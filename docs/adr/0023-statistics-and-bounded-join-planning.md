@@ -493,12 +493,78 @@ coverage or freeze numerical acceptance rules. The completed no-statistics
 WatDiv V3 diagnostic preserves all 192 oracle comparisons but scans 55,720 quad
 rows for Q4 versus greedy's 36,144. Its earlier genre expansion is a plan-quality
 limitation under heuristic fanout, not evidence of a violated V3 formula.
-Next compare shared verified statistics on these same inputs and establish
-repeatable controls; do not change costs or relax thresholds to fit Q4. See the
+The subsequent shared-statistics comparison below diagnoses the remaining
+join-domain error; old profile formulas and acceptance gates stay unchanged. See the
 [measured diagnostic and lookup correction](../../bench/query-benchmark.md#watdiv-v3-and-statistics-lookup-diagnostic).
 The native comparator now accepts explicit unique mode subsets, retaining its
 round rotation and oracle checks. A pair can share one verified statistics
 setup; this changes diagnostic selection only, not admission or product APIs.
+
+### Optional source-derived domains and cost model v4 (2026-09-08)
+
+The completed paired shared-statistics WatDiv run at `ff580f2037` preserves
+384/384 oracle comparisons but fails performance: Q4 reads 175,870 quad rows
+under V3 versus greedy's 4,603; Q2 reads 17,902 versus three. Q4's complete
+leaf estimates are already exact. Correcting frequency-sketch noise cannot
+repair its join estimates, which assume a fixed 1,000-value key domain.
+These results justify an explicit domain-aware candidate, not changing V3 or
+relaxing thresholds. [Raw identities and measurements](../../bench/query-benchmark.md#paired-shared-statistics-failure-and-domain-aware-candidate)
+remain distinct from acceptance.
+
+`StatisticsProvider::read_with_distinct_estimates` optionally derives subject
+and object distinct-value estimates during the **same independent primary
+reconciliation scan** as ordinary `read`. The owned snapshot exposes their
+separate profile and physical graph/predicate lookup. No new generation is
+written or activated; `statistics.v1`, its fingerprint, ordinary `read`,
+source checkpoint and private live-open identity retain their contracts.
+The bound query's `distinct_estimation_profile()` accessor identifies admitted
+observations, not whether a particular query actually used them. Stale reuse
+clears that identity; the existing public context struct is unchanged.
+
+The profile `oxigraph.statistics.distinct.sha256-hll10-fixed48.v1` binds codec 1
+and the RDF-1.2 feature flag. Each populated physical scope has two 1,024-byte
+HyperLogLog register arrays, using the first 64 bits of SHA-256 over the
+`oxigraph.statistics.distinct.sha256-hll10.v1\0` domain, a position byte and
+canonical term bytes: ten index bits and 54 rank bits. Registers start at zero;
+the raw coefficient is exactly `0.7213/(1+1.079/1024)`. Harmonic sums and raw
+rounding use `u128`. Below/equal `2.5m`, nonzero empty-register counts select
+linear counting; the logarithm uses a 48-fractional-bit, 32-term normalized
+atanh series with integer truncation and final half-up rounding. Estimates
+are clamped to zero for empty scopes or `[1, occurrences]` otherwise.
+This bounded variant follows [HyperLogLog's raw and small-range algorithms](https://algo.inria.fr/flajolet/Publications/FlFuGaMe07.pdf),
+not its 32-bit large-range correction. Fixed hashes and these advisory
+estimates carry no advertised confidence or exact-distinctness guarantee.
+The additional default 4 MiB logical ceiling charges scratch/result keys,
+both arrays and metadata before scope allocation; it is not an RSS quota.
+Existing scan limits, cancellation and deadlines apply through finalization.
+
+`BoundedJoinCostModel::DomainAwareV4` selects
+`oxigraph.join-work.domain-aware.v4`. V1/V2/V3 never call the new default-`None`
+variable-specific estimator seam. V4 only requests direct non-repeated
+subject/object variables with a fixed predicate, supported single physical
+graph, no nested triple pattern and no outer-bound pattern variable. The
+adapter declines merged defaults; fixed opposite endpoints clamp scope NDV
+to the leaf row hint, an advisory domain estimate, not a conjunction statistic.
+
+For the canonical highest-ordinal one-key subset extension with both domains known, replace
+the old denominator with `max(prefix_ndv, leaf_ndv, 1)` in the checked `u128`
+row product. Missing or multi-key domains retain the V3 recurrence; unknown
+domains are never synthesized from row counts. For each subset/variable,
+take the minimum known original leaf domain capped by that subset's rows,
+independently of its winning execution order. V3's conditional row caps,
+physical hash/probe costs and admission rules remain. Alternative last-leaf
+decompositions contribute only those existing conditional caps, not additional
+NDV estimates. Existing eight-leaf
+and candidate/state bounds are unchanged; optional domain maps add bounded
+per-subset work/state, not a new global memory or timing guarantee.
+
+Native tests cover integer extremes/rounding, physical scopes, limits,
+unchanged payloads, stale/copied/reopened identity, dataset/term fallback,
+legacy callback isolation, deterministic eight/nine-leaf plans and exact
+result bags. A constructed three-leaf join reads 3,000 rather than V3's 5,000
+quad rows for the same 1,000 solutions. This is a product regression test,
+not representative speedup. Ordinary greedy/default options remain unchanged;
+G3.2 corpus/resource/tail acceptance and default promotion remain open.
 
 ## Consequences
 

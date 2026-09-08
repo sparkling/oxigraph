@@ -9,8 +9,8 @@ use oxigraph::sparql::{
     QueryResults, QuerySolution, SparqlEvaluator, StatisticsAvailability,
 };
 use oxigraph::store::{
-    DerivedGenerationLimits, DerivedIndex, DerivedProvider, StatisticsProvider, Store,
-    TransactionStartControl,
+    DerivedGenerationLimits, DerivedIndex, DerivedProvider, DistinctStatisticsLimits,
+    StatisticsProvider, Store, TransactionStartControl,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -20,7 +20,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-const MODE_NAMES: [&str; 10] = [
+const DEFAULT_MODE_COUNT: usize = 10;
+const MODE_NAMES: [&str; 11] = [
     "greedy",
     "bounded",
     "statistics_greedy",
@@ -31,6 +32,7 @@ const MODE_NAMES: [&str; 10] = [
     "shared_statistics_bounded_conditional_v2",
     "bounded_correlated_v3",
     "shared_statistics_bounded_correlated_v3",
+    "shared_statistics_bounded_domain_v4",
 ];
 
 // Keep selection outside the measured path. Explicit names prevent a typo from
@@ -45,11 +47,11 @@ struct Options {
 }
 
 fn uses_statistics(mode: usize) -> bool {
-    (2..=5).contains(&mode) || mode == 7 || mode == 9
+    (2..=5).contains(&mode) || mode == 7 || mode == 9 || mode == 10
 }
 
 fn selection(mut args: &[String]) -> Result<(Options, &[String])> {
-    let mut modes: Vec<usize> = (0..MODE_NAMES.len()).collect();
+    let mut modes: Vec<usize> = (0..DEFAULT_MODE_COUNT).collect();
     let mut limits = DerivedGenerationLimits::default();
     let mut format = RdfFormat::NTriples;
     let mut union_default_graph = false;
@@ -354,7 +356,16 @@ fn main() -> Result {
         index.activate(&generation, &source, &provider, &limits)?;
         statistics_build_activate_seconds = Some(started.elapsed().as_secs_f64());
         let started = Instant::now();
-        let shared = Arc::new(provider.read(&index.strict(&source, &limits)?, &limits.input)?);
+        let view = index.strict(&source, &limits)?;
+        let shared = Arc::new(if modes.contains(&10) {
+            provider.read_with_distinct_estimates(
+                &view,
+                &limits.input,
+                &DistinctStatisticsLimits::default(),
+            )?
+        } else {
+            provider.read(&view, &limits.input)?
+        });
         statistics_verification_seconds = Some(started.elapsed().as_secs_f64());
         Some((index, shared))
     } else {
@@ -373,7 +384,8 @@ fn main() -> Result {
         "load_seconds": load_seconds,
         "statistics_build_activate_seconds": statistics_build_activate_seconds,
         "statistics_verification_seconds": statistics_verification_seconds,
-        "cost_models": [BoundedJoinCostModel::IndependentV1.id(), BoundedJoinCostModel::ConditionalV2.id(), BoundedJoinCostModel::CorrelatedV3.id()],
+        "cost_models": [BoundedJoinCostModel::IndependentV1.id(), BoundedJoinCostModel::ConditionalV2.id(), BoundedJoinCostModel::CorrelatedV3.id(), BoundedJoinCostModel::DomainAwareV4.id()],
+        "distinct_estimation_profile": statistics.as_ref().and_then(|(_, s)| s.distinct_estimation_profile()),
         "selected_modes": modes.iter().map(|&mode| MODE_NAMES[mode]).collect::<Vec<_>>(),
         "mode_rotation": modes.len() > 1,
         "max_dp_leaves": BoundedJoinPlanning::default().max_dp_leaves(),
@@ -413,7 +425,9 @@ fn main() -> Result {
                 let mut evaluator = SparqlEvaluator::new();
                 if mode % 2 == 1 || mode >= 6 {
                     evaluator = evaluator.with_bounded_join_planning(
-                        BoundedJoinPlanning::default().with_cost_model(if mode >= 8 {
+                        BoundedJoinPlanning::default().with_cost_model(if mode == 10 {
+                            BoundedJoinCostModel::DomainAwareV4
+                        } else if mode >= 8 {
                             BoundedJoinCostModel::CorrelatedV3
                         } else if mode >= 6 {
                             BoundedJoinCostModel::ConditionalV2
@@ -442,6 +456,9 @@ fn main() -> Result {
                         // A silently rejected generation is not a statistics sample.
                         if bound.context().availability != StatisticsAvailability::Current {
                             return Err("statistics admission was not current".into());
+                        }
+                        if mode == 10 && bound.distinct_estimation_profile().is_none() {
+                            return Err("distinct statistics admission missing".into());
                         }
                         let admission = admission_started.elapsed().as_secs_f64();
                         let explain_started = Instant::now();
@@ -553,7 +570,7 @@ mod tests {
         let args = |values: &[&str]| values.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         let default = args(&["--bag", "q.rq", "--ordered", "ordered.rq"]);
         let (options, queries) = selection(&default)?;
-        assert_eq!(options.modes, (0..MODE_NAMES.len()).collect::<Vec<_>>());
+        assert_eq!(options.modes, (0..DEFAULT_MODE_COUNT).collect::<Vec<_>>());
         assert_eq!(options.format, RdfFormat::NTriples);
         assert!(options.statistics_setup);
         assert!(!options.union_default_graph);

@@ -96,8 +96,12 @@
   `1771b64e`; baseline-first gates remain, with no new promotion authority.
   The no-statistics WatDiv V3 run is result-equivalent but exposes a Q4 work
   regression. A separate verified statistics lookup optimization removes linear
-  scope scans without changing estimates. The next step is shared-statistics
-  comparison on the existing 17-query scope, not unspecified corpus expansion.
+  scope scans without changing estimates. The paired shared-statistics run
+  then preserved results but exposed much worse V3 Q2/Q4 work. ADR-0023 now
+  describes an explicit source-bound NDV/V4 candidate addressing join-domain
+  estimates, with a native 5,000-to-3,000 quad-row regression. Old profiles,
+  default planning and numerical gates are unchanged; corpus/resource/tail
+  acceptance remains open. No harness-evolution prerequisite is added.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

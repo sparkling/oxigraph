@@ -69,8 +69,8 @@ pub use spatial_index::{
 };
 #[cfg(all(not(target_family = "wasm"), feature = "statistics"))]
 pub use statistics::{
-    FrequencyBounds, FrequentValue, GraphPredicateStatistics, StatisticsError, StatisticsLimits,
-    StatisticsProvider, StatisticsSnapshot,
+    DistinctStatisticsLimits, FrequencyBounds, FrequentValue, GraphPredicateStatistics,
+    StatisticsError, StatisticsLimits, StatisticsProvider, StatisticsSnapshot,
 };
 
 pub use crate::storage::TransactionStartControl;

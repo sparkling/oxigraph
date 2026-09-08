@@ -1170,10 +1170,14 @@ the [machine-checked corpus inputs](../../bench/query-benchmark.md#machine-check
 bind the existing 17 queries, which with native boundary tests define the scoped
 G3.2 opt-in workload. WatDiv V3 preserves 192/192 observations but increases Q4
 quad work from 36,144 to 55,720 without statistics. A separate indexed
-statistics-lookup correction preserves counts/profile. Next compare shared
-statistics on these same inputs and finish baseline-first frozen
-numerical/resource/tail acceptance, not unspecified corpus expansion, manual
-pre-run approval or another harness phase.
+statistics-lookup correction preserves counts/profile. The paired shared
+statistics run then preserved 384/384 WatDiv observations but failed performance
+(Q4: V3 175,870 versus greedy 4,603 quad rows). The explicit
+[source-derived NDV/V4 candidate](../adr/0023-statistics-and-bounded-join-planning.md#optional-source-derived-domains-and-cost-model-v4-2026-09-08)
+targets the missing join-domain estimates; old profiles/defaults and persisted
+evidence remain unchanged. Next compare this candidate on the same inputs and
+finish baseline-first frozen numerical/resource/tail acceptance, not unspecified
+corpus expansion, relaxed gates, manual pre-run approval or another harness phase.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 

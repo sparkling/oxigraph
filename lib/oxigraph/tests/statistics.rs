@@ -7,8 +7,9 @@
 use oxigraph::model::{BlankNode, GraphName, Literal, NamedNode, NamedOrBlankNode, Quad, Term};
 use oxigraph::store::{
     BackupError, DerivedGenerationError, DerivedGenerationLimits, DerivedIndex, DerivedProvider,
-    DerivedSnapshot, StatisticsError, StatisticsProvider, StatisticsSnapshot, Store,
-    TransactionKey, TransactionRequest, TransactionStartControl, WritableDataset,
+    DerivedSnapshot, DistinctStatisticsLimits, StatisticsError, StatisticsProvider,
+    StatisticsSnapshot, Store, TransactionKey, TransactionRequest, TransactionStartControl,
+    WritableDataset,
 };
 use std::collections::BTreeMap;
 use std::fmt::Write;
@@ -115,6 +116,77 @@ fn bounded_planning_reduces_intermediate_rows_without_changing_solutions() -> Re
 }
 
 #[test]
+fn distinct_join_costing_avoids_an_unnecessary_hinted_scan() -> Result {
+    let fixture = Fixture::new(
+        (0..3000)
+            .flat_map(|i| {
+                [
+                    quad(
+                        &format!("s{i}"),
+                        "p",
+                        &format!("p{i}"),
+                        GraphName::DefaultGraph,
+                    ),
+                    quad(
+                        &format!("s{i}"),
+                        "q",
+                        &format!("q{i}"),
+                        GraphName::DefaultGraph,
+                    ),
+                ]
+            })
+            .chain((0..1000).map(|i| quad(&format!("s{i}"), "r", "yes", GraphName::DefaultGraph))),
+    )?;
+    let source = capture(&fixture.store)?;
+    let shared = Arc::new(fixture.provider.read_with_distinct_estimates(
+        &fixture.index.strict(&source, &fixture.limits)?,
+        &fixture.limits.input,
+        &DistinctStatisticsLimits::default(),
+    )?);
+    let query = "SELECT * { ?s <urn:p> ?o . ?s <urn:q> ?v . ?s <urn:r> 'yes' }";
+    let expected = solution_bag(
+        SparqlEvaluator::new()
+            .without_optimizations()
+            .parse_query(query)?
+            .on_store(&fixture.store)
+            .execute()?,
+    )?;
+    assert_eq!(expected.values().sum::<usize>(), 1000);
+    let mut scans = Vec::new();
+    for model in [
+        BoundedJoinCostModel::CorrelatedV3,
+        BoundedJoinCostModel::DomainAwareV4,
+    ] {
+        let (result, explanation) = SparqlEvaluator::new()
+            .with_bounded_join_planning(BoundedJoinPlanning::default().with_cost_model(model))
+            .parse_query(query)?
+            .on_statistics_snapshot(
+                capture(&fixture.store)?,
+                Arc::clone(&shared),
+                TransactionStartControl::new(),
+            )?
+            .compute_statistics()
+            .explain()?;
+        assert_eq!(solution_bag(result?)?, expected);
+        scans.push(
+            leaves(&explanation.cardinality_feedback().root)
+                .iter()
+                .map(|n| n.observed_rows.unwrap())
+                .sum::<u64>(),
+        );
+    }
+    assert_eq!(
+        scans[1], 3000,
+        "NDV-aware execution probes only selected subjects: {scans:?}"
+    );
+    assert_eq!(
+        scans[0], 5000,
+        "V3 compatibility must retain its full final scan"
+    );
+    Ok(())
+}
+
+#[test]
 fn statistics_queries_preserve_solution_bags_across_operators_and_fallbacks() -> Result {
     let fixture = Fixture::new(
         (0..12)
@@ -125,7 +197,7 @@ fn statistics_queries_preserve_solution_bags_across_operators_and_fallbacks() ->
         fixture.dir.path().join("no-stats"),
         fixture.provider.identity(),
     )?;
-    let shared = Arc::new(fixture.read()?);
+    let shared = Arc::new(fixture.read_distinct()?);
     for query in [
         "SELECT ?s ?o ?v WHERE { ?s <urn:p> ?o . ?s <urn:q> ?v }",
         "SELECT ?o WHERE { ?s <urn:p> ?o . ?s <urn:q> ?v }",
@@ -151,6 +223,9 @@ fn statistics_queries_preserve_solution_bags_across_operators_and_fallbacks() ->
             ),
             Some(
                 BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::CorrelatedV3),
+            ),
+            Some(
+                BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::DomainAwareV4),
             ),
         ];
         for (index, options) in [&fixture.index, &missing]
@@ -205,7 +280,7 @@ fn every_planner_preserves_results_with_stale_or_corrupt_statistics() -> Result 
                     quad("named", "q", "blue", NamedNode::new("urn:g")?.into()),
                 ]),
         )?;
-        let shared = Arc::new(fixture.read()?);
+        let shared = Arc::new(fixture.read_distinct()?);
         let generation = fixture.index.active(&fixture.limits)?;
         // The zero count for :new in the old generation must never suppress the
         // newly written join. A separate fixture tests corruption at a matching
@@ -257,6 +332,10 @@ fn every_planner_preserves_results_with_stale_or_corrupt_statistics() -> Result 
                 SparqlEvaluator::new().with_bounded_join_planning(
                     BoundedJoinPlanning::default()
                         .with_cost_model(BoundedJoinCostModel::CorrelatedV3),
+                ),
+                SparqlEvaluator::new().with_bounded_join_planning(
+                    BoundedJoinPlanning::default()
+                        .with_cost_model(BoundedJoinCostModel::DomainAwareV4),
                 ),
             ] {
                 // Owned observations are still valid for their exact source
@@ -313,7 +392,7 @@ fn retained_statistics_produce_deterministic_dp_and_fallback_plans() -> Result {
             )
         })
     }))?;
-    let shared = Arc::new(fixture.read()?);
+    let shared = Arc::new(fixture.read_distinct()?);
     for leaf_count in [8, 9] {
         let mut patterns = String::new();
         for i in 0..leaf_count {
@@ -331,6 +410,7 @@ fn retained_statistics_produce_deterministic_dp_and_fallback_plans() -> Result {
             BoundedJoinCostModel::IndependentV1,
             BoundedJoinCostModel::ConditionalV2,
             BoundedJoinCostModel::CorrelatedV3,
+            BoundedJoinCostModel::DomainAwareV4,
         ] {
             let mut first = None;
             for _ in 0..8 {
@@ -491,6 +571,13 @@ fn shared_statistics_require_exact_source_and_retain_owned_observations() -> Res
 
 #[test]
 fn shared_statistics_reject_copied_siblings_and_reopened_stores() -> Result {
+    for distinct in [false, true] {
+        check_statistics_live_identity(distinct)?;
+    }
+    Ok(())
+}
+
+fn check_statistics_live_identity(distinct: bool) -> Result {
     let dir = tempfile::tempdir()?;
     let a = Store::open(dir.path().join("a"))?;
     a.insert(quad("base", "p", "base", GraphName::DefaultGraph))?;
@@ -509,7 +596,19 @@ fn shared_statistics_reject_copied_siblings_and_reopened_stores() -> Result {
     let mut index = DerivedIndex::create(dir.path().join("stats"), provider.identity())?;
     let generation = index.rebuild(&source, &provider, &limits)?;
     index.activate(&generation, &source, &provider, &limits)?;
-    let statistics = Arc::new(provider.read(&index.strict(&source, &limits)?, &limits.input)?);
+    let read = |source: &DerivedSnapshot| -> Result<_> {
+        let view = index.strict(source, &limits)?;
+        Ok(Arc::new(if distinct {
+            provider.read_with_distinct_estimates(
+                &view,
+                &limits.input,
+                &DistinctStatisticsLimits::default(),
+            )?
+        } else {
+            provider.read(&view, &limits.input)?
+        }))
+    };
+    let statistics = read(&source)?;
     let bind = |store: &Store| -> Result<_> {
         Ok(SparqlEvaluator::new()
             .parse_query("SELECT * { ?s <urn:p> ?o }")?
@@ -553,7 +652,7 @@ fn shared_statistics_reject_copied_siblings_and_reopened_stores() -> Result {
     );
     // Fresh independent verification after reopen creates a new admissible handle.
     let fresh = capture(&reopened)?;
-    let verified = Arc::new(provider.read(&index.strict(&fresh, &limits)?, &limits.input)?);
+    let verified = read(&fresh)?;
     assert_eq!(
         SparqlEvaluator::new()
             .parse_query("SELECT * { ?s <urn:p> ?o }")?
@@ -894,6 +993,146 @@ fn quad(s: &str, p: &str, o: &str, graph: GraphName) -> Quad {
 fn capture(store: &Store) -> Result<DerivedSnapshot> {
     Ok(store.derived_snapshot(&TransactionStartControl::new())?)
 }
+
+#[test]
+fn distinct_observations_are_optional_physical_owned_and_read_only() -> Result {
+    let graphs = [
+        GraphName::DefaultGraph,
+        NamedNode::new("urn:g")?.into(),
+        BlankNode::new("g")?.into(),
+    ];
+    let fixture = Fixture::new(graphs.iter().flat_map(|g| {
+        (0..20).flat_map(move |i| {
+            let q = quad(&format!("s{i}"), "p", &format!("v{}", i % 4), g.clone());
+            [q.clone(), q]
+        })
+    }))?;
+    let ordinary = fixture.read()?;
+    assert_eq!(ordinary.distinct_estimation_profile(), None);
+    let predicate = NamedNode::new("urn:p")?;
+    assert_eq!(ordinary.distinct_values(&graphs[0], &predicate), None);
+    let source = capture(&fixture.store)?;
+    let view = fixture.index.strict(&source, &fixture.limits)?;
+    let path = view.generation().directory().join("statistics.v1");
+    let bytes = std::fs::read(&path)?;
+    let ndv = fixture.provider.read_with_distinct_estimates(
+        &view,
+        &fixture.limits.input,
+        &DistinctStatisticsLimits::default(),
+    )?;
+    assert!(
+        ndv.distinct_estimation_profile()
+            .unwrap()
+            .contains("sha256-hll10-fixed48.v1")
+    );
+    assert_eq!(ndv.source(), ordinary.source());
+    assert_eq!(ndv.generation(), ordinary.generation());
+    assert_eq!(ndv.count_quads(None, None), 60);
+    for graph in &graphs {
+        assert_eq!(ndv.distinct_values(graph, &predicate), Some((20, 4)));
+        assert_eq!(
+            ndv.distinct_values(graph, &NamedNode::new("urn:missing")?),
+            Some((0, 0))
+        );
+    }
+    let larger = DistinctStatisticsLimits {
+        max_bytes: NonZeroUsize::new(8 * 1024 * 1024).unwrap(),
+    };
+    let repeated =
+        fixture
+            .provider
+            .read_with_distinct_estimates(&view, &fixture.limits.input, &larger)?;
+    for graph in &graphs {
+        assert_eq!(
+            ndv.distinct_values(graph, &predicate),
+            repeated.distinct_values(graph, &predicate)
+        );
+    }
+    assert_eq!(std::fs::read(path)?, bytes);
+    fixture
+        .store
+        .insert(quad("new", "p", "new", GraphName::DefaultGraph))?;
+    assert_eq!(ndv.distinct_values(&graphs[0], &predicate), Some((20, 4)));
+    let ndv = Arc::new(ndv);
+    let bind = |source| -> Result<_> {
+        Ok(SparqlEvaluator::new()
+            .parse_query("SELECT * { ?s <urn:p> ?o }")?
+            .on_statistics_snapshot(source, Arc::clone(&ndv), TransactionStartControl::new())?)
+    };
+    let retained = bind(source)?;
+    assert_eq!(
+        retained.distinct_estimation_profile(),
+        ndv.distinct_estimation_profile()
+    );
+    assert_eq!(consume(retained.execute()?)?, 20);
+    let stale = bind(capture(&fixture.store)?)?;
+    assert_eq!(stale.context().availability, StatisticsAvailability::Stale);
+    assert_eq!(stale.distinct_estimation_profile(), None);
+    assert_eq!(consume(stale.execute()?)?, 21);
+    Ok(())
+}
+
+#[test]
+fn distinct_observations_obey_read_controls_and_independent_reconciliation() -> Result {
+    let fixture = Fixture::new([quad("s", "p", "o", GraphName::DefaultGraph)])?;
+    let source = capture(&fixture.store)?;
+    let view = fixture.index.strict(&source, &fixture.limits)?;
+    assert!(matches!(
+        fixture.provider.read_with_distinct_estimates(
+            &view,
+            &fixture.limits.input,
+            &DistinctStatisticsLimits {
+                max_bytes: NonZeroUsize::MIN
+            }
+        ),
+        Err(StatisticsError::Limit)
+    ));
+    for timeout in [false, true] {
+        let mut limits = fixture.limits.input.clone();
+        limits.control = if timeout {
+            TransactionStartControl::new().with_timeout(Duration::ZERO)
+        } else {
+            let control = TransactionStartControl::new();
+            control.cancel();
+            control
+        };
+        let result = fixture.provider.read_with_distinct_estimates(
+            &view,
+            &limits,
+            &DistinctStatisticsLimits::default(),
+        );
+        if timeout {
+            assert!(matches!(
+                result,
+                Err(StatisticsError::Generation(DerivedGenerationError::Backup(
+                    BackupError::TimedOut
+                )))
+            ));
+        } else {
+            assert!(matches!(
+                result,
+                Err(StatisticsError::Generation(DerivedGenerationError::Backup(
+                    BackupError::Cancelled
+                )))
+            ));
+        }
+    }
+    // Only a private temporary fixture is changed, never programme evidence.
+    std::fs::write(
+        view.generation().directory().join("statistics.v1"),
+        b"corrupt",
+    )?;
+    assert!(matches!(
+        fixture.provider.read_with_distinct_estimates(
+            &view,
+            &fixture.limits.input,
+            &DistinctStatisticsLimits::default()
+        ),
+        Err(StatisticsError::Generation(DerivedGenerationError::Corrupt))
+    ));
+    assert_eq!(fixture.store.len()?, 1);
+    Ok(())
+}
 struct Fixture {
     store: Store,
     index: DerivedIndex,
@@ -933,6 +1172,13 @@ impl Fixture {
         Ok(self.provider.read(
             &self.index.strict(&capture(&self.store)?, &self.limits)?,
             &self.limits.input,
+        )?)
+    }
+    fn read_distinct(&self) -> Result<StatisticsSnapshot> {
+        Ok(self.provider.read_with_distinct_estimates(
+            &self.index.strict(&capture(&self.store)?, &self.limits)?,
+            &self.limits.input,
+            &DistinctStatisticsLimits::default(),
         )?)
     }
     fn catch_up(&mut self) -> Result {

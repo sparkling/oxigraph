@@ -1,5 +1,6 @@
 //! Bounded left-deep subset search. Estimates affect ordering, never query truth.
 use super::*;
+use std::collections::BTreeMap;
 
 /// Explicit opt-in profile; no default-planner or measured-speed promotion.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -17,6 +18,8 @@ pub enum BoundedJoinCostModel {
     ConditionalV2,
     /// Consistent correlated costs; unhinted leaves prefer legal indexed probes.
     CorrelatedV3,
+    /// V3 physical work with optional single-key distinct-domain join estimates.
+    DomainAwareV4,
 }
 impl BoundedJoinCostModel {
     pub const fn id(self) -> &'static str {
@@ -24,7 +27,11 @@ impl BoundedJoinCostModel {
             Self::IndependentV1 => "oxigraph.join-work.v1",
             Self::ConditionalV2 => "oxigraph.join-work.conditional.v2",
             Self::CorrelatedV3 => "oxigraph.join-work.correlated.v3",
+            Self::DomainAwareV4 => "oxigraph.join-work.domain-aware.v4",
         }
+    }
+    const fn correlated(self) -> bool {
+        matches!(self, Self::CorrelatedV3 | Self::DomainAwareV4)
     }
 }
 impl BoundedJoinPlanning {
@@ -158,10 +165,10 @@ pub(super) fn plan(
     let allow_hash: Vec<_> = ids
         .iter()
         .map(|&id| {
-            // Only V3 requires an actual RHS hint before choosing an unbound
+            // V3/V4 require an actual RHS hint before choosing an unbound
             // scan over a legal indexed probe. Some estimators decline individual
             // leaves; registration of an estimator alone is not evidence.
-            cost_model != BoundedJoinCostModel::CorrelatedV3
+            !cost_model.correlated()
                 || match &leaves[id] {
                     QueryExpression::QuadPattern {
                         subject,
@@ -190,6 +197,17 @@ pub(super) fn plan(
                 }
         })
         .collect();
+    // V1/V2/V3 never call the new seam or allocate domain maps. Only eligible
+    // direct leaf variables supply observations; unknown is never filled in.
+    let distinct = (cost_model == BoundedJoinCostModel::DomainAwareV4).then(|| {
+        ids.iter()
+            .enumerate()
+            .map(|(i, &id)| leaf_distinct_estimates(&leaves[id], input, estimator, sizes[i]))
+            .collect::<Vec<_>>()
+    });
+    let mut domains = distinct
+        .as_ref()
+        .map(|_| vec![BTreeMap::<Variable, u64>::new(); count]);
     let mut types = vec![input.clone(); count];
     let mut rows = vec![0_u64; count];
     let mut connected = vec![false; count];
@@ -212,7 +230,22 @@ pub(super) fn plan(
             sizes[last]
         } else {
             let numerator = u128::from(rows[previous]) * u128::from(sizes[last]);
-            let denominator = 1_000_u128.saturating_pow(keys.len().try_into().ok()?);
+            let domain_denominator =
+                distinct
+                    .as_ref()
+                    .zip(domains.as_ref())
+                    .and_then(|(leaf, subsets)| {
+                        let [key] = keys.as_slice() else {
+                            return None;
+                        };
+                        Some(u128::from(
+                            (*subsets[previous].get(key)?)
+                                .max(*leaf[last].get(key)?)
+                                .max(1),
+                        ))
+                    });
+            let denominator = domain_denominator
+                .unwrap_or(1_000_u128.saturating_pow(keys.len().try_into().ok()?));
             // Nonzero hints do not round an entire connected subset to zero.
             u64::try_from((numerator / denominator).min(u128::from(u64::MAX)))
                 .ok()?
@@ -236,6 +269,22 @@ pub(super) fn plan(
                 }
                 let probe = conditional_probe_rows(&leaves[id], &types[prefix], estimator);
                 rows[mask] = rows[mask].min(rows[prefix].saturating_mul(probe));
+            }
+        }
+        if let Some((distinct, domains)) = distinct.as_ref().zip(domains.as_mut()) {
+            // Recompute from original leaf observations, not a winning plan or
+            // an earlier prefix's clamping. All source orders for this subset
+            // see the same minimum known domain capped by its row estimate.
+            for (i, leaf) in distinct.iter().enumerate() {
+                if mask & (1 << i) != 0 {
+                    for (variable, &ndv) in leaf {
+                        let ndv = ndv.min(rows[mask]);
+                        domains[mask]
+                            .entry(variable.clone())
+                            .and_modify(|old| *old = (*old).min(ndv))
+                            .or_insert(ndv);
+                    }
+                }
             }
         }
     }
@@ -291,7 +340,7 @@ pub(super) fn plan(
                 // The right input is one eligible quad, never a path, SERVICE
                 // or scoped expression. Reuse the existing admission proof.
                 if can_probe {
-                    let work = if cost_model == BoundedJoinCostModel::CorrelatedV3 {
+                    let work = if cost_model.correlated() {
                         // The RHS is one admitted quad, so its matching rows
                         // and the join's output are the same occurrences. Use
                         // the same subset hint for both charges, plus one
@@ -327,6 +376,57 @@ pub(super) fn plan(
         }
     }
     states.pop()?.map(|s| s.expression)
+}
+
+fn leaf_distinct_estimates(
+    leaf: &QueryExpression,
+    input: &VariableTypes,
+    estimator: Option<&dyn CardinalityEstimator>,
+    rows: u64,
+) -> BTreeMap<Variable, u64> {
+    let mut result = BTreeMap::new();
+    let (
+        Some(estimator),
+        QueryExpression::QuadPattern {
+            subject,
+            predicate,
+            object,
+            graph_name,
+        },
+    ) = (estimator, leaf)
+    else {
+        return result;
+    };
+    if !matches!(predicate, NamedNodePattern::NamedNode(_))
+        || matches!(graph_name, Some(NamedNodePattern::Variable(_)))
+        || has_bound_pattern_variable(subject, predicate, object, graph_name.as_ref(), input)
+    {
+        return result;
+    }
+    #[cfg(feature = "sparql-12")]
+    if matches!(subject, GroundTermPattern::Triple(_))
+        || matches!(object, GroundTermPattern::Triple(_))
+    {
+        return result;
+    }
+    if matches!((subject, object), (GroundTermPattern::Variable(a), GroundTermPattern::Variable(b)) if a == b)
+    {
+        return result;
+    }
+    for term in [subject, object] {
+        if let GroundTermPattern::Variable(variable) = term {
+            if let Some(ndv) = estimator.estimate_distinct_values(
+                subject,
+                predicate,
+                object,
+                graph_name.as_ref(),
+                variable,
+            ) {
+                result.insert(variable.clone(), ndv.min(rows));
+            }
+        }
+    }
+    result
 }
 
 fn conditional_probe_rows(
@@ -387,6 +487,199 @@ mod tests {
             panic!("SELECT")
         };
         QueryExpression::from(&query.expression)
+    }
+
+    struct Domains {
+        calls: std::sync::atomic::AtomicUsize,
+        domain: Option<u64>,
+    }
+    impl CardinalityEstimator for Domains {
+        fn estimate_quad_pattern(
+            &self,
+            _: &GroundTermPattern,
+            _: &NamedNodePattern,
+            _: &GroundTermPattern,
+            _: Option<&NamedNodePattern>,
+        ) -> Option<u64> {
+            Some(10_000)
+        }
+        fn estimate_distinct_values(
+            &self,
+            _: &GroundTermPattern,
+            _: &NamedNodePattern,
+            _: &GroundTermPattern,
+            _: Option<&NamedNodePattern>,
+            _: &Variable,
+        ) -> Option<u64> {
+            self.calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.domain
+        }
+    }
+    #[test]
+    fn domain_profile_is_opt_in_and_missing_domains_preserve_v3() {
+        let query = parse("SELECT * { ?s <urn:p> ?o . ?s <urn:q> ?v }");
+        let estimator = Domains {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            domain: None,
+        };
+        let optimize = |model| {
+            Optimizer::optimize_query_expression_with_join_planning(
+                query.clone(),
+                Some(&estimator),
+                Some(BoundedJoinPlanning::default().with_cost_model(model)),
+            )
+        };
+        for model in [
+            BoundedJoinCostModel::IndependentV1,
+            BoundedJoinCostModel::ConditionalV2,
+            BoundedJoinCostModel::CorrelatedV3,
+        ] {
+            optimize(model);
+            assert_eq!(
+                estimator.calls.load(std::sync::atomic::Ordering::Relaxed),
+                0
+            );
+        }
+        let (v3, r3) = optimize(BoundedJoinCostModel::CorrelatedV3);
+        let (v4, r4) = optimize(BoundedJoinCostModel::DomainAwareV4);
+        assert_eq!(v3, v4);
+        assert_eq!(
+            (r3.dp_states, r3.dp_candidates),
+            (r4.dp_states, r4.dp_candidates)
+        );
+        assert_eq!(
+            estimator.calls.load(std::sync::atomic::Ordering::Relaxed),
+            4
+        );
+    }
+    #[test]
+    #[cfg(feature = "sep-0006")]
+    fn distinct_domains_replace_fixed_selectivity_not_just_cap_it() {
+        let query = parse("SELECT * { ?s <urn:p> ?o . ?s <urn:q> ?v }");
+        let optimize = |model, domain| {
+            Optimizer::optimize_query_expression_with_join_planning(
+                query.clone(),
+                Some(&Domains {
+                    calls: std::sync::atomic::AtomicUsize::new(0),
+                    domain: Some(domain),
+                }),
+                Some(BoundedJoinPlanning::default().with_cost_model(model)),
+            )
+            .0
+        };
+        let hash = optimize(BoundedJoinCostModel::CorrelatedV3, 10_000);
+        let probe = optimize(BoundedJoinCostModel::DomainAwareV4, 10_000);
+        assert_ne!(
+            hash, probe,
+            "one row per distinct key favors indexed probes"
+        );
+        assert_eq!(
+            optimize(BoundedJoinCostModel::DomainAwareV4, 1),
+            hash,
+            "small key domain must increase estimated fanout, not be capped by legacy /1000"
+        );
+        assert_eq!(
+            optimize(BoundedJoinCostModel::DomainAwareV4, u64::MAX),
+            probe,
+            "domains are capped by leaf rows before costing"
+        );
+    }
+    #[test]
+    fn domain_profile_declines_repetition_variable_predicates_and_graphs() {
+        let estimator = Domains {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            domain: Some(10_000),
+        };
+        for query in [
+            "SELECT * { ?s <urn:p> ?s . ?s <urn:q> ?s }",
+            "SELECT * { ?s ?p ?o . ?s ?q ?v }",
+            "SELECT * { GRAPH ?g { ?s <urn:p> ?o . ?s <urn:q> ?v } }",
+        ] {
+            let optimize = |model| {
+                Optimizer::optimize_query_expression_with_join_planning(
+                    parse(query),
+                    Some(&estimator),
+                    Some(BoundedJoinPlanning::default().with_cost_model(model)),
+                )
+                .0
+            };
+            assert_eq!(
+                optimize(BoundedJoinCostModel::CorrelatedV3),
+                optimize(BoundedJoinCostModel::DomainAwareV4)
+            );
+            assert_eq!(
+                estimator.calls.load(std::sync::atomic::Ordering::Relaxed),
+                0
+            );
+        }
+        // Domains are collected, but a two-key join still uses V3 selectivity.
+        let query = "SELECT * { ?s <urn:p> ?o . ?s <urn:q> ?o }";
+        let optimize = |model| {
+            Optimizer::optimize_query_expression_with_join_planning(
+                parse(query),
+                Some(&estimator),
+                Some(BoundedJoinPlanning::default().with_cost_model(model)),
+            )
+            .0
+        };
+        assert_eq!(
+            optimize(BoundedJoinCostModel::CorrelatedV3),
+            optimize(BoundedJoinCostModel::DomainAwareV4)
+        );
+        assert_eq!(
+            estimator.calls.load(std::sync::atomic::Ordering::Relaxed),
+            4
+        );
+    }
+    #[test]
+    fn leaf_domains_decline_outer_bindings_and_cap_zero_rows() {
+        let s = Variable::new("s").unwrap();
+        let leaf = QueryExpression::QuadPattern {
+            subject: GroundTermPattern::Variable(s.clone()),
+            predicate: NamedNode::new("urn:p").unwrap().into(),
+            object: GroundTermPattern::Variable(Variable::new("o").unwrap()),
+            graph_name: None,
+        };
+        let estimator = Domains {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            domain: Some(u64::MAX),
+        };
+        let bound = infer_query_expression_types(&leaf, VariableTypes::default());
+        assert!(leaf_distinct_estimates(&leaf, &bound, Some(&estimator), 10).is_empty());
+        assert_eq!(
+            estimator.calls.load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
+        let zero = leaf_distinct_estimates(&leaf, &VariableTypes::default(), Some(&estimator), 0);
+        assert_eq!(zero.len(), 2);
+        assert!(zero.values().all(|&v| v == 0));
+    }
+    #[test]
+    #[cfg(feature = "sparql-12")]
+    fn leaf_domains_decline_nested_triple_patterns() {
+        let estimator = Domains {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            domain: Some(1),
+        };
+        let leaf = QueryExpression::QuadPattern {
+            subject: GroundTermPattern::Variable(Variable::new("s").unwrap()),
+            predicate: NamedNode::new("urn:p").unwrap().into(),
+            object: GroundTermPattern::Triple(Box::new(spargebra::term::GroundTriplePattern {
+                subject: GroundTermPattern::Variable(Variable::new("x").unwrap()),
+                predicate: NamedNode::new("urn:q").unwrap().into(),
+                object: GroundTermPattern::Variable(Variable::new("y").unwrap()),
+            })),
+            graph_name: None,
+        };
+        assert!(
+            leaf_distinct_estimates(&leaf, &VariableTypes::default(), Some(&estimator), 10)
+                .is_empty()
+        );
+        assert_eq!(
+            estimator.calls.load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
     }
     fn leaf_order(plan: &QueryExpression) -> Vec<String> {
         match plan {
@@ -488,6 +781,7 @@ mod tests {
             BoundedJoinCostModel::IndependentV1,
             BoundedJoinCostModel::ConditionalV2,
             BoundedJoinCostModel::CorrelatedV3,
+            BoundedJoinCostModel::DomainAwareV4,
         ] {
             let options = BoundedJoinPlanning::default().with_cost_model(model);
             for n in [8, 9] {
@@ -591,6 +885,7 @@ mod tests {
             BoundedJoinCostModel::IndependentV1,
             BoundedJoinCostModel::ConditionalV2,
             BoundedJoinCostModel::CorrelatedV3,
+            BoundedJoinCostModel::DomainAwareV4,
         ] {
             let options = BoundedJoinPlanning::default().with_cost_model(model);
             for hint in [0, 1, u64::MAX] {

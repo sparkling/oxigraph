@@ -184,6 +184,12 @@ The [WatDiv V3 diagnostic](bench/query-benchmark.md#watdiv-v3-and-statistics-loo
 preserves results but exposes a Q4 planning regression, so G3.2 performance
 acceptance remains open.
 
+An explicit [domain-aware V4 candidate](docs/adr/0023-statistics-and-bounded-join-planning.md#optional-source-derived-domains-and-cost-model-v4-2026-09-08)
+can use optional source-bound distinct-value estimates for single-key joins.
+Existing planner profiles, ordinary greedy defaults and persisted statistics
+are unchanged. Native regression tests pass; representative performance
+acceptance remains open after the paired shared-statistics V3 regressions.
+
 G2.2 now provides opt-in `ChangeTrackingTransaction` for backend-neutral Rust
 transactions: inspect pending quad, graph-lifecycle, and namespace changes
 before commit. It excludes point no-ops, preserves scoped operation ordering,

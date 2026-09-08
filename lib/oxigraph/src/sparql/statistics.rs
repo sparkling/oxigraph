@@ -12,7 +12,7 @@ use crate::store::{
     TransactionStartControl,
 };
 use spareval::CardinalityEstimator;
-use spargebra::term::{GroundTermPattern, NamedNodePattern};
+use spargebra::term::{GroundTermPattern, NamedNodePattern, Variable};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -38,10 +38,16 @@ pub struct BoundStatisticsSparqlQuery {
     context: StatisticsQueryContext,
     control: TransactionStartControl,
     started: Instant,
+    distinct_estimation_profile: Option<&'static str>,
 }
 impl BoundStatisticsSparqlQuery {
     pub const fn context(&self) -> &StatisticsQueryContext {
         &self.context
+    }
+    /// Optional admitted observation profile, not an assertion that this query
+    /// used NDV hints. Unsupported patterns and older cost models ignore them.
+    pub const fn distinct_estimation_profile(&self) -> Option<&'static str> {
+        self.distinct_estimation_profile
     }
     pub fn compute_statistics(mut self) -> Self {
         self.query = self.query.compute_statistics();
@@ -167,6 +173,9 @@ impl PreparedSparqlQuery {
                 .map(|statistics| *statistics.generation()),
             availability,
         };
+        let distinct_estimation_profile = statistics
+            .as_ref()
+            .and_then(|s| s.distinct_estimation_profile());
         if let Some(statistics) = statistics {
             self.evaluator = self.evaluator.with_cardinality_estimator(DatasetEstimator {
                 statistics,
@@ -189,6 +198,7 @@ impl PreparedSparqlQuery {
             context,
             control,
             started,
+            distinct_estimation_profile,
         })
     }
 }
@@ -288,7 +298,60 @@ impl CardinalityEstimator for DatasetEstimator {
         // Conservative upper point hint, no independence/correlation claim.
         Some(subject_upper.min(object_upper).min(total))
     }
+
+    fn estimate_distinct_values(
+        &self,
+        subject: &GroundTermPattern,
+        predicate: &NamedNodePattern,
+        object: &GroundTermPattern,
+        graph_name: Option<&NamedNodePattern>,
+        variable: &Variable,
+    ) -> Option<u64> {
+        self.statistics.distinct_estimation_profile()?;
+        let NamedNodePattern::NamedNode(p) = predicate else {
+            return None;
+        };
+        // Validate term/repetition/dataset support even for an empty scope.
+        constant(subject)?;
+        constant(object)?;
+        let is_subject = matches!(subject, GroundTermPattern::Variable(v) if v == variable);
+        let is_object = matches!(object, GroundTermPattern::Variable(v) if v == variable);
+        if is_subject == is_object {
+            return None;
+        }
+        let rows = self.estimate_quad_pattern(subject, predicate, object, graph_name)?;
+        let graph = match graph_name {
+            None => match self.dataset.default_graph_graphs()? {
+                [] => return Some(0),
+                [graph] => graph.clone(),
+                graphs if graphs.iter().all(|g| g == &graphs[0]) => graphs[0].clone(),
+                _ => return None,
+            },
+            Some(NamedNodePattern::NamedNode(graph)) => {
+                if self
+                    .dataset
+                    .available_named_graphs()
+                    .is_some_and(|graphs| !graphs.contains(&graph.clone().into()))
+                {
+                    return Some(0);
+                }
+                graph.clone().into()
+            }
+            Some(NamedNodePattern::Variable(_)) => return None,
+        };
+        let (subjects, objects) = self.statistics.distinct_values(&graph, p)?;
+        // Scope NDV is not conditioned on the other endpoint. Clamping to the
+        // marginal row hint is advisory, not a conjunction/intersection bound.
+        Some(if is_subject { subjects } else { objects }.min(rows))
+    }
 }
+#[cfg_attr(
+    not(feature = "rdf-12"),
+    expect(
+        clippy::unnecessary_wraps,
+        reason = "Shared signature distinguishes unsupported RDF 1.2 triples from variable terms"
+    )
+)]
 fn constant(pattern: &GroundTermPattern) -> Option<Option<Term>> {
     match pattern {
         GroundTermPattern::Variable(_) => Some(None),
@@ -296,5 +359,143 @@ fn constant(pattern: &GroundTermPattern) -> Option<Option<Term>> {
         GroundTermPattern::Literal(l) => Some(Some(l.clone().into())),
         #[cfg(feature = "rdf-12")]
         GroundTermPattern::Triple(_) => None,
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use crate::model::{Literal, NamedNode};
+    use crate::sparql::SparqlEvaluator;
+    use crate::store::{DerivedProvider, DistinctStatisticsLimits, Store};
+
+    #[test]
+    fn distinct_adapter_scopes_and_conditions_only_supported_variables()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path().join("db"))?;
+        store.load_from_slice(
+            crate::io::RdfFormat::TriG,
+            "<urn:s1> <urn:p> 'red' . <urn:s2> <urn:p> 'red' . <urn:s3> <urn:p> 'blue' .
+             <urn:g> { <urn:s1> <urn:p> 'green' . }",
+        )?;
+        let provider = StatisticsProvider::default();
+        let limits = DerivedGenerationLimits::default();
+        let source = store.derived_snapshot(&TransactionStartControl::new())?;
+        let mut index = DerivedIndex::create(directory.path().join("stats"), provider.identity())?;
+        let generation = index.rebuild(&source, &provider, &limits)?;
+        index.activate(&generation, &source, &provider, &limits)?;
+        let statistics = Arc::new(provider.read_with_distinct_estimates(
+            &index.strict(&source, &limits)?,
+            &limits.input,
+            &DistinctStatisticsLimits::default(),
+        )?);
+        let estimator = |query: &str| -> Result<_, crate::sparql::SparqlSyntaxError> {
+            Ok(DatasetEstimator {
+                statistics: Arc::clone(&statistics),
+                dataset: SparqlEvaluator::new().parse_query(query)?.dataset,
+            })
+        };
+        let s = Variable::new("s")?;
+        let o = Variable::new("o")?;
+        let subject = GroundTermPattern::Variable(s.clone());
+        let object = GroundTermPattern::Variable(o.clone());
+        let predicate = NamedNodePattern::NamedNode(NamedNode::new("urn:p")?);
+        let default = estimator("SELECT * { ?s ?p ?o }")?;
+        let estimate = <DatasetEstimator as CardinalityEstimator>::estimate_distinct_values;
+        assert_eq!(
+            estimate(&default, &subject, &predicate, &object, None, &s),
+            Some(3)
+        );
+        assert_eq!(
+            estimate(&default, &subject, &predicate, &object, None, &o),
+            Some(2)
+        );
+        assert_eq!(
+            estimate(
+                &default,
+                &subject,
+                &predicate,
+                &GroundTermPattern::Literal(Literal::from("red")),
+                None,
+                &s
+            ),
+            Some(2)
+        );
+        assert_eq!(
+            estimate(
+                &default,
+                &GroundTermPattern::NamedNode(NamedNode::new("urn:s1")?),
+                &predicate,
+                &object,
+                None,
+                &o
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            estimate(&default, &subject, &predicate, &subject, None, &s),
+            None
+        );
+        assert_eq!(
+            estimate(
+                &default,
+                &subject,
+                &NamedNodePattern::Variable(s.clone()),
+                &object,
+                None,
+                &s
+            ),
+            None
+        );
+        assert_eq!(
+            estimate(
+                &default,
+                &subject,
+                &predicate,
+                &object,
+                Some(&NamedNodePattern::Variable(s.clone())),
+                &s
+            ),
+            None
+        );
+        assert_eq!(
+            estimate(
+                &default,
+                &subject,
+                &predicate,
+                &object,
+                None,
+                &Variable::new("absent")?
+            ),
+            None
+        );
+        let named = estimator("SELECT * FROM <urn:g> FROM <urn:g> { ?s ?p ?o }")?;
+        assert_eq!(
+            estimate(&named, &subject, &predicate, &object, None, &s),
+            Some(1)
+        );
+        let merged = estimator("SELECT * FROM <urn:g> FROM <urn:h> { ?s ?p ?o }")?;
+        assert_eq!(
+            estimate(&merged, &subject, &predicate, &object, None, &s),
+            None
+        );
+        let excluded = estimator("SELECT * FROM NAMED <urn:h> { GRAPH <urn:g> { ?s ?p ?o } }")?;
+        assert_eq!(
+            estimate(
+                &excluded,
+                &subject,
+                &predicate,
+                &object,
+                Some(&NamedNodePattern::NamedNode(NamedNode::new("urn:g")?)),
+                &s
+            ),
+            Some(0)
+        );
+        assert_eq!(
+            estimate(&excluded, &subject, &predicate, &object, None, &s),
+            Some(0)
+        );
+        Ok(())
     }
 }

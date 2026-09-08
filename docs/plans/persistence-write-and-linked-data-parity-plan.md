@@ -1230,9 +1230,14 @@ are now verified preparation. The existing 17 SELECT inputs and native boundary
 tests define the scoped G3.2 opt-in workload; unspecified corpus expansion is
 not the next task. WatDiv V3 preserves 192/192 observations but increases Q4
 quad work from 36,144 to 55,720 without statistics. Exact statistics lookups now
-use their canonical index, with unchanged counts/profile. Next measure shared
-statistics on the same inputs and finish baseline-first numerical/resource/tail
-acceptance, with no extra manual pre-run approval prerequisite.
+use their canonical index, with unchanged counts/profile. The paired shared
+statistics run then preserved 384/384 WatDiv observations but failed performance
+(Q4: V3 175,870 versus greedy 4,603 quad rows). The explicit
+[source-derived NDV/V4 candidate](../adr/0023-statistics-and-bounded-join-planning.md#optional-source-derived-domains-and-cost-model-v4-2026-09-08)
+targets join-domain estimation, preserving old profiles and persisted evidence.
+Next measure this candidate on the same corpus, then finish baseline-first
+numerical/resource/tail acceptance; no gate is relaxed or extra manual pre-run
+approval prerequisite introduced.
 
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.

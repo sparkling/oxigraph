@@ -11,6 +11,10 @@ use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::time::Instant;
 
+mod distinct;
+pub use distinct::DistinctStatisticsLimits;
+use distinct::{DistinctCollector, DistinctEstimates};
+
 const FILE: &str = "statistics.v1";
 const WIDTH: usize = 256;
 const DEPTH: usize = 4;
@@ -222,7 +226,12 @@ impl Data {
         }
         Ok(key)
     }
-    fn insert(&mut self, quad: &Quad, limits: &StatisticsLimits) -> Result<(), StatisticsError> {
+    fn insert(
+        &mut self,
+        quad: &Quad,
+        limits: &StatisticsLimits,
+        distinct: Option<&mut DistinctCollector>,
+    ) -> Result<(), StatisticsError> {
         let graph = self.graph(&quad.graph_name, limits)?;
         if quad.predicate.as_str().len() > limits.max_record_bytes.get() {
             return Err(StatisticsError::Limit);
@@ -252,6 +261,9 @@ impl Data {
             limits.max_record_bytes.get(),
         )?;
         let object = term_key(&quad.object, limits.max_record_bytes.get())?;
+        if let Some(distinct) = distinct {
+            distinct.insert(&key, &subject, &object)?;
+        }
         let group = self.scopes.get_mut(&key).ok_or(StatisticsError::Profile)?;
         group.count = group.count.checked_add(1).ok_or(StatisticsError::Limit)?;
         group.subjects.insert(&subject, 0)?;
@@ -314,8 +326,31 @@ pub struct StatisticsSnapshot {
     generation: [u8; 32],
     origin: std::sync::Arc<()>,
     max_record_bytes: usize,
+    distinct: Option<DistinctEstimates>,
 }
 impl StatisticsSnapshot {
+    /// Identity of optional, source-derived NDV observations. They are not part
+    /// of the persisted physical.v1 generation or a statistical error guarantee.
+    pub fn distinct_estimation_profile(&self) -> Option<&'static str> {
+        self.distinct.as_ref().map(|_| distinct::PROFILE)
+    }
+    /// Approximate distinct subjects/objects of one physical graph/predicate,
+    /// not filtered, merged-dataset or join cardinalities. None means uncollected.
+    pub fn distinct_values(&self, graph: &GraphName, predicate: &NamedNode) -> Option<(u64, u64)> {
+        let distinct = self.distinct.as_ref()?;
+        if predicate.as_str().len() > self.max_record_bytes {
+            return None;
+        }
+        Some(
+            distinct
+                .get(&(
+                    graph_key(graph, self.max_record_bytes).ok()?,
+                    predicate.as_str().to_owned(),
+                ))
+                .copied()
+                .unwrap_or((0, 0)),
+        )
+    }
     pub(crate) fn matches_source(&self, source: &DerivedSnapshot) -> bool {
         std::sync::Arc::ptr_eq(&self.origin, source.statistics_origin())
             && self.source() == source.checkpoint()
@@ -387,6 +422,15 @@ impl StatisticsProvider {
         limits: &DerivedLimits,
         started: Instant,
     ) -> Result<Data, StatisticsError> {
+        self.scan_with_distinct(source, limits, started, None)
+    }
+    fn scan_with_distinct(
+        &self,
+        source: &DerivedSnapshot,
+        limits: &DerivedLimits,
+        started: Instant,
+        mut distinct: Option<&mut DistinctCollector>,
+    ) -> Result<Data, StatisticsError> {
         let mut data = Data {
             graphs: BTreeMap::new(),
             scopes: BTreeMap::new(),
@@ -401,7 +445,9 @@ impl StatisticsProvider {
                     SemanticChange::NamedGraphCreated(graph) => {
                         data.graph(&GraphName::from(graph.clone()), &self.limits)?;
                     }
-                    SemanticChange::QuadAdded(quad) => data.insert(quad, &self.limits)?,
+                    SemanticChange::QuadAdded(quad) => {
+                        data.insert(quad, &self.limits, distinct.as_deref_mut())?
+                    }
                     _ => (),
                 }
                 Ok::<_, StatisticsError>(())
@@ -426,6 +472,26 @@ impl StatisticsProvider {
         view: &DerivedView<'_>,
         limits: &DerivedLimits,
     ) -> Result<StatisticsSnapshot, StatisticsError> {
+        self.read_inner(view, limits, None)
+    }
+    /// Independently verifies the unchanged physical generation, additionally
+    /// deriving bounded NDV observations during that SAME primary scan. No
+    /// generation is written, activated or relabelled. The returned observations
+    /// remain owned by the exact retained source, not the current Store state.
+    pub fn read_with_distinct_estimates(
+        &self,
+        view: &DerivedView<'_>,
+        limits: &DerivedLimits,
+        distinct_limits: &DistinctStatisticsLimits,
+    ) -> Result<StatisticsSnapshot, StatisticsError> {
+        self.read_inner(view, limits, Some(distinct_limits))
+    }
+    fn read_inner(
+        &self,
+        view: &DerivedView<'_>,
+        limits: &DerivedLimits,
+        distinct_limits: Option<&DistinctStatisticsLimits>,
+    ) -> Result<StatisticsSnapshot, StatisticsError> {
         let started = Instant::now();
         controlled(limits, started)?;
         if view.is_eventual() {
@@ -435,7 +501,8 @@ impl StatisticsProvider {
             return Err(StatisticsError::Profile);
         }
         let data = self.open(view.generation().files(), limits, started)?;
-        if data != self.scan(view.source(), limits, started)? {
+        let mut distinct = distinct_limits.map(DistinctCollector::new);
+        if data != self.scan_with_distinct(view.source(), limits, started, distinct.as_mut())? {
             return Err(StatisticsError::NotEquivalent);
         }
         controlled(limits, started)?;
@@ -445,6 +512,7 @@ impl StatisticsProvider {
             generation: view.generation().fingerprint(),
             origin: std::sync::Arc::clone(view.source().statistics_origin()),
             max_record_bytes: self.limits.max_record_bytes.get(),
+            distinct: distinct.map(|d| d.finish(limits, started)).transpose()?,
         })
     }
     fn write(

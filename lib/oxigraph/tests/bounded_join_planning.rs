@@ -130,6 +130,13 @@ fn bounded_queries_preserve_multisets_and_scopes() -> Result {
                 .unwrap()
                 .with_cost_model(BoundedJoinCostModel::CorrelatedV3),
             BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::CorrelatedV3),
+            BoundedJoinPlanning::new(1)
+                .unwrap()
+                .with_cost_model(BoundedJoinCostModel::DomainAwareV4),
+            BoundedJoinPlanning::new(2)
+                .unwrap()
+                .with_cost_model(BoundedJoinCostModel::DomainAwareV4),
+            BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::DomainAwareV4),
         ] {
             let (results, explanation) = SparqlEvaluator::new()
                 .with_bounded_join_planning(options)
@@ -180,6 +187,7 @@ fn conditional_planning_avoids_broad_type_and_numeric_scans() -> Result {
         BoundedJoinCostModel::IndependentV1,
         BoundedJoinCostModel::ConditionalV2,
         BoundedJoinCostModel::CorrelatedV3,
+        BoundedJoinCostModel::DomainAwareV4,
     ] {
         let (result, explanation) = SparqlEvaluator::new()
             .with_bounded_join_planning(BoundedJoinPlanning::default().with_cost_model(model))
@@ -260,6 +268,7 @@ fn correlated_costs_do_not_scan_unrelated_reviewers() -> Result {
     for model in [
         BoundedJoinCostModel::ConditionalV2,
         BoundedJoinCostModel::CorrelatedV3,
+        BoundedJoinCostModel::DomainAwareV4,
     ] {
         let evaluator = SparqlEvaluator::new()
             .with_bounded_join_planning(BoundedJoinPlanning::default().with_cost_model(model));
@@ -315,6 +324,7 @@ fn disabled_optimization_and_substitutions_bypass_bounded_search() -> Result {
         BoundedJoinCostModel::IndependentV1,
         BoundedJoinCostModel::ConditionalV2,
         BoundedJoinCostModel::CorrelatedV3,
+        BoundedJoinCostModel::DomainAwareV4,
     ] {
         let evaluator = SparqlEvaluator::new()
             .with_bounded_join_planning(BoundedJoinPlanning::default().with_cost_model(model));
@@ -344,6 +354,7 @@ fn all_query_forms_keep_results_and_cancellation() -> Result {
         BoundedJoinCostModel::IndependentV1,
         BoundedJoinCostModel::ConditionalV2,
         BoundedJoinCostModel::CorrelatedV3,
+        BoundedJoinCostModel::DomainAwareV4,
     ] {
         for query in [
             "ASK { ?s <urn:p> ?o . ?s <urn:q> ?v }",
@@ -411,6 +422,7 @@ fn bounded_planning_preserves_rdf12_patterns_and_version_errors() -> Result {
         BoundedJoinCostModel::IndependentV1,
         BoundedJoinCostModel::ConditionalV2,
         BoundedJoinCostModel::CorrelatedV3,
+        BoundedJoinCostModel::DomainAwareV4,
     ] {
         let evaluator = SparqlEvaluator::new()
             .with_bounded_join_planning(BoundedJoinPlanning::default().with_cost_model(model));

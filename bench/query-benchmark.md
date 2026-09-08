@@ -9,10 +9,15 @@ inherit an old handle. It adds no package or application dependency.
 Four additional modes select conditional v2 and correlated v3, each without
 statistics and with shared verified statistics. The original six retain v1/greedy
 behavior. Per-record `cost_model` identifies the effective profile; `input`
-lists all three cost identities. With two queries and five repetitions,
-the current ten-mode runner emits 140 observations (120 samples including
+lists the available cost identities. With two queries and five repetitions,
+the default ten-mode runner emits 140 observations (120 samples including
 warm-ups and 20 separate feedback executions). Historical six/eight-mode runs
 below retain their original identities and counts.
+The eleventh mode, `shared_statistics_bounded_domain_v4`, must be selected
+explicitly. Its shared verification additionally collects source-owned NDVs;
+`input.distinct_estimation_profile` identifies that setup. Old modes ignore
+these observations. No-argument selection still runs only the original ten
+modes, and query-only setup rejects the new statistics-requiring mode.
 This is a local diagnostic, **not frozen-corpus acceptance, qualification, or
 default-planner promotion**. The legacy HTTP BSBM script cannot select these APIs.
 
@@ -767,3 +772,48 @@ Native scope/state/planning tests pass 28 with `statistics,rdf-12` and 26 with
 `--no-default-features --features statistics`; focused Clippy and release build
 pass. No threshold is relaxed and the next measurement is shared verified
 statistics on the existing scoped corpus.
+
+## Paired shared-statistics failure and domain-aware candidate
+
+Source `ff580f2037`, binary SHA-256
+`f10363b77575ebf0fa1e289fad38327e44e376b33f39c6fe7d4c7ac10a2b1989`,
+compared `shared_statistics_greedy,shared_statistics_bounded_correlated_v3`
+on CPU 8 with 30 measured repetitions, one warm-up and one separate feedback
+execution per mode/query. Both shared the same verified physical statistics.
+All 640 BSBM and 384 WatDiv observations equal their optimization-disabled
+oracles. This is a correctness result, **not a performance pass**:
+
+| WatDiv query | Greedy / V3 quad rows | Greedy / V3 p95 ms |
+| --- | ---: | ---: |
+| Q1 | 3 / 2 | 0.075 / 0.069 |
+| Q2 | 3 / 17,902 | 0.390 / 156.737 |
+| Q4 | 4,603 / 175,870 | 48.926 / 1,937.511 |
+| Q7 | 2,801 / 9,359 | 41.669 / 102.637 |
+| Q14 | 11,595 / 11,595 | 102.662 / 93.058 |
+| Q17 | 4,302 / 10,134 | 80.243 / 139.830 |
+
+Q4's complete leaf q-errors are one: join fanout, not noisy leaf counts,
+explains the remaining estimation gap. BSBM V3 also increases Q1/Q4/Q8 work.
+WatDiv setup takes 289.016 s loading, 545.861 s build/activation and 228.479 s
+independent verification; total elapsed 1,302.56 s, peak RSS 21,680,464 KiB,
+zero major faults/swaps. Shared-host timings are diagnostic, not isolated-host
+or ratified tail gates. The LDBC shared-statistics attempt instead fails with
+typed `Limit` before any sample: its 5,743 named graphs exceed the unchanged
+1,024-graph provider default. Its merged default remains unsupported by this
+estimator. Existing no-statistics LDBC observations are not relabelled.
+
+Local raw files under `/tmp/oxigraph-g32-paired-statistics-BKJXDm`:
+`watdiv.jsonl` SHA-256 `4bc5ef1d57115822c77ca68bafa1029764a7d16c5c50b7f85a3b43a28d5e079e`;
+`watdiv.time` `b8018e3314ea8bf8593fa61765ee95ae29aa9cbe1c97e036501419077e1f7db7`;
+`bsbm.jsonl` `6345100a967934bc8eba8fcb299e258bcfe715ab9a4089f2b04aec53ea2a3f85`.
+These are retained local diagnostics, not protected baselines or uploads.
+
+The [separate V4 candidate](../docs/adr/0023-statistics-and-bounded-join-planning.md#optional-source-derived-domains-and-cost-model-v4-2026-09-08)
+addresses missing single-key domain estimates, retaining V1/V2/V3 and the
+ordinary greedy default. To compare it, build the same release example and
+select `--mode shared_statistics_greedy,shared_statistics_bounded_correlated_v3,shared_statistics_bounded_domain_v4`
+with the existing manifest and complete query inventory. Its additional
+collection is included in shared verification time; do not compare that setup
+as if it were ordinary `read`. Native 5,000-to-3,000 quad-row regression coverage
+does not close the corpus/resource/tail gate. No numerical threshold or input
+manifest is changed to fit these observations.
