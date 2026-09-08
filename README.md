@@ -175,6 +175,9 @@ The opt-in bounded planner also avoids cloning expression trees for rejected
 candidates, without changing costs, tie-breaks or search reports. The
 [planner-only diagnostic](bench/query-benchmark.md#planner-only-resource-diagnostic)
 checks DP/fallback behavior; full performance acceptance remains separate.
+The [native comparator](bench/query-benchmark.md#machine-checked-input-identities)
+can enforce the documented BSBM/WatDiv/LDBC input manifests before loading;
+this is reproducibility support, not a benchmark or default-promotion pass.
 
 G2.2 now provides opt-in `ChangeTrackingTransaction` for backend-neutral Rust
 transactions: inspect pending quad, graph-lifecycle, and namespace changes

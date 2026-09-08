@@ -1224,6 +1224,11 @@ The [allocation-only planner correction](../adr/0023-statistics-and-bounded-join
 now skips rejected candidate tree construction without changing plans or search
 counts. Native eight-leaf and nine/64-leaf fallback diagnostics supplement the
 resource evidence; representative coverage and numerical ratification remain.
+Native fallback/determinism coverage and
+[machine-checked input identities](../../bench/query-benchmark.md#machine-checked-input-identities)
+are now verified preparation; remaining work is representative coverage and
+baseline-first numerical/resource/tail acceptance, with no extra manual
+pre-run approval prerequisite.
 
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.

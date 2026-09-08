@@ -1,0 +1,66 @@
+{
+  "format": "oxigraph.query-inputs.v1",
+  "id": "bsbm-100-select-v1",
+  "dataset_sha256": "27bbf8a2758b80ac57dfdec5fcbcce0b828b41c5890372706cd72fcc7861f18b",
+  "rdf_format": "nt",
+  "default_graph": "stored",
+  "queries": [
+    {
+      "sha256": "bbd75bb45b1862bf33198438ad0abea838bd756c5e269af1f5faf10ac4c8b5c2",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "404f0114c43b28e3e5eefc93f698c86d3e9301a629a1dc020ed2d590cf9fe5e6",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "ecef0e53398a81a1ccf102f140f11a832dad6814c0076d401566bd823a14a591",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "8ca15e949566a8c4f66cfdbe6f5e9e94b5c38de59b4bf10109ce7518b1401216",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "2b26e7065d6c07d7b543f1f49e60cac1838b5f5b8beda10af984bbbc802bfb53",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "510a4500ea6afcfa5de31f756dc236b9fc17be462360f497a099a375f62cfaf7",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "ed3426a99f33122a1deb259010a5051e38d3e25e9baf7dee9e2e14f9a317ce9f",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "cb7920a985119ff96cf51f20010c1ab19fdf68d2c1d2f45f763102fcdf907f1f",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "d4ef552ea104e55ca18d897f5f69de6b377715d1cd9228131bea60e2c7451f86",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "1237d21207d1949b9ce4a68c03a5ee01d55b4ea3c49b927233fdc64b50174e87",
+      "comparison": "bag"
+    }
+  ],
+  "metadata": {
+    "query_ids": [
+      "Q1",
+      "Q2",
+      "Q3",
+      "Q4",
+      "Q5",
+      "Q6",
+      "Q7",
+      "Q8",
+      "Q10",
+      "Q11"
+    ],
+    "scope": "Pinned diagnostic inputs only; no performance thresholds, acceptance, qualification or default promotion.",
+    "reproduction": "../query-benchmark.md",
+    "notes": "Fixed 100-product, seed 53223436, forward-chained subset from bsbm-tools 59d0a8a605b26f21506789fa1a713beb5abf1cab; not the random parameter mix. Q10 is an empty control. Q7 does not exercise a matching German offer. Q9/Q12 are not SELECT and are outside this comparator."
+  }
+}

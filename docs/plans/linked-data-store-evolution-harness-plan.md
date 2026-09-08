@@ -1165,6 +1165,11 @@ The native planner now skips constructing rejected candidate trees, retaining
 the full cost/order/operator tie-break and speculative counts. Its
 [DP/fallback diagnostic](../../bench/query-benchmark.md#planner-only-resource-diagnostic)
 preserves exact parent plans; this does not close the full performance gate.
+Native stale/corrupt-state and retained-snapshot determinism checks now pass;
+the [machine-checked corpus inputs](../../bench/query-benchmark.md#machine-checked-input-identities)
+bind the existing 17 queries. Broader coverage and baseline-first frozen
+numerical/resource/tail acceptance remain the next G3.2 work, not manual
+pre-run approval or another harness phase.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 

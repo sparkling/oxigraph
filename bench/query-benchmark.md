@@ -16,6 +16,44 @@ below retain their original identities and counts.
 This is a local diagnostic, **not frozen-corpus acceptance, qualification, or
 default-planner promotion**. The legacy HTTP BSBM script cannot select these APIs.
 
+## Machine-checked input identities
+
+Pass `--input-manifest FILE.json` before the query pairs to require an exact
+dataset SHA-256, RDF format, default-graph interpretation, and ordered inventory
+of query SHA-256/comparison pairs. The checked bytes are retained for execution;
+no query file is reopened after checking. Missing, reordered, duplicated or
+changed inputs fail before temporary-store creation/loading. Output identifies
+the manifest's own SHA-256; there is no refresh option. Without the flag the
+existing arbitrary-input diagnostic remains available and reports null manifest
+identity. Annotation fields such as `metadata` are explanatory, not executable
+gates; these manifests do not pin modes, setup, repetitions or performance rules.
+
+| Manifest | Required query order (all `--bag`) | Dataset interpretation |
+| --- | --- | --- |
+| [BSBM 100](query-inputs/bsbm-100-select-v1.json) | Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q10, Q11 | N-Triples, stored default |
+| [WatDiv 10M](query-inputs/watdiv-10m-select-v1.json) | Q1, Q2, Q4, Q7, Q14, Q17 | N-Triples, stored default |
+| [LDBC Q7](query-inputs/ldbc-q7-select-v1.json) | Q7 | N-Quads, named union |
+
+Use the generators, licenses, archive/member hashes and fixed parameters below.
+For example, after generating the ten BSBM queries:
+
+```sh
+set --
+for query in 1 2 3 4 5 6 7 8 10 11; do
+  set -- "$@" --bag "$pilot_dir/queries/q$query.rq"
+done
+target/release/examples/query_benchmark "$pilot_dir/dataset.nt" 3 \
+  --input-manifest bench/query-inputs/bsbm-100-select-v1.json "$@"
+```
+
+These are the already-documented diagnostic inputs, now machine checked, not
+a declaration that the selected subsets satisfy every representative-workload
+requirement. Empty controls remain in the inventory; no official expected
+result is replaced. Numeric gates and noise treatment still need a deliberate
+baseline-first freeze before a gated performance run. Native state-fallback
+and retained-snapshot plan-determinism tests are documented in
+[ADR-0023](../docs/adr/0023-statistics-and-bounded-join-planning.md#full-statisticsplanning-promotion).
+
 ## Reproduce the small BSBM pilot
 
 Run from the repository root. Java is needed only for the existing generator;
@@ -601,9 +639,10 @@ its setup/repetition/affinity envelope differs from the earlier five-repetition
 WatDiv run, so the two totals are not a product speedup comparison. Raw JSONL
 SHA-256: `b4a11bc3340cacace1ad3c15beb9b165fe45c59984e0733293956d1fc36a71e9`.
 
-Remaining acceptance work is a representative pinned query manifest, current/
-absent/stale/corrupt-statistics correctness, explicit eight-leaf DP and larger
-fallback resource evidence, and repeatable per-query tails. Deliberately freeze
+The machine-checked inputs above and native statistics-state/determinism tests
+now close those focused preparation gaps. Remaining acceptance work is broader
+representative coverage, resource ceilings beyond the synthetic observations,
+and repeatable per-query tails. Deliberately freeze
 numerical thresholds and noise rules after the parent baseline and before
 a gated candidate run. The separate manual pre-run approval introduced in
 `1771b64e` was not required by the original contract; see the correction in

@@ -90,6 +90,10 @@
   trees while retaining exact costs, tie-breaks and search reports. Its native
   regression and planner-only DP/fallback comparisons are distinct from broad
   performance acceptance; no profile or default is promoted.
+  Native statistics-state and retained-snapshot determinism checks now close
+  focused acceptance gaps. Machine-checked input manifests add reproducibility
+  support. ADR-0023 corrects the extra manual pre-run approval invented in
+  `1771b64e`; baseline-first gates remain, with no new promotion authority.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

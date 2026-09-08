@@ -1,0 +1,21 @@
+{
+  "format": "oxigraph.query-inputs.v1",
+  "id": "ldbc-q7-select-v1",
+  "dataset_sha256": "e07ecce50009f1246d7c6aa4b8f456eeef991f9db1e8477b6a99bb7f97529839",
+  "rdf_format": "nq",
+  "default_graph": "named-union",
+  "queries": [
+    {
+      "sha256": "e1ca83475c854ca2d7e355caa39bca2a424fee7e205626fcf113e61f528ffd28",
+      "comparison": "bag"
+    }
+  ],
+  "metadata": {
+    "query_ids": [
+      "Q7"
+    ],
+    "scope": "Pinned diagnostic inputs only; no performance thresholds, acceptance, qualification or default promotion.",
+    "reproduction": "../query-benchmark.md",
+    "notes": "LDBC SPB ce6323c0936306729408233dc70d26f2389b34c6, validation archive members generatedCreativeWorks-000004.nq, -000025.nq, -000102.nq in that order, without rewriting graph names. Q7 fixed NewsItem and half-open UTC 2011-02-08 21:01 to 22:01 window; no reference-knowledge entailment or full SPB claim. Native disabled oracle, not raw lexical equality to official XML."
+  }
+}

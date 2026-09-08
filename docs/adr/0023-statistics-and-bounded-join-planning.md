@@ -475,6 +475,10 @@ wall-clock planning duration), exact search reports and solution bags using
 one verified, retained statistics snapshot: V1/V2/V3 at eight-leaf DP and
 nine-leaf greedy fallback. This closes the native retained-snapshot determinism
 check; synthetic estimator determinism is no longer its only evidence.
+The [machine-checked input manifests](../../bench/query-benchmark.md#machine-checked-input-identities)
+pin the existing 10 BSBM, six WatDiv and one LDBC SELECT inputs and their graph
+interpretations. They reject input drift but do not claim full representative
+coverage or freeze numerical acceptance rules.
 
 ## Consequences
 

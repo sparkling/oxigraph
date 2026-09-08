@@ -1,0 +1,46 @@
+{
+  "format": "oxigraph.query-inputs.v1",
+  "id": "watdiv-10m-select-v1",
+  "dataset_sha256": "7cfe0341d578a677d3b5d562eaaf94d67aff8587d9e0ef3d83cc82765b77cddd",
+  "rdf_format": "nt",
+  "default_graph": "stored",
+  "queries": [
+    {
+      "sha256": "97f292a405fff77691b69af07dcde72f5089ad862cd14efa244e8da781964af1",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "98dc727b8b1e2c3a7be2e9419edc5dac6f4fe2d6989891f95ea905ae0839a437",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "b9f69da89ae5936ad30d68a0552281c73aeaa2d811f20f59a9a5190b9ec29968",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "69ae752081ecf890a36acf4b679ca590f6c1394af79be1aec4ae7316fba9dbe4",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "4972c502256f96680defeafc6dc15ee3e0a975ba31b8c4eddce275de3a7076ad",
+      "comparison": "bag"
+    },
+    {
+      "sha256": "0dde5aa65432ad52792ffe8abe27225a685ca6254823c438eab92f913bcbd13d",
+      "comparison": "bag"
+    }
+  ],
+  "metadata": {
+    "query_ids": [
+      "Q1",
+      "Q2",
+      "Q4",
+      "Q7",
+      "Q14",
+      "Q17"
+    ],
+    "scope": "Pinned diagnostic inputs only; no performance thresholds, acceptance, qualification or default promotion.",
+    "reproduction": "../query-benchmark.md",
+    "notes": "Intact official watdiv.10M.nt, 10916457 triples, unchanged six stress-query lines extracted by bench/watdiv-10m-queries.sh. Q1/Q2/Q7 are empty controls and must not be dropped. Not full WatDiv qualification."
+  }
+}

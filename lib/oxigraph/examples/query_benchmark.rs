@@ -41,6 +41,7 @@ struct Options {
     format: RdfFormat,
     union_default_graph: bool,
     statistics_setup: bool,
+    input_manifest: Option<String>,
 }
 
 fn uses_statistics(mode: usize) -> bool {
@@ -53,6 +54,7 @@ fn selection(mut args: &[String]) -> Result<(Options, &[String])> {
     let mut format = RdfFormat::NTriples;
     let mut union_default_graph = false;
     let mut statistics_setup = true;
+    let mut input_manifest = None;
     let mut seen = BTreeSet::new();
     while let Some(option) = args.first() {
         if matches!(option.as_str(), "--bag" | "--ordered") {
@@ -65,6 +67,7 @@ fn selection(mut args: &[String]) -> Result<(Options, &[String])> {
             .get(1)
             .ok_or_else(|| format!("{option} requires a value"))?;
         match option.as_str() {
+            "--input-manifest" => input_manifest = Some(value.clone()),
             "--mode" => {
                 let mode = MODE_NAMES
                     .iter()
@@ -130,6 +133,7 @@ fn selection(mut args: &[String]) -> Result<(Options, &[String])> {
             format,
             union_default_graph,
             statistics_setup,
+            input_manifest,
         },
         queries,
     ))
@@ -261,11 +265,26 @@ fn sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
+// This pins input identity only, not performance thresholds or promotion.
+// Reject omissions, reordering, changed comparison semantics and changed graph
+// interpretation before creating/loading the temporary database. No auto-refresh.
+fn verify_inputs(manifest: &Value, actual: &Value) -> Result {
+    if manifest["format"] != "oxigraph.query-inputs.v1" {
+        return Err("unsupported query input manifest format".into());
+    }
+    for key in ["dataset_sha256", "rdf_format", "default_graph", "queries"] {
+        if manifest.get(key).is_none() || manifest.get(key) != actual.get(key) {
+            return Err(format!("input manifest mismatch: {key}").into());
+        }
+    }
+    Ok(())
+}
+
 fn main() -> Result {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.len() < 4 || args.len() % 2 != 0 {
         return Err(
-            "usage: query_benchmark DATASET REPETITIONS [--mode MODE] [--format nt|nq] [--default-graph stored|named-union] [--setup statistics|query-only] [--max-input-records N] [--max-input-bytes N] (--bag|--ordered) QUERY.rq ...".into(),
+            "usage: query_benchmark DATASET REPETITIONS [--mode MODE] [--format nt|nq] [--default-graph stored|named-union] [--setup statistics|query-only] [--max-input-records N] [--max-input-bytes N] [--input-manifest JSON] (--bag|--ordered) QUERY.rq ...".into(),
         );
     }
     let repetitions: usize = args[1].parse()?;
@@ -279,9 +298,38 @@ fn main() -> Result {
         format,
         union_default_graph,
         statistics_setup,
+        input_manifest,
     } = options;
     let bytes = std::fs::read(&args[0])?;
     let data_sha256 = sha256(&bytes);
+    // Retain the exact query bytes validated here for execution; do not reopen
+    // mutable input files after their hashes have passed the manifest check.
+    let queries = queries
+        .chunks_exact(2)
+        .map(|pair| {
+            let query = std::fs::read_to_string(&pair[1])?;
+            let digest = sha256(query.as_bytes());
+            Ok((pair[0] == "--ordered", pair[1].clone(), query, digest))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let manifest_sha256 = if let Some(path) = &input_manifest {
+        let manifest_bytes = std::fs::read(path)?;
+        let manifest: Value = serde_json::from_slice(&manifest_bytes)?;
+        verify_inputs(
+            &manifest,
+            &json!({
+                "dataset_sha256": data_sha256,
+                "rdf_format": format.file_extension(),
+                "default_graph": if union_default_graph { "named-union" } else { "stored" },
+                "queries": queries.iter().map(|(ordered, _, _, digest)| json!({
+                    "sha256": digest, "comparison": if *ordered { "sequence" } else { "bag" }
+                })).collect::<Vec<_>>()
+            }),
+        )?;
+        Some(sha256(&manifest_bytes))
+    } else {
+        None
+    };
     let directory = tempfile::tempdir()?;
     let store = Store::open(directory.path().join("db"))?;
     let started = Instant::now();
@@ -309,6 +357,7 @@ fn main() -> Result {
     emit(&json!({
         "kind": "input", "format": "oxigraph.query-benchmark.v1",
         "dataset": args[0], "dataset_sha256": data_sha256,
+        "input_manifest": input_manifest, "input_manifest_sha256": manifest_sha256,
         "rdf_format": format.file_extension(),
         "default_graph": if union_default_graph { "named-union" } else { "stored" },
         "setup": if statistics_setup { "statistics" } else { "query-only" },
@@ -331,17 +380,11 @@ fn main() -> Result {
     // The store is private, receives no further writes and has no other handles.
     // Each statistics query checks that its new retained source is current.
     let mut emitted = 0;
-    for pair in queries.chunks_exact(2) {
-        let [comparison, path] = pair else {
-            return Err("expected comparison and query path".into());
-        };
-        let ordered = comparison == "--ordered";
-        let query = std::fs::read_to_string(path)?;
-        let query_sha256 = sha256(query.as_bytes());
+    for (ordered, path, query, query_sha256) in &queries {
         let oracle = Rows::collect(
             prepare(
                 SparqlEvaluator::new().without_optimizations(),
-                &query,
+                query,
                 union_default_graph,
             )?
             .on_store(&store)
@@ -349,7 +392,7 @@ fn main() -> Result {
         )?;
         emit(
             &json!({"kind": "query", "path": path, "sha256": query_sha256,
-            "comparison": if ordered { "sequence" } else { "bag" },
+            "comparison": if *ordered { "sequence" } else { "bag" },
             "oracle": "optimization-disabled", "rows": oracle.rows.len()}),
         )?;
         // Round zero warms all modes; subsequent rounds rotate the first mode
@@ -373,7 +416,7 @@ fn main() -> Result {
                         }),
                     );
                 }
-                let prepared = prepare(evaluator, &query, union_default_graph)?;
+                let prepared = prepare(evaluator, query, union_default_graph)?;
                 let prepare_seconds = started.elapsed().as_secs_f64();
                 let admission_started = Instant::now();
                 let (result, explanation, admission_seconds, explain_seconds) =
@@ -425,7 +468,7 @@ fn main() -> Result {
                 let actual = Rows::collect(result?)?;
                 let consume_seconds = consume_started.elapsed().as_secs_f64();
                 let total_seconds = started.elapsed().as_secs_f64();
-                if !oracle.equivalent(&actual, ordered)? {
+                if !oracle.equivalent(&actual, *ordered)? {
                     return Err(format!("result mismatch: {path} mode {mode_name} round {round}; investigate corpus determinism and ordering before attributing an optimizer defect").into());
                 }
                 let observations = explanation.cardinality_feedback();
@@ -446,7 +489,7 @@ fn main() -> Result {
             }
         }
     }
-    let queries = queries.len() / 2;
+    let queries = queries.len();
     emit(
         &json!({"kind": "complete", "queries": queries, "emitted_observations": emitted,
         "expected_observations": queries * (repetitions + 2) * modes.len(),
@@ -459,6 +502,45 @@ fn main() -> Result {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manifest_rejects_changed_or_incomplete_inputs() -> Result {
+        let manifest = json!({
+            "format": "oxigraph.query-inputs.v1",
+            "dataset_sha256": sha256(b"dataset"), "rdf_format": "nt", "default_graph": "stored",
+            "queries": [
+                {"sha256": sha256(b"q1"), "comparison": "bag"},
+                {"sha256": sha256(b"q2"), "comparison": "sequence"}
+            ]
+        });
+        verify_inputs(&manifest, &manifest)?;
+        for key in ["dataset_sha256", "rdf_format", "default_graph", "queries"] {
+            let mut changed = manifest.clone();
+            changed[key] = Value::Null;
+            assert!(verify_inputs(&manifest, &changed).is_err(), "changed {key}");
+            let mut missing = manifest.clone();
+            missing
+                .as_object_mut()
+                .ok_or("expected object")?
+                .remove(key);
+            assert!(verify_inputs(&missing, &manifest).is_err(), "missing {key}");
+        }
+        let mut changed = manifest.clone();
+        changed["format"] = "oxigraph.query-inputs.v2".into();
+        assert!(verify_inputs(&changed, &manifest).is_err());
+        for queries in [
+            json!([manifest["queries"][1], manifest["queries"][0]]),
+            json!([manifest["queries"][0]]),
+            json!([manifest["queries"][0], manifest["queries"][0]]),
+            json!([{"sha256":sha256(b"q1"), "comparison":"sequence"}, manifest["queries"][1]]),
+            json!([{"sha256":sha256(b"changed q1"), "comparison":"bag"}, manifest["queries"][1]]),
+        ] {
+            changed = manifest.clone();
+            changed["queries"] = queries;
+            assert!(verify_inputs(&manifest, &changed).is_err());
+        }
+        Ok(())
+    }
 
     #[test]
     fn mode_selection_is_explicit_and_preserves_default_order() -> Result {
@@ -492,9 +574,23 @@ mod tests {
             vec!["--mode", "greedy", "--mode", "bounded", "--bag", "q.rq"],
             vec!["--bag"],
             vec!["--silent", "q.rq"],
+            vec!["--input-manifest"],
+            vec![
+                "--input-manifest",
+                "a.json",
+                "--input-manifest",
+                "b.json",
+                "--bag",
+                "q.rq",
+            ],
         ] {
             assert!(selection(&args(&invalid)).is_err(), "{invalid:?}");
         }
+        let selected = args(&["--input-manifest", "inputs.json", "--bag", "q.rq"]);
+        assert_eq!(
+            selection(&selected)?.0.input_manifest.as_deref(),
+            Some("inputs.json")
+        );
         Ok(())
     }
 
