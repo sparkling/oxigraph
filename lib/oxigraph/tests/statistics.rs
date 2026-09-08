@@ -187,6 +187,71 @@ fn distinct_join_costing_avoids_an_unnecessary_hinted_scan() -> Result {
 }
 
 #[test]
+fn equal_marginal_statistics_do_not_imply_equal_join_overlap() -> Result {
+    let link = |s: &str, p: &str, o: &str| -> Result<_> {
+        Ok(Quad::new(
+            NamedNode::new(format!("urn:{s}"))?,
+            NamedNode::new(format!("urn:{p}"))?,
+            NamedNode::new(format!("urn:{o}"))?,
+            GraphName::DefaultGraph,
+        ))
+    };
+    let query =
+        "PREFIX : <urn:> SELECT * { ?offer :product :P; :vendor ?vendor . ?vendor :country :DE }";
+    let mut observations = Vec::new();
+    for correlated in [true, false] {
+        let f = Fixture::new([
+            link("o1", "product", "P")?,
+            link("o2", "product", "Other")?,
+            link("o1", "vendor", if correlated { "vDE" } else { "vUS" })?,
+            link("o2", "vendor", if correlated { "vUS" } else { "vDE" })?,
+            link("vDE", "country", "DE")?,
+            link("vUS", "country", "US")?,
+        ])?;
+        let statistics = Arc::new(f.read_distinct()?);
+        let ndvs = ["product", "vendor", "country"].map(|p| {
+            statistics.distinct_values(
+                &GraphName::DefaultGraph,
+                &NamedNode::new(format!("urn:{p}")).unwrap(),
+            )
+        });
+        let bytes = std::fs::read(f.index.active(&f.limits)?.directory().join("statistics.v1"))?;
+        let expected = solution_bag(
+            SparqlEvaluator::new()
+                .without_optimizations()
+                .parse_query(query)?
+                .on_store(&f.store)
+                .execute()?,
+        )?;
+        assert_eq!(expected.values().sum::<usize>(), usize::from(correlated));
+        let (result, explanation) = SparqlEvaluator::new()
+            .with_bounded_join_planning(
+                BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::DomainAwareV4),
+            )
+            .parse_query(query)?
+            .on_statistics_snapshot(
+                capture(&f.store)?,
+                statistics,
+                TransactionStartControl::new(),
+            )?
+            .explain()?;
+        assert_eq!(solution_bag(result?)?, expected);
+        let mut serialized = Vec::new();
+        explanation.write_in_json(&mut serialized)?;
+        let mut plan: serde_json::Value = serde_json::from_slice(&serialized)?;
+        plan.as_object_mut()
+            .ok_or("plan object")?
+            .remove("planning duration in seconds");
+        observations.push((bytes, ndvs, plan));
+    }
+    assert_eq!(
+        observations[0], observations[1],
+        "marginal frequency and NDV summaries cannot encode this cross-predicate correlation"
+    );
+    Ok(())
+}
+
+#[test]
 fn statistics_queries_preserve_solution_bags_across_operators_and_fallbacks() -> Result {
     let fixture = Fixture::new(
         (0..12)

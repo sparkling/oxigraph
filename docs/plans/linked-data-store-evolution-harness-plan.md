@@ -1175,7 +1175,9 @@ statistics run then preserved 384/384 WatDiv observations but failed performance
 (Q4: V3 175,870 versus greedy 4,603 quad rows). The explicit
 [source-derived NDV/V4 candidate](../adr/0023-statistics-and-bounded-join-planning.md#optional-source-derived-domains-and-cost-model-v4-2026-09-08)
 targets the missing join-domain estimates; old profiles/defaults and persisted
-evidence remain unchanged. Next compare this candidate on the same inputs and
+evidence remain unchanged. Its first BSBM comparison preserves 960/960
+observations but regresses Q7 from V3's 83 to 223 quad rows, despite Q8 improving.
+Next diagnose that optional-offer ordering before the large WatDiv rerun, then
 finish baseline-first frozen numerical/resource/tail acceptance, not unspecified
 corpus expansion, relaxed gates, manual pre-run approval or another harness phase.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and

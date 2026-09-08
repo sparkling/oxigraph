@@ -102,6 +102,8 @@
   estimates, with a native 5,000-to-3,000 quad-row regression. Old profiles,
   default planning and numerical gates are unchanged; corpus/resource/tail
   acceptance remains open. No harness-evolution prerequisite is added.
+  Its first BSBM comparison passes all 960 oracle checks but regresses Q7
+  quad work; diagnose that ordering before the large WatDiv candidate rerun.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

@@ -817,3 +817,45 @@ collection is included in shared verification time; do not compare that setup
 as if it were ordinary `read`. Native 5,000-to-3,000 quad-row regression coverage
 does not close the corpus/resource/tail gate. No numerical threshold or input
 manifest is changed to fit these observations.
+
+The first candidate check at `8a839a2951` uses all ten pinned BSBM queries,
+CPU 8, 30 measured repetitions and the three modes above. All **960/960**
+observations are equivalent (930 samples including 30 warm-ups; 30 separate
+feedback executions). Greedy/V3/V4 quad rows, in manifest order, are:
+
+| Query | Greedy | V3 | V4 |
+| --- | ---: | ---: | ---: |
+| Q1 | 6 | 8 | 8 |
+| Q2 | 49 | 49 | 49 |
+| Q3 | 66 | 66 | 66 |
+| Q4 | 81 | 111 | 111 |
+| Q5 | 388 | 388 | 388 |
+| Q6 | 200 | 200 | 200 |
+| Q7 | 84 | 83 | 223 |
+| Q8 | 77 | 93 | 77 |
+| Q10 | 21 | 21 | 21 |
+| Q11 | 10 | 10 | 10 |
+
+**V4 is not ready for acceptance.** Q8 improves, but Q7's optional offer group
+starts with 29 product offers instead of five country matches, performs four
+more 29-row probes, then finds no country match. Q7 p95 is 0.664/0.896/1.553 ms
+for greedy/V3/V4. This deterministic work regression is not explained away as
+timing noise. The large WatDiv candidate rerun is held while this concrete
+ordering problem is diagnosed; no new profile or looser gate is inferred.
+Setup includes NDV collection: load 0.266 s, build/activation 0.770 s,
+verification 0.305 s; elapsed 3.33 s, peak RSS 115,604 KiB.
+
+The local candidate binary has SHA-256
+`8c4f60bb3d7d33ae57289d7b9781a349b2eedf8c47ab400823feea29612a4ec2`.
+Raw files under `/tmp/oxigraph-g32-domain-v4-j8YwLL`:
+`bsbm.jsonl` `ff3ada58f70d5681e90f719173552ceace68a9defc14c8698e495df8575e9f21`;
+`bsbm.time` `a3ceedcc4716eb199f3e5a02a3ac3ae3e99fd240fbb998cf310afc66283b41df`.
+The previous binary is preserved there as `query-benchmark-v3`, with its
+original `f10363b7…` hash above. These observations neither promote V4 nor
+establish WatDiv or LDBC candidate performance.
+The native `equal_marginal_statistics_do_not_imply_equal_join_overlap` test
+distinguishes an implementation defect from this information limit: swapping
+offer/vendor associations preserves identical payloads, NDVs and V4 plans,
+but changes the exact join from one row to zero. New statistics or a planning
+strategy would need a specific contract and evidence; another profile is not
+automatically justified by this failure.

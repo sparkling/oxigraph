@@ -566,6 +566,19 @@ quad rows for the same 1,000 solutions. This is a product regression test,
 not representative speedup. Ordinary greedy/default options remain unchanged;
 G3.2 corpus/resource/tail acceptance and default promotion remain open.
 
+The first pinned BSBM candidate comparison preserves 960/960 observations but
+is **not acceptable yet**: Q8 improves from V3's 93 to 77 quad rows, while Q7
+regresses from 83 to 223 (greedy: 84). Diagnose that optional-offer join order
+before the large WatDiv rerun; do not promote the native fixture into a broad
+performance claim. The linked diagnostic retains source/binary/raw identities.
+An independent paired native fixture swaps offer/vendor associations while
+preserving every per-predicate subject/object multiset. Its persisted physical
+statistics, NDVs and serialized V4 plans are identical, but exact query results
+are one versus zero. This proves that these summaries lack the cross-predicate
+overlap needed to distinguish the cases; it is not a violated V4 formula or
+permission to tune another cost multiplier. Both executions match their
+optimization-disabled oracles.
+
 ## Consequences
 
 - One estimator can serve local, indexed, and federated planning.
