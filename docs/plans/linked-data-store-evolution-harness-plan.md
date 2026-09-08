@@ -1119,7 +1119,9 @@ The [initial native pilot](../../bench/query-benchmark.md) exposed full-data
 reconstruction at query admission; explicit verified-snapshot reuse now avoids
 that scan while checking the full checkpoint and private live-store identity
 (including copied-sibling/reopen rejection). It also exposed a bounded
-planner regression. This is not a frozen-corpus pass: at `8b5b6002` no G3.2
+planner regression, now corrected by an explicit conditional v2 cost profile
+with native result/work checks and a retained-parent pilot. Legacy v1 and default
+greedy remain unchanged. This is not a frozen-corpus pass: at `8b5b6002` no G3.2
 corpus manifest or numerical gate existed, and WatDiv/LDBC inputs were absent.
 Next: broaden reviewed BSBM inputs, obtain reproducible WatDiv/LDBC subsets,
 baseline the retained parent path under controlled conditions, then review

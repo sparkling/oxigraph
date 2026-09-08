@@ -1187,7 +1187,9 @@ The [initial native BSBM pilot](../../bench/query-benchmark.md) now measures thi
 admission bottleneck, and explicit shared verified statistics avoid repeating
 the full-data scan with a private live-store identity check as well as the full
 checkpoint, excluding copied-sibling and reopen confusion. It also records a bounded
-planner regression. G3.2 has no frozen corpus/numeric promotion gate yet:
+planner regression, now addressed by an explicit conditional v2 cost profile
+while preserving v1/default behavior. The native work regression and retained-parent
+pilot are separate from full acceptance. G3.2 has no frozen corpus/numeric promotion gate yet:
 BSBM breadth, reproducible WatDiv/LDBC inputs, controlled parent-first baselines
 and per-query resource/tail gates remain the concrete next work, not a claim
 that an existing acceptance suite passed.

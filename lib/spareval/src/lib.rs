@@ -39,7 +39,9 @@ use spargebra::{ParsedQuery, Query, SparqlVersion};
 use spargeo::GEOSPARQL_EXTENSION_FUNCTIONS;
 use sparopt::Optimizer;
 use sparopt::algebra::QueryExpression;
-pub use sparopt::{BoundedJoinPlanning, CardinalityEstimator, JoinPlanningReport};
+pub use sparopt::{
+    BoundedJoinCostModel, BoundedJoinPlanning, CardinalityEstimator, JoinPlanningReport,
+};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;

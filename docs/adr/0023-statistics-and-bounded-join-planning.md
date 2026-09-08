@@ -321,6 +321,51 @@ manifests and numeric thresholds did not exist; candidate percentages in the
 plan were only hypotheses. G3.2 stays active for broader corpus preparation,
 controlled parent-first baselining, resource/tail gates and threshold review.
 
+### G3.2 opt-in conditional cost model v2 (2026-09-08)
+
+The Q1 trace identified two cost errors **inside the same five-leaf DP group**:
+the old `rdf:type` scan preference also inflated a fully bound membership probe
+from one row to two, and independent subset estimates favored an eager numeric
+hash-side scan. This was not a surrounding join-boundary failure; the report
+had one DP component, 31 states and no greedy component. No cross-boundary
+planner rewrite is introduced to fix an unobserved cause.
+
+`BoundedJoinCostModel::ConditionalV2` explicitly selects
+`oxigraph.join-work.conditional.v2` through
+`BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::ConditionalV2)`.
+Pass this option to `SparqlEvaluator::with_bounded_join_planning`. Existing constructors,
+the option default and legacy `COST_MODEL` constant retain `IndependentV1`
+and `oxigraph.join-work.v1`; ordinary planning remains greedy. Consumers should
+identify an instance using `cost_model().id()`, also emitted by the diagnostic
+runner for each sample. The public enum is non-exhaustive for future explicit
+profiles. This changes no persistence format or semantic specification.
+
+V2 retains the eight-leaf ceiling, eligible same-graph connected quad groups,
+one physical state per subset, saturating work arithmetic, deterministic ties,
+and existing hash/lateral admission rules. For each subset in ascending mask
+order, start with the canonical recurrence using already computed prefix rows.
+Then take the minimum with each **connected** prefix's rows multiplied by the
+remaining connected leaf's conditional probe estimate, saturating at `u64::MAX`.
+These subset hints are computed before selecting physical states and do not
+depend on the winning execution order. A disconnected prefix cannot bind both
+endpoints before probing a bridge in this connected left-deep search. The
+membership estimate is capped at one only when subject, predicate, object and
+the single active graph are all fixed/bound; an unbound graph variable is not
+capped. Other heuristic estimates and unbound scan preferences are retained.
+These are advisory costs, not semantic upper bounds, algebra-elimination rules,
+global optimality, or a default-promotion claim. Conditional estimates add
+bounded per-subset work; state/candidate counters do not include that work.
+
+A native 100-type-row/selective-feature regression preserves the exact result
+while reducing observed quad rows from 204 to 7 and bound invocations from 103
+to 6. Separate tests cover disconnected-prefix cost ordering, single-graph
+membership, determinism, eight/nine-leaf bounds, zero/max hints, both query
+profiles across result forms, graph scopes, cancellation and RDF 1.2, and
+current/missing/shared statistics. Query fuzzing also evaluates both profiles.
+The [local parent-first BSBM comparison](../../bench/query-benchmark.md) retains
+v1 and reports v2 separately. The two-query pilot does not close the full G3.2
+corpus, resource/tail or promotion gate; G3.2 remains active.
+
 ### Full statistics/planning promotion
 
 Promotion requires:

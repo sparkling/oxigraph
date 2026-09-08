@@ -16,8 +16,8 @@ use std::sync::Arc;
 use std::time::Duration;
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 use oxigraph::sparql::{
-    BoundedJoinPlanning, CancellationToken, CardinalityFeedbackNode, EstimateBasis,
-    QueryEvaluationError, QueryResults, SparqlEvaluator, StatisticsAvailability,
+    BoundedJoinCostModel, BoundedJoinPlanning, CancellationToken, CardinalityFeedbackNode,
+    EstimateBasis, QueryEvaluationError, QueryResults, SparqlEvaluator, StatisticsAvailability,
 };
 fn leaves(node: &CardinalityFeedbackNode) -> Vec<&CardinalityFeedbackNode> {
     if node.operator == "QuadPattern" {
@@ -142,12 +142,19 @@ fn statistics_queries_preserve_solution_bags_across_operators_and_fallbacks() ->
                 .on_store(&fixture.store)
                 .execute()?,
         )?;
-        for (index, bounded) in [&fixture.index, &missing]
+        let planners = [
+            None,
+            Some(BoundedJoinPlanning::default()),
+            Some(
+                BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::ConditionalV2),
+            ),
+        ];
+        for (index, options) in [&fixture.index, &missing]
             .into_iter()
-            .flat_map(|index| [false, true].map(|bounded| (index, bounded)))
+            .flat_map(|index| planners.map(|options| (index, options)))
         {
-            let evaluator = if bounded {
-                SparqlEvaluator::new().with_bounded_join_planning(BoundedJoinPlanning::default())
+            let evaluator = if let Some(options) = options {
+                SparqlEvaluator::new().with_bounded_join_planning(options)
             } else {
                 SparqlEvaluator::new()
             };
@@ -162,9 +169,9 @@ fn statistics_queries_preserve_solution_bags_across_operators_and_fallbacks() ->
                 .execute()?;
             assert_eq!(solution_bag(result)?, expected, "{query}");
         }
-        for bounded in [false, true] {
-            let evaluator = if bounded {
-                SparqlEvaluator::new().with_bounded_join_planning(BoundedJoinPlanning::default())
+        for options in planners {
+            let evaluator = if let Some(options) = options {
+                SparqlEvaluator::new().with_bounded_join_planning(options)
             } else {
                 SparqlEvaluator::new()
             };

@@ -6,6 +6,12 @@ with strict per-query statistics verification, and with an explicitly shared
 verified `StatisticsSnapshot`. Reuse requires a private live-store identity
 match as well as the full checkpoint, so copied or reopened databases cannot
 inherit an old handle. It adds no package or application dependency.
+Two additional modes select conditional cost model v2, without statistics and
+with shared verified statistics. The original six modes retain v1/greedy
+behavior. Per-record `cost_model` identifies the effective profile; `input`
+lists both supported cost identities. With two queries and five repetitions,
+the current eight-mode runner emits 112 observations (96 samples including
+warm-ups and 16 separate feedback executions).
 This is a local diagnostic, **not frozen-corpus acceptance, qualification, or
 default-planner promotion**. The legacy HTTP BSBM script cannot select these APIs.
 
@@ -115,3 +121,45 @@ controlled parent-first baselines, resource/tail evidence and numeric threshold
 ratification remain open under [ADR-0023](../docs/adr/0023-statistics-and-bounded-join-planning.md).
 There was no frozen G3.2 corpus or numerical promotion gate at parent `8b5b6002`;
 the plan's percentages were hypotheses, not already-established evidence.
+
+## Conditional v2 follow-up, 2026-09-08
+
+The retained executable from parent `fa13b21e` (the binary hash above) ran first,
+then the conditional-v2 candidate, against the exact same dataset/query bytes.
+Both exited zero with complete markers and all comparisons equal: parent
+84/84 observations, candidate 112/112. This is an actual parent-first **local
+diagnostic**, still not isolated-host or frozen-corpus acceptance. All native
+test commands had finished, but unrelated host load was not controlled.
+
+Five-repetition total-time medians in milliseconds, kept separate by binary:
+
+| Query/mode | Parent | Candidate |
+| --- | ---: | ---: |
+| Q1 greedy | 0.171 | 0.087 |
+| Q1 bounded v1 | 1.151 | 0.848 |
+| Q1 conditional v2 | unavailable | 0.154 |
+| Q1 shared-statistics bounded v1 | 0.219 | 0.162 |
+| Q1 shared-statistics conditional v2 | unavailable | 0.166 |
+| Q2 greedy | 0.421 | 0.839 |
+| Q2 bounded v1 | 0.388 | 0.558 |
+| Q2 conditional v2 | unavailable | 0.844 |
+| Q2 shared-statistics bounded v1 | 0.601 | 1.261 |
+| Q2 shared-statistics conditional v2 | unavailable | 1.271 |
+
+The substantial variation in unchanged modes precludes a reliable cross-binary
+speedup conclusion. V2 is slower than v1 for Q2 on this run and remains slower
+than greedy for Q1. The strong evidence for the Q1 correction is the separately
+instrumented work trace: v1 reads 204 quad rows and makes 103 bound invocations;
+v2 reads 7 and makes 6. Both return the same one-row result. Q1 uses one
+five-leaf DP group in both profiles; v2 avoids the broad type and numeric scans.
+Q2's observed leaf work remains the same, with 19 result rows. None of these
+observations justifies a default change or closes the full G3.2 gate.
+
+Candidate binary SHA-256:
+`b5d8f67ee0a13eb12a3d6647fec71e39f76420b3db9f5969a460d5c6f2ebe6c7`.
+Parent/candidate raw JSONL SHA-256, respectively:
+`afb1d105570312b6e03fa3fe89b0b4be6017cf5a6d040148353ee791707ce00d`,
+`a3356a5154a753ace48652f171cbfa147290b9d1915ea7216bbb1cd5ac50929b`.
+Whole-process peaks were 112,964/114,552 KiB and elapsed times 12.81/17.11 s;
+these runs have different mode counts and are not comparable per-query costs.
+Raw artifacts remain local; no binary or benchmark upload is implied.

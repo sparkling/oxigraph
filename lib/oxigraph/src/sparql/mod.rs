@@ -50,10 +50,10 @@ use crate::store::EvaluationOperation;
 use crate::store::evaluation_metrics::{EvaluationObservation, observe_query_result};
 use crate::store::{Store, Transaction};
 pub use spareval::{
-    AggregateFunctionAccumulator, BoundedJoinPlanning, CancellationToken, CardinalityFeedback,
-    CardinalityFeedbackNode, DefaultServiceHandler, EstimateBasis, JoinPlanningReport,
-    QueryDatasetSpecification, QueryEvaluationError, QueryExplanation, QueryResults, QuerySolution,
-    QuerySolutionIter, QueryTripleIter, ServiceHandler,
+    AggregateFunctionAccumulator, BoundedJoinCostModel, BoundedJoinPlanning, CancellationToken,
+    CardinalityFeedback, CardinalityFeedbackNode, DefaultServiceHandler, EstimateBasis,
+    JoinPlanningReport, QueryDatasetSpecification, QueryEvaluationError, QueryExplanation,
+    QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter, ServiceHandler,
 };
 use spareval::{QueryEvaluator, QueryableDataset};
 use spargebra::SparqlParser;

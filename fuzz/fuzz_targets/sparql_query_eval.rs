@@ -5,7 +5,7 @@ use oxigraph::io::{RdfFormat, RdfParser};
 use oxigraph::model::graph::CanonicalizationAlgorithm;
 use oxigraph::model::{Dataset, Graph, NamedNode};
 use oxigraph::sparql::{
-    BoundedJoinPlanning, DefaultServiceHandler, QueryEvaluationError, QueryResults,
+    BoundedJoinCostModel, BoundedJoinPlanning, DefaultServiceHandler, QueryEvaluationError, QueryResults,
     QuerySolutionIter, SparqlEvaluator,
 };
 use oxigraph::store::Store;
@@ -42,6 +42,9 @@ fuzz_target!(|data: sparql_smith::Query| {
         for evaluator in [
             SparqlEvaluator::new(),
             SparqlEvaluator::new().with_bounded_join_planning(BoundedJoinPlanning::default()),
+            SparqlEvaluator::new().with_bounded_join_planning(
+                BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::ConditionalV2),
+            ),
         ] {
             let with_opt = evaluator
                 .with_default_service_handler(StoreServiceHandler {

@@ -5,15 +5,38 @@ use super::*;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BoundedJoinPlanning {
     max_dp_leaves: u8,
+    cost_model: BoundedJoinCostModel,
+}
+/// Versioned opt-in cost rules. Neither profile promotes the ordinary planner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum BoundedJoinCostModel {
+    /// Original independent-cardinality recurrence and bound-probe heuristic.
+    IndependentV1,
+    /// Conditional, plan-independent subset hints and single-graph membership probes.
+    ConditionalV2,
+}
+impl BoundedJoinCostModel {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::IndependentV1 => "oxigraph.join-work.v1",
+            Self::ConditionalV2 => "oxigraph.join-work.conditional.v2",
+        }
+    }
 }
 impl BoundedJoinPlanning {
+    /// Legacy/default profile identifier. Use `cost_model().id()` for a
+    /// configured instance, which may explicitly select a newer profile.
     pub const COST_MODEL: &str = "oxigraph.join-work.v1";
     pub const MAX_DP_LEAVES: u8 = 8;
 
     /// Rejects zero or a bound above the reviewed eight-leaf ceiling.
     pub const fn new(max_dp_leaves: u8) -> Option<Self> {
         if max_dp_leaves > 0 && max_dp_leaves <= Self::MAX_DP_LEAVES {
-            Some(Self { max_dp_leaves })
+            Some(Self {
+                max_dp_leaves,
+                cost_model: BoundedJoinCostModel::IndependentV1,
+            })
         } else {
             None
         }
@@ -21,11 +44,20 @@ impl BoundedJoinPlanning {
     pub const fn max_dp_leaves(self) -> u8 {
         self.max_dp_leaves
     }
+    pub const fn cost_model(self) -> BoundedJoinCostModel {
+        self.cost_model
+    }
+    #[must_use]
+    pub const fn with_cost_model(mut self, model: BoundedJoinCostModel) -> Self {
+        self.cost_model = model;
+        self
+    }
 }
 impl Default for BoundedJoinPlanning {
     fn default() -> Self {
         Self {
             max_dp_leaves: Self::MAX_DP_LEAVES,
+            cost_model: BoundedJoinCostModel::IndependentV1,
         }
     }
 }
@@ -83,6 +115,7 @@ pub(super) fn plan(
     leaf_types: &[VariableTypes],
     input: &VariableTypes,
     estimator: Option<&dyn CardinalityEstimator>,
+    cost_model: BoundedJoinCostModel,
     report: &mut JoinPlanningReport,
 ) -> Option<QueryExpression> {
     // Defensive bound before any exponential allocation/shift.
@@ -96,6 +129,7 @@ pub(super) fn plan(
         .collect();
     let mut types = vec![input.clone(); count];
     let mut rows = vec![0_u64; count];
+    let mut connected = vec![false; count];
     // A subset's size is independent of its selected execution order. Use a
     // canonical ascending-ordinal fold of the legacy shared-key selectivity.
     for mask in 1..count {
@@ -104,6 +138,13 @@ pub(super) fn plan(
         types[mask] = types[previous].clone();
         let keys = join_key_variables(&types[previous], &leaf_types[ids[last]], input);
         types[mask].intersect_with(leaf_types[ids[last]].clone());
+        connected[mask] = mask.is_power_of_two()
+            || ids.iter().enumerate().any(|(last, &id)| {
+                let prefix = mask ^ (1 << last);
+                mask & (1 << last) != 0
+                    && connected[prefix]
+                    && has_common_variables(&types[prefix], &leaf_types[id], input)
+            });
         rows[mask] = if previous == 0 {
             sizes[last]
         } else {
@@ -114,6 +155,26 @@ pub(super) fn plan(
                 .ok()?
                 .max(u64::from(numerator != 0))
         };
+        if cost_model == BoundedJoinCostModel::ConditionalV2 && previous != 0 {
+            // Plan-independent conditional estimates: a join cannot produce
+            // more estimated rows than a preceding subset times its bound
+            // leaf probe estimate. Consider every connected last-leaf choice,
+            // not only the eventually selected physical plan. These remain
+            // advisory hints, not semantic upper bounds or elimination rules.
+            for (last, &id) in ids.iter().enumerate() {
+                if mask & (1 << last) == 0 {
+                    continue;
+                }
+                let prefix = mask ^ (1 << last);
+                if !connected[prefix]
+                    || !has_common_variables(&types[prefix], &leaf_types[id], input)
+                {
+                    continue;
+                }
+                let probe = conditional_probe_rows(&leaves[id], &types[prefix], estimator);
+                rows[mask] = rows[mask].min(rows[prefix].saturating_mul(probe));
+            }
+        }
     }
     let mut states: Vec<Option<State>> = vec![None; count];
     for (i, &id) in ids.iter().enumerate() {
@@ -177,8 +238,11 @@ pub(super) fn plan(
                 // The right input is one eligible quad, never a path, SERVICE
                 // or scoped expression. Reuse the existing admission proof.
                 if is_fit_for_for_loop_join(&leaves[id], input, &types[previous]) {
-                    let probe_rows =
-                        estimate_query_expression_size(&leaves[id], &types[previous], estimator);
+                    let probe_rows = if cost_model == BoundedJoinCostModel::ConditionalV2 {
+                        conditional_probe_rows(&leaves[id], &types[previous], estimator)
+                    } else {
+                        estimate_query_expression_size(&leaves[id], &types[previous], estimator)
+                    };
                     let work = parent
                         .work
                         .saturating_add(
@@ -201,9 +265,39 @@ pub(super) fn plan(
     states.pop()?.map(|s| s.expression)
 }
 
+fn conditional_probe_rows(
+    leaf: &QueryExpression,
+    input: &VariableTypes,
+    estimator: Option<&dyn CardinalityEstimator>,
+) -> u64 {
+    let estimate = estimate_query_expression_size(leaf, input, estimator);
+    // A fully specified quad is a membership lookup in one RDF graph. The
+    // heuristic's rdf:type +1 is a tie bias, not a second matching row. Do not
+    // apply this correction to a variable graph that is not already bound.
+    if let QueryExpression::QuadPattern {
+        subject,
+        predicate,
+        object,
+        graph_name,
+    } = leaf
+    {
+        if is_term_pattern_bound(subject, input)
+            && is_named_node_pattern_bound(predicate, input)
+            && is_term_pattern_bound(object, input)
+            && graph_name
+                .as_ref()
+                .is_none_or(|g| is_named_node_pattern_bound(g, input))
+        {
+            return estimate.min(1);
+        }
+    }
+    estimate
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oxrdf::NamedNode;
     use spargebra::{Query, SparqlParser};
 
     struct Counts;
@@ -240,9 +334,31 @@ mod tests {
             QueryExpression::Lateral { left, right } => {
                 [leaf_order(left), leaf_order(right)].concat()
             }
-            QueryExpression::Project { inner, .. } => leaf_order(inner),
+            QueryExpression::Project { inner, .. } | QueryExpression::Filter { inner, .. } => {
+                leaf_order(inner)
+            }
             other => panic!("unexpected {other:?}"),
         }
+    }
+    #[test]
+    #[cfg(feature = "sep-0006")]
+    fn conditional_costs_start_selective_features_before_type_membership() {
+        let input = parse(
+            "SELECT * { ?s <urn:label> ?label . ?s a <urn:Class> . ?s <urn:feature> <urn:a> . ?s <urn:feature> <urn:b> . ?s <urn:numeric> ?n FILTER(?n > 0) }",
+        );
+        let (v1, _) = Optimizer::optimize_query_expression_with_join_planning(
+            input.clone(),
+            None,
+            Some(BoundedJoinPlanning::default()),
+        );
+        assert_eq!(leaf_order(&v1)[0], rdf::TYPE.to_string());
+        let options =
+            BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::ConditionalV2);
+        let (v2, report) =
+            Optimizer::optimize_query_expression_with_join_planning(input, None, Some(options));
+        assert_eq!(leaf_order(&v2)[0], "<urn:feature>");
+        assert_eq!(report.bounded, Some(options));
+        assert_eq!(report.dp_components, 1);
     }
     #[test]
     fn bounded_search_selects_a_pair_greedy_cannot_start_with() {
@@ -265,38 +381,45 @@ mod tests {
     }
     #[test]
     fn eight_leaf_bound_and_nine_leaf_fallback_are_deterministic() {
-        for n in [8, 9] {
-            let body = (0..n)
-                .map(|i| format!("?s <urn:p{i}> ?o{i} ."))
-                .collect::<String>();
-            let input = parse(&format!("SELECT * WHERE {{ {body} }}"));
-            let (first, report) = Optimizer::optimize_query_expression_with_join_planning(
-                input.clone(),
-                Some(&Counts),
-                Some(BoundedJoinPlanning::default()),
-            );
-            assert_eq!(report.dp_components, usize::from(n == 8));
-            assert_eq!(report.greedy_components, usize::from(n == 9));
-            assert!(report.dp_states <= 255);
-            assert!(report.dp_candidates <= 4096);
-            assert_eq!(leaf_order(&first).len(), n);
-            for _ in 0..10 {
-                let (again, again_report) = Optimizer::optimize_query_expression_with_join_planning(
+        for model in [
+            BoundedJoinCostModel::IndependentV1,
+            BoundedJoinCostModel::ConditionalV2,
+        ] {
+            let options = BoundedJoinPlanning::default().with_cost_model(model);
+            for n in [8, 9] {
+                let body = (0..n)
+                    .map(|i| format!("?s <urn:p{i}> ?o{i} ."))
+                    .collect::<String>();
+                let input = parse(&format!("SELECT * WHERE {{ {body} }}"));
+                let (first, report) = Optimizer::optimize_query_expression_with_join_planning(
                     input.clone(),
                     Some(&Counts),
-                    Some(BoundedJoinPlanning::default()),
+                    Some(options),
                 );
-                assert_eq!(format!("{first:?}"), format!("{again:?}"));
-                assert_eq!(report, again_report);
-            }
-            if n == 9 {
-                assert_eq!(
-                    first,
-                    Optimizer::optimize_query_expression_with_cardinality_estimator(
-                        input,
-                        Some(&Counts)
-                    )
-                );
+                assert_eq!(report.dp_components, usize::from(n == 8));
+                assert_eq!(report.greedy_components, usize::from(n == 9));
+                assert!(report.dp_states <= 255);
+                assert!(report.dp_candidates <= 4096);
+                assert_eq!(leaf_order(&first).len(), n);
+                for _ in 0..10 {
+                    let (again, again_report) =
+                        Optimizer::optimize_query_expression_with_join_planning(
+                            input.clone(),
+                            Some(&Counts),
+                            Some(options),
+                        );
+                    assert_eq!(format!("{first:?}"), format!("{again:?}"));
+                    assert_eq!(report, again_report);
+                }
+                if n == 9 {
+                    assert_eq!(
+                        first,
+                        Optimizer::optimize_query_expression_with_cardinality_estimator(
+                            input,
+                            Some(&Counts)
+                        )
+                    );
+                }
             }
         }
     }
@@ -360,22 +483,115 @@ mod tests {
             }
         }
         let input = parse("SELECT * { ?s <urn:p> ?o . ?s <urn:q> ?o . ?s <urn:r> ?x }");
-        for hint in [0, 1, u64::MAX] {
-            let (plan, report) = Optimizer::optimize_query_expression_with_join_planning(
-                input.clone(),
-                Some(&Fixed(hint)),
-                Some(BoundedJoinPlanning::default()),
-            );
-            assert_eq!(leaf_order(&plan).len(), 3);
-            assert_eq!(report.dp_components, 1);
-            let (again, again_report) = Optimizer::optimize_query_expression_with_join_planning(
-                input.clone(),
-                Some(&Fixed(hint)),
-                Some(BoundedJoinPlanning::default()),
-            );
-            assert_eq!(plan, again);
-            assert_eq!(report, again_report);
+        for model in [
+            BoundedJoinCostModel::IndependentV1,
+            BoundedJoinCostModel::ConditionalV2,
+        ] {
+            let options = BoundedJoinPlanning::default().with_cost_model(model);
+            for hint in [0, 1, u64::MAX] {
+                let (plan, report) = Optimizer::optimize_query_expression_with_join_planning(
+                    input.clone(),
+                    Some(&Fixed(hint)),
+                    Some(options),
+                );
+                assert_eq!(leaf_order(&plan).len(), 3);
+                assert_eq!(report.dp_components, 1);
+                let (again, again_report) = Optimizer::optimize_query_expression_with_join_planning(
+                    input.clone(),
+                    Some(&Fixed(hint)),
+                    Some(options),
+                );
+                assert_eq!(plan, again);
+                assert_eq!(report, again_report);
+            }
         }
+    }
+
+    #[test]
+    fn conditional_membership_requires_a_single_bound_graph() {
+        let leaf = QueryExpression::QuadPattern {
+            subject: NamedNode::new_unchecked("urn:s").into(),
+            predicate: rdf::TYPE.into(),
+            object: NamedNode::new_unchecked("urn:Class").into(),
+            graph_name: None,
+        };
+        let input = VariableTypes::default();
+        assert_eq!(estimate_query_expression_size(&leaf, &input, None), 2);
+        assert_eq!(conditional_probe_rows(&leaf, &input, None), 1);
+        let QueryExpression::QuadPattern {
+            subject,
+            predicate,
+            object,
+            ..
+        } = leaf
+        else {
+            unreachable!()
+        };
+        let named = QueryExpression::QuadPattern {
+            subject: subject.clone(),
+            predicate: predicate.clone(),
+            object: object.clone(),
+            graph_name: Some(NamedNode::new_unchecked("urn:g").into()),
+        };
+        assert_eq!(conditional_probe_rows(&named, &input, None), 1);
+        let variable = QueryExpression::QuadPattern {
+            subject,
+            predicate,
+            object,
+            graph_name: Some(Variable::new_unchecked("g").into()),
+        };
+        assert_eq!(
+            conditional_probe_rows(&variable, &input, None),
+            estimate_query_expression_size(&variable, &input, None)
+        );
+        let bound = infer_query_expression_types(&variable, input);
+        assert_eq!(conditional_probe_rows(&variable, &bound, None), 1);
+        assert_eq!(
+            BoundedJoinPlanning::default().cost_model(),
+            BoundedJoinCostModel::IndependentV1
+        );
+        assert_eq!(
+            BoundedJoinPlanning::COST_MODEL,
+            BoundedJoinCostModel::IndependentV1.id()
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "sep-0006")]
+    fn conditional_estimates_require_an_executable_connected_prefix() {
+        struct Counts;
+        impl CardinalityEstimator for Counts {
+            fn estimate_quad_pattern(
+                &self,
+                _: &GroundTermPattern,
+                predicate: &NamedNodePattern,
+                _: &GroundTermPattern,
+                _: Option<&NamedNodePattern>,
+            ) -> Option<u64> {
+                Some(match predicate {
+                    NamedNodePattern::NamedNode(n) if n.as_str() == "urn:p0" => 2,
+                    NamedNodePattern::NamedNode(n) if n.as_str() == "urn:bridge" => 1_000_000_000,
+                    _ => 1,
+                })
+            }
+        }
+        let input = parse(
+            "SELECT * { <urn:a> <urn:p0> ?x . <urn:b> <urn:p1> ?x . <urn:c> <urn:p2> ?y . ?y <urn:bridge> ?x }",
+        );
+        let (plan, report) = Optimizer::optimize_query_expression_with_join_planning(
+            input,
+            Some(&Counts),
+            Some(
+                BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::ConditionalV2),
+            ),
+        );
+        // A disconnected {p0,p2} prefix cannot bind both bridge endpoints
+        // before probing it in this connected left-deep search.
+        assert_eq!(
+            leaf_order(&plan),
+            ["<urn:p2>", "<urn:bridge>", "<urn:p0>", "<urn:p1>"]
+        );
+        assert_eq!(report.dp_components, 1);
     }
 
     #[test]

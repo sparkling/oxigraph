@@ -13,7 +13,7 @@ use spargebra::vocab::sparql;
 use std::cmp::{max, min};
 
 mod bounded;
-pub use bounded::{BoundedJoinPlanning, JoinPlanningReport};
+pub use bounded::{BoundedJoinCostModel, BoundedJoinPlanning, JoinPlanningReport};
 
 pub struct Optimizer;
 
@@ -899,6 +899,7 @@ impl Optimizer {
                                 &to_reorder_types,
                                 input_types,
                                 estimator,
+                                options.cost_model(),
                                 report,
                             ) {
                                 for id in ids {

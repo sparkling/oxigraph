@@ -5,8 +5,8 @@ use oxigraph::io::RdfFormat;
 use oxigraph::model::graph::CanonicalizationAlgorithm;
 use oxigraph::model::{BlankNode, Graph, Literal, NamedNode, Term, Triple, Variable};
 use oxigraph::sparql::{
-    BoundedJoinPlanning, CardinalityFeedbackNode, QueryResults, QuerySolution, SparqlEvaluator,
-    StatisticsAvailability,
+    BoundedJoinCostModel, BoundedJoinPlanning, CardinalityFeedbackNode, QueryResults,
+    QuerySolution, SparqlEvaluator, StatisticsAvailability,
 };
 use oxigraph::store::{
     DerivedGenerationLimits, DerivedIndex, DerivedProvider, StatisticsProvider, Store,
@@ -20,6 +20,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+const MODE_COUNT: usize = 8;
 
 struct Rows {
     variables: Vec<Variable>,
@@ -182,11 +183,11 @@ fn main() -> Result {
         "load_seconds": load_seconds,
         "statistics_build_activate_seconds": statistics_build_activate_seconds,
         "statistics_verification_seconds": statistics_verification_seconds,
-        "cost_model": BoundedJoinPlanning::COST_MODEL,
+        "cost_models": [BoundedJoinCostModel::IndependentV1.id(), BoundedJoinCostModel::ConditionalV2.id()],
         "max_dp_leaves": BoundedJoinPlanning::default().max_dp_leaves(),
         "debug_assertions": cfg!(debug_assertions), "rdf_12": cfg!(feature = "rdf-12"),
         "cache": "shared process; no eviction or cold-cache claim",
-        "timing": "sample excludes feedback instrumentation and result comparison; explain includes planning; feedback records are separate untimed diagnostic runs",
+        "timing": "sample excludes feedback instrumentation and result comparison; explain includes planning; feedback records are separate instrumented diagnostic runs",
         "input_contract": "bounded deterministic SELECT corpus; --ordered requires a fully determined projected sequence; no resource-ceiling claim",
         "scope": "local diagnostic; not frozen-corpus acceptance or qualification"
     }))?;
@@ -217,8 +218,8 @@ fn main() -> Result {
         // One separate instrumented round follows latency sampling.
         for round in 0..=repetitions + 1 {
             let instrumented = round == repetitions + 1;
-            for offset in 0..6 {
-                let mode = (offset + round) % 6;
+            for offset in 0..MODE_COUNT {
+                let mode = (offset + round) % MODE_COUNT;
                 let mode_name = [
                     "greedy",
                     "bounded",
@@ -226,58 +227,66 @@ fn main() -> Result {
                     "statistics_bounded",
                     "shared_statistics_greedy",
                     "shared_statistics_bounded",
+                    "bounded_conditional_v2",
+                    "shared_statistics_bounded_conditional_v2",
                 ][mode];
                 let started = Instant::now();
                 let mut evaluator = SparqlEvaluator::new();
-                if mode % 2 == 1 {
-                    evaluator =
-                        evaluator.with_bounded_join_planning(BoundedJoinPlanning::default());
+                if mode % 2 == 1 || mode == 6 {
+                    evaluator = evaluator.with_bounded_join_planning(
+                        BoundedJoinPlanning::default().with_cost_model(if mode >= 6 {
+                            BoundedJoinCostModel::ConditionalV2
+                        } else {
+                            BoundedJoinCostModel::IndependentV1
+                        }),
+                    );
                 }
                 let prepared = evaluator.parse_query(&query)?;
                 let prepare_seconds = started.elapsed().as_secs_f64();
                 let admission_started = Instant::now();
-                let (result, explanation, admission_seconds, explain_seconds) = if mode >= 2 {
-                    let source = store.derived_snapshot(&TransactionStartControl::new())?;
-                    let mut bound = if mode >= 4 {
-                        prepared.on_statistics_snapshot(
-                            source,
-                            Arc::clone(&shared),
-                            TransactionStartControl::new(),
-                        )?
+                let (result, explanation, admission_seconds, explain_seconds) =
+                    if (2..=5).contains(&mode) || mode == 7 {
+                        let source = store.derived_snapshot(&TransactionStartControl::new())?;
+                        let mut bound = if mode >= 4 {
+                            prepared.on_statistics_snapshot(
+                                source,
+                                Arc::clone(&shared),
+                                TransactionStartControl::new(),
+                            )?
+                        } else {
+                            prepared.on_statistics(source, &index, &provider, limits.clone())?
+                        };
+                        // A silently rejected generation is not a statistics sample.
+                        if bound.context().availability != StatisticsAvailability::Current {
+                            return Err("statistics admission was not current".into());
+                        }
+                        let admission = admission_started.elapsed().as_secs_f64();
+                        let explain_started = Instant::now();
+                        if instrumented {
+                            bound = bound.compute_statistics();
+                        }
+                        let (result, explanation) = bound.explain()?;
+                        (
+                            result,
+                            explanation,
+                            admission,
+                            explain_started.elapsed().as_secs_f64(),
+                        )
                     } else {
-                        prepared.on_statistics(source, &index, &provider, limits.clone())?
+                        let mut bound = prepared.on_store(&store);
+                        let admission = admission_started.elapsed().as_secs_f64();
+                        let explain_started = Instant::now();
+                        if instrumented {
+                            bound = bound.compute_statistics();
+                        }
+                        let (result, explanation) = bound.explain();
+                        (
+                            result,
+                            explanation,
+                            admission,
+                            explain_started.elapsed().as_secs_f64(),
+                        )
                     };
-                    // A silently rejected generation is not a statistics sample.
-                    if bound.context().availability != StatisticsAvailability::Current {
-                        return Err("statistics admission was not current".into());
-                    }
-                    let admission = admission_started.elapsed().as_secs_f64();
-                    let explain_started = Instant::now();
-                    if instrumented {
-                        bound = bound.compute_statistics();
-                    }
-                    let (result, explanation) = bound.explain()?;
-                    (
-                        result,
-                        explanation,
-                        admission,
-                        explain_started.elapsed().as_secs_f64(),
-                    )
-                } else {
-                    let mut bound = prepared.on_store(&store);
-                    let admission = admission_started.elapsed().as_secs_f64();
-                    let explain_started = Instant::now();
-                    if instrumented {
-                        bound = bound.compute_statistics();
-                    }
-                    let (result, explanation) = bound.explain();
-                    (
-                        result,
-                        explanation,
-                        admission,
-                        explain_started.elapsed().as_secs_f64(),
-                    )
-                };
                 let consume_started = Instant::now();
                 let actual = Rows::collect(result?)?;
                 let consume_seconds = consume_started.elapsed().as_secs_f64();
@@ -290,6 +299,7 @@ fn main() -> Result {
                 emit(&json!({
                     "kind": if instrumented { "feedback" } else { "sample" }, "query_sha256": query_sha256,
                     "mode": mode_name, "round": round, "warmup": round == 0,
+                    "cost_model": search.bounded.map(|options| options.cost_model().id()),
                     "rows": actual.rows.len(), "equivalent": true,
                     "prepare_seconds": prepare_seconds, "admission_seconds": admission_seconds,
                     "explain_seconds": explain_seconds, "planning_seconds": observations.planning_seconds,
@@ -305,8 +315,8 @@ fn main() -> Result {
     let queries = (args.len() - 2) / 2;
     emit(
         &json!({"kind": "complete", "queries": queries, "emitted_observations": emitted,
-        "expected_observations": queries * (repetitions + 2) * 6,
-        "samples": queries * (repetitions + 1) * 6, "feedback_records": queries * 6,
+        "expected_observations": queries * (repetitions + 2) * MODE_COUNT,
+        "samples": queries * (repetitions + 1) * MODE_COUNT, "feedback_records": queries * MODE_COUNT,
         "all_equivalent": true}),
     )?;
     Ok(())

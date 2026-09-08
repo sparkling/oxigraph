@@ -59,6 +59,10 @@
   diagnostic runner/docs. The pilot also found a bounded-without-statistics
   regression and confirmed missing frozen corpus/threshold assets, so it closes
   neither the full G3.2 performance gate nor the wider programme.
+  Explicit conditional cost model v2 now corrects the measured broad-scan
+  choice while retaining legacy v1 and the ordinary greedy default. Native
+  result/work regressions and a retained-parent pilot verify this opt-in slice;
+  representative corpus, resource/tail and promotion gates remain open.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

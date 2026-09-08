@@ -127,6 +127,11 @@ and reopened stores cannot reuse an old handle; stale or foreign inputs fall
 back; the strict file-reading API is unchanged. The [native comparison](bench/query-benchmark.md)
 measures admission separately and records the pilot's bounded-planner regression
 as well as the reusable-snapshot improvement; full corpus acceptance stays open.
+An additive `BoundedJoinCostModel::ConditionalV2`, selected with
+`BoundedJoinPlanning::default().with_cost_model(...)`, corrects that pilot's
+broad-scan choice using conditional subset costs. Existing v1 options and the
+ordinary greedy default are unchanged. See the [versioned contract](docs/adr/0023-statistics-and-bounded-join-planning.md#g32-opt-in-conditional-cost-model-v2-2026-09-08)
+and measured limitations before selecting it.
 
 Build this fork rather than an upstream package to obtain these changes:
 
