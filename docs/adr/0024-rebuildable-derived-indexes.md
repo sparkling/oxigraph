@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-09-08
+- Updated: 2026-09-09
 - Deciders: Oxigraph parity programme
 - Implementation status: G3.0 native local lifecycle implemented: snapshot/delta
   inputs, durable generation reconciliation/activation, bounded provider output,
@@ -291,6 +291,33 @@ The [native text baseline](../../bench/text-benchmark.md) measures fixed
 explicit candidate ceilings and lag/catch-up checks. It separates admission
 from hydration-inclusive queries and reports cache/RSS limitations. This is
 baseline support, not a newly ratified speed threshold or production promotion.
+
+#### Explicit retained text-query session (2026-09-08)
+
+`TextIndexProvider::prepare(&view, &limits)` adds a `TextQuerySession` for
+multiple different queries over the same borrowed `DerivedView`. Preparation
+copies and verifies every payload against the retained inventory, checks the
+profile/schema/document ceiling and source metadata binding, and owns an
+immutable RAM searcher. Session queries reuse those bytes, retain the exact
+primary snapshot and strict/eventual context, and run the unchanged bounded
+candidate/refinement/scoring path. They cannot be rebound to another source.
+
+Provider limits are cloned at preparation. Every query gets fresh cooperative
+control and reapplies candidate/document/inspected-byte limits; input scan
+record/byte ceilings do not re-bound already hydrated bytes. A failed query
+does not poison the session. Release sessions promptly: retained RAM/native
+buffers and primary snapshots are not aggregate RSS or reclamation guarantees.
+
+Later durable-file corruption cannot alter an existing session's verified RAM;
+it still fails new preparation and the unchanged one-shot query path. Session
+success is not fresh health evidence for those files. Ordinary `strict`, lifecycle
+reconciliation, readiness, backup/restore and SPARQL binding remain unchanged.
+One-shot queries keep a single timeout spanning hydration and search; explicit
+preparation and subsequent session calls have separate operation clocks.
+No implicit primary-scan cache, persisted profile change or new dependency is
+introduced. The optional `--prepared` native baseline measures preparation
+separately, with the same independent oracle and nine different queries per
+retained view; any acceleration claim excludes first strict admission.
 
 ### G3.3 local SPARQL text SERVICE v1 (2026-09-08)
 

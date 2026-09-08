@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-09-07
-- Updated: 2026-09-08
+- Updated: 2026-09-09
 - Deciders: Oxigraph parity programme
 - Implementation status: the product and validation slice is implemented in
   `eb0f0cc2`; the six-hour scheduler is installed and its wake-up path is
@@ -108,6 +108,10 @@
   text candidate scan and enforces cancellation/overflow during enumeration.
   Native cursor-work and result checks support this bounded correction, not
   completion of either provider's frozen performance/promotion gates.
+  The fixed native text baseline now supports an explicit retained RAM query
+  session for different queries on the same admitted view. It avoids repeated
+  payload hydration, not first strict admission; no implicit primary-scan cache
+  or broader performance promotion is introduced.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

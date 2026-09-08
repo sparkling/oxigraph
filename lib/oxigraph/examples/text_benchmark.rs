@@ -1,6 +1,6 @@
 //! Native G3.3 baseline, not a qualification or promotion command.
-//! Usage: text_benchmark (1000|10000|100000) REPETITIONS
-//! Emits raw JSONL; public query timing INCLUDES payload hydration.
+//! Usage: text_benchmark (1000|10000|100000) REPETITIONS [--prepared]
+//! Emits raw JSONL; one-shot query timing INCLUDES payload hydration.
 use oxigraph::model::{BlankNode, GraphName, Literal, NamedNode, Quad, Term};
 use oxigraph::store::{
     BackupCheckpoint, BackupError, DerivedGenerationError, DerivedGenerationLimits, DerivedIndex,
@@ -23,16 +23,22 @@ fn emit(value: &Value) -> Result {
     Ok(())
 }
 
-fn options(args: &[String]) -> Result<(usize, usize)> {
-    let [size, repetitions] = args else {
-        return Err("usage: text_benchmark (1000|10000|100000) REPETITIONS(1..100)".into());
+fn options(args: &[String]) -> Result<(usize, usize, bool)> {
+    let (size, repetitions, prepared) = match args {
+        [size, repetitions] => (size, repetitions, false),
+        [size, repetitions, mode] if mode == "--prepared" => (size, repetitions, true),
+        _ => {
+            return Err(
+                "usage: text_benchmark (1000|10000|100000) REPETITIONS(1..100) [--prepared]".into(),
+            );
+        }
     };
     let size = size.parse()?;
     let repetitions = repetitions.parse()?;
     if ![1_000, 10_000, 100_000].contains(&size) || !(1..=100).contains(&repetitions) {
         return Err("unsupported corpus size or repetition count".into());
     }
-    Ok((size, repetitions))
+    Ok((size, repetitions, prepared))
 }
 
 // Every document has a distinct, equal-width IRI subject. Therefore v1 quad-byte
@@ -233,7 +239,7 @@ fn snapshot(store: &Store) -> Result<DerivedSnapshot> {
     Ok(store.derived_snapshot(&TransactionStartControl::new())?)
 }
 
-fn run(size: usize, repetitions: usize) -> Result {
+fn run(size: usize, repetitions: usize, prepared: bool) -> Result {
     let quads = corpus(size)?;
     let directory = tempfile::tempdir()?;
     let store = Store::open(directory.path().join("primary"))?;
@@ -254,6 +260,8 @@ fn run(size: usize, repetitions: usize) -> Result {
     emit(
         &json!({"kind":"input","profile":PROFILE,"documents":size,"repetitions":repetitions,
         "input_sha256":input_hash(&quads),"provider_profile":TextIndexProvider::profile(),
+        "query_mode":if prepared {"prepared"} else {"one-shot"},
+        "query_mode_scope":"timed query records only; auxiliary calls identify their API separately",
         "limits":{"documents":provider.limits.max_documents.get(),"postings":provider.limits.max_postings.get(),
             "index_bytes":provider.limits.max_index_bytes.get(),"candidates":provider.limits.max_candidates.get(),
             "document_bytes":provider.limits.max_document_bytes.get(),"inspected_bytes":provider.limits.max_inspected_bytes.get(),
@@ -261,8 +269,8 @@ fn run(size: usize, repetitions: usize) -> Result {
             "generation_files":limits.max_files.get(),"generation_bytes":limits.max_bytes.get(),
             "retained_generations":limits.max_generations.get(),"stored_bytes":limits.max_stored_bytes.get()},
         "concurrency":1,"durability":"native Store::extend and governed commit defaults, no overrides",
-        "cache_state":"post-build OS cache, not evicted; one warmup round; fresh RAM hydration per query; retained view within each round",
-        "load_plus_governance_base_seconds":load_seconds,"query_timing":"includes checksum verification, RAM hydration, engine search and primary refinement; excludes strict admission and oracle"}),
+        "cache_state":if prepared {"post-build OS cache, not evicted; one warmup round; one verified RAM session per round for nine distinct queries"} else {"post-build OS cache, not evicted; one warmup round; fresh RAM hydration per query; retained view within each round"},
+        "load_plus_governance_base_seconds":load_seconds,"query_timing":if prepared {"includes retained RAM engine search and primary refinement; excludes separately timed strict admission, preparation and oracle"} else {"includes checksum verification, RAM hydration, engine search and primary refinement; excludes strict admission and oracle"}}),
     )?;
     let started = Instant::now();
     let generation = index.rebuild(&source, &provider, &limits)?;
@@ -294,13 +302,26 @@ fn run(size: usize, repetitions: usize) -> Result {
         let started = Instant::now();
         let view = index.strict(&source, &limits)?;
         emit(
-            &json!({"kind":"admission","round":round,"warmup":round==0,"seconds":started.elapsed().as_secs_f64()}),
+            &json!({"kind":"admission","api":"DerivedIndex::strict","round":round,"warmup":round==0,"seconds":started.elapsed().as_secs_f64()}),
         )?;
+        let session = if prepared {
+            let started = Instant::now();
+            let session = provider.prepare(&view, &limits.input)?;
+            emit(
+                &json!({"kind":"preparation","api":"TextIndexProvider::prepare","round":round,"warmup":round==0,"seconds":started.elapsed().as_secs_f64()}),
+            )?;
+            Some(session)
+        } else {
+            None
+        };
         for offset in 0..queries.len() {
             let position = (offset + round) % queries.len();
             let (id, query) = &queries[position];
             let started = Instant::now();
-            let observed = provider.query(&view, query, &limits.input);
+            let observed = match &session {
+                Some(session) => session.query(query, &limits.input),
+                None => provider.query(&view, query, &limits.input),
+            };
             let seconds = started.elapsed().as_secs_f64();
             if observed.as_ref().is_ok_and(|result| {
                 result.eventual
@@ -318,6 +339,7 @@ fn run(size: usize, repetitions: usize) -> Result {
             checks += 1;
             emit(
                 &json!({"kind":"query","round":round,"warmup":round==0,"query":id,"seconds":seconds,
+                "api":if prepared {"prepared"} else {"one-shot"},
                 "outcome":outcome,"oracle_candidates":expected[position].0,"oracle_matches":expected[position].1.len()}),
             )?;
         }
@@ -332,7 +354,7 @@ fn run(size: usize, repetitions: usize) -> Result {
         let seconds = started.elapsed().as_secs_f64();
         let outcome = verify(observed, &expected[3], query, maximum)?;
         emit(
-            &json!({"kind":"candidate_boundary","maximum":maximum,"candidates":expected[3].0,"outcome":outcome,"seconds":seconds}),
+            &json!({"kind":"candidate_boundary","api":"one-shot","maximum":maximum,"candidates":expected[3].0,"outcome":outcome,"seconds":seconds}),
         )?;
     }
     let cancelled = DerivedGenerationLimits::default();
@@ -347,7 +369,7 @@ fn run(size: usize, repetitions: usize) -> Result {
         return Err("pre-cancelled query did not fail typed".into());
     }
     emit(
-        &json!({"kind":"cancellation","case":"before_query","seconds":started.elapsed().as_secs_f64(),"typed_cancelled":true}),
+        &json!({"kind":"cancellation","api":"one-shot","case":"before_query","seconds":started.elapsed().as_secs_f64(),"typed_cancelled":true}),
     )?;
     drop(view);
     // A governed deletion plus missing addition: strict must fail, eventual may
@@ -370,7 +392,9 @@ fn run(size: usize, repetitions: usize) -> Result {
     ) {
         return Err("strict lag did not return NotFresh".into());
     }
-    emit(&json!({"kind":"lag","strict_not_fresh":true,"seconds":started.elapsed().as_secs_f64()}))?;
+    emit(
+        &json!({"kind":"lag","api":"DerivedIndex::strict","strict_not_fresh":true,"seconds":started.elapsed().as_secs_f64()}),
+    )?;
     let mut query = TextQuery::new("needle");
     query.limit = NonZeroUsize::MAX;
     let (old_candidates, _) = oracle(&quads, &query);
@@ -382,7 +406,7 @@ fn run(size: usize, repetitions: usize) -> Result {
         return Err("missing eventual lag context".into());
     }
     emit(
-        &json!({"kind":"eventual","applied":checkpoint(&eventual.applied),"source":checkpoint(&eventual.source),"candidates":eventual.candidates,"surviving":eventual.total_matches,"current_primary_matches":oracle(&changed,&query).1.len()}),
+        &json!({"kind":"eventual","api":"one-shot","applied":checkpoint(&eventual.applied),"source":checkpoint(&eventual.source),"candidates":eventual.candidates,"surviving":eventual.total_matches,"current_primary_matches":oracle(&changed,&query).1.len()}),
     )?;
     verify(
         Ok(eventual),
@@ -406,13 +430,14 @@ fn run(size: usize, repetitions: usize) -> Result {
         &json!({"kind":"complete","query_checks":checks,"lag_checks":3,"resource_checks":3,"catch_up_seconds":catch_up_seconds,
         "catch_up_activation_seconds":catch_up_activation_seconds,"changed_input_sha256":input_hash(&changed),
         "catch_up_generation":hex(&candidate.fingerprint()),"catch_up_source":checkpoint(candidate.source()),
+        "catch_up_query_api":"one-shot",
         "all_checks_passed":true,"promotion":false}),
     )
 }
 
 fn main() -> Result {
-    let (size, repetitions) = options(&std::env::args().skip(1).collect::<Vec<_>>())?;
-    run(size, repetitions)
+    let (size, repetitions, prepared) = options(&std::env::args().skip(1).collect::<Vec<_>>())?;
+    run(size, repetitions, prepared)
 }
 
 #[cfg(test)]
@@ -431,7 +456,11 @@ mod tests {
         }
         assert_eq!(
             options(&["10000".into(), "30".into()]).unwrap(),
-            (10000, 30)
+            (10000, 30, false)
+        );
+        assert_eq!(
+            options(&["10000".into(), "30".into(), "--prepared".into()]).unwrap(),
+            (10000, 30, true)
         );
     }
     #[test]

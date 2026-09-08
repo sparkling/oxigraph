@@ -132,7 +132,8 @@ pub use shacl_receipt::{
 };
 #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
 pub use text_index::{
-    TextError, TextIndexProvider, TextLimits, TextMatch, TextQuery, TextQueryMode, TextResults,
+    TextError, TextIndexProvider, TextLimits, TextMatch, TextQuery, TextQueryMode,
+    TextQuerySession, TextResults,
 };
 pub use transaction_metrics::{
     TransactionDurationHistogram, TransactionMetrics, TransactionObservation,

@@ -1311,6 +1311,9 @@ The [native baseline](../../bench/text-benchmark.md#observed-baseline--2026-09-0
 passes 837 query checks across 1,000/10,000/100,000 documents, plus explicit
 lag and resource checks. Repeated strict admission dominates short-query cost;
 these measurements guide the next product optimization, not a promotion claim.
+An [explicit retained text-query session](../adr/0024-rebuildable-derived-indexes.md#explicit-retained-text-query-session-2026-09-08)
+now avoids repeated payload hydration for different queries on that same view.
+First strict admission remains scan-based; no implicit primary cache is added.
 
 - Define an index provider and a small SPARQL extension surface without making
   Lucene or Elasticsearch types part of the core API.

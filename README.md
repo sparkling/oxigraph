@@ -92,6 +92,10 @@ graph declares a Rust 1.90 minimum for this feature; validation used Rust 1.98.
 The workspace's declared 1.87 MSRV is not a tested claim for this optional lane.
 The [native text baseline](bench/text-benchmark.md) provides reproducible
 equivalence, logical-limit and timing diagnostics without a promotion claim.
+For several different native text queries on one retained view,
+`provider.prepare(&view, &limits.input)?` returns a reusable `TextQuerySession`;
+call `session.query(&query, &limits.input)?` to avoid reloading its verified RAM
+payload. Strict admission and the one-shot API's fresh-file checks are unchanged.
 
 Try the [spatial example](lib/oxigraph/examples/spatial_index.rs) with
 `cargo run --locked -p oxigraph --features spatial-index --example spatial_index`.

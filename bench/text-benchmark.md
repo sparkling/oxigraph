@@ -85,7 +85,7 @@ unmeasured operational/concurrency claims remain separate programme work.
 ## Observed baseline — 2026-09-08
 
 Product source `996ab94abeca06cbd02bede9bb765058206416a2`, with the example
-added in the commit introducing this document. Example-source SHA-256:
+added in `7c26ff3962565942a02f33e40a8529d299083627`. Example-source SHA-256:
 `c8d0722fbfacd6844e2bed3b1f6c943c11bb2982f9949ba2321cb426433c5bdf`;
 release executable: `63ca43857d509d54ecd2383411e9be8f2ce645fb6ab0bec3ee01fa2873f75413`;
 lockfile: `3b13553240707e31ee3c0332a39faeb8af638a1e06173a73e784cd01f54f9e39`.
@@ -124,3 +124,60 @@ The dominant measured short-query cost is full-snapshot strict admission;
 payload hydration remains included in query time. The next optimization must
 preserve exact snapshot identity, file-corruption checks, cancellation and
 resource ceilings. These observations do not ratify a numeric promotion gate.
+
+## Explicit prepared-session comparison
+
+Add `--prepared` to the same size/repetition command to prepare one verified
+RAM session per round and reuse it for all nine distinct queries. The default
+remains one-shot. Inputs, order rotation, oracle and ceilings are unchanged;
+the `query_mode` field distinguishes the two paths. `preparation` events measure
+the checksum-copy/open operation separately from strict `admission` and `query`.
+The per-record `api` (and completion's `catch_up_query_api`) explicitly labels
+the auxiliary calls: global `query_mode` applies only to timed `query` records.
+The additional lag/resource checks still use the one-shot path; focused native
+tests cover retained-session lag, corruption, control and captured limits.
+
+Run the two modes sequentially with the **same rebuilt executable**. Compare
+the total nine-query cost plus preparation, not just a prepared query with
+one-shot hydration included. Admission is unchanged and must still be reported.
+The retained session has warm private engine caches across queries and remains
+allocated until the round ends. This is an explicit multi-query workload, not
+a claim about single-query requests, cold caches or a default SPARQL speedup.
+
+### Observed retained-session comparison — 2026-09-08
+
+Both modes ran at 100,000 documents, 30 measured rounds plus one warmup,
+sequentially (one-shot first) on the host/CPU affinity described above, using
+the same release executable
+`0a4e9c124dedb1d8700eeb6513e953506b10dd958b095f209288e5054cb40517`.
+The measured working source is the retained-session implementation on parent
+`7c26ff39`, before the additive per-record API-label clarification. The
+unchanged text-provider source SHA-256 is
+`f1567e141c41536e2d1384276717b3daf7047eb027ac4eeaacb2b067341da55e`
+and example-source SHA-256 is
+`eb95813a1639f43973a6c3435fa8aeb1c38b39c3007e63da9a14a5fb4fd4b41c`.
+The lockfile and generated input hash remain those reported above. Each mode
+exited zero with 279 query checks, three lag checks and three resource checks.
+These historical raw logs lack the later `api` labels: their `query_mode` applies
+only to the timed query records, and all auxiliary query checks are one-shot.
+
+| Operation | One-shot p50/p95 ms | Prepared p50/p95 ms |
+| --- | ---: | ---: |
+| Nine queries, including preparation/loading | 216.800 / 235.340 | 84.989 / 103.218 |
+| Preparation alone | Included in each query | 13.785 / 16.076 |
+| Strict admission, separately | 424.649 / 501.465 | 366.581 / 433.296 |
+
+The first row sums the nine queries and any separate preparation **per round**
+before taking nearest-rank quantiles; it does not sum individual quantiles.
+Three of the nine cases are expected candidate-limit failures at this scale.
+Shared-host/order/cache effects are uncontrolled, so these observations are not
+a ratified speedup ratio or tail bound. Admission uses identical code in both
+modes: its timing difference is not an implementation improvement. Whole-process
+peak RSS was 315,420/315,700 KiB, including the corpus and oracle, not just RAM
+index bytes. The deterministic changed-file regression separately proves that
+prepared queries do not rehydrate durable payloads, even for different terms.
+
+Raw logs remain local in `/tmp/oxigraph-g33-text-baseline-PyBagJ/`:
+
+- `session-oneshot-100000.jsonl`: `62573e27265e9c11bec3e978106217015b81aba237752b29b315944e39e973b2`
+- `session-prepared-100000.jsonl`: `764e15d016da015f43612d189c229a9a6a6b8d0bd087f49a002a15ca7c16240e`

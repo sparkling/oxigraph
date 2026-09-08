@@ -182,6 +182,231 @@ fn text_strict_lag_eventual_candidate_refinement_and_snapshot_retention() -> Res
 }
 
 #[test]
+fn prepared_text_queries_reuse_verified_ram_but_not_new_primary_state() -> Result {
+    let dir = tempfile::tempdir()?;
+    let db = Store::open(dir.path().join("db"))?;
+    let a = quad("a", "red blue", GraphName::DefaultGraph);
+    let b = quad("b", "red", NamedNode::new("urn:g")?.into());
+    db.extend([a.clone(), b.clone()])?;
+    // Establish lineage before preparing; adopting governance after admission
+    // changes identity and must not be mislabeled as an eventual descendant.
+    db.start_governed_transaction(TransactionRequest::default(), TransactionKey::new([8; 16]))?
+        .into_transaction()
+        .commit()?;
+    let source = capture(&db)?;
+    let provider = TextIndexProvider::default();
+    let limits = DerivedGenerationLimits::default();
+    let mut index = DerivedIndex::create(dir.path().join("text"), provider.identity())?;
+    build(&mut index, &source, &provider, &limits)?;
+    let view = index.strict(&source, &limits)?;
+    let session = provider.prepare(&view, &limits.input)?;
+    let mut queries = vec![
+        TextQuery::new("red"),
+        TextQuery::new("blue"),
+        TextQuery::new("absent"),
+    ];
+    let mut any = TextQuery::new("blue red");
+    any.mode = TextQueryMode::AnyTerm;
+    any.limit = NonZeroUsize::MIN;
+    queries.push(any);
+    let mut scoped = TextQuery::new("red");
+    scoped.graph = Some(GraphName::DefaultGraph);
+    queries.push(scoped);
+    for query in &queries {
+        let expected = provider.query(&view, query, &limits.input)?;
+        let result = session.query(query, &limits.input)?;
+        assert_eq!(result.matches, expected.matches);
+        assert_eq!(result.candidates, expected.candidates);
+        assert_eq!(result.total_matches, expected.total_matches);
+        assert_eq!(result.applied, expected.applied);
+        assert_eq!(result.source, expected.source);
+        assert!(!result.eventual);
+    }
+    let added = quad("new", "red", GraphName::DefaultGraph);
+    let mut tx = db
+        .start_governed_transaction(TransactionRequest::default(), TransactionKey::new([9; 16]))?
+        .into_transaction();
+    tx.remove(&a)?;
+    tx.insert(added.clone())?;
+    tx.commit()?;
+    let newer = capture(&db)?;
+    assert!(matches!(
+        index.strict(&newer, &limits),
+        Err(DerivedGenerationError::NotFresh)
+    ));
+    let old = session.query(&TextQuery::new("red"), &limits.input)?;
+    assert_eq!(
+        old.matches.iter().map(|m| &m.quad).collect::<Vec<_>>(),
+        [&a, &b]
+    );
+    assert_eq!(old.source, *source.checkpoint());
+    let eventual_view = index.eventual(&newer, &limits)?;
+    let eventual = provider.prepare(&eventual_view, &limits.input)?;
+    let result = eventual.query(&TextQuery::new("red"), &limits.input)?;
+    assert_eq!(result.matches.len(), 1);
+    assert_eq!(result.matches[0].quad, b);
+    assert!(result.eventual);
+    assert_ne!(result.applied, result.source);
+    build(&mut index, &newer, &provider, &limits)?;
+    let current_view = index.strict(&newer, &limits)?;
+    let current = provider.prepare(&current_view, &limits.input)?;
+    assert!(
+        current
+            .query(&TextQuery::new("red"), &limits.input)?
+            .matches
+            .iter()
+            .any(|m| m.quad == added)
+    );
+    assert_eq!(
+        session
+            .query(&TextQuery::new("red"), &limits.input)?
+            .matches,
+        old.matches
+    );
+    Ok(())
+}
+
+#[test]
+fn prepared_text_queries_do_not_reread_changed_durable_payloads() -> Result {
+    let dir = tempfile::tempdir()?;
+    let db = Store::open(dir.path().join("db"))?;
+    let expected = quad("a", "red blue", GraphName::DefaultGraph);
+    db.insert(expected.clone())?;
+    let source = capture(&db)?;
+    let provider = TextIndexProvider::default();
+    let limits = DerivedGenerationLimits::default();
+    let mut index = DerivedIndex::create(dir.path().join("text"), provider.identity())?;
+    build(&mut index, &source, &provider, &limits)?;
+    let view = index.strict(&source, &limits)?;
+    let session = provider.prepare(&view, &limits.input)?;
+    // Every durable file in this isolated test generation is now unreadable as
+    // its original payload. Only the session's already-verified owned RAM is used.
+    for name in view.generation().files().names() {
+        std::fs::write(view.generation().directory().join(name), b"changed")?;
+    }
+    for text in ["red", "blue", "red blue"] {
+        let query = TextQuery::new(text);
+        let result = session.query(&query, &limits.input)?;
+        assert_eq!(result.matches.len(), 1);
+        assert_eq!(result.matches[0].quad, expected);
+        assert!(matches!(
+            provider.query(&view, &query, &limits.input),
+            Err(TextError::Generation(DerivedGenerationError::Corrupt))
+        ));
+    }
+    assert!(matches!(
+        provider.prepare(&view, &limits.input),
+        Err(TextError::Generation(DerivedGenerationError::Corrupt))
+    ));
+    assert!(matches!(
+        index.strict(&source, &limits),
+        Err(DerivedGenerationError::Corrupt)
+    ));
+    Ok(())
+}
+
+#[test]
+fn prepared_text_queries_preserve_captured_limits_and_per_call_control() -> Result {
+    use oxigraph::store::BackupError;
+    use std::time::Duration;
+    let dir = tempfile::tempdir()?;
+    let db = Store::open(dir.path().join("db"))?;
+    db.extend([
+        quad("a", "red blue", GraphName::DefaultGraph),
+        quad("b", "red", GraphName::DefaultGraph),
+    ])?;
+    let source = capture(&db)?;
+    let mut provider = TextIndexProvider::default();
+    let limits = DerivedGenerationLimits::default();
+    let mut index = DerivedIndex::create(dir.path().join("text"), provider.identity())?;
+    build(&mut index, &source, &provider, &limits)?;
+    let view = index.strict(&source, &limits)?;
+    provider.limits.max_candidates = NonZeroUsize::MIN;
+    let session = provider.prepare(&view, &limits.input)?;
+    provider.limits.max_candidates = NonZeroUsize::MAX;
+    // Changing the caller's provider cannot raise a session's captured limits.
+    assert!(matches!(
+        session.query(&TextQuery::new("red"), &limits.input),
+        Err(TextError::Limit)
+    ));
+    assert_eq!(
+        session
+            .query(&TextQuery::new("blue"), &limits.input)?
+            .total_matches,
+        1
+    );
+    assert!(matches!(
+        session.query(&TextQuery::new("!!!"), &limits.input),
+        Err(TextError::InvalidQuery)
+    ));
+    for (text, deadline) in [("red", false), ("!!!", true)] {
+        let mut controlled = limits.input.clone();
+        controlled.control = TransactionStartControl::new();
+        if deadline {
+            controlled.control = controlled.control.with_timeout(Duration::ZERO);
+        } else {
+            controlled.control.cancel();
+        }
+        let matches_control = |error| {
+            matches!(
+                (deadline, error),
+                (
+                    false,
+                    TextError::Generation(DerivedGenerationError::Backup(BackupError::Cancelled))
+                ) | (
+                    true,
+                    TextError::Generation(DerivedGenerationError::Backup(BackupError::TimedOut))
+                )
+            )
+        };
+        assert!(matches_control(
+            session
+                .query(&TextQuery::new(text), &controlled)
+                .unwrap_err()
+        ));
+        assert!(
+            provider
+                .prepare(&view, &controlled)
+                .err()
+                .is_some_and(matches_control)
+        );
+    }
+    for resource in 0..2 {
+        let mut bounded = provider.clone();
+        if resource == 0 {
+            bounded.limits.max_documents = NonZeroUsize::MIN;
+        } else {
+            bounded.limits.max_index_bytes = NonZeroUsize::MIN;
+        }
+        assert!(matches!(
+            bounded.prepare(&view, &limits.input),
+            Err(TextError::Limit) | Err(TextError::Generation(DerivedGenerationError::Limit))
+        ));
+    }
+    for resource in 0..2 {
+        let mut bounded = provider.clone();
+        if resource == 0 {
+            bounded.limits.max_document_bytes = NonZeroUsize::MIN;
+        } else {
+            bounded.limits.max_inspected_bytes = NonZeroUsize::MIN;
+        }
+        let constrained = bounded.prepare(&view, &limits.input)?;
+        assert!(matches!(
+            constrained.query(&TextQuery::new("blue"), &limits.input),
+            Err(TextError::Limit)
+        ));
+    }
+    // A failed/cancelled query cannot poison the immutable retained session.
+    assert_eq!(
+        session
+            .query(&TextQuery::new("blue"), &limits.input)?
+            .total_matches,
+        1
+    );
+    Ok(())
+}
+
+#[test]
 fn text_governed_catch_up_rollback_clear_drop_and_empty_rebuild() -> Result {
     let dir = tempfile::tempdir()?;
     let db = Store::open(dir.path().join("db"))?;

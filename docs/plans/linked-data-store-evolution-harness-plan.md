@@ -1104,6 +1104,9 @@ The [native baseline](../../bench/text-benchmark.md#observed-baseline--2026-09-0
 passes 837 query checks across three fixed scales, plus explicit lag/resource
 checks. Repeated strict admission is the measured short-query bottleneck;
 numeric promotion thresholds remain unratified.
+The [explicit retained text-query session](../adr/0024-rebuildable-derived-indexes.md#explicit-retained-text-query-session-2026-09-08)
+now reuses verified RAM for different queries on one admitted view, without
+changing first strict admission, lifecycle checks or the one-shot API contract.
 G3.4 now adds
 the optional native CRS84 spatial provider with exact refinement, strict retained
 snapshots and bounded ordered catch-up, plus reopen/backup/restore tests. Its

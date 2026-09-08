@@ -2,6 +2,43 @@ use super::*;
 use crate::store::{DerivedGenerationLimits, DerivedIndex, Store, TransactionStartControl};
 type Result = std::result::Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
+#[test]
+fn prepared_search_preserves_the_supplied_operation_start() -> Result {
+    use crate::store::BackupError;
+    use std::time::Duration;
+    let dir = tempfile::tempdir()?;
+    let store = Store::open(dir.path().join("db"))?;
+    store.insert(Quad::new(
+        NamedNode::new("urn:s")?,
+        NamedNode::new("urn:p")?,
+        Literal::from("red"),
+        GraphName::DefaultGraph,
+    ))?;
+    let source = store.derived_snapshot(&TransactionStartControl::new())?;
+    let provider = TextIndexProvider::default();
+    let limits = DerivedGenerationLimits::default();
+    let mut index = DerivedIndex::create(dir.path().join("index"), provider.identity())?;
+    let generation = index.rebuild(&source, &provider, &limits)?;
+    index.activate(&generation, &source, &provider, &limits)?;
+    let view = index.strict(&source, &limits)?;
+    let session = provider.prepare(&view, &limits.input)?;
+    let query = TextQuery::new("red");
+    let mut controlled = limits.input.clone();
+    controlled.control = TransactionStartControl::new().with_timeout(Duration::from_secs(60));
+    // Deterministically model time already spent in preparation, without sleep.
+    // This is the same private search stage used by the one-shot path, which
+    // passes its original Instant through preparation and search unchanged.
+    let expired_start = Instant::now() - Duration::from_secs(120);
+    assert!(matches!(
+        session.query_at(&query, &query.terms()?, &controlled, expired_start),
+        Err(TextError::Generation(DerivedGenerationError::Backup(
+            BackupError::TimedOut
+        )))
+    ));
+    assert_eq!(session.query(&query, &controlled)?.total_matches, 1);
+    Ok(())
+}
+
 // Observe actual cursor advances, not elapsed time or a synthetic work score.
 #[derive(Clone, Debug)]
 struct CountedQuery(std::sync::Arc<std::sync::atomic::AtomicUsize>);

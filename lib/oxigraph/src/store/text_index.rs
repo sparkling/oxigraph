@@ -15,7 +15,9 @@ use tantivy::directory::{Directory, RamDirectory};
 use tantivy::indexer::NoMergePolicy;
 use tantivy::query::{AllQuery, BooleanQuery, EnableScoring, Occur, Query, TermQuery};
 use tantivy::schema::{Field, IndexRecordOption, STORED, STRING, Schema, Value};
-use tantivy::{DocAddress, DocSet, Index, IndexSettings, IndexWriter, TERMINATED, TantivyDocument};
+use tantivy::{
+    DocAddress, DocSet, Index, IndexSettings, IndexWriter, Searcher, TERMINATED, TantivyDocument,
+};
 
 const PROFILE_FILE: &str = "text.profile";
 const MAX_TOKEN_BYTES: usize = 256;
@@ -182,6 +184,116 @@ fn controlled(limits: &DerivedLimits, started: Instant) -> Result<(), TextError>
 pub struct TextIndexProvider {
     pub limits: TextLimits,
 }
+
+/// Explicitly retained, checksum-verified RAM index for multiple different
+/// queries on one already-admitted primary snapshot. No durable payload is
+/// reread after preparation: later file corruption affects new preparation and
+/// one-shot queries, not these owned immutable bytes. This is not fresh index
+/// health evidence or authority for a newer primary snapshot.
+///
+/// Provider ceilings are captured at preparation. Each query has independent
+/// cooperative cancellation/deadline control; query failure does not poison the
+/// session. Release promptly: RAM payloads and the borrowed primary view remain
+/// retained. Logical provider limits do not bound aggregate sessions or RSS.
+pub struct TextQuerySession<'a> {
+    provider: TextIndexProvider,
+    searcher: Searcher,
+    generation: &'a super::DerivedGeneration,
+    source: &'a DerivedSnapshot,
+    eventual: bool,
+}
+impl TextQuerySession<'_> {
+    /// Queries the retained RAM index and the same primary snapshot. The input
+    /// limits supply per-call control; their scan record/byte ceilings do not
+    /// re-bound an already hydrated index. Captured text candidate/document/
+    /// inspected-byte ceilings still apply on every query.
+    pub fn query(
+        &self,
+        query: &TextQuery,
+        limits: &DerivedLimits,
+    ) -> Result<TextResults, TextError> {
+        let started = Instant::now();
+        controlled(limits, started)?;
+        self.query_at(query, &query.terms()?, limits, started)
+    }
+
+    fn query_at(
+        &self,
+        query: &TextQuery,
+        terms: &BTreeSet<String>,
+        limits: &DerivedLimits,
+        started: Instant,
+    ) -> Result<TextResults, TextError> {
+        let (_, token_field, quad_field) = schema();
+        let occur = match query.mode {
+            TextQueryMode::AllTerms => Occur::Must,
+            TextQueryMode::AnyTerm => Occur::Should,
+        };
+        let clauses: Vec<(Occur, Box<dyn Query>)> = terms
+            .iter()
+            .map(|term| -> (Occur, Box<dyn Query>) {
+                (
+                    occur,
+                    Box::new(TermQuery::new(
+                        tantivy::Term::from_field_text(token_field, term),
+                        IndexRecordOption::Basic,
+                    )),
+                )
+            })
+            .collect();
+        let engine_query = BooleanQuery::new(clauses);
+        let candidates = collect_candidates(
+            &self.searcher,
+            &engine_query,
+            self.provider.limits.max_candidates,
+            || controlled(limits, started),
+        )?;
+        let count = candidates.len();
+        let mut found = Vec::new();
+        let mut inspected_bytes = 0_usize;
+        for address in candidates {
+            controlled(limits, started)?;
+            let doc: TantivyDocument = self.searcher.doc(address).map_err(engine)?;
+            let (bytes, quad) = self
+                .provider
+                .read_quad(&doc, quad_field, &mut inspected_bytes)?;
+            let Term::Literal(literal) = &quad.object else {
+                return Err(TextError::NotEquivalent);
+            };
+            if !query.in_scope(&quad, literal) || !self.source.contains(&quad)? {
+                continue;
+            }
+            let tokens = tokenize(literal.value())?;
+            let score = terms.intersection(&tokens).count();
+            if score == 0 || (query.mode == TextQueryMode::AllTerms && score != terms.len()) {
+                continue;
+            }
+            found.push((
+                bytes,
+                TextMatch {
+                    quad,
+                    score: u32::try_from(score).map_err(|_| TextError::Limit)?,
+                },
+            ));
+        }
+        found.sort_by(|(a, x), (b, y)| y.score.cmp(&x.score).then_with(|| a.cmp(b)));
+        let total_matches = found.len();
+        let matches = found
+            .into_iter()
+            .take(query.limit.get())
+            .map(|(_, hit)| hit)
+            .collect();
+        controlled(limits, started)?;
+        Ok(TextResults {
+            matches,
+            total_matches,
+            candidates: count,
+            applied: self.generation.source().clone(),
+            source: self.source.checkpoint().clone(),
+            eventual: self.eventual,
+        })
+    }
+}
 impl TextIndexProvider {
     pub(crate) fn checkpoint_binding(checkpoint: &BackupCheckpoint) -> String {
         payload(checkpoint)
@@ -224,6 +336,23 @@ impl TextIndexProvider {
         )
     }
 
+    /// Hydrates and verifies one RAM index for reuse by multiple queries on
+    /// this exact borrowed view. Strict admission itself is unchanged. Unlike
+    /// `query`, later session queries do not reread durable generation files.
+    pub fn prepare<'a>(
+        &self,
+        view: &'a DerivedView<'_>,
+        limits: &DerivedLimits,
+    ) -> Result<TextQuerySession<'a>, TextError> {
+        self.prepare_at(
+            view.generation(),
+            view.source(),
+            view.is_eventual(),
+            limits,
+            Instant::now(),
+        )
+    }
+
     /// Only the SPARQL adapter may use the owned, already-admitted equivalent
     /// of a DerivedView. Its source remains immutable for the whole query.
     pub(crate) fn query_snapshot(
@@ -240,6 +369,24 @@ impl TextIndexProvider {
             return Err(TextError::Profile);
         }
         let terms = query.terms()?;
+        // Preserve one timeout covering hydration AND search for the existing
+        // one-shot API. Public prepare/query calls have separate operation clocks.
+        self.prepare_at(generation, source, eventual, limits, started)?
+            .query_at(query, &terms, limits, started)
+    }
+
+    fn prepare_at<'a>(
+        &self,
+        generation: &'a super::DerivedGeneration,
+        source: &'a DerivedSnapshot,
+        eventual: bool,
+        limits: &DerivedLimits,
+        started: Instant,
+    ) -> Result<TextQuerySession<'a>, TextError> {
+        controlled(limits, started)?;
+        if generation.identity() != self.identity() {
+            return Err(TextError::Profile);
+        }
         let index = self.open(generation.files(), limits, started)?;
         if index.load_metas().map_err(engine)?.payload.as_deref()
             != Some(&payload(generation.source()))
@@ -247,69 +394,12 @@ impl TextIndexProvider {
             return Err(TextError::Profile);
         }
         let reader = index.reader().map_err(engine)?;
-        let searcher = reader.searcher();
-        let (_, token_field, quad_field) = schema();
-        let occur = match query.mode {
-            TextQueryMode::AllTerms => Occur::Must,
-            TextQueryMode::AnyTerm => Occur::Should,
-        };
-        let clauses: Vec<(Occur, Box<dyn Query>)> = terms
-            .iter()
-            .map(|term| -> (Occur, Box<dyn Query>) {
-                (
-                    occur,
-                    Box::new(TermQuery::new(
-                        tantivy::Term::from_field_text(token_field, term),
-                        IndexRecordOption::Basic,
-                    )),
-                )
-            })
-            .collect();
-        let engine_query = BooleanQuery::new(clauses);
-        let candidates =
-            collect_candidates(&searcher, &engine_query, self.limits.max_candidates, || {
-                controlled(limits, started)
-            })?;
-        let count = candidates.len();
-        let mut found = Vec::new();
-        let mut inspected_bytes = 0_usize;
-        for address in candidates {
-            controlled(limits, started)?;
-            let doc: TantivyDocument = searcher.doc(address).map_err(engine)?;
-            let (bytes, quad) = self.read_quad(&doc, quad_field, &mut inspected_bytes)?;
-            let Term::Literal(literal) = &quad.object else {
-                return Err(TextError::NotEquivalent);
-            };
-            if !query.in_scope(&quad, literal) || !source.contains(&quad)? {
-                continue;
-            }
-            let tokens = tokenize(literal.value())?;
-            let score = terms.intersection(&tokens).count();
-            if score == 0 || (query.mode == TextQueryMode::AllTerms && score != terms.len()) {
-                continue;
-            }
-            found.push((
-                bytes,
-                TextMatch {
-                    quad,
-                    score: u32::try_from(score).map_err(|_| TextError::Limit)?,
-                },
-            ));
-        }
-        found.sort_by(|(a, x), (b, y)| y.score.cmp(&x.score).then_with(|| a.cmp(b)));
-        let total_matches = found.len();
-        let matches = found
-            .into_iter()
-            .take(query.limit.get())
-            .map(|(_, hit)| hit)
-            .collect();
         controlled(limits, started)?;
-        Ok(TextResults {
-            matches,
-            total_matches,
-            candidates: count,
-            applied: generation.source().clone(),
-            source: source.checkpoint().clone(),
+        Ok(TextQuerySession {
+            provider: self.clone(),
+            searcher: reader.searcher(),
+            generation,
+            source,
             eventual,
         })
     }
@@ -583,7 +673,7 @@ impl TextIndexProvider {
 }
 
 fn collect_candidates(
-    searcher: &tantivy::Searcher,
+    searcher: &Searcher,
     query: &dyn Query,
     maximum: NonZeroUsize,
     mut check: impl FnMut() -> Result<(), TextError>,
