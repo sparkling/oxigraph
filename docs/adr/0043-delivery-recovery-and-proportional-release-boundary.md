@@ -25,8 +25,9 @@
   observation endpoints, transaction terminal and Store-bound query/update
   counters/duration histograms. Lazy evaluation is counted at EOF, first error,
   or abandonment, without changing iteration or transaction semantics.
-  Its task `task-1787851231441-1gdfzd` remains active for denial-attempt and
-  validation telemetry; these slices are not full P1.4a completion. Local
+  Denied attempts and returned SHACL commit-gate observations now close the
+  bounded G2.5/P1.4a contract in task `task-1787851231441-1gdfzd`.
+  G2.6 backup receipt creation is next, followed by G2.7 restore validation. Local
   implementation is not publication
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

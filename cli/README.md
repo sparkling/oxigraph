@@ -126,7 +126,7 @@ succeed. Startup failure exits the process and releases both listeners.
   explicitly degraded is HTTP 200; not-ready is 503 with fixed reason tokens.
 - `GET`/`HEAD /metrics`: the same native observation as at most 21 fixed,
   label-free Prometheus text-format gauges, plus 89 bounded transaction samples
-  and 154 bounded query/update samples
+  and 154 bounded query/update samples plus 143 policy samples (at most 407 total)
   described below. A storage-not-ready result remains
   HTTP 200 with `oxigraph_ready 0`; a clock-conversion failure is 503.
 
@@ -176,9 +176,24 @@ abandoned. Update commit errors are indeterminate, never a replay instruction.
 No extra reads, retries, or rollback calls are introduced. Query and update
 counts are not HTTP response counts: parse failures, serialization failures,
 and generic-dataset or borrowed-transaction bindings are outside this boundary.
-`SILENT` success remains success. Denial-attempt and validation-level telemetry
-remain in G2.5. Each snapshot is internally consistent, but readiness,
-transaction and evaluation snapshots are not one atomic observation. See
+`SILENT` success remains success. `oxigraph_egress_denials_total` and
+`oxigraph_egress_denial_duration_seconds` record denied attempts separately,
+using only `purpose="service|load|document"`. Nested-document rejection is not
+recounted as LOAD rejection. Timing covers request/target-preflight entry through
+the denial, not whole-query latency. Custom handlers, generic/borrowed bindings,
+and standalone document loaders are not Store-attributed.
+
+`oxigraph_shacl_commit_gates_total` and
+`oxigraph_shacl_commit_gate_duration_seconds` use ten fixed disposition labels.
+They measure returned gated commits, including validation, final guards, cleanup,
+and native commit—not pure validator CPU time. Accepted validation may coexist
+with an indeterminate commit. Start/preparation failures, explicit rollback,
+pre-commit Drop, unwinding, and standalone validation are excluded. The current
+CLI does not configure a SHACL policy, so those counters remain zero; zero is
+not a claim that validation or remote egress is enabled.
+
+Each snapshot is internally consistent, but readiness, transaction, evaluation,
+and policy snapshots are not one atomic observation. See
 [ADR-0022](../docs/adr/0022-operational-readiness-backup-and-recovery.md).
 
 It is also possible to load RDF data offline using bulk loading:

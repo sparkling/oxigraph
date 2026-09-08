@@ -115,6 +115,7 @@ impl EvaluationMetrics {
                 self.duration(operation, outcome).write_series(
                     output,
                     histogram,
+                    "outcome",
                     outcome.as_str(),
                 )?;
             }

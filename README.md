@@ -50,11 +50,11 @@ R1 source and installation instructions were published on `main` at
 records all 43 decisions at that handoff. G2.2 and G2.3a-b are published in
 `58d3253c`; G2.3c adds native retention/leases and governance health.
 G2.4a-b add the native staged-view SHACL commit gate and atomically bound policy
-receipts. G2.5 now adds native readiness observations and a bounded contributor
-inventory, opt-in loopback operational endpoints, and per-Store transaction
-outcome counters and cumulative duration histograms. Query/update evaluation,
-external-denial and validation telemetry remain in that active slice, not
-another containment or harness milestone.
+receipts. G2.5 adds native readiness observations and a bounded contributor
+inventory, opt-in loopback operational endpoints, and per-Store transaction,
+query/update, denied-attempt and SHACL commit-gate counters and cumulative
+duration histograms. The bounded observation slice is complete; G2.6 backup
+creation and receipts are the next product step.
 
 Build this fork rather than an upstream package to obtain these changes:
 
@@ -167,8 +167,10 @@ outcome counters and cumulative duration histograms through that listener.
 Lazy SELECT/CONSTRUCT queries succeed only at observed end-of-stream; early
 drop is abandoned. Update success requires acknowledged commit. Counters are
 shared by Store clones and reset on reopen; they are not durable outcome proof.
-Denied attempts swallowed by `SILENT` and validation-level telemetry remain
-G2.5 work;
+`Store::policy_metrics()` adds denied SERVICE/LOAD/document attempts, including
+denials swallowed by `SILENT`, and returned SHACL commit-gate dispositions.
+Accepted validation is not proof of successful commit. This closes the bounded
+G2.5 observation surface; backup receipts and fresh-directory restore remain next;
 see [ADR-0022](docs/adr/0022-operational-readiness-backup-and-recovery.md).
 
 ```sh

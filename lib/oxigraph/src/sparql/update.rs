@@ -58,6 +58,8 @@ pub struct PreparedSparqlUpdate {
     cancellation_token: Option<CancellationToken>,
     #[cfg(feature = "http-client")]
     client: HttpClient,
+    #[cfg(feature = "http-client")]
+    service_client: Option<HttpClient>,
 }
 
 impl PreparedSparqlUpdate {
@@ -72,6 +74,7 @@ impl PreparedSparqlUpdate {
         update: Update,
         cancellation_token: Option<CancellationToken>,
         #[cfg(feature = "http-client")] client: HttpClient,
+        #[cfg(feature = "http-client")] service_client: Option<HttpClient>,
     ) -> Self {
         let using_datasets = update
             .operations
@@ -91,6 +94,8 @@ impl PreparedSparqlUpdate {
             cancellation_token,
             #[cfg(feature = "http-client")]
             client,
+            #[cfg(feature = "http-client")]
+            service_client,
         }
     }
 
@@ -119,8 +124,17 @@ impl PreparedSparqlUpdate {
     /// prepared_update.on_store(&Store::new()?).execute()?;
     /// # Ok::<_, Box<dyn std::error::Error>>(())
     /// ```
-    pub fn on_store(self, store: &Store) -> BoundPreparedSparqlUpdate<'_, '_> {
+    #[cfg_attr(not(feature = "http-client"), expect(unused_mut))]
+    pub fn on_store(mut self, store: &Store) -> BoundPreparedSparqlUpdate<'_, '_> {
         let observation = store.start_evaluation_observation(EvaluationOperation::Update);
+        #[cfg(feature = "http-client")]
+        {
+            self.evaluator =
+                super::bind_store_service(self.evaluator, self.service_client.take(), store);
+            self.client = self
+                .client
+                .with_policy_metrics(store.policy_metrics_state());
+        }
         let transaction = (|| {
             ensure_update_start_alive(
                 &self.update,
@@ -363,6 +377,8 @@ impl<D: TransactionalDataset> BoundTransactionalSparqlUpdate<'_, D> {
             cancellation_token: self.cancellation_token,
             #[cfg(feature = "http-client")]
             client: self.client,
+            #[cfg(feature = "http-client")]
+            service_client: None,
         }
         .execute_with_changes_on(
             transaction,
@@ -454,6 +470,8 @@ impl<D: NegotiatedTransactionalDataset> BoundNegotiatedSparqlUpdate<'_, D> {
             cancellation_token: self.cancellation_token,
             #[cfg(feature = "http-client")]
             client: self.client,
+            #[cfg(feature = "http-client")]
+            service_client: None,
         }
         .execute_with_changes_on(
             transaction,

@@ -217,6 +217,8 @@ fn loopback_routes_are_separate_and_head_matches_get() -> Result<()> {
                 && !line.starts_with("oxigraph_queries_total")
                 && !line.starts_with("oxigraph_update_")
                 && !line.starts_with("oxigraph_updates_total")
+                && !line.starts_with("oxigraph_egress_")
+                && !line.starts_with("oxigraph_shacl_commit_")
         })
         .collect();
     ensure!(
@@ -344,6 +346,74 @@ fn successful_update_and_failed_request_export_distinct_transaction_observations
     ensure!(
         evaluation_samples == 154,
         "evaluation metric cardinality differs: {evaluation_samples}"
+    );
+    let policy_samples = metrics
+        .body
+        .lines()
+        .filter(|line| {
+            line.starts_with("oxigraph_egress_") || line.starts_with("oxigraph_shacl_commit_")
+        })
+        .count();
+    ensure!(
+        policy_samples == 143,
+        "policy metric cardinality differs: {policy_samples}"
+    );
+    Ok(())
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+#[test]
+fn silent_policy_denials_remain_visible_without_failed_operation_counts() -> Result<()> {
+    let running = start(None, false)?;
+    for silent in [false, true] {
+        let keyword = if silent { "SILENT" } else { "" };
+        let update = wire_body(
+            running.public,
+            "POST",
+            "/update",
+            &format!("LOAD {keyword} <http://example.invalid/private>"),
+            "application/sparql-update",
+        )?;
+        ensure!(
+            if silent {
+                update.status == 204
+            } else {
+                update.status >= 400
+            },
+            "unexpected update result"
+        );
+    }
+    let query = wire_body(
+        running.public,
+        "POST",
+        "/query",
+        "ASK { SERVICE SILENT <http://example.invalid/private> { ?s ?p ?o } }",
+        "application/sparql-query",
+    )?;
+    ensure!(
+        query.status == 200 && query.body.contains("true"),
+        "SILENT query did not succeed"
+    );
+    let metrics = wire(running.admin, "GET", "/metrics")?;
+    for sample in [
+        "oxigraph_egress_denials_total{purpose=\"load\"} 2\n",
+        "oxigraph_egress_denials_total{purpose=\"service\"} 1\n",
+        "oxigraph_queries_total{outcome=\"succeeded\"} 1\n",
+        "oxigraph_updates_total{outcome=\"succeeded\"} 1\n",
+        "oxigraph_updates_total{outcome=\"policy_denied\"} 1\n",
+    ] {
+        ensure!(
+            metrics.body.contains(sample),
+            "missing bounded observation: {sample}"
+        );
+    }
+    ensure!(
+        !metrics.body.contains("private") && !metrics.body.contains("example.invalid"),
+        "request value leaked"
     );
     Ok(())
 }

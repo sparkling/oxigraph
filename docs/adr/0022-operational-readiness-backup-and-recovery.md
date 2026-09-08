@@ -6,8 +6,8 @@
 - Deciders: Oxigraph parity programme
 - Implementation status: G2.5 native observation/contributor API and opt-in
   loopback observation endpoints, transaction terminal telemetry and Store-bound
-  query/update evaluation telemetry implemented; denial-attempt and validation
-  telemetry remain in G2.5.
+  query/update evaluation, denied-attempt and SHACL commit-gate telemetry
+  implemented. The bounded G2.5 observation surface is complete.
   G2.6-G2.7 backup/restore receipt work remains unimplemented
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
@@ -24,8 +24,8 @@ The store can create a backup, optimize RocksDB, and validate storage, but a
 successful method return is not a recovery contract. There is no completed
 backup receipt tying primary state to its authoritative outbox and declared
 derived-state contributor positions, no
-fresh-directory restore drill, and no stable readiness or bounded-label
-metrics surface.
+fresh-directory restore drill. At programme entry there was also no stable
+readiness or bounded-label metrics surface; G2.5 now supplies that surface.
 
 Operations must distinguish liveness from readiness and must not promote a
 store that is open while its durable feed, required derived state, or recovery
@@ -128,8 +128,9 @@ state in isolated test stores. No pinned evidence or operator runtime is changed
 
 Run the usable native artifact with
 `cargo run --locked -p oxigraph --example operational_readiness`.
-The broader P1.4a/G2.5 task remains open for operation counters and latency/error
-histograms and their consumer tests. This native slice implements no automatic
+At this checkpoint, the broader P1.4a/G2.5 task remained open for operation
+counters and latency/error histograms; the later slices below close that gap.
+This native slice implements no automatic
 circuit breaker, workload admission engine, full-store certificate, backup
 receipt, or production claim.
 
@@ -264,7 +265,8 @@ Four fixed families export exactly 154 samples: query/update counters and
 cumulative duration histograms, each with seven fixed outcomes. The transaction
 histogram bucket/saturation rules are reused without changing its existing 89
 samples. Together with readiness's at-most-21 gauges, the CLI exports at most
-264 samples. No user-derived labels or raw errors are retained. Each metrics
+264 samples at this checkpoint, before the policy families below. No user-derived
+labels or raw errors are retained. Each metrics
 snapshot is internally consistent, not an atomic snapshot across all three
 operational APIs. Counters do not affect readiness decisions.
 
@@ -275,7 +277,8 @@ read-only admission, bounded histograms, denied operations and `SILENT`, and
 remote deadlines. Isolated guards test ambiguous commit/unwind without adding a
 public fault API. CLI subprocess checks verify successful/failed updates, ASK
 absence, both transaction and evaluation observations, and fixed sample counts.
-Denial-attempt and validation telemetry remain in G2.5; G2.6/G2.7 are not closed.
+At this checkpoint denial-attempt and validation telemetry remained in G2.5;
+the following slice closes them. G2.6/G2.7 are not closed.
 
 The evaluation slice passes 90 unit tests plus 13 focused evaluation tests with
 SHACL/RDF-12/HTTP, and the no-default SHACL/RDF-12 unit/evaluation/transaction/
@@ -284,6 +287,70 @@ cancellation/negotiation/capability lane passes 62. Default CLI validation passe
 pass. These are overlapping regression lanes, not new-feature counts. Scoped
 library Clippy without HTTP and CLI-only Clippy pass with warnings denied.
 The previously noted broader lint/no-default CLI limitations remain explicit.
+
+### Policy observation and G2.5 closure (2026-09-08)
+
+`Store::policy_metrics()` adds three fixed denied-retrieval purposes and ten
+fixed SHACL dispositions to the same per-open, clone-shared observation model.
+The four families add exactly 143 samples; CLI composition is now at most 407
+samples. Counts and microsecond sums saturate; cumulative duration bounds match
+the earlier transaction/evaluation histograms. No identities, destinations,
+shape/data contents, or errors are labels or retained values.
+
+Built-in `SERVICE`, `LOAD`, and nested document denial decisions are counted at
+typed error creation, before `SILENT` handling. Copying/taking an existing error
+does not count it again; a nested document failure is not recounted as a LOAD
+denial. Durations start at request or target-preflight entry. A remote attempt
+can occur during `execute()` before lazy result consumption, so denial and
+evaluation counters deliberately have different observation boundaries.
+Prepared clones retain the exact built-in client template and attach a
+Store-local observer only on the consumed Store binding. Existing cancellation,
+timeout/TLS configuration, connection-budget sharing, custom-handler precedence,
+and service-description claims are unchanged. Generic/borrowed bindings,
+custom handlers, and standalone loaders are not attributed.
+
+The native SHACL inherent commit is the sole observation wrapper, including
+calls through both write traits. The final returned validation disposition is
+recorded after final-guard handling, cleanup and native commit. Its duration is
+commit-gate elapsed time, not validator CPU time or time holding an entire
+transaction open. Accepted validation remains accepted when commit is
+indeterminate; rollback failure never overwrites the validation disposition.
+Start/preparation failure, explicit rollback, Drop before commit, unwinding,
+and standalone validation are outside this returned-gate boundary. Receipt
+lookup neither recounts nor rewrites observations. No receipt encoding changes.
+
+Additive native fixtures cover swallowed and multiple denials, nested documents,
+prepared clones bound to different Stores, custom/generic/borrowed exclusions,
+all three SHACL commit entry points, validation rejection/cancellation, rollback
+and drop exclusions, reopen/reset, and accepted validation with before/after
+commit ambiguity. Existing gate/final-guard, operational, cancellation, LOAD and
+SERVICE regression lanes remain passing. A CLI subprocess fixture proves denied
+attempts remain visible while `SILENT` operations report success.
+
+Validation passes 91 native unit tests and seven policy tests with
+SHACL/RDF-12/HTTP, the 70-test operational/SHACL/remote regression lane, and
+the 74-test no-default SHACL/RDF-12 lane. The no-feature evaluation/policy lane
+passes ten tests. CLI validation passes 153 unit tests, six default-feature
+wire tests, and five no-default wire tests in separate commands. These lanes
+overlap; nine added test functions are not nine separate product capabilities.
+Scoped no-HTTP library and CLI Clippy pass with warnings denied. HTTP library
+Clippy retains the five unchanged warnings recorded above, with no new warning.
+
+Run CLI unit and wire lanes separately: some unit helpers invoke Cargo with
+`--no-default-features` and overwrite the shared server binary. The combined
+command passed all unit tests but then failed the new HTTP-denial fixture
+against that no-HTTP binary. A subsequent integration-only default-feature
+command rebuilds the intended binary and passes all six wire tests. This is a
+test-artifact collision, not a change to denial semantics or a passing combined
+lane; no expected result was weakened.
+
+This closes G2.5/P1.4a's bounded native metrics, readiness, contributor and
+loopback observation contract. Zero counters do not claim a capability is
+enabled; the current CLI has no SHACL policy configuration. Circuit state is
+observed, not automatically tripped, and required/eventual contributor policy is
+unchanged. Automatic workload admission belongs to G4.2. G2.6 backup receipts
+and G2.7 fresh-directory restore remain required; this ADR stays Proposed until
+its complete boundary below is satisfied.
 
 ### Complete ADR boundary
 

@@ -310,6 +310,7 @@ pub struct ShaclTransaction<'a> {
     started: Instant,
     shapes_at_begin: [u8; 32],
     descriptor: ShaclPolicyDescriptor,
+    metrics: std::sync::Arc<super::policy_metrics::PolicyMetricsState>,
 }
 
 impl<'a> ShaclTransaction<'a> {
@@ -411,6 +412,7 @@ impl<'a> ShaclTransaction<'a> {
                 started,
                 shapes_at_begin,
                 descriptor,
+                metrics: store.policy_metrics_state(),
             },
             effective,
         ))
@@ -425,6 +427,18 @@ impl<'a> ShaclTransaction<'a> {
         reason = "typed commit report refines the minimal write trait"
     )]
     pub fn commit(self) -> Result<ShaclCommitReport, ShaclCommitError> {
+        let metrics = std::sync::Arc::clone(&self.metrics);
+        let started = Instant::now();
+        let result = self.commit_inner();
+        let disposition = match &result {
+            Ok(report) => report.validation.disposition(),
+            Err(error) => error.validation_evidence().disposition(),
+        };
+        metrics.validation(disposition, started.elapsed());
+        result
+    }
+
+    fn commit_inner(self) -> Result<ShaclCommitReport, ShaclCommitError> {
         let mut validation = ShaclValidationEvidence {
             policy: self.descriptor.clone(),
             shapes_at_begin: self.shapes_at_begin,
@@ -859,6 +873,82 @@ mod tests {
                 store.lookup_shacl_receipt(&key(1))?,
                 ShaclReceiptOutcome::Validated(_)
             ));
+        }
+        Ok(())
+    }
+
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    #[test]
+    fn policy_metrics_preserve_validation_under_commit_and_rollback_failures() -> TestResult {
+        use crate::storage::TransactionOutcomeFaultPoint as Fault;
+        use crate::store::TransactionObservation;
+        for fault in [
+            Fault::CommitAttemptedBefore,
+            Fault::CommitAttemptedAfter,
+            Fault::FinalBatchBefore,
+            Fault::FinalBatchAfter,
+        ] {
+            let directory = tempfile::tempdir()?;
+            let store = Store::open(directory.path())?;
+            let mut tx = store
+                .start_shacl_transaction(TransactionRequest::default(), key(1), policy())?
+                .into_transaction();
+            tx.insert(quad())?;
+            store.storage.arm_transaction_outcome_fault(fault)?;
+            let error = tx.commit().unwrap_err();
+            assert_eq!(
+                error.validation_evidence().disposition(),
+                ShaclDisposition::Accepted
+            );
+            assert_eq!(
+                store
+                    .policy_metrics()
+                    .validations(ShaclDisposition::Accepted),
+                1
+            );
+            assert_eq!(
+                store
+                    .transaction_metrics()
+                    .count(TransactionObservation::Indeterminate),
+                1
+            );
+            let before = store.policy_metrics();
+            store.lookup_shacl_receipt(&key(1))?;
+            assert_eq!(store.policy_metrics(), before);
+            let events = store.storage.transaction_outcome_fault_events()?;
+            assert!(!events.contains(&Fault::RolledBackBefore));
+        }
+        for fault in [Fault::RolledBackBefore, Fault::RolledBackAfter] {
+            let directory = tempfile::tempdir()?;
+            let store = Store::open(directory.path())?;
+            let gate_policy = policy();
+            let control = gate_policy.control();
+            let tx = store
+                .start_shacl_transaction(TransactionRequest::default(), key(1), gate_policy)?
+                .into_transaction();
+            store.storage.arm_transaction_outcome_fault(fault)?;
+            control.cancel();
+            let error = tx.commit().unwrap_err();
+            assert!(matches!(
+                &error,
+                ShaclCommitError::Rejected {
+                    rollback: Some(_),
+                    ..
+                }
+            ));
+            assert_eq!(
+                store
+                    .policy_metrics()
+                    .validations(ShaclDisposition::Cancelled),
+                1
+            );
+            assert_eq!(
+                store
+                    .policy_metrics()
+                    .validations(ShaclDisposition::Accepted),
+                0
+            );
+            assert_eq!(store.transaction_metrics().rollback_failures(), 1);
         }
         Ok(())
     }

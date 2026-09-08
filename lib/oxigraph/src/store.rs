@@ -37,6 +37,7 @@ mod contributors;
 pub(crate) mod evaluation_metrics;
 mod namespace;
 pub(crate) mod outbox;
+pub(crate) mod policy_metrics;
 mod readiness;
 pub(crate) mod receipt;
 pub(crate) mod retention;
@@ -60,6 +61,7 @@ pub use namespace::{
     Namespace, NamespacePrefix, NamespacePrefixParseError, WritableNamespaceRegistry,
 };
 pub use outbox::{OutboxBatch, OutboxCoverage, OutboxCursor, OutboxReadError, OutboxRecord};
+pub use policy_metrics::{PolicyDenialPurpose, PolicyMetrics};
 pub use readiness::{
     CircuitState, OperationalMetric, OperationalSnapshot, ProbeCoverage, ReadinessDisposition,
     ReadinessPolicy, ReadinessReason,
@@ -749,6 +751,16 @@ impl From<StoreOptions> for StorageOptions {
     reason = "transaction traits mirror the Store API; the additive governance API has its own focused module"
 )]
 impl Store {
+    /// Copies bounded policy-denial and SHACL commit-gate observations without storage I/O.
+    pub fn policy_metrics(&self) -> PolicyMetrics {
+        self.storage.policy_metrics_state().snapshot()
+    }
+
+    #[cfg(any(feature = "http-client", feature = "shacl"))]
+    pub(crate) fn policy_metrics_state(&self) -> Arc<policy_metrics::PolicyMetricsState> {
+        self.storage.policy_metrics_state()
+    }
+
     /// Copies Store-bound query/update observations without acquiring a storage writer permit.
     pub fn evaluation_metrics(&self) -> EvaluationMetrics {
         self.storage.evaluation_metrics()

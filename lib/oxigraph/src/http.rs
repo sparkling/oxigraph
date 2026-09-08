@@ -402,11 +402,14 @@ struct RequestContext {
     last_error: Arc<Mutex<Option<EgressError>>>,
     timeout: Option<Duration>,
     deadline: Option<Instant>,
+    policy_metrics: Option<Arc<crate::store::policy_metrics::PolicyMetricsState>>,
+    attempt_started: Option<Instant>,
 }
 
 impl RequestContext {
     fn for_request(&self) -> Self {
         let mut context = self.clone();
+        context.attempt_started = Some(Instant::now());
         context.deadline = self
             .timeout
             .and_then(|timeout| Instant::now().checked_add(timeout));
@@ -440,6 +443,18 @@ impl RequestContext {
     }
 
     fn record_error(&self, error: &EgressError) {
+        if error.kind == EgressErrorKind::PolicyDenied
+            && let (Some(metrics), Some(started)) = (&self.policy_metrics, self.attempt_started)
+        {
+            metrics.deny(
+                match self.purpose {
+                    EgressPurpose::Service => crate::store::PolicyDenialPurpose::Service,
+                    EgressPurpose::Load => crate::store::PolicyDenialPurpose::Load,
+                    EgressPurpose::Document => crate::store::PolicyDenialPurpose::Document,
+                },
+                started.elapsed(),
+            );
+        }
         let mut slot = self
             .last_error
             .lock()
@@ -504,6 +519,8 @@ impl HttpClient {
                 last_error: Arc::new(Mutex::new(None)),
                 timeout,
                 deadline: None,
+                policy_metrics: None,
+                attempt_started: None,
             },
         }
     }
@@ -541,6 +558,14 @@ impl HttpClient {
         client
     }
 
+    pub(crate) fn with_policy_metrics(
+        mut self,
+        metrics: Arc<crate::store::policy_metrics::PolicyMetricsState>,
+    ) -> Self {
+        self.context.policy_metrics = Some(metrics);
+        self
+    }
+
     pub(crate) fn for_operation(&self) -> Self {
         let mut client = self.clone();
         client.context.last_error = Arc::new(Mutex::new(None));
@@ -554,9 +579,11 @@ impl HttpClient {
     pub(crate) fn validate_document_target(&self, target: &str) -> Result<(), EgressError> {
         self.context.ensure_alive()?;
         if self.context.policy.is_some() {
+            let mut context = self.context.clone();
+            context.attempt_started = Some(Instant::now());
             parse_request_target(target)
                 .map(|_| ())
-                .map_err(|kind| self.context.error(kind, None))?;
+                .map_err(|kind| context.error(kind, None))?;
         }
         Ok(())
     }

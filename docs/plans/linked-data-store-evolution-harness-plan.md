@@ -6,7 +6,8 @@
   receipts, and failure closure are implemented. G2.5 native readiness and
   contributor observations, loopback endpoints, and transaction terminal
   and Store-bound query/update counters/histograms are implemented;
-  denial-attempt and validation telemetry remain active.
+  denial-attempt and SHACL commit-gate telemetry close bounded G2.5. G2.6 backup
+  receipt creation is next.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
@@ -69,7 +70,8 @@ SHACL gate; G2.4b task `task-1787670631837-w5ac24` closes bounded policy receipt
 expiry, and injected failures. G2.5 task `task-1787851231441-1gdfzd` has native
 readiness/contributor observations, loopback endpoints, and transaction terminal
 counters/histograms plus Store-bound query/update evaluation observations. It
-remains active for denial-attempt and validation telemetry required by P1.4a.
+is complete with denial-attempt and SHACL commit-gate telemetry required by P1.4a.
+G2.6 backup receipt creation is the next active delivery slice.
 
 G1.7, ADR-0034 through ADR-0041, Dream Machine, GEPA/AVO, broad Jena/RDF4J
 parity, and the P1-P3 product portfolio remain future work. They require a
@@ -107,9 +109,10 @@ close that slice. G2.5 now adds bounded native readiness, fixed gauges, and a
 canonical contributor inventory with strict required-provider checks and
 explicit optional degradation. The opt-in CLI loopback endpoints expose these
 observations, transaction terminal and Store-bound query/update counters and
-histograms. Denial-attempt and validation telemetry remain before G2.6–G2.7
+histograms. Denial-attempt and SHACL commit-gate telemetry now close G2.5 before
+G2.6–G2.7
 backup/restore. Remaining G3/G4 capabilities stay in the
-programme; the native G2.5 fragment does not close the full task.
+programme; G2.5 completion does not close backup/restore or the wider programme.
 No harness or new dependency version was added; receipt hashing reuses the
 already-locked workspace `sha2` dependency. Current behavior is documented in
 [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md).

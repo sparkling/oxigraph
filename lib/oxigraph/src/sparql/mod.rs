@@ -108,6 +108,29 @@ pub struct SparqlEvaluator {
     inner: QueryEvaluator,
 }
 
+struct PreparedEvaluator {
+    inner: QueryEvaluator,
+    #[cfg(feature = "http-client")]
+    service_client: Option<HttpClient>,
+}
+
+#[cfg(feature = "http-client")]
+fn bind_store_service(
+    evaluator: QueryEvaluator,
+    client: Option<HttpClient>,
+    store: &Store,
+) -> QueryEvaluator {
+    if let Some(client) = client {
+        let version = evaluator.version();
+        evaluator.with_default_service_handler(HttpServiceHandler::new(
+            client.with_policy_metrics(store.policy_metrics_state()),
+            version,
+        ))
+    } else {
+        evaluator
+    }
+}
+
 impl SparqlEvaluator {
     /// Creates an evaluator using the default parser and evaluation settings.
     pub fn new() -> Self {
@@ -471,16 +494,23 @@ impl SparqlEvaluator {
     }
 
     #[cfg_attr(not(feature = "http-client"), expect(unused_mut))]
-    fn into_evaluator(mut self) -> QueryEvaluator {
+    fn into_evaluator(mut self) -> PreparedEvaluator {
         #[cfg(feature = "http-client")]
-        if self.with_http_default_service_handler {
+        let service_client = self
+            .with_http_default_service_handler
+            .then(|| self.http_client(EgressPurpose::Service));
+        #[cfg(feature = "http-client")]
+        if let Some(client) = &service_client {
             let version = self.inner.version();
-            let client = self.http_client(EgressPurpose::Service);
             self.inner = self
                 .inner
-                .with_default_service_handler(HttpServiceHandler::new(client, version))
+                .with_default_service_handler(HttpServiceHandler::new(client.clone(), version));
         }
-        self.inner
+        PreparedEvaluator {
+            inner: self.inner,
+            #[cfg(feature = "http-client")]
+            service_client,
+        }
     }
 
     /// Parse a query and returns a [`PreparedSparqlQuery`] for the current evaluator.
@@ -565,10 +595,13 @@ impl SparqlEvaluator {
     /// ```
     pub fn for_query(self, query: Query) -> PreparedSparqlQuery {
         let dataset = query.dataset().cloned().map(Into::into).unwrap_or_default();
+        let evaluator = self.into_evaluator();
         PreparedSparqlQuery {
             dataset,
             query,
-            evaluator: self.into_evaluator(),
+            evaluator: evaluator.inner,
+            #[cfg(feature = "http-client")]
+            service_client: evaluator.service_client,
             substitutions: HashMap::new(),
         }
     }
@@ -632,12 +665,15 @@ impl SparqlEvaluator {
         let cancellation_token = self.cancellation_token.clone();
         #[cfg(feature = "http-client")]
         let client = self.http_client(EgressPurpose::Load);
+        let evaluator = self.into_evaluator();
         PreparedSparqlUpdate::new(
-            self.into_evaluator(),
+            evaluator.inner,
             update,
             cancellation_token,
             #[cfg(feature = "http-client")]
             client,
+            #[cfg(feature = "http-client")]
+            evaluator.service_client,
         )
     }
 }
@@ -688,6 +724,8 @@ impl Default for SparqlEvaluator {
 #[must_use]
 pub struct PreparedSparqlQuery {
     evaluator: QueryEvaluator,
+    #[cfg(feature = "http-client")]
+    service_client: Option<HttpClient>,
     query: Query,
     dataset: QueryDatasetSpecification,
     substitutions: HashMap<Variable, Term>,
@@ -747,8 +785,13 @@ impl PreparedSparqlQuery {
     }
 
     /// Bind the prepared query to the [`Store`] it should be evaluated on.
-    pub fn on_store(self, store: &Store) -> BoundPreparedSparqlQuery<'static> {
+    #[cfg_attr(not(feature = "http-client"), expect(unused_mut))]
+    pub fn on_store(mut self, store: &Store) -> BoundPreparedSparqlQuery<'static> {
         let observation = store.start_evaluation_observation(EvaluationOperation::Query);
+        #[cfg(feature = "http-client")]
+        {
+            self.evaluator = bind_store_service(self.evaluator, self.service_client.take(), store);
+        }
         let reader = store.storage().snapshot();
         let queryable_dataset = DatasetView::new(reader);
         let mut bound = self.on_queryable_dataset(queryable_dataset);
@@ -765,6 +808,10 @@ impl PreparedSparqlQuery {
     ) -> Result<BoundPreparedSparqlQuery<'static, QueryEntailmentDataset>, QueryEntailmentError>
     {
         let mut observation = store.start_evaluation_observation(EvaluationOperation::Query);
+        #[cfg(feature = "http-client")]
+        {
+            self.evaluator = bind_store_service(self.evaluator, self.service_client.take(), store);
+        }
         let queryable_dataset = match QueryEntailmentDataset::from_store_with_query_dataset(
             store,
             options,

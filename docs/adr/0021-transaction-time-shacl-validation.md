@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-09-07
+- Updated: 2026-09-08
 - Deciders: Oxigraph parity programme
 - Implementation status: G2.4a full staged-view gate and G2.4b native bounded
   policy receipts/failure closure implemented; opt-in Rust API only
@@ -188,6 +188,14 @@ every-byte corruption/truncation, impossible rechecksummed evidence, atomic
 expiry, backup, compaction, and read-only reopen. The native scope is complete;
 HTTP/binding policy configuration, global enforcement, incremental validation,
 remote imports, and production/power-loss qualification are not claimed.
+
+G2.5's additive `Store::policy_metrics()` records each returned native SHACL
+commit-gate disposition and elapsed duration independently of transaction
+outcome. Accepted validation plus ambiguous commit remains accepted validation;
+rollback failure does not replace the validation disposition. It records no
+RDF or receipt payload and does not change gate decisions or durable evidence.
+The measurement scope and exclusions are defined in
+[ADR-0022](0022-operational-readiness-backup-and-recovery.md#policy-observation-and-g25-closure-2026-09-08).
 
 This additive outcome tag is a storage compatibility boundary: older binaries
 reject `[2,5]` on governed lookup/outbox access. No global schema migration,

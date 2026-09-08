@@ -209,6 +209,7 @@ pub struct Storage {
     kind: StorageKind,
     transaction_metrics: Arc<TransactionMetricsState>,
     evaluation_metrics: Arc<EvaluationMetricsState>,
+    policy_metrics: Arc<crate::store::policy_metrics::PolicyMetricsState>,
 }
 
 #[derive(Clone)]
@@ -219,6 +220,11 @@ enum StorageKind {
 }
 
 impl Storage {
+    pub(crate) fn policy_metrics_state(
+        &self,
+    ) -> Arc<crate::store::policy_metrics::PolicyMetricsState> {
+        Arc::clone(&self.policy_metrics)
+    }
     pub(crate) fn evaluation_metrics(&self) -> crate::store::EvaluationMetrics {
         self.evaluation_metrics.snapshot()
     }
@@ -249,6 +255,7 @@ impl Storage {
             kind: StorageKind::Memory(MemoryStorage::new()),
             transaction_metrics: Arc::default(),
             evaluation_metrics: Arc::default(),
+            policy_metrics: Arc::default(),
         })
     }
 
@@ -258,6 +265,7 @@ impl Storage {
             kind: StorageKind::RocksDb(RocksDbStorage::open(path)?),
             transaction_metrics: Arc::default(),
             evaluation_metrics: Arc::default(),
+            policy_metrics: Arc::default(),
         })
     }
 
@@ -273,6 +281,7 @@ impl Storage {
             )?),
             transaction_metrics: Arc::default(),
             evaluation_metrics: Arc::default(),
+            policy_metrics: Arc::default(),
         })
     }
 
@@ -282,6 +291,7 @@ impl Storage {
             kind: StorageKind::RocksDb(RocksDbStorage::open_read_only(path)?),
             transaction_metrics: Arc::default(),
             evaluation_metrics: Arc::default(),
+            policy_metrics: Arc::default(),
         })
     }
 

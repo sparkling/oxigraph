@@ -94,22 +94,23 @@ impl TransactionDurationHistogram {
         &self,
         output: &mut impl Write,
         family: &'static str,
-        outcome: &'static str,
+        label: &'static str,
+        value: &'static str,
     ) -> fmt::Result {
-        for (label, count) in BOUND_LABELS.iter().zip(self.buckets) {
+        for (bound, count) in BOUND_LABELS.iter().zip(self.buckets) {
             writeln!(
                 output,
-                "{family}_bucket{{outcome=\"{outcome}\",le=\"{label}\"}} {count}"
+                "{family}_bucket{{{label}=\"{value}\",le=\"{bound}\"}} {count}"
             )?;
         }
         writeln!(
             output,
-            "{family}_count{{outcome=\"{outcome}\"}} {}",
+            "{family}_count{{{label}=\"{value}\"}} {}",
             self.count()
         )?;
         writeln!(
             output,
-            "{family}_sum{{outcome=\"{outcome}\"}} {}.{:06}",
+            "{family}_sum{{{label}=\"{value}\"}} {}.{:06}",
             self.sum_micros / 1_000_000,
             self.sum_micros % 1_000_000
         )
@@ -168,6 +169,7 @@ impl TransactionMetrics {
             self.duration(outcome).write_series(
                 output,
                 "oxigraph_transaction_duration_seconds",
+                "outcome",
                 outcome.as_str(),
             )?;
         }
