@@ -130,6 +130,10 @@ name = "text_service"
 required-features = ["text-index"]
 
 [[example]]
+name = "text_benchmark"
+required-features = ["text-index"]
+
+[[example]]
 name = "spatial_index"
 required-features = ["spatial-index"]
 

@@ -1100,6 +1100,10 @@ G3.3 retains only its separately gated performance/promotion work. Its
 [bounded candidate correction](../adr/0024-rebuildable-derived-indexes.md#bounded-text-candidate-enumeration-2026-09-08)
 now removes the duplicate engine scan and observes cancellation/overflow during
 enumeration; native work/equivalence checks are not full performance acceptance.
+The [native baseline](../../bench/text-benchmark.md#observed-baseline--2026-09-08)
+passes 837 query checks across three fixed scales, plus explicit lag/resource
+checks. Repeated strict admission is the measured short-query bottleneck;
+numeric promotion thresholds remain unratified.
 G3.4 now adds
 the optional native CRS84 spatial provider with exact refinement, strict retained
 snapshots and bounded ordered catch-up, plus reopen/backup/restore tests. Its

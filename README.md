@@ -90,6 +90,8 @@ For a SPARQL join and empty-result lag demonstration, run
 features disabled; it does not add Node to the application. The locked dependency
 graph declares a Rust 1.90 minimum for this feature; validation used Rust 1.98.
 The workspace's declared 1.87 MSRV is not a tested claim for this optional lane.
+The [native text baseline](bench/text-benchmark.md) provides reproducible
+equivalence, logical-limit and timing diagnostics without a promotion claim.
 
 Try the [spatial example](lib/oxigraph/examples/spatial_index.rs) with
 `cargo run --locked -p oxigraph --features spatial-index --example spatial_index`.

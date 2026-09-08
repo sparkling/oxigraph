@@ -286,6 +286,12 @@ resource/control checks, not an end-to-end speedup or full G3.3 performance pass
 Profile bytes, scoring/order, freshness, payload hydration, independent
 reconciliation and primary verification are unchanged.
 
+The [native text baseline](../../bench/text-benchmark.md) measures fixed
+1,000/10,000/100,000-document inputs with an independent ordered result oracle,
+explicit candidate ceilings and lag/catch-up checks. It separates admission
+from hydration-inclusive queries and reports cache/RSS limitations. This is
+baseline support, not a newly ratified speed threshold or production promotion.
+
 ### G3.3 local SPARQL text SERVICE v1 (2026-09-08)
 
 The optional [text binding](../../lib/oxigraph/src/sparql/text_service.rs) adds
