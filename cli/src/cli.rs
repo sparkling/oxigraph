@@ -49,6 +49,9 @@ pub enum Command {
         /// Host and port to listen to
         #[arg(short, long, default_value = "localhost:7878", value_hint = ValueHint::Hostname)]
         bind: String,
+        /// Allow an unauthenticated listener on non-loopback addresses (unsafe development use)
+        #[arg(long)]
+        unsafe_allow_remote_anonymous: bool,
         /// Optional separate loopback health/readiness/metrics listener (no maintenance routes)
         #[arg(long, value_parser = loopback_admin_address)]
         admin_bind: Option<SocketAddr>,
@@ -85,6 +88,9 @@ pub enum Command {
         /// Host and port to listen to
         #[arg(short, long, default_value = "localhost:7878")]
         bind: String,
+        /// Allow an unauthenticated listener on non-loopback addresses (unsafe development use)
+        #[arg(long)]
+        unsafe_allow_remote_anonymous: bool,
         /// Optional separate loopback health/readiness/metrics listener (no maintenance routes)
         #[arg(long, value_parser = loopback_admin_address)]
         admin_bind: Option<SocketAddr>,

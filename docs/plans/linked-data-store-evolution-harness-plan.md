@@ -1252,6 +1252,11 @@ widens core RDF semantics implicitly.
 | G4.7 Incremental entailment projections        | G2.3c, G2.7                            |          XL | Insert/delete/clear/drop truth maintenance differentially matches full recomputation; unsupported recursion/deletion shapes rebuild or fail typed                       |
 | G4.8 Analytical and WCOJ research path         | G3.2; G4.2 for server/`Auto` promotion | Research/XL | A separate optional executor beats frozen cyclic workloads within resource ceilings while matching the ordinary evaluator exactly and preserving its fallback           |
 
+G4.1 is active: the native anonymous startup boundary now requires explicit
+non-loopback consent before store open and binds the exact validated address
+set. Request identity, authorization and trusted-proxy/audit gates remain open;
+this startup slice does not claim full G4.1 completion.
+
 ## Evaluator DAG
 
 The harness delegates rather than duplicates.

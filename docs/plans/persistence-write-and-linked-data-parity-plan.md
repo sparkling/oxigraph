@@ -1384,6 +1384,11 @@ Acceptance:
 
 ### P3 — explicit linked-data platform decisions
 
+G4.1 is active after native G3.3 completion. Its first ADR-0026 slice enforces
+explicit anonymous non-loopback startup consent before store open, including
+the Docker default; loopback remains usable. Principal propagation and
+per-request authorization/proxy/audit gates are still outstanding.
+
 The programme now records the named decisions admitted by this user:
 
 - ADR-0026: service identity and authorization;

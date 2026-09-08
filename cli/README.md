@@ -111,6 +111,22 @@ It provides the following REST actions:
 
 Use `oxigraph --help` to see the possible options when starting the server.
 
+### Anonymous listener boundary (fork)
+
+`serve` and `serve-read-only` use anonymous access for trusted local use.
+Every resolved bind address must be loopback unless the operator explicitly
+passes `--unsafe-allow-remote-anonymous`. Wildcard addresses (`0.0.0.0`, `::`)
+and mixed loopback/non-loopback DNS answers require that option too. The server
+resolves once and binds only the exact validated addresses; rejection happens
+before opening or creating the store or either listener. IPv4-mapped IPv6
+addresses are conservatively treated as non-loopback; use `127.0.0.1` or `::1`.
+
+The unsafe option emits a warning and does **not** add authentication,
+authorization, or trusted-proxy identity. Read-only mode and CORS are not access
+control. Do not expose anonymous data or the separate operator listener to
+untrusted clients. Request identity, coarse authorization and policy reload
+remain G4.1 work under [ADR-0026](../docs/adr/0026-service-identity-and-authorization.md).
+
 ### Local operational observations (fork)
 
 `serve` and `serve-read-only` optionally expose a separate loopback listener:
@@ -290,10 +306,20 @@ docker run --rm ghcr.io/oxigraph/oxigraph --help
 ```
 
 ### Run the Webserver
-Expose the server on port `7878` of the host machine, and save data on the local `./data` folder
+
+Published upstream images do not contain this fork's changes. From the fork
+repository root, build a local image and explicitly opt in to the container's
+non-loopback listener, publishing it only on host loopback:
+
 ```sh
-docker run --rm -v $PWD/data:/data -p 7878:7878 ghcr.io/oxigraph/oxigraph serve --location /data --bind 0.0.0.0:7878
+docker build -f cli/Dockerfile -t oxigraph-fork .
+docker run --rm -v "$PWD/data:/data" -p 127.0.0.1:7878:7878 oxigraph-fork serve --location /data --bind 0.0.0.0:7878 --unsafe-allow-remote-anonymous
 ```
+
+Other containers on the container network may still reach that anonymous
+listener. Use only a trusted local network. Without the explicit command, this
+fork's image defaults to loopback inside the container and is not reachable
+through Docker port publishing. No fork image publication is implied.
 
 You can then access it from your machine on port `7878`:
 

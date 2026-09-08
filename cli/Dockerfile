@@ -22,4 +22,4 @@ RUN if [ "$BUILDARCH" != "$TARGETARCH" ] && [ "$TARGETARCH" = "arm64" ] ; \
 FROM gcr.io/distroless/cc-debian12
 COPY --from=builder /oxigraph/target/release/oxigraph /usr/local/bin/oxigraph
 ENTRYPOINT [ "/usr/local/bin/oxigraph" ]
-CMD [ "serve", "--location", "/data", "--bind", "0.0.0.0:7878" ]
+CMD [ "serve", "--location", "/data" ]

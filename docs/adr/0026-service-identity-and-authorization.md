@@ -2,9 +2,10 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-08-25
+- Updated: 2026-09-09
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; planned by G4.1
+- Implementation status: anonymous listener startup boundary implemented;
+  request identity, coarse authorization, proxy trust and audit/reload remain G4.1
 - Programme task: `task-1787670631989-m5vxqk`
 - **Depends on**:
   [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md)
@@ -94,6 +95,25 @@ security, data encryption, identity federation, billing, or a multi-repository
 control plane.
 
 ## Staged implementation and evaluator gates
+
+### Native anonymous listener slice (2026-09-09)
+
+`serve` and `serve-read-only` now resolve the configured address once, validate
+the whole resolved set before store open or listener startup, and bind exactly
+those validated sockets. Anonymous non-loopback listening requires the explicit
+`--unsafe-allow-remote-anonymous` development option and emits a warning.
+Wildcard, mixed DNS and IPv4-mapped IPv6 addresses do not bypass this rule.
+The Docker default is loopback too; the CLI README documents explicit container
+opt-in and its remaining network exposure. No new dependency is introduced.
+
+Native tests cover IPv4/IPv6 loopback, wildcard/non-loopback/mixed/empty sets,
+single resolution retention, both command paths rejecting before store open,
+and explicit consent/warning. Existing loopback wire tests retain ordinary
+HTTP behavior. This implements the compatibility/open-profile requirement,
+**not** authentication, request authorization, trusted proxy support, audit,
+policy reload or G4.1 completion. There is no authorization advertisement.
+
+### Remaining gates
 
 1. **Identity seam:** freeze compile fixtures for a custom provider and
    authorizer, plus wire tests for anonymous, authenticated, malformed,

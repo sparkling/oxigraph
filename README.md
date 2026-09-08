@@ -161,6 +161,10 @@ cargo build --locked --release -p oxigraph-cli --bin oxigraph
 ```
 
 See [CLI installation requirements and usage](cli/README.md#installation).
+Anonymous serving defaults to loopback. Non-loopback binds now require explicit
+`--unsafe-allow-remote-anonymous` consent before opening a store; this is a
+startup safeguard, not implemented request authentication. See the
+[server access boundary](cli/README.md#anonymous-listener-boundary-fork).
 RocksDB remains the persistent backend. The custom-backend tests prove the
 public extension contract, not deployment of a separate replacement backend.
 G1.7 and ADR-0034 through ADR-0041 remain future, non-gating harness work.

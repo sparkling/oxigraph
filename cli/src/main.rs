@@ -35,7 +35,6 @@ use std::env;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{self, BufWriter, Read, Write, stdin, stdout};
-use std::net::ToSocketAddrs;
 #[cfg(target_os = "linux")]
 use std::os::unix::net::UnixDatagram;
 use std::path::{Path, PathBuf};
@@ -59,6 +58,7 @@ mod operations;
 #[cfg(test)]
 mod protocol_wire_tests;
 mod rdf_response;
+mod server_access;
 mod service_description;
 #[cfg(test)]
 mod simple_query_tests;
@@ -92,43 +92,53 @@ pub fn main() -> anyhow::Result<()> {
         Command::Serve {
             location,
             bind,
+            unsafe_allow_remote_anonymous,
             admin_bind,
             cors,
             union_default_graph,
             entailment,
             timeout_s,
-        } => serve(
-            if let Some(location) = location {
-                Store::open(location)
-            } else {
-                Store::new()
-            }?,
-            &bind,
-            admin_bind,
-            false,
-            cors,
-            union_default_graph,
-            entailment.into(),
-            timeout_s,
-        ),
+        } => {
+            let listener =
+                server_access::AnonymousListener::resolve(bind, unsafe_allow_remote_anonymous)?;
+            serve(
+                if let Some(location) = location {
+                    Store::open(location)
+                } else {
+                    Store::new()
+                }?,
+                &listener,
+                admin_bind,
+                false,
+                cors,
+                union_default_graph,
+                entailment.into(),
+                timeout_s,
+            )
+        }
         Command::ServeReadOnly {
             location,
             bind,
+            unsafe_allow_remote_anonymous,
             admin_bind,
             cors,
             union_default_graph,
             entailment,
             timeout_s,
-        } => serve(
-            Store::open_read_only(location)?,
-            &bind,
-            admin_bind,
-            true,
-            cors,
-            union_default_graph,
-            entailment.into(),
-            timeout_s,
-        ),
+        } => {
+            let listener =
+                server_access::AnonymousListener::resolve(bind, unsafe_allow_remote_anonymous)?;
+            serve(
+                Store::open_read_only(location)?,
+                &listener,
+                admin_bind,
+                true,
+                cors,
+                union_default_graph,
+                entailment.into(),
+                timeout_s,
+            )
+        }
         Command::Backup {
             location,
             destination,
@@ -1092,7 +1102,7 @@ fn rdf_format_from_name(name: &str) -> anyhow::Result<RdfFormat> {
 
 fn serve(
     store: Store,
-    bind: &str,
+    listener: &server_access::AnonymousListener,
     admin_bind: Option<std::net::SocketAddr>,
     read_only: bool,
     cors: bool,
@@ -1129,8 +1139,8 @@ fn serve(
     .with_global_timeout(timeout.unwrap_or(HTTP_TIMEOUT))
     .with_server_name(concat!("Oxigraph/", env!("CARGO_PKG_VERSION")))?
     .with_max_concurrent_connections(available_parallelism()?.get() * 128);
-    for socket in bind.to_socket_addrs()? {
-        server = server.bind(socket);
+    for socket in listener.addresses() {
+        server = server.bind(*socket);
     }
     let server = server.spawn()?;
     // Both listeners have CLI-process lifetime: oxhttp exposes no shutdown API.
@@ -1142,7 +1152,7 @@ fn serve(
     #[cfg(target_os = "linux")]
     systemd_notify_ready()?;
     started.store(true, Ordering::Release);
-    eprintln!("Listening for requests at http://{bind}");
+    eprintln!("Listening for requests at http://{}", listener.bind());
     server.join()?;
     if let Some(admin_server) = admin_server {
         admin_server.join()?;

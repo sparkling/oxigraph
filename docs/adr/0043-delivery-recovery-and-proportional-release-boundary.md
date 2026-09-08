@@ -117,6 +117,9 @@
   that delivered task active for unspecified later promotion was process drift,
   not a missing text feature. G4.1 now owns the next product delivery step under
   ADR-0026; no text benchmark rerun or harness expansion gates its implementation.
+  G4.1's first native slice rejects anonymous non-loopback startup without
+  explicit development consent before store open and reuses the exact validated
+  socket set. Loopback serving is unchanged; request authorization remains open.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
