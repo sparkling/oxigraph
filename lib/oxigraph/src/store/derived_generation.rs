@@ -692,7 +692,7 @@ impl DerivedFiles {
     /// Hydrate an immutable provider payload against this retained inventory.
     /// Checking the copied bytes closes the gap between view admission and a
     /// later query; an earlier successful generation open is not a file lease.
-    #[cfg(feature = "text-index")]
+    #[cfg(any(feature = "text-index", feature = "spatial-index"))]
     pub(super) fn read_verified(
         &self,
         name: &str,

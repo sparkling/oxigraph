@@ -58,6 +58,17 @@ Run `cargo run --locked -p oxigraph --features text-index --example text_service
 for the SPARQL example. This is a correctness baseline, not an acceleration claim.
 Strict admission currently scans primary contents; no acceleration is claimed.
 
+The optional native `spatial-index` feature adds `store::SpatialIndexProvider`
+and `SpatialQuery`: CRS84 envelope candidates refine through existing exact
+predicates on the retained primary snapshot. It reuses durable generations,
+bounded ordered delta catch-up and backup/restore. Strict lag is an error;
+there is no eventual spatial mode, SPARQL binding or server route in this slice.
+The v1 profile rejects invalid/nonfinite/extreme shapes and nonempty geometry
+collections with typed failures, without changing ordinary GeoSPARQL functions.
+Run `cargo run --locked -p oxigraph --features spatial-index --example spatial_index`.
+This adds optional `rstar` 0.13.0, not Node. The locked `geo` declares Rust 1.88;
+Linux/Rust 1.98 was tested. Full-scan reconciliation makes no acceleration claim.
+
 A preliminary benchmark [is provided](../bench/README.md). Oxigraph internal design [is described on the wiki](https://github.com/oxigraph/oxigraph/wiki/Architecture).
 
 The main entry point of Oxigraph is the [`Store`](store::Store) struct:

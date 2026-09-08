@@ -50,6 +50,7 @@ owl2-rl = ["dep:oxowl"]
 shacl = ["dep:oxshacl"]
 # Native optional full-text provider; standard SPARQL remains independent.
 text-index = ["rocksdb", "dep:tantivy"]
+spatial-index = ["rocksdb", "dep:spargeo", "dep:rstar"]
 
 [dependencies]
 dashmap.workspace = true
@@ -81,6 +82,8 @@ libc.workspace = true
 oxhttp = { workspace = true, optional = true, features = ["flate2"] }
 oxrocksdb-sys = { workspace = true, optional = true }
 tantivy = { version = "0.26.1", default-features = false, optional = true }
+rstar = { version = "0.13", default-features = false, optional = true }
+spargeo = { workspace = true, optional = true }
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
 getrandom.workspace = true
@@ -124,3 +127,7 @@ required-features = ["text-index"]
 [[example]]
 name = "text_service"
 required-features = ["text-index"]
+
+[[example]]
+name = "spatial_index"
+required-features = ["spatial-index"]

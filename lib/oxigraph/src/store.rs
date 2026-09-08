@@ -57,8 +57,14 @@ mod derived;
 mod derived_generation;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod restore;
+#[cfg(all(not(target_family = "wasm"), feature = "spatial-index"))]
+mod spatial_index;
 #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
 mod text_index;
+#[cfg(all(not(target_family = "wasm"), feature = "spatial-index"))]
+pub use spatial_index::{
+    SpatialError, SpatialIndexProvider, SpatialLimits, SpatialQuery, SpatialResults,
+};
 
 pub use crate::storage::TransactionStartControl;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]

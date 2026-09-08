@@ -11,7 +11,8 @@
   G2.7 fresh-directory restore/reconciliation and local baselined drills are
   implemented. G3.0 native inputs, durable generation reconciliation/activation
   and G2 lifecycle hooks are implemented. G3.3 native text and opt-in SPARQL
-  integration are implemented; performance gates and G3.4 spatial remain.
+  integration are implemented. G3.4 native spatial queries/catch-up are implemented;
+  spatial SPARQL integration and separate performance/promotion gates remain.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
@@ -81,8 +82,9 @@ verification. G2.7 task `task-1787851233022-antw51` implements fresh-directory
 restore, primary/contributor reconciliation and artifact-bound local baselines.
 G3.0 shared native lifecycle is implemented: snapshot/delta inputs, checksummed
 generations, strict primary reconciliation, atomic activation and G2 hooks.
-G3.3 native text and SPARQL joins are implemented; G3.3 performance gates and
-G3.4 spatial remain outstanding.
+G3.3 native text/SPARQL joins and G3.4 native spatial queries/catch-up are
+implemented. Spatial SPARQL integration and separate provider performance/
+promotion gates remain outstanding.
 
 G1.7, ADR-0034 through ADR-0041, Dream Machine, GEPA/AVO, broad Jena/RDF4J
 parity, and the P1-P3 product portfolio remain future work. They require a
@@ -1085,7 +1087,12 @@ strict/explicit-eventual primary verification. The opt-in
 [local SPARQL text SERVICE](../adr/0024-rebuildable-derived-indexes.md#g33-local-sparql-text-service-v1-2026-09-08)
 now adds snapshot-consistent literal/RDF joins, bounded caching and independent
 empty-result lag context. Frozen performance/promotion receipts remain, so
-G3.3 stays active; G3.4 is next. See
+G3.3 retains only its separately gated performance/promotion work. G3.4 now adds
+the optional native CRS84 spatial provider with exact refinement, strict retained
+snapshots and bounded ordered catch-up, plus reopen/backup/restore tests. Its
+profile explicitly rejects invalid/nonfinite/extreme shapes and nonempty geometry
+collections. Spatial SPARQL integration and frozen performance/promotion gates
+remain active. See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 
 | Task                                            | Depends on                                                                                                                          | Size | Exit gate                                                                                                                                                                                                                                                                        |

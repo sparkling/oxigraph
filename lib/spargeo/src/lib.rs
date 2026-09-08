@@ -8,7 +8,10 @@ mod boundary;
 mod geosparql_functions;
 mod parse;
 mod serialization;
+mod spatial;
 mod units;
+
+pub use spatial::{SpatialEnvelope, spatial_envelope};
 
 pub mod vocab;
 

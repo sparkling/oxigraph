@@ -11,7 +11,8 @@
   restore/reconciliation and local baselined drills are implemented. G3.0 native
   lifecycle includes stable inputs, bounded deltas, durable generation
   reconciliation/activation and G2 hooks. G3.3 native text and opt-in SPARQL
-  integration are implemented; performance gates and G3.4 spatial remain.
+  integration are implemented. G3.4 native spatial queries/catch-up are implemented;
+  spatial SPARQL integration and separate performance/promotion gates remain.
   Backend-neutral writes and the upstream delta are verified. G1.7,
   ADR-0034 through ADR-0041, and P1-P3 breadth are future roadmap work and do
   not gate R1
@@ -149,8 +150,9 @@ validation and policy receipt/failure closure are implemented. G2.5 bounded
 operational observations are complete; G2.6 checkpoint packages and backup
 receipts are implemented. G2.7 fresh-directory restore and reconciliation close
 the native ADR-0022 boundary. G3.0 native generation lifecycle is implemented;
-G3.3 native text and SPARQL joins are implemented, with performance gates still
-open, followed by G3.4 spatial and remaining G3/G4 work.
+G3.3 native text/SPARQL joins and G3.4 native spatial queries/catch-up are
+implemented. Spatial SPARQL integration, separate performance/promotion gates,
+and remaining G3/G4 work are outstanding.
 
 The clone is patch-current with audited `upstream/main` `7ce152a1`. Local
 commit `eb0f0cc2` integrates its merged-default-graph product change plus two
@@ -970,7 +972,8 @@ histograms. Denial-attempt and SHACL commit-gate observations close G2.5;
 G2.6 backup receipts and offline verification plus G2.7 fresh-directory restore
 and reconciliation are implemented. G3.0 native inputs, durable generations,
 strict snapshot verification and G2 integration are implemented. G3.3 native text
-and SPARQL joins are implemented; performance gates and G3.4 spatial remain.
+and SPARQL joins are implemented. G3.4 native spatial queries/catch-up are
+implemented; spatial SPARQL integration and separate performance gates remain.
 The following frozen-candidate admission conditions apply only to optional
 containment; under ADR-0043 they do not block direct native product work.
 
@@ -1134,7 +1137,8 @@ and restore-to-validated/synced-data duration. They do not invent production
 RPO/RTO objectives or measure actual lost changes/full-service recovery; see
 [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md#native-g27-fresh-directory-restore-2026-09-08).
 G3.0 native lifecycle and G3.3 native/SPARQL text behavior are implemented;
-G3.3 performance gates and G3.4 spatial remain.
+G3.4 native spatial queries/catch-up are implemented; spatial SPARQL integration
+and separate provider performance gates remain.
 
 - Restore into a fresh directory, open the store, run its storage validator,
   and verify topology, namespaces, outbox position, and every declared
@@ -1233,6 +1237,14 @@ Acceptance:
 #### P2.3 Spatial index — L/XL
 
 Dependencies: G3.0 and existing `spargeo` correctness tests.
+
+The first G3.4 increment provides optional native CRS84 envelope/exact queries,
+strict snapshot freshness, bounded ordered change overlays, explicit rebuild,
+reopen and G2 backup/restore. All 24 relation names match direct exact evaluation
+for the admitted fixture profile. Invalid/nonfinite/extreme geometry and nonempty
+collections fail typed; no reprojection or ordinary SPARQL change is implied.
+See [the exact native contract](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08).
+Spatial SPARQL integration and frozen performance/promotion receipts remain.
 
 - Index per-CRS geometry envelopes. Transform/normalize only where exact
   transformation semantics and error bounds are proven.

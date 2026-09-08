@@ -7,8 +7,9 @@
 - Implementation status: G3.0 native local lifecycle implemented: snapshot/delta
   inputs, durable generation reconciliation/activation, bounded provider output,
   crash recovery and G2 readiness/backup/restore integration. G3.3 adds the native
-  text provider/Rust query and opt-in SPARQL SERVICE slices below. G3.4 spatial,
-  and separately gated performance/production promotion remain outstanding
+  text provider/Rust query and opt-in SPARQL SERVICE slices below. G3.4 adds the
+  native spatial provider/Rust query slice below. Spatial SPARQL integration and
+  separately gated performance/production promotion remain outstanding
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
@@ -318,6 +319,86 @@ Run the [usable example](../../lib/oxigraph/examples/text_service.rs) with
 `cargo run --locked -p oxigraph --features text-index --example text_service`.
 Frozen performance/promotion gates remain open; this is callable query behavior,
 not a speed, production qualification, or complete G3.3 claim.
+
+### G3.4 native spatial provider/Rust query slice (2026-09-08)
+
+The optional `spatial-index` feature adds
+[`SpatialIndexProvider`](../../lib/oxigraph/src/store/spatial_index.rs) and an
+engine-neutral `SpatialQuery`, reusing G3.0 without a primary commit hook. The
+only new registry package is `rstar` 0.13.0, with default features disabled;
+`spargeo` is reused locally. No Node application dependency is added. `rstar`
+declares Rust 1.85; the already locked `geo` 0.33.1 declares 1.88. This lane was
+tested on Linux/Rust 1.98, not the workspace's declared 1.87 minimum.
+
+Profile `oxigraph.spatial.crs84.rawxy.v1` uses the
+[same parser](../../lib/spargeo/src/spatial.rs) as existing exact functions.
+WKT's optional CRS must be CRS84; GeoJSON follows the current parser. Coordinates
+retain raw XY order: no axis swap, longitude wrapping, reprojection, clamping or
+topology repair. For example, a line from longitude 179 to -179 has the current
+planar envelope [-179,179], not a new antimeridian interpretation.
+
+The initial admitted profile requires finite coordinates of absolute value at
+most `1e150` and topology accepted by `geo::Validation`. Nonempty geometry
+collections are rejected even when members individually validate. A regression
+with overlapping polygon members triggered `geo` 0.33.1's topology-position debug
+assertion during direct exact evaluation. This slice avoids that unsupported
+input with a typed error; it does not fix or change ordinary GeoSPARQL evaluation.
+Invalid topology and out-of-range/nonfinite coordinates also fail build/query,
+never silently disappear from a successful index result. Unparseable or foreign-CRS
+primary literals are omitted because existing exact functions cannot return true
+for them; the same terms as query geometry return a typed query error.
+
+Empty geometries remain in an always-refined bucket, including empty geometry
+collections. An absent envelope does not mean no match. Every other candidate
+uses an inclusive bounding-box intersection before the existing exact function.
+All 24 SF/Egenhofer/RCC8 relation names are supported in the order
+`relation(candidate_literal, query_geometry)`. The three disjoint relations and
+empty query geometries inspect all records: overlapping boxes can still be
+disjoint, for example a point in a polygon hole. Graph and predicate filters,
+primary quad membership and the original exact predicate decide results.
+
+Each document retains canonical v1 quad bytes and the raw envelope, not a native
+R-tree serialization. A versioned profile/codec/RDF-mode fingerprint binds the
+provider identity. Hydration hashes bytes against the retained inventory and
+recomputes envelopes through the shared classifier; a query also independently
+reconciles the complete accepted primary geometry set. This closes missing
+additions after parser changes or ungoverned writes; checksums alone do not.
+The tree is bulk-loaded in memory per query. This full-scan correctness baseline
+is not a latency, throughput or broad GeoSPARQL conformance claim.
+
+Catch-up persists the immutable base plus a bounded, ordered semantic-change
+overlay. Quad additions/removals and compact graph/all-graph/dataset barriers
+replay in order; namespace/topology-only changes do not create documents.
+Rollback contributes no effects. G3.0 validates complete retained commits and
+requires exact reconciliation before activation. Overlay exhaustion returns
+`RebuildRequired`; callers explicitly rebuild. No automatic fallback disguises
+an ungoverned coverage gap. Fresh rebuild folds changes into a new base.
+
+Queries accept strict views only; lag/eventual admission fails with typed
+`NotFresh`. Results expose full source/applied checkpoints, candidate and exact
+match counts, and explicit output-limit truncation. Deterministic order is
+ascending canonical quad bytes; all candidates must fit before scope filtering
+or output truncation. There is no implicit top-K loss, eventual spatial result,
+SPARQL index binding, CLI route or advertisement change in this increment.
+
+Default bounds are 100,000 documents, 1 MiB per encoded record, 64 MiB base plus
+overlay payload, 10,000 candidates and 10,000 overlay records. Materialized
+documents conservatively charge key/framing/envelope bytes before insertion,
+without repeatedly recounting the whole index. Core file/input ceilings also
+apply. These are logical bounds, not RSS quotas: base/materialized/expected maps,
+one record/file copy and native geometry/tree allocations can coexist.
+Cancellation/deadline checks run at record, replay, copy and refinement boundaries;
+they cannot preempt a parser, topology-validation, tree-build or exact-engine call.
+
+The [native tests](../../lib/oxigraph/tests/spatial_index.rs) compare all 24
+relations against direct exact evaluation over the admitted fixture set, including
+holes, boundary contact, asymmetric axes, planar dateline and empty shapes.
+They also test typed excluded inputs, scope, retained snapshots, lag, ordered
+barriers, rollback, ungoverned gaps, bounded rebuild/catch-up, corruption after
+admission, abrupt process exit, reopen and backup/restore/import. Run
+`cargo run --locked -p oxigraph --features spatial-index --example spatial_index`
+for the [usable catch-up example](../../lib/oxigraph/examples/spatial_index.rs).
+Spatial SPARQL integration and frozen performance/promotion gates remain open.
 
 ### Complete lifecycle and provider boundary
 

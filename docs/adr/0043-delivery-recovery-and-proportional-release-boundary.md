@@ -39,8 +39,10 @@
   semantics and exact document/posting reconciliation. G3.3 now also provides
   opt-in local SPARQL text SERVICE joins on that same retained snapshot, with
   row-independent eventual lag context, bounded caching and fatal cancellation.
-  Performance gates, then G3.4 spatial, remain outstanding. Local implementation
-  is not publication or production recovery qualification
+  G3.4 adds a native CRS84 envelope/exact-predicate provider with bounded ordered
+  catch-up, strict freshness and the same backup/restore lifecycle. Spatial SPARQL
+  integration and separate performance/promotion gates remain outstanding.
+  Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
   `programme-controls/oxigraph-six-hour-delivery-course-correction-v1`

@@ -67,7 +67,10 @@ An opt-in prepared-query binding now adds local SPARQL text search, joining
 matching literals to ordinary RDF patterns on the same retained snapshot.
 Strict lag is a typed error; explicit eventual results report their lag even
 when empty. This is not a server endpoint or an acceleration claim;
-G3.3 performance gates and the G3.4 spatial provider remain outstanding.
+G3.4 now adds a native CRS84 spatial provider: bounded envelope candidates,
+existing exact predicates, ordered delta catch-up, strict freshness, and the same
+reopen/backup/restore lifecycle. Spatial SPARQL integration and provider performance
+gates remain outstanding.
 See the [runnable lifecycle example](lib/oxigraph/examples/derived_generations.rs)
 and [ADR-0024](docs/adr/0024-rebuildable-derived-indexes.md).
 
@@ -81,6 +84,16 @@ For a SPARQL join and empty-result lag demonstration, run
 features disabled; it does not add Node to the application. The locked dependency
 graph declares a Rust 1.90 minimum for this feature; validation used Rust 1.98.
 The workspace's declared 1.87 MSRV is not a tested claim for this optional lane.
+
+Try the [spatial example](lib/oxigraph/examples/spatial_index.rs) with
+`cargo run --locked -p oxigraph --features spatial-index --example spatial_index`.
+The optional Rust provider uses `rstar` 0.13.0; it adds no Node runtime. Its first
+profile admits valid, finite CRS84 WKT/GeoJSON shapes and empty geometries, with
+typed rejection of nonempty geometry collections and coordinates beyond its
+arithmetic range. No coordinate transformation or speed claim is made. See
+[the spatial contract](docs/adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08).
+The locked `geo` dependency declares Rust 1.88; this lane was tested on Linux/Rust
+1.98, not the base workspace's 1.87 minimum.
 
 Build this fork rather than an upstream package to obtain these changes:
 
