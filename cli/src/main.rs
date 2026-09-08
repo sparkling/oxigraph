@@ -130,9 +130,34 @@ pub fn main() -> anyhow::Result<()> {
         Command::Backup {
             location,
             destination,
+            with_receipt,
         } => {
             let store = Store::open_read_only(location)?;
-            store.backup(destination)?;
+            if with_receipt {
+                let receipt = store
+                    .backup_with_receipt(destination, &oxigraph::store::BackupOptions::default())?;
+                writeln!(
+                    stdout().lock(),
+                    "backup_complete=true files={} quads={}",
+                    receipt.files().len(),
+                    receipt.contents().quads()
+                )?;
+            } else {
+                store.backup(destination)?;
+            }
+            Ok(())
+        }
+        Command::VerifyBackup { location } => {
+            let receipt = oxigraph::store::BackupReceipt::verify(
+                location,
+                &oxigraph::store::TransactionStartControl::new(),
+            )?;
+            writeln!(
+                stdout().lock(),
+                "backup_verified=true files={} quads={}",
+                receipt.files().len(),
+                receipt.contents().quads()
+            )?;
             Ok(())
         }
         Command::Load {

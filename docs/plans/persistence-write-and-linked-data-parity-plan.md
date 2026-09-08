@@ -6,7 +6,8 @@
   and failure closure are implemented. G2.5 native readiness/contributor
   observations, loopback endpoints, and transaction terminal counters/histograms
   and Store-bound query/update evaluation are implemented. Denial-attempt and
-  SHACL commit-gate observations close bounded G2.5; G2.6 backup creation is next.
+  SHACL commit-gate observations close bounded G2.5. G2.6 checkpoint packages,
+  backup receipts and offline verification are implemented; G2.7 restore is next.
   Backend-neutral writes and the upstream delta are verified. G1.7,
   ADR-0034 through ADR-0041, and P1-P3 breadth are future roadmap work and do
   not gate R1
@@ -141,8 +142,9 @@ and the [runnable retention example](../../lib/oxigraph/examples/outbox_retentio
 The cap includes pending physical cleanup, leases fence replaced owners, and
 expired receipt markers permanently block key replay. G2.4a-b staged-view SHACL
 validation and policy receipt/failure closure are implemented. G2.5 bounded
-operational observations are complete; G2.6 backup receipts and G2.7 restore
-verification remain required, followed by the approved G3/G4 product slices.
+operational observations are complete; G2.6 checkpoint packages and backup
+receipts are implemented. G2.7 restore verification remains required, followed
+by the approved G3/G4 product slices.
 
 The clone is patch-current with audited `upstream/main` `7ce152a1`. Local
 commit `eb0f0cc2` integrates its merged-default-graph product change plus two
@@ -531,7 +533,7 @@ Evidence grade A applies to this section.
 | G09 | Outbound `SERVICE`/`LOAD` policy           | G1.5 implements one deny-by-default policy for `SERVICE`, `LOAD`, and nested retrieval with typed policy failures, origin/IP allow controls, encoded/decoded byte ceilings, time/connection budgets, and remote-read cancellation                                                                                                                                         | SERVICE disable and endpoint-specific timeout/client controls                                      | HTTP client/federation controls                                                                                                                                                   | ADR-0019 implemented; retain one fail-closed egress boundary                                                                |
 | G10 | Update-wide cancellation                   | G1.5b proves one token across validation, built-in writer admission, owned mutation, and the final pre-commit rollback boundary; G1.5c carries that exact control through negotiated custom-backend and `Store` admission; caller-owned rollback remains explicitly separate                                                                                              | Update timeouts and query abort controls                                                           | Query/FedX timeouts and circuit breakers                                                                                                                                          | Preserve the accepted negotiated binding; do not claim update-scoped rollback for a borrowed transaction without savepoints |
 | G11 | Truthful service description               | G1.6 derives deterministic federation and remote-load disclosure from effective handlers, egress policy, and compiled transport; the exact seven-stage 4/17/1/1/12 verifier accepted the product and rejected all three controls                                                                                                                                          | Broad Service Description/Fuseki feature disclosure                                                | Repository metadata and protocols                                                                                                                                                 | ADR-0019 implemented; keep configured capability distinct from remote health/current admission                              |
-| G12 | Operational metrics/admin                  | G2.5 bounded native readiness/contributor observations and fixed-label transaction, evaluation, denial and SHACL metrics; opt-in loopback health/ready/metrics routes | Ping, stats, Prometheus, backup, compaction, tasks                                                 | Server/Workbench/Console and slow-query/circuit-breaker work                                                                                                                      | G2.5 implemented; G2.6-G2.7 recovery next; automatic admission remains G4.2 |
+| G12 | Operational metrics/admin                  | G2.5 bounded native readiness/contributor observations and fixed-label transaction, evaluation, denial and SHACL metrics; opt-in loopback health/ready/metrics routes; G2.6 receipt-bearing backups | Ping, stats, Prometheus, backup, compaction, tasks                                                 | Server/Workbench/Console and slow-query/circuit-breaker work                                                                                                                      | G2.5-G2.6 implemented; G2.7 restore next; automatic admission remains G4.2 |
 | G13 | Backup/restore verification                | Backup and optimize exist; recovery is not continuously proven                                                                                                                                                                                                                                                                                                            | Live consistent backup and compaction administration                                               | Store-specific recovery tooling                                                                                                                                                   | P1 restore drills and receipts                                                                                              |
 | G14 | Full-text indexing                         | No index or SPARQL extension                                                                                                                                                                                                                                                                                                                                              | Lucene text dataset and SPARQL property function                                                   | Lucene/Elasticsearch SAIL                                                                                                                                                         | P2 optional derived-index capability                                                                                        |
 | G15 | Spatial indexing                           | GeoSPARQL functions; no persistent transaction-consistent spatial index                                                                                                                                                                                                                                                                                                   | GeoSPARQL module and spatial index management                                                      | GeoSPARQL support                                                                                                                                                                 | P2; preserve correctness without index                                                                                      |
@@ -959,7 +961,8 @@ G2.4a-b native staged-view SHACL validation and policy receipts are implemented;
 G2.5 native readiness/contributor observations and loopback endpoints are
 implemented, including transaction and Store-bound query/update counters and
 histograms. Denial-attempt and SHACL commit-gate observations close G2.5;
-backup receipts and fresh-directory restore remain next.
+G2.6 backup receipts and offline verification are implemented; fresh-directory
+restore remains next.
 The following frozen-candidate admission conditions apply only to optional
 containment; under ADR-0043 they do not block direct native product work.
 
@@ -1080,6 +1083,16 @@ Acceptance:
 #### P1.4b Backup receipts and creation — M
 
 Dependencies: P1.2 and P1.4a.
+
+Implemented natively as G2.6 task `task-1787851232211-6fiarr`: checkpoint-bound
+physical/governed identity, outbox coverage/retention, topology/namespace hashes,
+canonical frozen contributors, exact file checksums and completion-last failure
+semantics. `backup --with-receipt` creates the package; `verify-backup` verifies
+without opening it. The read-only WAL omission is repaired without changing
+vendored RocksDB. Native creation currently requires Unix synchronization;
+limits and tested boundaries are in
+[ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md#native-g26-checkpoint-package-2026-09-08).
+Automated fresh-directory restore and contributor reconciliation remain P1.4c.
 
 - Start with a checkpoint-plus-manifest design. Bind store UUID, schema
   version, source commit ID, RocksDB sequence, authoritative-outbox cursor, the

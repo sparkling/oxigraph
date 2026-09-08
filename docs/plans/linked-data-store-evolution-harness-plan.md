@@ -6,8 +6,9 @@
   receipts, and failure closure are implemented. G2.5 native readiness and
   contributor observations, loopback endpoints, and transaction terminal
   and Store-bound query/update counters/histograms are implemented;
-  denial-attempt and SHACL commit-gate telemetry close bounded G2.5. G2.6 backup
-  receipt creation is next.
+  denial-attempt and SHACL commit-gate telemetry close bounded G2.5. G2.6
+  checkpoint packages, backup receipts and offline verification are implemented;
+  G2.7 fresh-directory restore is next.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
@@ -71,7 +72,9 @@ expiry, and injected failures. G2.5 task `task-1787851231441-1gdfzd` has native
 readiness/contributor observations, loopback endpoints, and transaction terminal
 counters/histograms plus Store-bound query/update evaluation observations. It
 is complete with denial-attempt and SHACL commit-gate telemetry required by P1.4a.
-G2.6 backup receipt creation is the next active delivery slice.
+G2.6 task `task-1787851232211-6fiarr` implements checkpoint-bound backup
+receipts, frozen contributor files, completion-last failure handling and offline
+verification. G2.7 fresh-directory restore is the next active delivery slice.
 
 G1.7, ADR-0034 through ADR-0041, Dream Machine, GEPA/AVO, broad Jena/RDF4J
 parity, and the P1-P3 product portfolio remain future work. They require a
@@ -109,10 +112,10 @@ close that slice. G2.5 now adds bounded native readiness, fixed gauges, and a
 canonical contributor inventory with strict required-provider checks and
 explicit optional degradation. The opt-in CLI loopback endpoints expose these
 observations, transaction terminal and Store-bound query/update counters and
-histograms. Denial-attempt and SHACL commit-gate telemetry now close G2.5 before
-G2.6–G2.7
-backup/restore. Remaining G3/G4 capabilities stay in the
-programme; G2.5 completion does not close backup/restore or the wider programme.
+histograms. Denial-attempt and SHACL commit-gate telemetry close G2.5. G2.6 now
+adds checkpoint packages, completion-last manifests and offline verification;
+G2.7 restore/reconciliation remains next. Remaining G3/G4 capabilities stay in
+the programme; backup creation does not close restore or the wider programme.
 No harness or new dependency version was added; receipt hashing reuses the
 already-locked workspace `sha2` dependency. Current behavior is documented in
 [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md).
@@ -1034,6 +1037,15 @@ cursor-mismatched entries fail closed. The backup receipt binds the store UUID,
 schema version, source commit ID, RocksDB sequence, authoritative-outbox cursor,
 canonical contributor inventory, file inventory/checksums, and a completion
 marker. G2 does not depend on G3.0; later providers plug into the hook.
+
+G2.6 now implements this package in the native Rust API and CLI. The checkpoint
+binds physical and governed identities separately, preserves schema-1/no-outbox
+history and the later coverage origin, and hashes topology/namespaces. The
+read-only RocksDB WAL omission is repaired in the local C API adapter, retaining
+the ordinary no-concurrent-writer read-only contract. Completion follows file
+and directory synchronization; current creation support is Unix. See
+[ADR-0022's precise bounds](../adr/0022-operational-readiness-backup-and-recovery.md#native-g26-checkpoint-package-2026-09-08).
+Package verification is not G2.7 restore/reconciliation or production RPO/RTO.
 
 SHACL validation is network-free, bounded, and fail-closed. External policy
 shapes are version-pinned at begin. If a transaction mutates its shapes graph,

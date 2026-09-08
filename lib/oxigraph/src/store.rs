@@ -48,7 +48,16 @@ pub(crate) mod shacl_receipt;
 pub(crate) mod transaction_metrics;
 mod transactional;
 
+// Native on-disk package APIs are separate from backend-neutral governance.
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+mod backup;
+
 pub use crate::storage::TransactionStartControl;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+pub use backup::{
+    BackupArtifact, BackupCheckpoint, BackupContents, BackupContribution, BackupError, BackupFile,
+    BackupObservation, BackupOptions, BackupReceipt,
+};
 pub use contributors::{
     ContributorCheckpoint, ContributorConsistency, ContributorDeclaration, ContributorError,
     ContributorHealth, ContributorIdentity, ContributorInventory, ContributorInventoryEntry,

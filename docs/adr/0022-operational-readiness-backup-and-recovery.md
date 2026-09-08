@@ -8,7 +8,8 @@
   loopback observation endpoints, transaction terminal telemetry and Store-bound
   query/update evaluation, denied-attempt and SHACL commit-gate telemetry
   implemented. The bounded G2.5 observation surface is complete.
-  G2.6-G2.7 backup/restore receipt work remains unimplemented
+  G2.6 native checkpoint packages, completion-last backup receipts and offline
+  file verification are implemented. G2.7 fresh-directory restore remains open
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
 - **Related**:
@@ -21,10 +22,10 @@
 ## Context
 
 The store can create a backup, optimize RocksDB, and validate storage, but a
-successful method return is not a recovery contract. There is no completed
-backup receipt tying primary state to its authoritative outbox and declared
-derived-state contributor positions, no
-fresh-directory restore drill. At programme entry there was also no stable
+successful method return is not a recovery contract. At programme entry there
+was no completed backup receipt tying primary state to its authoritative outbox
+and declared contributor positions. G2.6 now supplies it; an automated
+fresh-directory restore drill remains required. There was also no stable
 readiness or bounded-label metrics surface; G2.5 now supplies that surface.
 
 Operations must distinguish liveness from readiness and must not promote a
@@ -351,6 +352,57 @@ observed, not automatically tripped, and required/eventual contributor policy is
 unchanged. Automatic workload admission belongs to G4.2. G2.6 backup receipts
 and G2.7 fresh-directory restore remain required; this ADR stays Proposed until
 its complete boundary below is satisfied.
+
+### Native G2.6 checkpoint package (2026-09-08)
+
+`Store::backup_with_receipt` creates an exclusively owned fresh package with
+`store/`, `contributors/`, and a completion-last `oxigraph-backup.complete`.
+`BackupReceipt::verify` checks the exact bounded manifest and regular-file set,
+sizes, SHA-256 hashes, and contributor bindings without opening RocksDB.
+The CLI exposes `backup --with-receipt` and `verify-backup`. No new dependency,
+provider, HTTP administration route, or persisted governance encoding is added.
+
+Identity comes from the checkpoint, not a later source observation. The receipt
+distinguishes opaque physical RocksDB identity, storage layout, optional governed
+StoreIdentity/schema/sequence, latest full v2 commit, outbox high-water, coverage
+origin, and retention floor. Plain stores do not acquire synthetic governance;
+schema-1 history preserves its sequence without inventing a latest v2 receipt
+or outbox. Retention-only genesis is not a commit. Source start/end time and
+RocksDB sequences bracket the checkpoint but are not its identity. Native-order
+content hashes and counts bind quads, empty named graphs, and namespaces; they
+are not RDF canonicalization or a whole-outbox integrity certificate.
+
+Canonical contributor declarations retain G2.5's policy. Frozen descriptors bind
+source/applied observations plus file names, sizes and hashes before copying;
+verification recomputes that binding. Provider bytes are copied, not linked.
+Unknown, duplicate, missing-required, cursor-invalid, or changed contributions
+reject. Checksums do not independently establish a provider's index semantics.
+
+The native RocksDB 11.1.2 read-only checkpoint collector omitted recovered WALs:
+a closed source reopened at sequence 7 produced a checkpoint at sequence 1.
+A local C API adapter now supplies alive WALs with exact observed sizes to the
+native checkpoint copier. It forces WAL copies and leaves vendored engine code
+unchanged. Ordinary read-only Store handles still prohibit a concurrent writer;
+read-write Store checkpoints retain native concurrent-write/compaction support.
+The sequence bracket that detected the omission remains enforced.
+
+Native tests cover plain/governed/schema-1/genesis stores, later outbox coverage,
+source removal, reopen, empty topology and namespaces, concurrent writes and
+optimize, frozen contributors and altered bindings, missing/modified/extra files,
+symlinks, traversal, interrupted phases, cancellation and limits. Failures before
+manifest publication preserve an incomplete package. A post-publication sync
+failure returns `CompletionIndeterminate`; verification resolves current package
+integrity, not a retroactive power-loss durability guarantee.
+
+Creation requires Unix directory synchronization and rejects other platforms
+before creating files. Bounds are 64 MiB manifest, 100,000 files and 128 providers;
+caller byte limits are checked during provider copying and inventory hashing,
+not an atomic native-checkpoint disk reservation. Cancellation is cooperative;
+native checkpoint I/O cannot be interrupted. Exclusively owned directories are
+required, not a hostile concurrent path-replacement guarantee. Keep completed
+packages immutable. G2.7 must still copy to a fresh destination, validate storage,
+and reconcile receipt-bound primary and contributor state. No production RPO/RTO
+threshold, restore completion, or promotion is claimed; this ADR stays Proposed.
 
 ### Complete ADR boundary
 

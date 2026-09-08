@@ -128,6 +128,15 @@ pub enum Command {
         /// Directory in which the backup will be written
         #[arg(short, long, value_hint = ValueHint::DirPath)]
         destination: PathBuf,
+        /// Create a checksummed package with store/ and a completion receipt
+        #[arg(long)]
+        with_receipt: bool,
+    },
+    /// Verify a completed backup package without opening or changing its database
+    VerifyBackup {
+        /// Directory containing the backup completion manifest
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
+        location: PathBuf,
     },
     /// Load file(s) into the store
     ///

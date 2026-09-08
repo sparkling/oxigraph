@@ -861,6 +861,40 @@ impl RocksDbStorage {
         self.db.backup(target_directory)
     }
 
+    pub fn backup_path(&self) -> &Path {
+        self.db.backup_path()
+    }
+
+    pub fn backup_identity(&self) -> Result<super::BackupStorageIdentity, StorageError> {
+        let version = self
+            .db
+            .get(&self.default_cf, b"oxversion")?
+            .ok_or_else(|| CorruptionError::msg("missing storage layout version"))?;
+        let version = u64::from_be_bytes(
+            version
+                .as_ref()
+                .try_into()
+                .map_err(|_| CorruptionError::msg("invalid storage layout version"))?,
+        );
+        if version != LATEST_STORAGE_VERSION {
+            return Err(CorruptionError::msg("incompatible storage layout version").into());
+        }
+        let (identity, sequence) = self.db.backup_identity()?;
+        let governance = self.db.get(&self.default_cf, GOVERNANCE_STATE_KEY)?;
+        let governance_schema = governance.as_ref().and_then(|value| value.first().copied());
+        let governance = governance
+            .as_ref()
+            .map(|value| GovernanceState::decode(value.as_ref()))
+            .transpose()?;
+        Ok(super::BackupStorageIdentity {
+            database_id: identity,
+            sequence,
+            storage_version: version,
+            governance_schema,
+            governance,
+        })
+    }
+
     pub fn bulk_loader(&self) -> RocksDbStorageBulkLoader<'_> {
         RocksDbStorageBulkLoader {
             storage: self,
@@ -2766,6 +2800,86 @@ impl<'a> FileBulkLoader<'a> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    #[expect(
+        clippy::missing_assert_message,
+        clippy::panic_in_result_fn,
+        reason = "isolated literal v1 compatibility fixture"
+    )]
+    fn backup_preserves_v1_history_and_later_outbox_coverage_origin()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use super::*;
+        use crate::store::{BackupOptions, BackupReceipt, Store, TransactionRequest};
+        fn hex(value: &str) -> Result<Vec<u8>, std::num::ParseIntError> {
+            (0..value.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&value[i..i + 2], 16))
+                .collect()
+        }
+        // Independent literal schema-1 state: four earlier receipts, no outbox.
+        let old_state = hex(
+            "01010101010101010101010101010101010000000000000004059570c219db7d76c3ff0620696221c739fda4c15b877d039a86d4eecb0b84ec",
+        )?;
+        let directory = tempfile::tempdir()?;
+        let source_path = directory.path().join("source");
+        {
+            let storage = RocksDbStorage::open(&source_path)?;
+            storage
+                .db
+                .insert(&storage.default_cf, GOVERNANCE_STATE_KEY, &old_state)?;
+        }
+        {
+            let source = Store::open_read_only(&source_path)?;
+            let target = directory.path().join("v1-backup");
+            let receipt = source.backup_with_receipt(&target, &BackupOptions::default())?;
+            assert_eq!(
+                BackupReceipt::verify(&target, &TransactionStartControl::new())?,
+                receipt
+            );
+            assert_eq!(receipt.checkpoint().governance_schema(), Some(1));
+            assert_eq!(receipt.checkpoint().governed_sequence(), Some(4));
+            assert!(receipt.checkpoint().store_identity().is_some());
+            assert!(receipt.checkpoint().latest_receipt().is_none());
+            assert!(receipt.checkpoint().outbox_high_water().is_none());
+            assert!(
+                receipt
+                    .checkpoint()
+                    .outbox_after_receipt_sequence()
+                    .is_none()
+            );
+            let copy = RocksDbStorage::open_read_only(&target.join("store"))?;
+            assert_eq!(
+                copy.db
+                    .get(&copy.default_cf, GOVERNANCE_STATE_KEY)?
+                    .as_deref(),
+                Some(old_state.as_slice())
+            );
+        }
+        let source = Store::open(&source_path)?;
+        let commit = source
+            .start_governed_transaction(
+                TransactionRequest::default(),
+                TransactionKey::new([3; 16]),
+            )?
+            .into_transaction()
+            .commit()?;
+        assert_eq!(commit.sequence(), 5);
+        let target = directory.path().join("v2-backup");
+        let receipt = source.backup_with_receipt(&target, &BackupOptions::default())?;
+        assert_eq!(
+            BackupReceipt::verify(&target, &TransactionStartControl::new())?,
+            receipt
+        );
+        assert_eq!(receipt.checkpoint().governance_schema(), Some(2));
+        assert_eq!(receipt.checkpoint().latest_receipt(), Some(&commit));
+        assert_eq!(
+            receipt.checkpoint().outbox_after_receipt_sequence(),
+            Some(4)
+        );
+        Ok(())
+    }
+
     #[cfg(feature = "shacl")]
     #[test]
     #[expect(

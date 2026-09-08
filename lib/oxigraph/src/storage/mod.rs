@@ -40,6 +40,15 @@ pub mod small_string;
 
 pub const DEFAULT_BULK_LOAD_BATCH_SIZE: usize = 1_000_000;
 
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+pub(crate) struct BackupStorageIdentity {
+    pub database_id: Vec<u8>,
+    pub sequence: u64,
+    pub storage_version: u64,
+    pub governance_schema: Option<u8>,
+    pub governance: Option<crate::store::receipt::GovernanceState>,
+}
+
 const TRANSACTION_START_CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// Controls how long transaction admission may wait and allows that wait to be cancelled.
@@ -563,6 +572,24 @@ impl Storage {
             StorageKind::RocksDb(storage) => storage.backup(target_directory),
             StorageKind::Memory(_) => Err(StorageError::Other(
                 "It is not possible to backup an in-memory database".into(),
+            )),
+        }
+    }
+
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    pub fn backup_path(&self) -> Option<&Path> {
+        match &self.kind {
+            StorageKind::RocksDb(storage) => Some(storage.backup_path()),
+            StorageKind::Memory(_) => None,
+        }
+    }
+
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    pub fn backup_identity(&self) -> Result<BackupStorageIdentity, StorageError> {
+        match &self.kind {
+            StorageKind::RocksDb(storage) => storage.backup_identity(),
+            StorageKind::Memory(_) => Err(StorageError::Other(
+                "backup requires an on-disk store".into(),
             )),
         }
     }

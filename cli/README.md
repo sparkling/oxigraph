@@ -199,6 +199,37 @@ and policy snapshots are not one atomic observation. See
 It is also possible to load RDF data offline using bulk loading:
 `oxigraph load --location my_data_storage_directory --file my_file.nq`
 
+## Receipt-bearing backups (fork)
+
+Build this fork's CLI to use these commands. Stop any writer before opening the
+source through the offline CLI; ordinary read-only handles must not coexist
+with a writer.
+
+```sh
+oxigraph backup --with-receipt --location ./data --destination ./backup-new
+oxigraph verify-backup --location ./backup-new
+```
+
+The fresh package contains `store/`, `contributors/`, and
+`oxigraph-backup.complete`. The completion manifest is published last, after
+file checksums and synchronization. Pre-publication failures leave an incomplete
+directory, never a successful receipt. A final directory-sync error is explicitly
+indeterminate: inspect and verify the existing package instead of overwriting it.
+Successful verification checks the exact regular-file inventory, sizes, hashes,
+and receipt bindings without opening the database. Keep the package immutable;
+opening its `store/` writable can invalidate it. This is not an automated restore
+drill or a production RPO/RTO claim; G2.7 supplies that next boundary.
+
+Receipt creation currently requires Unix directory synchronization. The manifest
+is bounded to 64 MiB, 100,000 data files, and 128 contributors. The CLI declares
+an empty contributor inventory; Rust callers can supply frozen provider files
+through `BackupOptions`. Checksums bind those files, not independently prove
+their index semantics. Destinations must be exclusively operator-owned; this is
+not a concurrent untrusted-filesystem sandbox. Native checkpoint I/O is not
+interruptible; Rust cancellation is checked between native calls and copy chunks.
+The existing plain `backup` command keeps its directory format. Both paths now
+preserve recovered WAL writes when backing up a closed source read-only.
+
 ## Using a Docker image
 
 ### Display the help menu

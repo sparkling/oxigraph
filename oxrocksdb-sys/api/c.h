@@ -12,6 +12,10 @@ extern ROCKSDB_LIBRARY_API uint32_t oxrocksdb_ticker_compact_read_bytes(void);
 extern ROCKSDB_LIBRARY_API uint32_t oxrocksdb_ticker_compact_write_bytes(void);
 extern ROCKSDB_LIBRARY_API uint32_t oxrocksdb_ticker_flush_write_bytes(void);
 
+// Ordinary read-only DB handles require the source to have no concurrent writer.
+extern ROCKSDB_LIBRARY_API void oxrocksdb_read_only_checkpoint(
+    rocksdb_t* db, const char* directory, char** errptr);
+
 typedef struct rocksdb_ingestexternalfilearg_t {
   rocksdb_column_family_handle_t* column_family;
   char const* const* external_files;

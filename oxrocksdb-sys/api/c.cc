@@ -2,9 +2,16 @@
 
 #include <rocksdb/db.h>
 #include <rocksdb/statistics.h>
+#include <rocksdb/metadata.h>
+#include <rocksdb/transaction_log.h>
+#include <rocksdb/utilities/checkpoint.h>
+#include <rocksdb/utilities/stackable_db.h>
 #include <rocksdb/utilities/write_batch_with_index.h>
 
 #include <cstring>
+#include <algorithm>
+#include <limits>
+#include <memory>
 #include <vector>
 
 using ROCKSDB_NAMESPACE::ColumnFamilyHandle;
@@ -61,7 +68,68 @@ static void SaveError(char** errptr, const Status& source) {
   }
 }
 
+// RocksDB 11.1.2 read-only recovery observes WAL writes, but its live-file
+// collector uses cur_wal_number_ == 0 and omits those WALs from checkpoints.
+// Keep the vendored engine unchanged. This scoped adapter supplies all live
+// WALs to the ordinary Checkpoint copy/sync implementation. As for every
+// ordinary read-only Store, no source writer may coexist with this handle.
+class ReadOnlyCheckpointDB final : public ROCKSDB_NAMESPACE::StackableDB {
+ public:
+  explicit ReadOnlyCheckpointDB(DB* db)
+      : StackableDB(std::shared_ptr<DB>(db, [](DB*) {})) {}
+
+  Status GetLiveFilesStorageInfo(
+      const ROCKSDB_NAMESPACE::LiveFilesStorageInfoOptions& requested,
+      std::vector<ROCKSDB_NAMESPACE::LiveFileStorageInfo>* files) override {
+    if (requested.include_checksum_info) {
+      return Status::NotSupported("read-only checkpoint checksum discovery");
+    }
+    auto options = requested;
+    options.wal_size_for_flush = std::numeric_limits<uint64_t>::max();
+    auto status = db_->GetLiveFilesStorageInfo(options, files);
+    if (!status.ok()) return status;
+    ROCKSDB_NAMESPACE::VectorWalPtr logs;
+    status = db_->GetSortedWalFiles(logs);
+    if (!status.ok()) return status;
+    const auto db_options = db_->GetDBOptions();
+    const auto wal_directory = db_options.wal_dir.empty()
+                                   ? db_->GetName()
+                                   : db_options.wal_dir;
+    files->erase(std::remove_if(files->begin(), files->end(), [](const auto& file) {
+      return file.file_type == ROCKSDB_NAMESPACE::kWalFile;
+    }), files->end());
+    for (const auto& log : logs) {
+      if (log->Type() != ROCKSDB_NAMESPACE::kAliveLogFile) continue;
+      const auto name = log->PathName();
+      if (name.empty() || name.front() != '/' || name.find('/', 1) != std::string::npos) {
+        return Status::Corruption("invalid live WAL filename");
+      }
+      ROCKSDB_NAMESPACE::LiveFileStorageInfo file;
+      file.relative_filename = name.substr(1);
+      file.directory = wal_directory;
+      file.file_number = log->LogNumber();
+      file.file_type = ROCKSDB_NAMESPACE::kWalFile;
+      file.size = log->SizeFileBytes();
+      file.trim_to_size = true;  // Never link potentially recyclable WAL files.
+      files->push_back(std::move(file));
+    }
+    return Status::OK();
+  }
+};
+
 extern "C" {
+
+void oxrocksdb_read_only_checkpoint(rocksdb_t* db, const char* directory,
+                                  char** errptr) {
+  ReadOnlyCheckpointDB view(db->rep);
+  ROCKSDB_NAMESPACE::Checkpoint* raw = nullptr;
+  auto status = ROCKSDB_NAMESPACE::Checkpoint::Create(&view, &raw);
+  std::unique_ptr<ROCKSDB_NAMESPACE::Checkpoint> checkpoint(raw);
+  if (status.ok()) {
+    status = checkpoint->CreateCheckpoint(directory, std::numeric_limits<uint64_t>::max());
+  }
+  SaveError(errptr, status);
+}
 
 uint32_t oxrocksdb_ticker_user_bytes_written(void) {
   return static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::BYTES_WRITTEN);

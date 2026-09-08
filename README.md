@@ -53,8 +53,9 @@ G2.4a-b add the native staged-view SHACL commit gate and atomically bound policy
 receipts. G2.5 adds native readiness observations and a bounded contributor
 inventory, opt-in loopback operational endpoints, and per-Store transaction,
 query/update, denied-attempt and SHACL commit-gate counters and cumulative
-duration histograms. The bounded observation slice is complete; G2.6 backup
-creation and receipts are the next product step.
+duration histograms. G2.6 now adds checkpoint packages, completion-last receipts,
+and offline package verification. G2.7 fresh-directory restore and reconciliation
+is the next product step.
 
 Build this fork rather than an upstream package to obtain these changes:
 
@@ -170,7 +171,13 @@ shared by Store clones and reset on reopen; they are not durable outcome proof.
 `Store::policy_metrics()` adds denied SERVICE/LOAD/document attempts, including
 denials swallowed by `SILENT`, and returned SHACL commit-gate dispositions.
 Accepted validation is not proof of successful commit. This closes the bounded
-G2.5 observation surface; backup receipts and fresh-directory restore remain next;
+G2.5 observation surface. G2.6 provides `Store::backup_with_receipt` and
+`BackupReceipt::verify`: checkpoint-bound identities/cursors, topology and
+namespace content hashes, frozen contributor files, and exact file checksums.
+The CLI adds `backup --with-receipt` and `verify-backup`; see
+[backup usage and limits](cli/README.md#receipt-bearing-backups-fork).
+Receipt creation requires Unix directory synchronization. Package verification
+does not open or modify RocksDB; automated fresh-directory restore remains G2.7;
 see [ADR-0022](docs/adr/0022-operational-readiness-backup-and-recovery.md).
 
 ```sh

@@ -636,6 +636,7 @@ struct RoDbHandler {
     column_family_names: Vec<&'static str>,
     cf_handles: Vec<*mut rocksdb_column_family_handle_t>,
     cf_options: Vec<*mut rocksdb_options_t>,
+    path: PathBuf,
 }
 
 unsafe impl Send for RoDbHandler {}
@@ -796,6 +797,33 @@ impl Db {
             DbKind::ReadOnly(db) => db.db,
             DbKind::ReadWrite(db) => db.db,
         }
+    }
+
+    pub fn backup_path(&self) -> &Path {
+        match &self.inner {
+            DbKind::ReadOnly(db) => &db.path,
+            DbKind::ReadWrite(db) => &db.path,
+        }
+    }
+
+    /// Physical RocksDB identity, never a governed StoreIdentity or commit ID.
+    pub fn backup_identity(&self) -> Result<(Vec<u8>, u64), StorageError> {
+        let mut len = 0;
+        let id = unsafe { rocksdb_get_db_identity(self.raw_rocksdb(), &raw mut len) };
+        let Some(id) = NonNull::new(id) else {
+            return Err(CorruptionError::msg("RocksDB database identity unavailable").into());
+        };
+        let identity = unsafe {
+            let value = (1..=1024)
+                .contains(&len)
+                .then(|| slice::from_raw_parts(id.as_ptr().cast::<u8>(), len).to_vec());
+            rocksdb_free(id.as_ptr().cast());
+            value
+        }
+        .ok_or_else(|| CorruptionError::msg("invalid RocksDB database identity length"))?;
+        Ok((identity, unsafe {
+            rocksdb_get_latest_sequence_number(self.raw_rocksdb())
+        }))
     }
 
     fn read_rocksdb_property(
@@ -1063,6 +1091,7 @@ impl Db {
                     column_family_names,
                     cf_handles,
                     cf_options,
+                    path: path.into(),
                 })),
             })
         }
@@ -1539,6 +1568,10 @@ impl Db {
 
     pub fn backup(&self, target_directory: &Path) -> Result<(), StorageError> {
         let path = path_to_cstring(target_directory)?;
+        if let DbKind::ReadOnly(db) = &self.inner {
+            return unsafe { ffi_result!(oxrocksdb_read_only_checkpoint(db.db, path.as_ptr())) }
+                .map_err(Into::into);
+        }
         unsafe {
             let checkpoint = ffi_result!(rocksdb_checkpoint_object_create(match &self.inner {
                 DbKind::ReadOnly(db) => db.db,

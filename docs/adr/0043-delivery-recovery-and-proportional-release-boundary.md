@@ -27,7 +27,9 @@
   or abandonment, without changing iteration or transaction semantics.
   Denied attempts and returned SHACL commit-gate observations now close the
   bounded G2.5/P1.4a contract in task `task-1787851231441-1gdfzd`.
-  G2.6 backup receipt creation is next, followed by G2.7 restore validation. Local
+  G2.6 task `task-1787851232211-6fiarr` adds checkpoint-bound manifests, frozen
+  contributor file checksums, completion-last receipts, offline verification,
+  and the read-only WAL checkpoint repair. G2.7 restore validation is next. Local
   implementation is not publication
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
