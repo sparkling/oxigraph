@@ -413,6 +413,13 @@ do not close full corpus, resource/tail acceptance or default promotion.
 
 ### Full statistics/planning promotion
 
+The [fixed WatDiv input contract](../../bench/query-benchmark.md#fixed-watdiv-input-and-baseline-preparation)
+now identifies the intact official 10M archive and six unchanged stress-query
+lines. Explicit diagnostic input ceilings support this dataset without changing
+store/provider defaults or optimizer semantics. Input checks and a greedy pilot
+do not ratify numerical gates or establish full corpus acceptance. LDBC inputs
+and controlled parent-first resource/tail measurements remain open.
+
 Promotion requires:
 
 - identical query results with statistics current, absent, stale, corrupt, and

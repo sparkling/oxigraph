@@ -1,5 +1,5 @@
 //! Local SELECT comparison, not a qualification or default-promotion command.
-//! Usage: query_benchmark DATASET.nt REPETITIONS [--mode MODE] (--bag|--ordered) QUERY.rq ...
+//! Usage: query_benchmark DATASET.nt REPETITIONS [OPTIONS] (--bag|--ordered) QUERY.rq ...
 //! Input identities and raw samples are JSON lines on stdout; no files published.
 use oxigraph::io::RdfFormat;
 use oxigraph::model::graph::CanonicalizationAlgorithm;
@@ -14,7 +14,7 @@ use oxigraph::store::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::sync::Arc;
 use std::time::Instant;
@@ -35,23 +35,41 @@ const MODE_NAMES: [&str; 10] = [
 
 // Keep selection outside the measured path. Explicit names prevent a typo from
 // silently running the default set (and mislabelling process resource use).
-fn selection(args: &[String]) -> Result<(Vec<usize>, &[String])> {
-    let (modes, queries) = if args.first().is_some_and(|arg| arg == "--mode") {
-        let name = args.get(1).ok_or("--mode requires a mode name")?;
-        let mode = MODE_NAMES
-            .iter()
-            .position(|candidate| candidate == name)
-            .ok_or_else(|| {
-                format!(
-                    "unknown mode {name}; expected one of {}",
-                    MODE_NAMES.join(", ")
-                )
-            })?;
-        (vec![mode], &args[2..])
-    } else {
-        ((0..MODE_NAMES.len()).collect(), args)
-    };
-    if queries.is_empty() || queries.len() % 2 != 0 {
+fn selection(mut args: &[String]) -> Result<(Vec<usize>, DerivedGenerationLimits, &[String])> {
+    let mut modes = (0..MODE_NAMES.len()).collect();
+    let mut limits = DerivedGenerationLimits::default();
+    let mut seen = BTreeSet::new();
+    while let Some(option) = args.first() {
+        if matches!(option.as_str(), "--bag" | "--ordered") {
+            break;
+        }
+        if !seen.insert(option) {
+            return Err(format!("duplicate option {option}").into());
+        }
+        let value = args
+            .get(1)
+            .ok_or_else(|| format!("{option} requires a value"))?;
+        match option.as_str() {
+            "--mode" => {
+                let mode = MODE_NAMES
+                    .iter()
+                    .position(|name| name == value)
+                    .ok_or_else(|| {
+                        format!(
+                            "unknown mode {value}; expected one of {}",
+                            MODE_NAMES.join(", ")
+                        )
+                    })?;
+                modes = vec![mode];
+            }
+            "--max-input-records" => limits.input.max_records = value.parse()?,
+            "--max-input-bytes" => limits.input.max_bytes = value.parse()?,
+            _ => return Err(format!("unknown option {option}").into()),
+        }
+        args = &args[2..];
+    }
+    let queries = args;
+    if queries.is_empty() || !queries.len().is_multiple_of(2) {
         return Err("expected one or more (--bag|--ordered) QUERY.rq pairs".into());
     }
     for pair in queries.chunks_exact(2) {
@@ -59,7 +77,7 @@ fn selection(args: &[String]) -> Result<(Vec<usize>, &[String])> {
             return Err("each SELECT needs an explicit --bag or --ordered comparison".into());
         }
     }
-    Ok((modes, queries))
+    Ok((modes, limits, queries))
 }
 
 struct Rows {
@@ -184,14 +202,14 @@ fn main() -> Result {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.len() < 4 || args.len() % 2 != 0 {
         return Err(
-            "usage: query_benchmark DATASET.nt REPETITIONS [--mode MODE] (--bag|--ordered) QUERY.rq ...".into(),
+            "usage: query_benchmark DATASET.nt REPETITIONS [--mode MODE] [--max-input-records N] [--max-input-bytes N] (--bag|--ordered) QUERY.rq ...".into(),
         );
     }
     let repetitions: usize = args[1].parse()?;
     if !(1..=100).contains(&repetitions) {
         return Err("repetitions must be 1..100".into());
     }
-    let (modes, queries) = selection(&args[2..])?;
+    let (modes, limits, queries) = selection(&args[2..])?;
     let bytes = std::fs::read(&args[0])?;
     let data_sha256 = sha256(&bytes);
     let directory = tempfile::tempdir()?;
@@ -201,7 +219,6 @@ fn main() -> Result {
     let load_seconds = started.elapsed().as_secs_f64();
     drop(bytes);
     let provider = StatisticsProvider::default();
-    let limits = DerivedGenerationLimits::default();
     let started = Instant::now();
     let mut index = DerivedIndex::create(directory.path().join("statistics"), provider.identity())?;
     let source = store.derived_snapshot(&TransactionStartControl::new())?;
@@ -216,6 +233,8 @@ fn main() -> Result {
         "kind": "input", "format": "oxigraph.query-benchmark.v1",
         "dataset": args[0], "dataset_sha256": data_sha256,
         "quads": store.len()?, "repetitions": repetitions, "warmups_per_mode": 1,
+        "max_input_records": limits.input.max_records.get(),
+        "max_input_logical_bytes": limits.input.max_bytes.get(),
         "load_seconds": load_seconds,
         "statistics_build_activate_seconds": statistics_build_activate_seconds,
         "statistics_verification_seconds": statistics_verification_seconds,
@@ -361,12 +380,20 @@ mod tests {
     fn mode_selection_is_explicit_and_preserves_default_order() -> Result {
         let args = |values: &[&str]| values.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         let default = args(&["--bag", "q.rq", "--ordered", "ordered.rq"]);
-        let (modes, queries) = selection(&default)?;
+        let (modes, limits, queries) = selection(&default)?;
         assert_eq!(modes, (0..MODE_NAMES.len()).collect::<Vec<_>>());
+        assert_eq!(
+            limits.input.max_records,
+            DerivedGenerationLimits::default().input.max_records
+        );
+        assert_eq!(
+            limits.input.max_bytes,
+            DerivedGenerationLimits::default().input.max_bytes
+        );
         assert_eq!(queries, default);
         for (expected, name) in MODE_NAMES.iter().enumerate() {
             let selected = args(&["--mode", name, "--bag", "q.rq"]);
-            let (modes, queries) = selection(&selected)?;
+            let (modes, _, queries) = selection(&selected)?;
             assert_eq!(modes, [expected]);
             assert_eq!(queries, &selected[2..]);
         }
@@ -380,6 +407,53 @@ mod tests {
             vec!["--silent", "q.rq"],
         ] {
             assert!(selection(&args(&invalid)).is_err(), "{invalid:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn explicit_input_limits_are_nonzero_and_enforced() -> Result {
+        let args = |values: &[&str]| values.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        let selected = args(&[
+            "--max-input-records",
+            "2",
+            "--mode",
+            "greedy",
+            "--max-input-bytes",
+            "1024",
+            "--bag",
+            "q.rq",
+        ]);
+        let (modes, mut limits, queries) = selection(&selected)?;
+        assert_eq!(modes, [0]);
+        assert_eq!(queries, &selected[6..]);
+        assert_eq!(limits.input.max_records.get(), 2);
+        assert_eq!(limits.input.max_bytes.get(), 1024);
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path().join("db"))?;
+        store.load_from_slice(
+            RdfFormat::NTriples,
+            b"<urn:s> <urn:p> <urn:a> .\n<urn:s> <urn:p> <urn:b> .\n",
+        )?;
+        let source = store.derived_snapshot(&TransactionStartControl::new())?;
+        assert_eq!(source.scan(&limits.input, |_| Ok(()))?.records(), 2);
+        limits.input.max_records = std::num::NonZeroU64::MIN;
+        assert!(matches!(
+            source.scan(&limits.input, |_| Ok(())),
+            Err(oxigraph::store::DerivedError::Limit)
+        ));
+        limits.input.max_records = 2.try_into()?;
+        limits.input.max_bytes = std::num::NonZeroU64::MIN;
+        assert!(matches!(
+            source.scan(&limits.input, |_| Ok(())),
+            Err(oxigraph::store::DerivedError::Limit)
+        ));
+        for option in ["--max-input-records", "--max-input-bytes"] {
+            for value in ["0", "-1", "18446744073709551616", "typo"] {
+                assert!(selection(&args(&[option, value, "--bag", "q.rq"])).is_err());
+            }
+            assert!(selection(&args(&[option, "1", option, "2", "--bag", "q.rq"])).is_err());
+            assert!(selection(&args(&[option])).is_err());
         }
         Ok(())
     }

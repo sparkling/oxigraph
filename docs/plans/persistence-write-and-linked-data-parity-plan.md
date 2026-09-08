@@ -1201,6 +1201,9 @@ prefers legal indexed probes for unhinted leaves, with a red/green Q8-shaped
 regression and preserved V1/V2/defaults. Single-mode runs
 support equal-envelope process measurements, not planner allocation bounds.
 WatDiv/LDBC assets and baseline-first numerical ratification remain open.
+The intact official WatDiv 10M data and six unchanged stress-query lines now
+have an exact input contract and explicit diagnostic limits. LDBC inputs and
+controlled baseline-first numerical acceptance are still outstanding.
 
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.

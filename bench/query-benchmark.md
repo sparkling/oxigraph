@@ -277,4 +277,85 @@ Raw JSONL SHA-256:
 `be687192e99164e3b32de59f3181370c0518f336aa0ecfbfbafa0bf676edf0cf`.
 Whole-process peak RSS is 113,936 KiB and elapsed time 31.39 seconds; neither
 is comparable to historical whole-run costs with different mode counts.
-WatDiv/LDBC corpus preparation and parent-first ratified acceptance remain next.
+The WatDiv input contract below now fixes one further diagnostic corpus.
+LDBC inputs and parent-first ratified acceptance remain open.
+
+## Fixed WatDiv input and baseline preparation
+
+Use the intact official [WatDiv 10M dataset and stress workloads](https://dsg.uwaterloo.ca/watdiv/index.shtml),
+not a subset of subjects that severs generated relationships. Cite G. Aluç,
+O. Hartig, M. T. Özsu and K. Daudjee, *Diversified Stress Testing of RDF Data
+Management Systems*, ISWC 2014, pp. 197–212. The upstream download/use conditions
+and attribution remain applicable; this repository does not relicense or
+redistribute their data or queries.
+
+| Input | SHA-256 |
+| --- | --- |
+| `watdiv.10M.tar.bz2` | `1d0a8a4725c98974eb7347ce3e6d9cab44f9f40389589809674254151b745af6` |
+| Extracted `watdiv.10M.nt` | `7cfe0341d578a677d3b5d562eaaf94d67aff8587d9e0ef3d83cc82765b77cddd` |
+| `stress-workloads.tar.gz` | `98796d4c8db67a1f68b3d1958d8f1334d5d38fe6da1c5e8eae72a8823ac7eed5` |
+
+The extracted file is 1,542,624,409 bytes and has 10,916,457 triple lines.
+The [extractor](watdiv-10m-queries.sh) selects unchanged, one-line SELECTs from
+`watdiv-stress-100/test.1.sparql`. These positions were selected before any
+candidate measurement, for contrasting shapes; they are not the official
+20-template basic suite or the full stress workload. No parameters, filters,
+LIMITs, or triple ordering are rewritten. Empty outcomes stay visible.
+
+| Line / file | Shape | SHA-256 |
+| --- | --- | --- |
+| 1 / `q1.rq` | Three-leaf selective star | `97f292a405fff77691b69af07dcde72f5089ad862cd14efa244e8da781964af1` |
+| 2 / `q2.rq` | Four-leaf selective offer star | `98dc727b8b1e2c3a7be2e9419edc5dac6f4fe2d6989891f95ea905ae0839a437` |
+| 4 / `q4.rq` | Eight-leaf product/genre cycle | `b9f69da89ae5936ad30d68a0552281c73aeaa2d811f20f59a9a5190b9ec29968` |
+| 7 / `q7.rq` | Six-leaf author/self-edge join | `69ae752081ecf890a36acf4b679ca590f6c1394af79be1aec4ae7316fba9dbe4` |
+| 14 / `q14.rq` | Two-leaf broad star | `4972c502256f96680defeafc6dc15ee3e0a975ba31b8c4eddce275de3a7076ad` |
+| 17 / `q17.rq` | Three-leaf author/demographic join | `0dde5aa65432ad52792ffe8abe27225a685ca6254823c438eab92f913bcbd13d` |
+
+Download into a fresh directory, verify the archive hashes above before
+extracting, and verify the extracted data hash before running:
+
+```sh
+watdiv_dir=$(mktemp -d /tmp/oxigraph-watdiv-XXXXXX)
+curl --fail --location --output "$watdiv_dir/watdiv.10M.tar.bz2" \
+  https://dsg.uwaterloo.ca/watdiv/watdiv.10M.tar.bz2
+curl --fail --location --output "$watdiv_dir/stress-workloads.tar.gz" \
+  https://dsg.uwaterloo.ca/watdiv/stress-workloads.tar.gz
+sha256sum "$watdiv_dir/watdiv.10M.tar.bz2" "$watdiv_dir/stress-workloads.tar.gz"
+tar -xjkf "$watdiv_dir/watdiv.10M.tar.bz2" -C "$watdiv_dir" watdiv.10M.nt
+sha256sum "$watdiv_dir/watdiv.10M.nt"
+sh bench/watdiv-10m-queries.sh "$watdiv_dir/stress-workloads.tar.gz" "$watdiv_dir/queries"
+test "$(cat "$watdiv_dir/queries/COMPLETE")" = watdiv-six-select-v1
+```
+
+The extractor requires a checksum-matching archive and fresh absolute output
+directory. It rechecks the archive after extraction and writes `COMPLETE` last.
+A failed directory is retained for diagnosis; neither its existence nor an
+output prefix proves completion. No source download is executed as a program.
+
+The comparator now accepts `--max-input-records N` and `--max-input-bytes N`
+before the query pairs, in either order with `--mode`. Values must be nonzero
+64-bit integers; duplicate/unknown options fail before loading. Defaults remain
+1,000,000 records and 64 MiB. The input record reports both effective limits.
+These bound the statistics input scan, **not** loading, process RSS, result
+materialization or planner allocation. Provider/generation defaults and all
+optimizer profiles remain unchanged. The diagnostic still builds/verifies
+statistics for every mode, preserving the existing setup envelope.
+
+```sh
+cargo build --locked --release -p oxigraph --features statistics --example query_benchmark
+/usr/bin/time -v -o "$watdiv_dir/greedy.time" target/release/examples/query_benchmark \
+  "$watdiv_dir/watdiv.10M.nt" 5 --mode greedy \
+  --max-input-records 12000000 --max-input-bytes 4294967296 \
+  --bag "$watdiv_dir/queries/q1.rq" --bag "$watdiv_dir/queries/q2.rq" \
+  --bag "$watdiv_dir/queries/q4.rq" --bag "$watdiv_dir/queries/q7.rq" \
+  --bag "$watdiv_dir/queries/q14.rq" --bag "$watdiv_dir/queries/q17.rq" \
+  > "$watdiv_dir/greedy.jsonl"
+```
+
+Require exit zero, all six query records, and a completion record with 42/42
+equivalent observations (36 samples including warmups, six feedback runs).
+This measures the current unchanged greedy product path, not an old binary
+rebuilt and relabelled as a historical parent. Five repetitions are input
+validation, not a controlled p95 baseline or numerical acceptance decision.
+Prepare the controlled parent-only baseline and ratify the resource/tail gates
+before running a gated candidate. Full G3.2 acceptance remains open.

@@ -1140,6 +1140,9 @@ probes are legal; native Q8-shaped result/work checks pass and older profiles
 remain reproducible. Equal-envelope
 single-mode resource runs are available; this supporting work does not close
 the corpus or performance gate and does not change the default planner.
+WatDiv archive/data hashes and six unchanged query lines are now fixed in the
+native comparison instructions, with explicit diagnostic input ceilings.
+Controlled baselines, LDBC input semantics and numerical ratification remain.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 
