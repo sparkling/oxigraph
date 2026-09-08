@@ -7,7 +7,8 @@
 - Implementation status: G3.0 native local lifecycle implemented: snapshot/delta
   inputs, durable generation reconciliation/activation, bounded provider output,
   crash recovery and G2 readiness/backup/restore integration. G3.3 adds the native
-  text provider/Rust query and opt-in SPARQL SERVICE slices below. G3.4 adds the
+  text provider/Rust query and opt-in SPARQL SERVICE slices below; the native
+  G3.3 task is complete at `e865c7aa`. G3.4 adds the
   native spatial provider/Rust query and opt-in SPARQL SERVICE slices below.
   Separately gated performance/production promotion remain outstanding
 - **Depends on**:
@@ -263,9 +264,15 @@ and backup/restore/import. The independent
 extra postings even when all stored quads are correct. Run the
 [usable example](../../lib/oxigraph/examples/text_index.rs) with
 `cargo run --locked -p oxigraph --features text-index --example text_index`.
-This native API increment is followed by the SPARQL slice below, not completion
-of all G3.3/P2.2. Provider-specific frozen performance/promotion receipts remain
-separate gates; no provider-backed qualification was run.
+This native API increment is followed by the SPARQL slice below. The native
+G3.3/P2.2 task is complete at `e865c7aa`: the lifecycle/failure tests, independent
+posting checks, SERVICE tests and fixed three-scale oracle/resource observations
+satisfy its literal acceptance requirements. The 2026-09-09 independent review
+found no additional native behavior gate. Frozen performance/production
+promotion receipts remain separate requirements **before promotion**, not a
+reason to keep adding unrelated native optimizations. No speed threshold,
+default/server exposure, production qualification or provider-backed run is
+approved by this completion.
 
 #### Bounded text candidate enumeration (2026-09-08)
 

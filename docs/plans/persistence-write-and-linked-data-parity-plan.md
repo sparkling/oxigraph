@@ -1315,6 +1315,12 @@ An [explicit retained text-query session](../adr/0024-rebuildable-derived-indexe
 now avoids repeated payload hydration for different queries on that same view.
 First strict admission remains scan-based; no implicit primary cache is added.
 
+Native G3.3/P2.2 is complete at `e865c7aa`. The 2026-09-09 literal-gate review
+matched the acceptance below to native lifecycle, posting, SERVICE and fixed
+oracle/resource evidence. Performance/production promotion remains open under
+ADR-0024; it does not require further arbitrary text optimizations or block the
+next approved product task (G4.1 service identity/authorization).
+
 - Define an index provider and a small SPARQL extension surface without making
   Lucene or Elasticsearch types part of the core API.
 - Use a rebuildable asynchronous outbox consumer with an applied-commit cursor,

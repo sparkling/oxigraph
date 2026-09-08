@@ -1203,6 +1203,14 @@ See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34
 | G3.4 Spatial provider                           | G3.0                                                                                                                                | L/XL | Per-CRS envelope candidates refine through exact `spargeo` and pass provider-specific equivalence/resource receipts on the shared lifecycle                                                                                                                                      |
 | G3.5 Federation planner                         | G1.5, G3.1-G3.2 for embedded/research; additionally G1.6 for advertisement; additionally G4.1-G4.2 for server exposure or promotion |   XL | Catalog/source selection/bound joins obey per-endpoint budgets and `SERVICE SILENT` semantics                                                                                                                                                                                    |
 
+Native G3.3 (`task-1787851233862-4l1tii`) is complete at `e865c7aa`. The
+2026-09-09 independent literal-gate review matched its exit above to native
+lifecycle/posting/SERVICE tests and the fixed three-scale oracle/resource
+observations. ADR-0024 still requires frozen evidence before performance or
+production promotion; those requirements are preserved, not treated as a
+missing native feature or an invented speedup gate. G4.1 is the next active
+product task; G3.2's failed corpus-performance gate remains open.
+
 The current optimizer's fixed large cardinalities and constant join-key
 selectivity make statistics the highest-leverage performance seam after P0.
 Start with bounded dynamic programming and telemetry; do not begin with a full

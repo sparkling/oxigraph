@@ -112,6 +112,11 @@
   session for different queries on the same admitted view. It avoids repeated
   payload hydration, not first strict admission; no implicit primary-scan cache
   or broader performance promotion is introduced.
+  The 2026-09-09 literal-gate review closes native G3.3 at `e865c7aa` while
+  preserving separate performance/production promotion requirements. Keeping
+  that delivered task active for unspecified later promotion was process drift,
+  not a missing text feature. G4.1 now owns the next product delivery step under
+  ADR-0026; no text benchmark rerun or harness expansion gates its implementation.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
