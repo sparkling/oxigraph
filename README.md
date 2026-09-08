@@ -134,6 +134,9 @@ An additive `BoundedJoinCostModel::ConditionalV2`, selected with
 broad-scan choice using conditional subset costs. Existing v1 options and the
 ordinary greedy default are unchanged. See the [versioned contract](docs/adr/0023-statistics-and-bounded-join-planning.md#g32-opt-in-conditional-cost-model-v2-2026-09-08)
 and measured limitations before selecting it.
+The ten-template BSBM SELECT diagnostic now reports exact result equality but
+also remaining Q8/Q5 scan-work regressions. Its optional single-mode execution
+supports comparable process workloads; it is not a corpus-performance pass.
 
 Build this fork rather than an upstream package to obtain these changes:
 

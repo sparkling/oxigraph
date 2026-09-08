@@ -1194,6 +1194,12 @@ BSBM breadth, reproducible WatDiv/LDBC inputs, controlled parent-first baselines
 and per-query resource/tail gates remain the concrete next work, not a claim
 that an existing acceptance suite passed.
 
+The expanded BSBM pilot now covers all ten Explore SELECT templates and has
+parent/candidate result equality. It exposes Q8 and shared-statistics Q5
+scan-work regressions; fix measured product behavior next. Single-mode runs
+support equal-envelope process measurements, not planner allocation bounds.
+WatDiv/LDBC assets and baseline-first numerical ratification remain open.
+
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.
 - Instrument estimated/actual rows and q-error. Use bounded dynamic programming

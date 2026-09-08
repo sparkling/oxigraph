@@ -163,3 +163,86 @@ Parent/candidate raw JSONL SHA-256, respectively:
 Whole-process peaks were 112,964/114,552 KiB and elapsed times 12.81/17.11 s;
 these runs have different mode counts and are not comparable per-query costs.
 Raw artifacts remain local; no binary or benchmark upload is implied.
+
+## Ten-template SELECT pilot and isolated mode selection
+
+`bsbm-100-queries.sh` now instantiates every upstream Explore SELECT template
+(Q1–Q8, Q10, Q11). Q1/Q2 bytes and the dataset above are unchanged. Q9 DESCRIBE
+and Q12 CONSTRUCT are excluded because this runner compares SELECT results.
+This remains a diagnostic subset, not the official random parameter mix or a
+ratified performance corpus. The additional fixed parameters are:
+
+| Query | Parameters beyond the shared prefix | Observed rows | SHA-256 |
+| --- | --- | ---: | --- |
+| Q3 | Type1; features 38/418; x=0, y=1000 | 8 | `ecef0e53398a81a1ccf102f140f11a832dad6814c0076d401566bd823a14a591` |
+| Q4 | Type1; features 29/25/36; x=0, y=0 | 4 | `8ca15e949566a8c4f66cfdbe6f5e9e94b5c38de59b4bf10109ce7518b1401216` |
+| Q5 | dataFromProducer1/Product11 | 1 | `2b26e7065d6c07d7b543f1f49e60cac1838b5f5b8beda10af984bbbc802bfb53` |
+| Q6 | word `turgescence` | 1 | `510a4500ea6afcfa5de31f756dc236b9fc17be462360f497a099a375f62cfaf7` |
+| Q7 | dataFromProducer1/Product37; fixed date below | 14 | `ed3426a99f33122a1deb259010a5051e38d3e25e9baf7dee9e2e14f9a317ce9f` |
+| Q8 | dataFromProducer1/Product37 | 6 | `cb7920a985119ff96cf51f20010c1ab19fdf68d2c1d2f45f763102fcdf907f1f` |
+| Q10 | dataFromProducer1/Product1; fixed date below | 0 | `d4ef552ea104e55ca18d897f5f69de6b377715d1cd9228131bea60e2c7451f86` |
+| Q11 | dataFromVendor1/Offer1 | 10 | `1237d21207d1949b9ce4a68c03a5ee01d55b4ea3c49b927233fdc64b50174e87` |
+
+Type/feature/product/offer IRIs use the upstream BSBM instances prefix. The
+fixed typed dateTime is `2008-06-20T00:00:00`, the generator's declared date,
+not wall-clock time. Product labels are unique on this exact dataset, so the
+label-ordered LIMIT/OFFSET queries have stable membership. Q8's six English
+reviews are below LIMIT 20; date ties are compared as a bag. Q10 is an explicit
+empty-result control: the only vendor is British, not American. Q7 exercises
+the review OPTIONAL but not a matching German offer. These gaps require a
+larger/other subset before broad offer-path performance claims.
+
+After generating a fresh pilot directory as above:
+
+```sh
+set --
+for query in 1 2 3 4 5 6 7 8 10 11; do
+  set -- "$@" --bag "$pilot_dir/queries/q$query.rq"
+done
+target/release/examples/query_benchmark "$pilot_dir/dataset.nt" 3 "$@" \
+  > "$pilot_dir/explore-select.jsonl"
+```
+
+The retained `fa13b21e` parent ran first, then product source `382a6a7d`, on
+these exact inputs: exit zero and 300/300 versus 400/400 observations, all equal.
+They have six/eight modes respectively, three timed repetitions, warm-ups and
+separate feedback. Candidate binary SHA-256 was
+`6a94ae71ff44dd7b460e3a46de6d93c3c66e78503e7289ad9384759d39252270`;
+parent/candidate raw SHA-256:
+`b08fb3657d02f7992c5a1d230dcca23f947b7b88fe9ee9eb52166a900fbe962f` /
+`d25e1f245b0b2505d82e39dc404dd7d24c8e561032bbb8c52d11c622d8058cec`.
+The initial parent-only parameter exploration is not pooled into these runs.
+
+Results expose remaining product work, not a performance pass: Q8 greedy,
+bounded v1 and conditional v2 read 77, 3,095 and 1,115 quad rows respectively;
+shared-statistics v2 reads 129. All return six rows. Q5 shared-statistics v2
+reads 2,728 quad rows versus greedy's 388 for the same one-row result. Three
+repetitions do not establish p95 tails or reliable cross-binary speedups.
+
+The runner additionally accepts `--mode NAME` immediately after repetitions.
+An unknown/repeated mode or missing query is rejected; omitting the option
+preserves the rotating eight-mode comparison. `input.selected_modes` and
+`mode_rotation` identify the actual selection, and completion counts scale
+with it. Each invocation creates a fresh temporary store:
+
+```sh
+/usr/bin/time -v -o "$pilot_dir/q8-v2.time" \
+  target/release/examples/query_benchmark "$pilot_dir/dataset.nt" 20 \
+  --mode bounded_conditional_v2 --bag "$pilot_dir/queries/q8.rq" \
+  > "$pilot_dir/q8-v2.jsonl"
+```
+
+Names are the eight `mode` values reported above (an invalid name lists them).
+Use the same query set, repetitions and process envelope for each mode before
+comparing RSS. Every mode still includes loading, statistics build/verification,
+the independent oracle and separate feedback. This makes whole-process peaks
+comparable in scope, **not** isolated planner allocations, cold-cache evidence,
+a resource ceiling, or frozen acceptance. Historical executables lack this
+option; do not attribute a new-runner result to an unchanged historical binary.
+
+Full G3.2 still needs reproducible WatDiv/LDBC subsets, parent-first controlled
+measurements including complete/null q-error coverage, per-query tails and
+resource bounds. The programme decider must ratify numerical gates after the
+parent baseline and before the gated candidate run; no pilot observation is
+retroactively an acceptance threshold. Opt-in acceptance does not require
+changing the ordinary greedy default.

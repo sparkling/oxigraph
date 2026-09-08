@@ -366,6 +366,15 @@ The [local parent-first BSBM comparison](../../bench/query-benchmark.md) retains
 v1 and reports v2 separately. The two-query pilot does not close the full G3.2
 corpus, resource/tail or promotion gate; G3.2 remains active.
 
+The expanded local pilot now covers all ten upstream BSBM Explore SELECT
+templates, with explicit fixed parameters and unchanged Q1/Q2 identities.
+Parent/candidate comparisons return identical results but expose remaining
+Q8 and shared-statistics Q5 scan-work regressions. Single-mode execution gives
+each process the same declared workload envelope for RSS observations; it does
+not measure isolated planner allocations. These are diagnostic acceptance
+inputs, not new semantic behavior or a frozen performance pass. See the
+[input identities and reproduction](../../bench/query-benchmark.md#ten-template-select-pilot-and-isolated-mode-selection).
+
 ### Full statistics/planning promotion
 
 Promotion requires:

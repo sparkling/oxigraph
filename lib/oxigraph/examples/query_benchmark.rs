@@ -1,5 +1,5 @@
 //! Local SELECT comparison, not a qualification or default-promotion command.
-//! Usage: query_benchmark DATASET.nt REPETITIONS (--bag|--ordered) QUERY.rq ...
+//! Usage: query_benchmark DATASET.nt REPETITIONS [--mode MODE] (--bag|--ordered) QUERY.rq ...
 //! Input identities and raw samples are JSON lines on stdout; no files published.
 use oxigraph::io::RdfFormat;
 use oxigraph::model::graph::CanonicalizationAlgorithm;
@@ -20,7 +20,45 @@ use std::sync::Arc;
 use std::time::Instant;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-const MODE_COUNT: usize = 8;
+const MODE_NAMES: [&str; 8] = [
+    "greedy",
+    "bounded",
+    "statistics_greedy",
+    "statistics_bounded",
+    "shared_statistics_greedy",
+    "shared_statistics_bounded",
+    "bounded_conditional_v2",
+    "shared_statistics_bounded_conditional_v2",
+];
+
+// Keep selection outside the measured path. Explicit names prevent a typo from
+// silently running the default set (and mislabelling process resource use).
+fn selection(args: &[String]) -> Result<(Vec<usize>, &[String])> {
+    let (modes, queries) = if args.first().is_some_and(|arg| arg == "--mode") {
+        let name = args.get(1).ok_or("--mode requires a mode name")?;
+        let mode = MODE_NAMES
+            .iter()
+            .position(|candidate| candidate == name)
+            .ok_or_else(|| {
+                format!(
+                    "unknown mode {name}; expected one of {}",
+                    MODE_NAMES.join(", ")
+                )
+            })?;
+        (vec![mode], &args[2..])
+    } else {
+        ((0..MODE_NAMES.len()).collect(), args)
+    };
+    if queries.is_empty() || queries.len() % 2 != 0 {
+        return Err("expected one or more (--bag|--ordered) QUERY.rq pairs".into());
+    }
+    for pair in queries.chunks_exact(2) {
+        if !matches!(pair[0].as_str(), "--bag" | "--ordered") {
+            return Err("each SELECT needs an explicit --bag or --ordered comparison".into());
+        }
+    }
+    Ok((modes, queries))
+}
 
 struct Rows {
     variables: Vec<Variable>,
@@ -144,18 +182,14 @@ fn main() -> Result {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.len() < 4 || args.len() % 2 != 0 {
         return Err(
-            "usage: query_benchmark DATASET.nt REPETITIONS (--bag|--ordered) QUERY.rq ...".into(),
+            "usage: query_benchmark DATASET.nt REPETITIONS [--mode MODE] (--bag|--ordered) QUERY.rq ...".into(),
         );
     }
     let repetitions: usize = args[1].parse()?;
     if !(1..=100).contains(&repetitions) {
         return Err("repetitions must be 1..100".into());
     }
-    for pair in args[2..].chunks_exact(2) {
-        if !matches!(pair[0].as_str(), "--bag" | "--ordered") {
-            return Err("each SELECT needs an explicit --bag or --ordered comparison".into());
-        }
-    }
+    let (modes, queries) = selection(&args[2..])?;
     let bytes = std::fs::read(&args[0])?;
     let data_sha256 = sha256(&bytes);
     let directory = tempfile::tempdir()?;
@@ -184,6 +218,8 @@ fn main() -> Result {
         "statistics_build_activate_seconds": statistics_build_activate_seconds,
         "statistics_verification_seconds": statistics_verification_seconds,
         "cost_models": [BoundedJoinCostModel::IndependentV1.id(), BoundedJoinCostModel::ConditionalV2.id()],
+        "selected_modes": modes.iter().map(|&mode| MODE_NAMES[mode]).collect::<Vec<_>>(),
+        "mode_rotation": modes.len() > 1,
         "max_dp_leaves": BoundedJoinPlanning::default().max_dp_leaves(),
         "debug_assertions": cfg!(debug_assertions), "rdf_12": cfg!(feature = "rdf-12"),
         "cache": "shared process; no eviction or cold-cache claim",
@@ -194,7 +230,7 @@ fn main() -> Result {
     // The store is private, receives no further writes and has no other handles.
     // Each statistics query checks that its new retained source is current.
     let mut emitted = 0;
-    for pair in args[2..].chunks_exact(2) {
+    for pair in queries.chunks_exact(2) {
         let [comparison, path] = pair else {
             return Err("expected comparison and query path".into());
         };
@@ -218,18 +254,9 @@ fn main() -> Result {
         // One separate instrumented round follows latency sampling.
         for round in 0..=repetitions + 1 {
             let instrumented = round == repetitions + 1;
-            for offset in 0..MODE_COUNT {
-                let mode = (offset + round) % MODE_COUNT;
-                let mode_name = [
-                    "greedy",
-                    "bounded",
-                    "statistics_greedy",
-                    "statistics_bounded",
-                    "shared_statistics_greedy",
-                    "shared_statistics_bounded",
-                    "bounded_conditional_v2",
-                    "shared_statistics_bounded_conditional_v2",
-                ][mode];
+            for offset in 0..modes.len() {
+                let mode = modes[(offset + round) % modes.len()];
+                let mode_name = MODE_NAMES[mode];
                 let started = Instant::now();
                 let mut evaluator = SparqlEvaluator::new();
                 if mode % 2 == 1 || mode == 6 {
@@ -312,11 +339,11 @@ fn main() -> Result {
             }
         }
     }
-    let queries = (args.len() - 2) / 2;
+    let queries = queries.len() / 2;
     emit(
         &json!({"kind": "complete", "queries": queries, "emitted_observations": emitted,
-        "expected_observations": queries * (repetitions + 2) * MODE_COUNT,
-        "samples": queries * (repetitions + 1) * MODE_COUNT, "feedback_records": queries * MODE_COUNT,
+        "expected_observations": queries * (repetitions + 2) * modes.len(),
+        "samples": queries * (repetitions + 1) * modes.len(), "feedback_records": queries * modes.len(),
         "all_equivalent": true}),
     )?;
     Ok(())
@@ -325,6 +352,33 @@ fn main() -> Result {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mode_selection_is_explicit_and_preserves_default_order() -> Result {
+        let args = |values: &[&str]| values.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        let default = args(&["--bag", "q.rq", "--ordered", "ordered.rq"]);
+        let (modes, queries) = selection(&default)?;
+        assert_eq!(modes, (0..MODE_NAMES.len()).collect::<Vec<_>>());
+        assert_eq!(queries, default);
+        for (expected, name) in MODE_NAMES.iter().enumerate() {
+            let selected = args(&["--mode", name, "--bag", "q.rq"]);
+            let (modes, queries) = selection(&selected)?;
+            assert_eq!(modes, [expected]);
+            assert_eq!(queries, &selected[2..]);
+        }
+        for invalid in [
+            vec![],
+            vec!["--mode"],
+            vec!["--mode", "greedy"],
+            vec!["--mode", "typo", "--bag", "q.rq"],
+            vec!["--mode", "greedy", "--mode", "bounded", "--bag", "q.rq"],
+            vec!["--bag"],
+            vec!["--silent", "q.rq"],
+        ] {
+            assert!(selection(&args(&invalid)).is_err(), "{invalid:?}");
+        }
+        Ok(())
+    }
 
     fn rows(query: &str) -> Result<Rows> {
         Rows::collect(

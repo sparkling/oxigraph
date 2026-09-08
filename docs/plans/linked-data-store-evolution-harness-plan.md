@@ -1132,6 +1132,11 @@ baseline the retained parent path under controlled conditions, then review
 numeric gates and address measured plan regressions. Keep G3.2 active and the
 default planner unchanged; do not turn the missing assets into another harness
 evolution phase.
+The ten-template BSBM SELECT pilot now has exact parent/candidate result
+equality and explicit empty/OPTIONAL coverage limits. Q8 and shared-statistics
+Q5 expose concrete scan-work regressions to address next. Equal-envelope
+single-mode resource runs are available; this supporting work does not close
+the corpus or performance gate and does not change the default planner.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 
