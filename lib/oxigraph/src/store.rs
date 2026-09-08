@@ -54,6 +54,8 @@ mod backup;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod derived;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+mod derived_generation;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod restore;
 
 pub use crate::storage::TransactionStartControl;
@@ -70,6 +72,11 @@ pub use contributors::{
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 pub use derived::{
     DerivedCommit, DerivedDelta, DerivedError, DerivedLimits, DerivedScan, DerivedSnapshot,
+};
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+pub use derived_generation::{
+    DerivedFiles, DerivedGeneration, DerivedGenerationError, DerivedGenerationLimits, DerivedIndex,
+    DerivedMonitor, DerivedProvider, DerivedRestore, DerivedState, DerivedView, DerivedWriter,
 };
 pub use evaluation_metrics::{
     EvaluationDurationHistogram, EvaluationMetrics, EvaluationOperation, EvaluationOutcome,

@@ -380,6 +380,15 @@ verification recomputes that binding. Provider bytes are copied, not linked.
 Unknown, duplicate, missing-required, cursor-invalid, or changed contributions
 reject. Checksums do not independently establish a provider's index semantics.
 
+G3.0's derived-generation adapter additionally binds the full physical checkpoint
+and primary scan tuple. Admission checks the actual packaged database, using one
+bounded scan for agreeing exact-primary contributors. This rejects ungoverned
+drift and copied-sibling divergence even with equal receipt/sequence identities;
+the generic contributor format is unchanged. Its restore adapter uses an internal
+borrowed-snapshot callback which cannot retain the read-only handle, then checks
+provider semantics and scan identity before G2's final file verification. See
+[ADR-0024](0024-rebuildable-derived-indexes.md#g30-native-durable-generations-2026-09-08).
+
 The native RocksDB 11.1.2 read-only checkpoint collector omitted recovered WALs:
 a closed source reopened at sequence 7 produced a checkpoint at sequence 1.
 A local C API adapter now supplies alive WALs with exact observed sizes to the

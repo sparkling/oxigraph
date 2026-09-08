@@ -9,8 +9,8 @@
   denial-attempt and SHACL commit-gate telemetry close bounded G2.5. G2.6
   checkpoint packages, backup receipts and offline verification are implemented;
   G2.7 fresh-directory restore/reconciliation and local baselined drills are
-  implemented. G3.0 native input APIs are implemented; durable generation
-  reconciliation/activation is active.
+  implemented. G3.0 native inputs, durable generation reconciliation/activation
+  and G2 lifecycle hooks are implemented; G3.3 text is the next product slice.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
@@ -78,8 +78,9 @@ G2.6 task `task-1787851232211-6fiarr` implements checkpoint-bound backup
 receipts, frozen contributor files, completion-last failure handling and offline
 verification. G2.7 task `task-1787851233022-antw51` implements fresh-directory
 restore, primary/contributor reconciliation and artifact-bound local baselines.
-G3.0 shared derived-index lifecycle is active. Its native snapshot/rebuild inputs
-and complete-commit deltas are implemented; durable generation activation remains.
+G3.0 shared native lifecycle is implemented: snapshot/delta inputs, checksummed
+generations, strict primary reconciliation, atomic activation and G2 hooks.
+The next approved product slice is G3.3 text; G3.4 spatial remains outstanding.
 
 G1.7, ADR-0034 through ADR-0041, Dream Machine, GEPA/AVO, broad Jena/RDF4J
 parity, and the P1-P3 product portfolio remain future work. They require a
@@ -120,8 +121,8 @@ observations, transaction terminal and Store-bound query/update counters and
 histograms. Denial-attempt and SHACL commit-gate telemetry close G2.5. G2.6 now
 adds checkpoint packages, completion-last manifests and offline verification;
 G2.7 now implements separate fresh-directory restore/reconciliation and measured
-local drills, closing native ADR-0022. G3.0 input APIs are implemented; durable
-generation lifecycle remains active. Remaining G3/G4 capabilities
+local drills, closing native ADR-0022. G3.0 native durable generation lifecycle
+is implemented. Remaining G3/G4 capabilities
 stay in the programme; native recovery does not close the wider programme or
 qualify a production recovery profile.
 No harness or new dependency version was added; receipt hashing reuses the
@@ -1070,12 +1071,14 @@ incremental validation is only a later differential optimization.
 
 ### G3 — optimize after correctness
 
-G3.0 task `task-1787851230690-xr6ls9` now has stable native snapshot inputs,
-streamed rebuild and bounded whole-commit deltas, including retention and
-ungoverned-write gap tests. This is not generation activation or strict query
-completeness. Durable generations, exact reconciliation, atomic activation,
-crash closure and G2 hooks remain; see
-[ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g30-native-input-slice-2026-09-08).
+G3.0 task `task-1787851230690-xr6ls9` implements the native lifecycle: stable
+inputs, bounded whole-commit deltas, checksummed immutable generations, exact
+primary reconciliation, atomic activation, process-crash closure and G2 hooks.
+Strict views retain the verified primary snapshot and compare scan identity,
+rejecting ungoverned and copied-sibling divergence. This initial scan-based
+correctness path is not a fast search engine or production qualification.
+G3.3 text is next; see
+[ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g30-native-durable-generations-2026-09-08).
 
 | Task                                            | Depends on                                                                                                                          | Size | Exit gate                                                                                                                                                                                                                                                                        |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

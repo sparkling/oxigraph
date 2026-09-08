@@ -116,6 +116,15 @@ pub struct RestorePrimary<'a> {
     contents: &'a BackupContents,
 }
 impl RestorePrimary<'_> {
+    // The callback cannot retain an owned MVCC handle across writable handoff.
+    pub(super) fn with_derived_snapshot(
+        &self,
+        control: &TransactionStartControl,
+        inspect: impl FnOnce(&super::DerivedSnapshot) -> Result<(), super::DerivedGenerationError>,
+    ) -> Result<(), super::DerivedGenerationError> {
+        let snapshot = self.store.derived_snapshot(control)?;
+        inspect(&snapshot)
+    }
     pub const fn checkpoint(&self) -> &BackupCheckpoint {
         self.checkpoint
     }

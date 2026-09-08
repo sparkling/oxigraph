@@ -55,10 +55,13 @@ inventory, opt-in loopback operational endpoints, and per-Store transaction,
 query/update, denied-attempt and SHACL commit-gate counters and cumulative
 duration histograms. G2.6 now adds checkpoint packages, completion-last receipts,
 and offline package verification. G2.7 adds fresh-directory restore, primary and
-contributor reconciliation, and measured local recovery drills. G3.0 shared
-derived-index lifecycle is active: native stable snapshot/rebuild inputs and
-bounded complete-commit deltas are implemented; durable generations and
-activation remain. See the [runnable input example](lib/oxigraph/examples/derived_inputs.rs)
+contributor reconciliation, and measured local recovery drills. G3.0 implements
+the native shared derived-index lifecycle: stable inputs, bounded deltas,
+checksummed generations, atomic activation, and readiness/backup/restore hooks.
+Strict views verify the same primary snapshot, including ungoverned changes and
+divergent database copies; this initial correctness path scans primary contents,
+not a fast search engine. Text/spatial providers remain G3.3/G3.4.
+See the [runnable lifecycle example](lib/oxigraph/examples/derived_generations.rs)
 and [ADR-0024](docs/adr/0024-rebuildable-derived-indexes.md).
 
 Build this fork rather than an upstream package to obtain these changes:

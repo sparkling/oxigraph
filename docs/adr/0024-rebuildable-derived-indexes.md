@@ -4,9 +4,11 @@
 - **Date**: 2026-08-24
 - Updated: 2026-09-08
 - Deciders: Oxigraph parity programme
-- Implementation status: G3.0 native snapshot/rebuild-input and complete-commit
-  delta APIs implemented. Durable generations, reconciliation/activation and
-  lifecycle integration remain G3.0; text/spatial engines remain G3.3/G3.4
+- Implementation status: G3.0 native local lifecycle implemented: snapshot/delta
+  inputs, durable generation reconciliation/activation, bounded provider output,
+  crash recovery and G2 readiness/backup/restore integration. Text/spatial engines
+  remain G3.3/G3.4; this ADR remains Proposed for those providers and separately
+  gated performance/production promotion
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
@@ -99,8 +101,78 @@ provider's rebuild/insert/delete/clear/drop/namespace replay, rollback exclusion
 lineage, stable snapshots and ungoverned freshness gaps. Run the
 [example](../../lib/oxigraph/examples/derived_inputs.rs) with
 `cargo run --locked -p oxigraph --example derived_inputs`.
-This is an input foundation, not complete G3.0: checksummed durable generations,
-crash-safe activation, readiness and backup/restore integration remain required.
+This input increment alone did not complete G3.0; the following native lifecycle
+increment closes its remaining local implementation gates.
+
+### G3.0 native durable generations (2026-09-08)
+
+[`DerivedIndex`](../../lib/oxigraph/src/store/derived_generation.rs) owns one
+operator-controlled index directory, a stable advisory `LOCK` inode and immutable
+generation directories. Creation rejects existing roots. Creation/activation
+currently requires Unix directory synchronization and reuses `libc`; the declared
+Rust 1.87 MSRV is unchanged (this slice was tested on Linux with Rust 1.98.0).
+This is not a distributed lock or hostile concurrent-filesystem
+sandbox.
+
+`DerivedProvider` supplies rebuild, optional whole-commit delta application and
+mandatory independent reconciliation with the complete primary snapshot.
+`DerivedWriter` copies fresh payloads, hashes/synchronizes them and poisons
+completion after any output error, even when swallowed. The completion-last
+manifest binds provider/schema, physical/governed source, applied commit (the
+reconciled source's latest full receipt, if present), optional base fingerprint,
+primary scan tuple and exact payload inventory. Building never changes ACTIVE.
+
+Activation reopens/verifies the candidate, reconciles primary input and semantics,
+rechecks payload/manifest bytes, synchronizes a temporary pointer and atomically
+renames it. Post-rename failure is `ActivationIndeterminate`, not rollback.
+Reopen discards only unpublished `ACTIVE.pending`; incomplete/inactive generations
+are retained, not automatically pruned. A failed activation with pending scratch
+requires reopen before retry. OS lock release survives abrupt process exit.
+Tests cover process interruption, not power loss on every filesystem/device.
+
+Strict views retain the **same borrowed `DerivedSnapshot`** used for verification,
+not authority for later Store reads. Full checkpoint equality is insufficient:
+copied sibling stores can have identical IDs/sequences/receipts and divergent
+ungoverned contents. Strict/Ready/Healthy checks also compare exact primary scan
+record count, logical bytes and hash. Mismatch is typed `NotFresh` or a lagging/
+rebuilding observation; cancellation/limit errors remain errors. Eventual views
+are explicitly opt-in and expose applied/source checkpoints. Shared identities
+and monotonic sequences are compatibility checks, **not proof of ancestry**.
+
+This correctness baseline scans primary contents and verifies payloads; it makes
+no accelerated-query/throughput claim. G3.3/G3.4 must measure this cost before any
+separately reviewed optimization, preserving strict completeness. Checksums detect
+accidental corruption, not a dishonest provider/operator rewriting every binding.
+Providers own semantic reconciliation and their internal working-memory limits.
+
+Default ceilings are 256 payload files/256 MiB and 64 retained generations/4 GiB,
+including incomplete candidates. Manifests are at most 1 MiB, inventories at most
+4,096 payloads, and old directory inspection stops after 4,098 entries. A manifest
+reservation reduces available output bytes. These are logical/file-size bounds,
+not disk quotas, RSS/native-allocation caps or automatic garbage collection.
+Cancellation/deadlines are cooperative at callbacks and chunk boundaries.
+
+`observation` freshly verifies files and the supplied primary snapshot before
+Healthy. These are sampled observations, not a lease or atomic readiness across
+later writes. G2 required/fallback policy is unchanged. The separate monitor
+reports in-process building/failure; reopen re-evaluates durable active state.
+
+`backup_contribution` freezes manifest/payloads. G2.6 compares its full checkpoint
+**and primary scan tuple against the actual packaged database**; exact-primary
+contributions must agree and share one bounded scan. Receipt equality cannot
+admit ungoverned/sibling drift. The generic G2 format remains unchanged.
+`DerivedRestore` reconciles copied bytes against a borrowed primary snapshot
+which cannot escape the callback. `import_restored` copies into a fresh inactive
+local generation; activation is explicit, not in-place adoption.
+
+The [fake-provider tests](../../lib/oxigraph/src/store/derived_generation_tests.rs)
+cover rebuild/delta lifecycle, topology/namespaces, rollback, ungoverned/sibling
+divergence, corrupted payloads/manifests/pointers, identity, writer exclusion,
+bounded/cancelled/failed builds, interrupted and abrupt-exit activation, reopen,
+backup admission, writable/reopened restore and imported index. Run the
+[count-only example](../../lib/oxigraph/examples/derived_generations.rs) using
+`cargo run --locked -p oxigraph --example derived_generations`.
+This closes native G3.0, not either search provider or production qualification.
 
 ### Complete lifecycle and provider boundary
 

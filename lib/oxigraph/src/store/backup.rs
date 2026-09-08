@@ -56,6 +56,10 @@ impl BackupArtifact {
 pub struct BackupContribution {
     observation: ContributorObservation,
     artifacts: Vec<BackupArtifact>,
+    // Additional admission guard for exact-primary derived generations. The
+    // generation manifest in artifacts binds this identity in the file format.
+    primary_checkpoint: Option<BackupCheckpoint>,
+    primary_input: Option<([u8; 32], u64, u64)>,
 }
 impl BackupContribution {
     pub fn new(
@@ -75,7 +79,18 @@ impl BackupContribution {
         Ok(Self {
             observation,
             artifacts,
+            primary_checkpoint: None,
+            primary_input: None,
         })
+    }
+    pub(super) fn at_primary(
+        mut self,
+        checkpoint: BackupCheckpoint,
+        input: ([u8; 32], u64, u64),
+    ) -> Self {
+        self.primary_checkpoint = Some(checkpoint);
+        self.primary_input = Some(input);
+        self
     }
     pub fn observation(&self) -> &ContributorObservation {
         &self.observation
@@ -179,6 +194,22 @@ pub struct BackupCheckpoint {
     retained_after: Option<OutboxCursor>,
 }
 impl BackupCheckpoint {
+    pub(super) fn encoded(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        self.encode(&mut bytes);
+        bytes
+    }
+
+    pub(super) fn from_encoded(bytes: &[u8]) -> Result<Self, BackupError> {
+        let mut input = Decoder(bytes);
+        let checkpoint = Self::decode(&mut input)?;
+        checkpoint.validate()?;
+        if !input.0.is_empty() || checkpoint.encoded() != bytes {
+            return Err(BackupError::InvalidManifest);
+        }
+        Ok(checkpoint)
+    }
+
     pub fn database_id(&self) -> &[u8] {
         &self.database_id
     }
@@ -412,6 +443,14 @@ impl Store {
         check(&options.control, started)?;
         let checkpoint_store = Store::open_read_only(destination.join("store"))?;
         let (checkpoint, health) = checkpoint_store.backup_checkpoint()?;
+        if options.contributions.iter().any(|contribution| {
+            contribution
+                .primary_checkpoint
+                .as_ref()
+                .is_some_and(|expected| expected != &checkpoint)
+        }) {
+            return Err(ContributorError::SourceMismatch.into());
+        }
         let observations: Vec<_> = options
             .contributions
             .iter()
@@ -424,6 +463,35 @@ impl Store {
                     check(&options.control, started).is_ok()
                 })?;
         let contents = checkpoint_store.backup_contents(&options.control, started)?;
+        let primary_input = options
+            .contributions
+            .iter()
+            .find_map(|entry| entry.primary_input);
+        if let Some(expected) = primary_input {
+            if options
+                .contributions
+                .iter()
+                .filter_map(|entry| entry.primary_input)
+                .any(|input| input != expected)
+            {
+                return Err(ContributorError::SourceMismatch.into());
+            }
+            let (hash, records, bytes) = expected;
+            let limits = super::DerivedLimits {
+                max_records: NonZeroU64::new(records).unwrap_or(NonZeroU64::MIN),
+                max_bytes: NonZeroU64::new(bytes).unwrap_or(NonZeroU64::MIN),
+                control: options.control.clone(),
+            };
+            let scan = checkpoint_store
+                .derived_snapshot(&options.control)
+                .and_then(|snapshot| snapshot.scan(&limits, |_| Ok(())))
+                .map_err(|error| StorageError::Other(Box::new(error)))?;
+            if *scan.sha256() != hash || scan.records() != records || scan.logical_bytes() != bytes
+            {
+                return Err(ContributorError::SourceMismatch.into());
+            }
+            check(&options.control, started)?;
+        }
         drop(checkpoint_store);
         let mut contributions = Vec::new();
         fs::create_dir(destination.join("contributors"))?;
