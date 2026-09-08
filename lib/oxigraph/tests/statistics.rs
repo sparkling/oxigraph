@@ -148,6 +148,9 @@ fn statistics_queries_preserve_solution_bags_across_operators_and_fallbacks() ->
             Some(
                 BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::ConditionalV2),
             ),
+            Some(
+                BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::CorrelatedV3),
+            ),
         ];
         for (index, options) in [&fixture.index, &missing]
             .into_iter()

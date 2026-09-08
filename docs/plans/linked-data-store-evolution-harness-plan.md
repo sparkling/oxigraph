@@ -1134,7 +1134,10 @@ default planner unchanged; do not turn the missing assets into another harness
 evolution phase.
 The ten-template BSBM SELECT pilot now has exact parent/candidate result
 equality and explicit empty/OPTIONAL coverage limits. Q8 and shared-statistics
-Q5 expose concrete scan-work regressions to address next. Equal-envelope
+Q5 expose concrete scan-work regressions. Explicit correlated V3 now corrects
+inconsistent correlated costs and avoids unhinted hash RHS scans when indexed
+probes are legal; native Q8-shaped result/work checks pass and older profiles
+remain reproducible. Equal-envelope
 single-mode resource runs are available; this supporting work does not close
 the corpus or performance gate and does not change the default planner.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and

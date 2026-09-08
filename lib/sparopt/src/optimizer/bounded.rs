@@ -15,12 +15,15 @@ pub enum BoundedJoinCostModel {
     IndependentV1,
     /// Conditional, plan-independent subset hints and single-graph membership probes.
     ConditionalV2,
+    /// Consistent correlated costs; unhinted leaves prefer legal indexed probes.
+    CorrelatedV3,
 }
 impl BoundedJoinCostModel {
     pub const fn id(self) -> &'static str {
         match self {
             Self::IndependentV1 => "oxigraph.join-work.v1",
             Self::ConditionalV2 => "oxigraph.join-work.conditional.v2",
+            Self::CorrelatedV3 => "oxigraph.join-work.correlated.v3",
         }
     }
 }
@@ -127,6 +130,41 @@ pub(super) fn plan(
         .iter()
         .map(|&id| estimate_query_expression_size(&leaves[id], input, estimator))
         .collect();
+    let allow_hash: Vec<_> = ids
+        .iter()
+        .map(|&id| {
+            // Only V3 requires an actual RHS hint before choosing an unbound
+            // scan over a legal indexed probe. Some estimators decline individual
+            // leaves; registration of an estimator alone is not evidence.
+            cost_model != BoundedJoinCostModel::CorrelatedV3
+                || match &leaves[id] {
+                    QueryExpression::QuadPattern {
+                        subject,
+                        predicate,
+                        object,
+                        graph_name,
+                    } => {
+                        !has_bound_pattern_variable(
+                            subject,
+                            predicate,
+                            object,
+                            graph_name.as_ref(),
+                            input,
+                        ) && estimator
+                            .and_then(|e| {
+                                e.estimate_quad_pattern(
+                                    subject,
+                                    predicate,
+                                    object,
+                                    graph_name.as_ref(),
+                                )
+                            })
+                            .is_some()
+                    }
+                    _ => false,
+                }
+        })
+        .collect();
     let mut types = vec![input.clone(); count];
     let mut rows = vec![0_u64; count];
     let mut connected = vec![false; count];
@@ -155,7 +193,7 @@ pub(super) fn plan(
                 .ok()?
                 .max(u64::from(numerator != 0))
         };
-        if cost_model == BoundedJoinCostModel::ConditionalV2 && previous != 0 {
+        if cost_model != BoundedJoinCostModel::IndependentV1 && previous != 0 {
             // Plan-independent conditional estimates: a join cannot produce
             // more estimated rows than a preceding subset times its bound
             // leaf probe estimate. Consider every connected last-leaf choice,
@@ -224,31 +262,50 @@ pub(super) fn plan(
                 .saturating_add(u128::from(rows[previous]))
                 .saturating_add(2 * u128::from(sizes[last]))
                 .saturating_add(u128::from(rows[mask]));
-            consider(
-                QueryExpression::join(
-                    parent.expression.clone(),
-                    leaves[id].clone(),
-                    JoinAlgorithm::HashBuildLeftProbeRight { keys },
-                ),
-                hash_work,
-                0,
-            );
+            #[cfg(feature = "sep-0006")]
+            let can_probe = is_fit_for_for_loop_join(&leaves[id], input, &types[previous]);
+            #[cfg(not(feature = "sep-0006"))]
+            let can_probe = false;
+            if allow_hash[last] || !can_probe {
+                consider(
+                    QueryExpression::join(
+                        parent.expression.clone(),
+                        leaves[id].clone(),
+                        JoinAlgorithm::HashBuildLeftProbeRight { keys },
+                    ),
+                    hash_work,
+                    0,
+                );
+            }
             #[cfg(feature = "sep-0006")]
             {
                 // The right input is one eligible quad, never a path, SERVICE
                 // or scoped expression. Reuse the existing admission proof.
-                if is_fit_for_for_loop_join(&leaves[id], input, &types[previous]) {
-                    let probe_rows = if cost_model == BoundedJoinCostModel::ConditionalV2 {
-                        conditional_probe_rows(&leaves[id], &types[previous], estimator)
+                if can_probe {
+                    let work = if cost_model == BoundedJoinCostModel::CorrelatedV3 {
+                        // The RHS is one admitted quad, so its matching rows
+                        // and the join's output are the same occurrences. Use
+                        // the same subset hint for both charges, plus one
+                        // range lookup per parent. Scan and emission remain
+                        // separate work; this is not an output deduplication.
+                        parent
+                            .work
+                            .saturating_add(u128::from(rows[previous]))
+                            .saturating_add(2 * u128::from(rows[mask]))
                     } else {
-                        estimate_query_expression_size(&leaves[id], &types[previous], estimator)
+                        let probe_rows = if cost_model == BoundedJoinCostModel::IndependentV1 {
+                            estimate_query_expression_size(&leaves[id], &types[previous], estimator)
+                        } else {
+                            conditional_probe_rows(&leaves[id], &types[previous], estimator)
+                        };
+                        parent
+                            .work
+                            .saturating_add(
+                                u128::from(rows[previous])
+                                    .saturating_mul(1 + u128::from(probe_rows)),
+                            )
+                            .saturating_add(u128::from(rows[mask]))
                     };
-                    let work = parent
-                        .work
-                        .saturating_add(
-                            u128::from(rows[previous]).saturating_mul(1 + u128::from(probe_rows)),
-                        )
-                        .saturating_add(u128::from(rows[mask]));
                     consider(
                         QueryExpression::lateral(parent.expression.clone(), leaves[id].clone()),
                         work,
@@ -384,6 +441,7 @@ mod tests {
         for model in [
             BoundedJoinCostModel::IndependentV1,
             BoundedJoinCostModel::ConditionalV2,
+            BoundedJoinCostModel::CorrelatedV3,
         ] {
             let options = BoundedJoinPlanning::default().with_cost_model(model);
             for n in [8, 9] {
@@ -486,6 +544,7 @@ mod tests {
         for model in [
             BoundedJoinCostModel::IndependentV1,
             BoundedJoinCostModel::ConditionalV2,
+            BoundedJoinCostModel::CorrelatedV3,
         ] {
             let options = BoundedJoinPlanning::default().with_cost_model(model);
             for hint in [0, 1, u64::MAX] {
@@ -554,6 +613,68 @@ mod tests {
             BoundedJoinPlanning::COST_MODEL,
             BoundedJoinCostModel::IndependentV1.id()
         );
+    }
+
+    #[test]
+    #[cfg(feature = "sep-0006")]
+    fn correlated_hash_requires_a_leaf_hint_but_keeps_expanding_hash_joins() {
+        struct Hint(Option<u64>, bool);
+        impl CardinalityEstimator for Hint {
+            fn estimate_quad_pattern(
+                &self,
+                _: &GroundTermPattern,
+                predicate: &NamedNodePattern,
+                _: &GroundTermPattern,
+                _: Option<&NamedNodePattern>,
+            ) -> Option<u64> {
+                if self.1
+                    && matches!(predicate, NamedNodePattern::NamedNode(n) if n.as_str() == "urn:q")
+                {
+                    None
+                } else {
+                    self.0
+                }
+            }
+        }
+        fn has_hash(plan: &QueryExpression) -> bool {
+            match plan {
+                QueryExpression::Join { .. } => true,
+                QueryExpression::Lateral { left, right } => has_hash(left) || has_hash(right),
+                QueryExpression::Project { inner, .. } | QueryExpression::Filter { inner, .. } => {
+                    has_hash(inner)
+                }
+                QueryExpression::QuadPattern { .. } => false,
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+        let input = parse("SELECT * { ?s <urn:p> ?o . ?s <urn:q> ?v }");
+        let options =
+            BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::CorrelatedV3);
+        for hint in [None, Some(100_000)] {
+            let (plan, report) = Optimizer::optimize_query_expression_with_join_planning(
+                input.clone(),
+                Some(&Hint(hint, false)),
+                Some(options),
+            );
+            assert_eq!(report.dp_components, 1);
+            // An installed-but-declining estimator is still unhinted. With
+            // large actual hints the estimated expanding join favors a scan.
+            assert_eq!(has_hash(&plan), hint.is_some());
+        }
+        let (mixed, _) = Optimizer::optimize_query_expression_with_join_planning(
+            input.clone(),
+            Some(&Hint(Some(1_000_000), true)),
+            Some(options),
+        );
+        assert!(has_hash(&mixed));
+        assert_eq!(
+            leaf_order(&mixed),
+            ["<urn:q>", "<urn:p>"],
+            "only the hinted p leaf may be the hash RHS"
+        );
+        let (plan, _) =
+            Optimizer::optimize_query_expression_with_join_planning(input, None, Some(options));
+        assert!(!has_hash(&plan));
     }
 
     #[test]

@@ -375,6 +375,42 @@ not measure isolated planner allocations. These are diagnostic acceptance
 inputs, not new semantic behavior or a frozen performance pass. See the
 [input identities and reproduction](../../bench/query-benchmark.md#ten-template-select-pilot-and-isolated-mode-selection).
 
+### G3.2 opt-in correlated cost model v3 (2026-09-08)
+
+`BoundedJoinCostModel::CorrelatedV3` identifies
+`oxigraph.join-work.correlated.v3`. V1, V2 and ordinary/default options retain
+their contracts. V3 retains V2's plan-independent conditional subset hints,
+membership correction, component eligibility, deterministic ties and eight-leaf
+bound. It changes only two physical-cost decisions:
+
+- For an admissible lateral over one quad, charge parent work, one range lookup
+  per parent row, and twice the subset row estimate: once for matching RHS rows
+  and once for emitted join rows. These are distinct operations using the same
+  estimated occurrences. The old profiles multiply an independent per-probe
+  hint instead; all formulas remain available under their original identities.
+- Prefer a legal indexed probe over an unbound hash RHS when that exact leaf
+  has no applicable estimator hint. A registered estimator returning `None`
+  does not count as a hint. As in base estimation, outer-bound pattern variables
+  exclude unbound estimator authority. An actual hint allows the existing hash
+  candidate and unchanged hash work formula; if lateral is ineligible or
+  SEP-0006 is disabled, hash remains available regardless of hint presence.
+
+This is a conservative strategy under unknown fanout, not a claim that RDF
+properties are single-valued or that indexed probes always outperform scans.
+No cardinality hint, including zero, removes data or algebra. No predicate
+fanout constant, persistence format or semantic boundary changes.
+
+The Q8-shaped native fixture first failed with 1,064 unbound quad rows, both
+under V2-equivalent costs and under the formula-only correction. Its bound
+probe heuristic still compounded tenfold fanout; the second rule is needed
+without statistics. The final profile scans only the selected 14-row range,
+with the same six result rows, both without and with shared statistics.
+Tests also retain V1/V2 work expectations, cover declining and mixed estimators,
+permit a hash join for a hinted expanding case, and extend differential,
+eight/nine-leaf, extreme-hint, cancellation and RDF-1.2 checks to V3.
+The native comparison exposes V3 explicitly. These native and workload checks
+do not close full corpus, resource/tail acceptance or default promotion.
+
 ### Full statistics/planning promotion
 
 Promotion requires:

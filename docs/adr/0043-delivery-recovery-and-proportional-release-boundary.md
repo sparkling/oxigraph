@@ -67,6 +67,11 @@
   explicitly unlock despite duplicated descriptors, while a copied foreign-PID
   guard cannot unlock the live parent. The unchanged parallel recovery test and
   deterministic ownership regressions validate this release-blocker correction.
+  Broader BSBM SELECT coverage then exposed Q8/Q5 scan-work regressions.
+  A separate opt-in correlated V3 profile now uses consistent probe/output
+  costs and conservative unhinted probe selection; the native Q8-shaped
+  red/green regression preserves results and avoids unrelated full scans.
+  V1/V2/defaults remain unchanged and full G3.2 acceptance remains open.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

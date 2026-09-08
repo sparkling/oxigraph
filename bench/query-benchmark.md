@@ -6,12 +6,13 @@ with strict per-query statistics verification, and with an explicitly shared
 verified `StatisticsSnapshot`. Reuse requires a private live-store identity
 match as well as the full checkpoint, so copied or reopened databases cannot
 inherit an old handle. It adds no package or application dependency.
-Two additional modes select conditional cost model v2, without statistics and
-with shared verified statistics. The original six modes retain v1/greedy
+Four additional modes select conditional v2 and correlated v3, each without
+statistics and with shared verified statistics. The original six retain v1/greedy
 behavior. Per-record `cost_model` identifies the effective profile; `input`
-lists both supported cost identities. With two queries and five repetitions,
-the current eight-mode runner emits 112 observations (96 samples including
-warm-ups and 16 separate feedback executions).
+lists all three cost identities. With two queries and five repetitions,
+the current ten-mode runner emits 140 observations (120 samples including
+warm-ups and 20 separate feedback executions). Historical six/eight-mode runs
+below retain their original identities and counts.
 This is a local diagnostic, **not frozen-corpus acceptance, qualification, or
 default-planner promotion**. The legacy HTTP BSBM script cannot select these APIs.
 
@@ -221,7 +222,7 @@ repetitions do not establish p95 tails or reliable cross-binary speedups.
 
 The runner additionally accepts `--mode NAME` immediately after repetitions.
 An unknown/repeated mode or missing query is rejected; omitting the option
-preserves the rotating eight-mode comparison. `input.selected_modes` and
+selects the rotating ten-mode comparison. `input.selected_modes` and
 `mode_rotation` identify the actual selection, and completion counts scale
 with it. Each invocation creates a fresh temporary store:
 
@@ -232,7 +233,8 @@ with it. Each invocation creates a fresh temporary store:
   > "$pilot_dir/q8-v2.jsonl"
 ```
 
-Names are the eight `mode` values reported above (an invalid name lists them).
+Names are the eight earlier `mode` values plus `bounded_correlated_v3` and
+`shared_statistics_bounded_correlated_v3` (an invalid name lists all ten).
 Use the same query set, repetitions and process envelope for each mode before
 comparing RSS. Every mode still includes loading, statistics build/verification,
 the independent oracle and separate feedback. This makes whole-process peaks
@@ -246,3 +248,33 @@ resource bounds. The programme decider must ratify numerical gates after the
 parent baseline and before the gated candidate run; no pilot observation is
 retroactively an acceptance threshold. Opt-in acceptance does not require
 changing the ordinary greedy default.
+
+## Correlated v3 follow-up, 2026-09-08
+
+The exact ten SELECT inputs above pass in all ten modes: exit zero, 500/500
+observations (400 samples including warm-ups and 100 separate feedback runs).
+The run followed native tests and fuzz completion. No CPU isolation or tail
+confidence claim is made. V1/V2 remain selectable and reproduce their scan-work
+observations. The explicit V3 product correction gives:
+
+| Query/mode | V2 quad rows | V3 quad rows | Unchanged result rows |
+| --- | ---: | ---: | ---: |
+| Q8, no statistics | 1,115 | 77 | 6 |
+| Q8, shared statistics | 129 | 93 | 6 |
+| Q5, shared statistics | 2,728 | 388 | 1 |
+| Q7, shared statistics | 177 | 83 | 14 |
+
+Q8 unbound scan rows fall from 1,064/64 to 14 in both V3 modes; the remaining
+work consists of indexed probes. This is not a universal speedup: Q8 greedy
+still has a lower three-sample median (0.346 ms) than no-stat/shared-stat V3
+(0.427/0.510 ms), and shared-stat V3 reads more rows than greedy (93 vs 77).
+The ten-query run uses shared caches and only three timed repetitions; it does
+not establish p95 performance, isolated planner memory or default promotion.
+
+Binary SHA-256:
+`c4c5f831351acb14262e2f353b85aff53f8703f833516230113954e23798a330`.
+Raw JSONL SHA-256:
+`be687192e99164e3b32de59f3181370c0518f336aa0ecfbfbafa0bf676edf0cf`.
+Whole-process peak RSS is 113,936 KiB and elapsed time 31.39 seconds; neither
+is comparable to historical whole-run costs with different mode counts.
+WatDiv/LDBC corpus preparation and parent-first ratified acceptance remain next.

@@ -123,6 +123,13 @@ fn bounded_queries_preserve_multisets_and_scopes() -> Result {
                 .unwrap()
                 .with_cost_model(BoundedJoinCostModel::ConditionalV2),
             BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::ConditionalV2),
+            BoundedJoinPlanning::new(1)
+                .unwrap()
+                .with_cost_model(BoundedJoinCostModel::CorrelatedV3),
+            BoundedJoinPlanning::new(2)
+                .unwrap()
+                .with_cost_model(BoundedJoinCostModel::CorrelatedV3),
+            BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::CorrelatedV3),
         ] {
             let (results, explanation) = SparqlEvaluator::new()
                 .with_bounded_join_planning(options)
@@ -172,6 +179,7 @@ fn conditional_planning_avoids_broad_type_and_numeric_scans() -> Result {
     for model in [
         BoundedJoinCostModel::IndependentV1,
         BoundedJoinCostModel::ConditionalV2,
+        BoundedJoinCostModel::CorrelatedV3,
     ] {
         let (result, explanation) = SparqlEvaluator::new()
             .with_bounded_join_planning(BoundedJoinPlanning::default().with_cost_model(model))
@@ -189,6 +197,113 @@ fn conditional_planning_avoids_broad_type_and_numeric_scans() -> Result {
         (7, 6),
         "v2 selective scan and bound probes"
     );
+    assert!(
+        observations[2].0 <= 7,
+        "v3 retains selective scan: {:?}",
+        observations[2]
+    );
+    Ok(())
+}
+
+#[test]
+fn correlated_costs_do_not_scan_unrelated_reviewers() -> Result {
+    fn unbound_rows(node: &CardinalityFeedbackNode) -> Result<u64> {
+        let own = if node.operator == "QuadPattern" && node.bound_invocations == 0 {
+            node.observed_rows.ok_or("missing quad observations")?
+        } else {
+            0
+        };
+        node.children
+            .iter()
+            .try_fold(own, |sum, child| Ok(sum + unbound_rows(child)?))
+    }
+    #[cfg(all(unix, feature = "statistics"))]
+    let store_directory = tempfile::tempdir()?;
+    #[cfg(all(unix, feature = "statistics"))]
+    let store = Store::open(store_directory.path())?;
+    #[cfg(not(all(unix, feature = "statistics")))]
+    let store = Store::new()?;
+    let mut data = String::from("@prefix : <urn:> .");
+    for i in 0..1000 {
+        let product = if i < 14 { "selected" } else { "other" };
+        let language = if i < 6 || (i >= 14 && i % 2 == 0) {
+            "en"
+        } else {
+            "de"
+        };
+        write!(
+            data,
+            ":review{i} :reviewFor :{product}; :title 'title{i}'; :text 'text{i}'@{language}; :date '2020-01-01'; :reviewer :person{} .",
+            i % 50
+        )?;
+        if i % 2 == 0 {
+            write!(data, ":review{i} :rating1 1; :rating3 3 .")?;
+        }
+    }
+    for i in 0..50 {
+        write!(data, ":person{i} :name 'person{i}' .")?;
+    }
+    store.load_from_slice(RdfFormat::Turtle, &data)?;
+    // Q8's mandatory chain plus sparse OPTIONAL ratings, independent fixture.
+    let query = "PREFIX : <urn:> SELECT ?title ?text ?date ?reviewer ?name ?r1 ?r2 ?r3 ?r4 {
+      ?review :reviewFor :selected; :title ?title; :text ?text; :date ?date; :reviewer ?reviewer .
+      FILTER(langMatches(lang(?text), 'en')) ?reviewer :name ?name .
+      OPTIONAL { ?review :rating1 ?r1 } OPTIONAL { ?review :rating2 ?r2 }
+      OPTIONAL { ?review :rating3 ?r3 } OPTIONAL { ?review :rating4 ?r4 }
+    } ORDER BY DESC(?date) LIMIT 20";
+    let expected = bag(SparqlEvaluator::new()
+        .without_optimizations()
+        .parse_query(query)?
+        .on_store(&store)
+        .execute()?)?;
+    assert_eq!(expected.0, 6);
+    for model in [
+        BoundedJoinCostModel::ConditionalV2,
+        BoundedJoinCostModel::CorrelatedV3,
+    ] {
+        let evaluator = SparqlEvaluator::new()
+            .with_bounded_join_planning(BoundedJoinPlanning::default().with_cost_model(model));
+        let (result, explanation) = evaluator
+            .clone()
+            .parse_query(query)?
+            .on_store(&store)
+            .compute_statistics()
+            .explain();
+        assert_eq!(bag(result?)?, expected);
+        let scans = unbound_rows(&explanation.cardinality_feedback().root)?;
+        if model == BoundedJoinCostModel::ConditionalV2 {
+            assert!(scans >= 1000, "v2 compatibility: {scans}");
+        } else {
+            assert_eq!(scans, 14, "only the selected review range is scanned");
+        }
+        #[cfg(all(unix, feature = "statistics"))]
+        {
+            use oxigraph::store::{
+                DerivedGenerationLimits, DerivedIndex, DerivedProvider, StatisticsProvider,
+                TransactionStartControl,
+            };
+            let directory = tempfile::tempdir()?;
+            let provider = StatisticsProvider::default();
+            let limits = DerivedGenerationLimits::default();
+            let mut index =
+                DerivedIndex::create(directory.path().join("statistics"), provider.identity())?;
+            let source = store.derived_snapshot(&TransactionStartControl::new())?;
+            let generation = index.rebuild(&source, &provider, &limits)?;
+            index.activate(&generation, &source, &provider, &limits)?;
+            let shared = std::sync::Arc::new(
+                provider.read(&index.strict(&source, &limits)?, &limits.input)?,
+            );
+            let (result, explanation) = evaluator
+                .parse_query(query)?
+                .on_statistics_snapshot(source, shared, TransactionStartControl::new())?
+                .compute_statistics()
+                .explain()?;
+            assert_eq!(bag(result?)?, expected);
+            if model == BoundedJoinCostModel::CorrelatedV3 {
+                assert_eq!(unbound_rows(&explanation.cardinality_feedback().root)?, 14);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -199,6 +314,7 @@ fn disabled_optimization_and_substitutions_bypass_bounded_search() -> Result {
     for model in [
         BoundedJoinCostModel::IndependentV1,
         BoundedJoinCostModel::ConditionalV2,
+        BoundedJoinCostModel::CorrelatedV3,
     ] {
         let evaluator = SparqlEvaluator::new()
             .with_bounded_join_planning(BoundedJoinPlanning::default().with_cost_model(model));
@@ -227,6 +343,7 @@ fn all_query_forms_keep_results_and_cancellation() -> Result {
     for model in [
         BoundedJoinCostModel::IndependentV1,
         BoundedJoinCostModel::ConditionalV2,
+        BoundedJoinCostModel::CorrelatedV3,
     ] {
         for query in [
             "ASK { ?s <urn:p> ?o . ?s <urn:q> ?v }",
@@ -293,6 +410,7 @@ fn bounded_planning_preserves_rdf12_patterns_and_version_errors() -> Result {
     for model in [
         BoundedJoinCostModel::IndependentV1,
         BoundedJoinCostModel::ConditionalV2,
+        BoundedJoinCostModel::CorrelatedV3,
     ] {
         let evaluator = SparqlEvaluator::new()
             .with_bounded_join_planning(BoundedJoinPlanning::default().with_cost_model(model));

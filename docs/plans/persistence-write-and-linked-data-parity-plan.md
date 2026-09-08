@@ -1196,7 +1196,9 @@ that an existing acceptance suite passed.
 
 The expanded BSBM pilot now covers all ten Explore SELECT templates and has
 parent/candidate result equality. It exposes Q8 and shared-statistics Q5
-scan-work regressions; fix measured product behavior next. Single-mode runs
+scan-work regressions. Explicit correlated V3 now aligns scan/output costs and
+prefers legal indexed probes for unhinted leaves, with a red/green Q8-shaped
+regression and preserved V1/V2/defaults. Single-mode runs
 support equal-envelope process measurements, not planner allocation bounds.
 WatDiv/LDBC assets and baseline-first numerical ratification remain open.
 

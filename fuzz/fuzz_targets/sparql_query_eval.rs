@@ -45,6 +45,9 @@ fuzz_target!(|data: sparql_smith::Query| {
             SparqlEvaluator::new().with_bounded_join_planning(
                 BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::ConditionalV2),
             ),
+            SparqlEvaluator::new().with_bounded_join_planning(
+                BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::CorrelatedV3),
+            ),
         ] {
             let with_opt = evaluator
                 .with_default_service_handler(StoreServiceHandler {

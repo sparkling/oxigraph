@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-const MODE_NAMES: [&str; 8] = [
+const MODE_NAMES: [&str; 10] = [
     "greedy",
     "bounded",
     "statistics_greedy",
@@ -29,6 +29,8 @@ const MODE_NAMES: [&str; 8] = [
     "shared_statistics_bounded",
     "bounded_conditional_v2",
     "shared_statistics_bounded_conditional_v2",
+    "bounded_correlated_v3",
+    "shared_statistics_bounded_correlated_v3",
 ];
 
 // Keep selection outside the measured path. Explicit names prevent a typo from
@@ -217,7 +219,7 @@ fn main() -> Result {
         "load_seconds": load_seconds,
         "statistics_build_activate_seconds": statistics_build_activate_seconds,
         "statistics_verification_seconds": statistics_verification_seconds,
-        "cost_models": [BoundedJoinCostModel::IndependentV1.id(), BoundedJoinCostModel::ConditionalV2.id()],
+        "cost_models": [BoundedJoinCostModel::IndependentV1.id(), BoundedJoinCostModel::ConditionalV2.id(), BoundedJoinCostModel::CorrelatedV3.id()],
         "selected_modes": modes.iter().map(|&mode| MODE_NAMES[mode]).collect::<Vec<_>>(),
         "mode_rotation": modes.len() > 1,
         "max_dp_leaves": BoundedJoinPlanning::default().max_dp_leaves(),
@@ -259,9 +261,11 @@ fn main() -> Result {
                 let mode_name = MODE_NAMES[mode];
                 let started = Instant::now();
                 let mut evaluator = SparqlEvaluator::new();
-                if mode % 2 == 1 || mode == 6 {
+                if mode % 2 == 1 || mode >= 6 {
                     evaluator = evaluator.with_bounded_join_planning(
-                        BoundedJoinPlanning::default().with_cost_model(if mode >= 6 {
+                        BoundedJoinPlanning::default().with_cost_model(if mode >= 8 {
+                            BoundedJoinCostModel::CorrelatedV3
+                        } else if mode >= 6 {
                             BoundedJoinCostModel::ConditionalV2
                         } else {
                             BoundedJoinCostModel::IndependentV1
@@ -272,7 +276,7 @@ fn main() -> Result {
                 let prepare_seconds = started.elapsed().as_secs_f64();
                 let admission_started = Instant::now();
                 let (result, explanation, admission_seconds, explain_seconds) =
-                    if (2..=5).contains(&mode) || mode == 7 {
+                    if (2..=5).contains(&mode) || mode == 7 || mode == 9 {
                         let source = store.derived_snapshot(&TransactionStartControl::new())?;
                         let mut bound = if mode >= 4 {
                             prepared.on_statistics_snapshot(
