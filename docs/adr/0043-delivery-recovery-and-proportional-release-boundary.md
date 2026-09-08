@@ -81,6 +81,11 @@
   materialization; the corresponding in-memory union-default exclusion defect
   is fixed. Focused dataset/streaming tests and a retained-parent LDBC comparison
   support this slice, not full G3.2 acceptance. Finite entailment is unchanged.
+  Subsequent BSBM/LDBC parent measurements and explicit N-Quads/query-only
+  diagnostic support are acceptance preparation, not new application behavior
+  or another closed documentation gate. Shared-host tail variation prevents
+  ratifying the proposed 5% gate from those observations; remaining scoped
+  acceptance work is tracked in ADR-0023 and the native comparison instructions.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

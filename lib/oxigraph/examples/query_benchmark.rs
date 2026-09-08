@@ -1,12 +1,12 @@
 //! Local SELECT comparison, not a qualification or default-promotion command.
-//! Usage: query_benchmark DATASET.nt REPETITIONS [OPTIONS] (--bag|--ordered) QUERY.rq ...
+//! Usage: query_benchmark DATASET REPETITIONS [OPTIONS] (--bag|--ordered) QUERY.rq ...
 //! Input identities and raw samples are JSON lines on stdout; no files published.
 use oxigraph::io::RdfFormat;
 use oxigraph::model::graph::CanonicalizationAlgorithm;
 use oxigraph::model::{BlankNode, Graph, Literal, NamedNode, Term, Triple, Variable};
 use oxigraph::sparql::{
-    BoundedJoinCostModel, BoundedJoinPlanning, CardinalityFeedbackNode, QueryResults,
-    QuerySolution, SparqlEvaluator, StatisticsAvailability,
+    BoundedJoinCostModel, BoundedJoinPlanning, CardinalityFeedbackNode, PreparedSparqlQuery,
+    QueryResults, QuerySolution, SparqlEvaluator, StatisticsAvailability,
 };
 use oxigraph::store::{
     DerivedGenerationLimits, DerivedIndex, DerivedProvider, StatisticsProvider, Store,
@@ -35,9 +35,24 @@ const MODE_NAMES: [&str; 10] = [
 
 // Keep selection outside the measured path. Explicit names prevent a typo from
 // silently running the default set (and mislabelling process resource use).
-fn selection(mut args: &[String]) -> Result<(Vec<usize>, DerivedGenerationLimits, &[String])> {
+struct Options {
+    modes: Vec<usize>,
+    limits: DerivedGenerationLimits,
+    format: RdfFormat,
+    union_default_graph: bool,
+    statistics_setup: bool,
+}
+
+fn uses_statistics(mode: usize) -> bool {
+    (2..=5).contains(&mode) || mode == 7 || mode == 9
+}
+
+fn selection(mut args: &[String]) -> Result<(Options, &[String])> {
     let mut modes = (0..MODE_NAMES.len()).collect();
     let mut limits = DerivedGenerationLimits::default();
+    let mut format = RdfFormat::NTriples;
+    let mut union_default_graph = false;
+    let mut statistics_setup = true;
     let mut seen = BTreeSet::new();
     while let Some(option) = args.first() {
         if matches!(option.as_str(), "--bag" | "--ordered") {
@@ -64,6 +79,27 @@ fn selection(mut args: &[String]) -> Result<(Vec<usize>, DerivedGenerationLimits
             }
             "--max-input-records" => limits.input.max_records = value.parse()?,
             "--max-input-bytes" => limits.input.max_bytes = value.parse()?,
+            "--format" => {
+                format = match value.as_str() {
+                    "nt" => RdfFormat::NTriples,
+                    "nq" => RdfFormat::NQuads,
+                    _ => return Err("format must be nt or nq".into()),
+                };
+            }
+            "--default-graph" => {
+                union_default_graph = match value.as_str() {
+                    "stored" => false,
+                    "named-union" => true,
+                    _ => return Err("default graph must be stored or named-union".into()),
+                };
+            }
+            "--setup" => {
+                statistics_setup = match value.as_str() {
+                    "statistics" => true,
+                    "query-only" => false,
+                    _ => return Err("setup must be statistics or query-only".into()),
+                };
+            }
             _ => return Err(format!("unknown option {option}").into()),
         }
         args = &args[2..];
@@ -77,7 +113,34 @@ fn selection(mut args: &[String]) -> Result<(Vec<usize>, DerivedGenerationLimits
             return Err("each SELECT needs an explicit --bag or --ordered comparison".into());
         }
     }
-    Ok((modes, limits, queries))
+    if !statistics_setup && modes.iter().any(|&mode| uses_statistics(mode)) {
+        return Err("query-only setup requires a mode that does not use statistics".into());
+    }
+    if !statistics_setup
+        && seen
+            .iter()
+            .any(|option| matches!(option.as_str(), "--max-input-records" | "--max-input-bytes"))
+    {
+        return Err("statistics input limits do not apply to query-only setup".into());
+    }
+    Ok((
+        Options {
+            modes,
+            limits,
+            format,
+            union_default_graph,
+            statistics_setup,
+        },
+        queries,
+    ))
+}
+
+fn prepare(evaluator: SparqlEvaluator, query: &str, union: bool) -> Result<PreparedSparqlQuery> {
+    let mut prepared = evaluator.parse_query(query)?;
+    if union {
+        prepared.dataset_mut().set_default_graph_as_union();
+    }
+    Ok(prepared)
 }
 
 struct Rows {
@@ -202,39 +265,56 @@ fn main() -> Result {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.len() < 4 || args.len() % 2 != 0 {
         return Err(
-            "usage: query_benchmark DATASET.nt REPETITIONS [--mode MODE] [--max-input-records N] [--max-input-bytes N] (--bag|--ordered) QUERY.rq ...".into(),
+            "usage: query_benchmark DATASET REPETITIONS [--mode MODE] [--format nt|nq] [--default-graph stored|named-union] [--setup statistics|query-only] [--max-input-records N] [--max-input-bytes N] (--bag|--ordered) QUERY.rq ...".into(),
         );
     }
     let repetitions: usize = args[1].parse()?;
     if !(1..=100).contains(&repetitions) {
         return Err("repetitions must be 1..100".into());
     }
-    let (modes, limits, queries) = selection(&args[2..])?;
+    let (options, queries) = selection(&args[2..])?;
+    let Options {
+        modes,
+        limits,
+        format,
+        union_default_graph,
+        statistics_setup,
+    } = options;
     let bytes = std::fs::read(&args[0])?;
     let data_sha256 = sha256(&bytes);
     let directory = tempfile::tempdir()?;
     let store = Store::open(directory.path().join("db"))?;
     let started = Instant::now();
-    store.load_from_slice(RdfFormat::NTriples, &bytes)?;
+    store.load_from_slice(format, &bytes)?;
     let load_seconds = started.elapsed().as_secs_f64();
     drop(bytes);
     let provider = StatisticsProvider::default();
-    let started = Instant::now();
-    let mut index = DerivedIndex::create(directory.path().join("statistics"), provider.identity())?;
-    let source = store.derived_snapshot(&TransactionStartControl::new())?;
-    let generation = index.rebuild(&source, &provider, &limits)?;
-    index.activate(&generation, &source, &provider, &limits)?;
-    let statistics_build_activate_seconds = started.elapsed().as_secs_f64();
-    let started = Instant::now();
-    let shared = Arc::new(provider.read(&index.strict(&source, &limits)?, &limits.input)?);
-    let statistics_verification_seconds = started.elapsed().as_secs_f64();
-    drop(source);
+    let mut statistics_build_activate_seconds = None;
+    let mut statistics_verification_seconds = None;
+    let statistics = if statistics_setup {
+        let started = Instant::now();
+        let mut index =
+            DerivedIndex::create(directory.path().join("statistics"), provider.identity())?;
+        let source = store.derived_snapshot(&TransactionStartControl::new())?;
+        let generation = index.rebuild(&source, &provider, &limits)?;
+        index.activate(&generation, &source, &provider, &limits)?;
+        statistics_build_activate_seconds = Some(started.elapsed().as_secs_f64());
+        let started = Instant::now();
+        let shared = Arc::new(provider.read(&index.strict(&source, &limits)?, &limits.input)?);
+        statistics_verification_seconds = Some(started.elapsed().as_secs_f64());
+        Some((index, shared))
+    } else {
+        None
+    };
     emit(&json!({
         "kind": "input", "format": "oxigraph.query-benchmark.v1",
         "dataset": args[0], "dataset_sha256": data_sha256,
+        "rdf_format": format.file_extension(),
+        "default_graph": if union_default_graph { "named-union" } else { "stored" },
+        "setup": if statistics_setup { "statistics" } else { "query-only" },
         "quads": store.len()?, "repetitions": repetitions, "warmups_per_mode": 1,
-        "max_input_records": limits.input.max_records.get(),
-        "max_input_logical_bytes": limits.input.max_bytes.get(),
+        "max_input_records": statistics_setup.then_some(limits.input.max_records.get()),
+        "max_input_logical_bytes": statistics_setup.then_some(limits.input.max_bytes.get()),
         "load_seconds": load_seconds,
         "statistics_build_activate_seconds": statistics_build_activate_seconds,
         "statistics_verification_seconds": statistics_verification_seconds,
@@ -259,11 +339,13 @@ fn main() -> Result {
         let query = std::fs::read_to_string(path)?;
         let query_sha256 = sha256(query.as_bytes());
         let oracle = Rows::collect(
-            SparqlEvaluator::new()
-                .without_optimizations()
-                .parse_query(&query)?
-                .on_store(&store)
-                .execute()?,
+            prepare(
+                SparqlEvaluator::new().without_optimizations(),
+                &query,
+                union_default_graph,
+            )?
+            .on_store(&store)
+            .execute()?,
         )?;
         emit(
             &json!({"kind": "query", "path": path, "sha256": query_sha256,
@@ -291,20 +373,22 @@ fn main() -> Result {
                         }),
                     );
                 }
-                let prepared = evaluator.parse_query(&query)?;
+                let prepared = prepare(evaluator, &query, union_default_graph)?;
                 let prepare_seconds = started.elapsed().as_secs_f64();
                 let admission_started = Instant::now();
                 let (result, explanation, admission_seconds, explain_seconds) =
-                    if (2..=5).contains(&mode) || mode == 7 || mode == 9 {
+                    if uses_statistics(mode) {
+                        let (index, shared) =
+                            statistics.as_ref().ok_or("statistics setup missing")?;
                         let source = store.derived_snapshot(&TransactionStartControl::new())?;
                         let mut bound = if mode >= 4 {
                             prepared.on_statistics_snapshot(
                                 source,
-                                Arc::clone(&shared),
+                                Arc::clone(shared),
                                 TransactionStartControl::new(),
                             )?
                         } else {
-                            prepared.on_statistics(source, &index, &provider, limits.clone())?
+                            prepared.on_statistics(source, index, &provider, limits.clone())?
                         };
                         // A silently rejected generation is not a statistics sample.
                         if bound.context().availability != StatisticsAvailability::Current {
@@ -380,21 +464,24 @@ mod tests {
     fn mode_selection_is_explicit_and_preserves_default_order() -> Result {
         let args = |values: &[&str]| values.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         let default = args(&["--bag", "q.rq", "--ordered", "ordered.rq"]);
-        let (modes, limits, queries) = selection(&default)?;
-        assert_eq!(modes, (0..MODE_NAMES.len()).collect::<Vec<_>>());
+        let (options, queries) = selection(&default)?;
+        assert_eq!(options.modes, (0..MODE_NAMES.len()).collect::<Vec<_>>());
+        assert_eq!(options.format, RdfFormat::NTriples);
+        assert!(options.statistics_setup);
+        assert!(!options.union_default_graph);
         assert_eq!(
-            limits.input.max_records,
+            options.limits.input.max_records,
             DerivedGenerationLimits::default().input.max_records
         );
         assert_eq!(
-            limits.input.max_bytes,
+            options.limits.input.max_bytes,
             DerivedGenerationLimits::default().input.max_bytes
         );
         assert_eq!(queries, default);
         for (expected, name) in MODE_NAMES.iter().enumerate() {
             let selected = args(&["--mode", name, "--bag", "q.rq"]);
-            let (modes, _, queries) = selection(&selected)?;
-            assert_eq!(modes, [expected]);
+            let (options, queries) = selection(&selected)?;
+            assert_eq!(options.modes, [expected]);
             assert_eq!(queries, &selected[2..]);
         }
         for invalid in [
@@ -424,8 +511,9 @@ mod tests {
             "--bag",
             "q.rq",
         ]);
-        let (modes, mut limits, queries) = selection(&selected)?;
-        assert_eq!(modes, [0]);
+        let (options, queries) = selection(&selected)?;
+        assert_eq!(options.modes, [0]);
+        let mut limits = options.limits;
         assert_eq!(queries, &selected[6..]);
         assert_eq!(limits.input.max_records.get(), 2);
         assert_eq!(limits.input.max_bytes.get(), 1024);
@@ -454,6 +542,116 @@ mod tests {
             }
             assert!(selection(&args(&[option, "1", option, "2", "--bag", "q.rq"])).is_err());
             assert!(selection(&args(&[option])).is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn query_only_setup_cannot_silently_disable_statistics() -> Result {
+        let args = |values: &[&str]| values.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        for (mode, name) in MODE_NAMES.iter().enumerate() {
+            let selected = args(&[
+                "--setup",
+                "query-only",
+                "--mode",
+                name,
+                "--format",
+                "nq",
+                "--default-graph",
+                "named-union",
+                "--bag",
+                "q.rq",
+            ]);
+            let result = selection(&selected);
+            if uses_statistics(mode) {
+                assert!(result.is_err(), "mode {name}");
+            } else {
+                let (options, _) = result?;
+                assert!(!options.statistics_setup);
+                assert!(options.union_default_graph);
+                assert_eq!(options.format, RdfFormat::NQuads);
+            }
+        }
+        for values in [
+            vec!["--setup", "query-only", "--bag", "q.rq"],
+            vec![
+                "--setup",
+                "query-only",
+                "--mode",
+                "greedy",
+                "--max-input-records",
+                "1",
+                "--bag",
+                "q.rq",
+            ],
+            vec!["--setup", "typo", "--bag", "q.rq"],
+            vec!["--format", "trig", "--bag", "q.rq"],
+            vec!["--default-graph", "all", "--bag", "q.rq"],
+            vec![
+                "--setup",
+                "statistics",
+                "--setup",
+                "statistics",
+                "--bag",
+                "q.rq",
+            ],
+        ] {
+            assert!(selection(&args(&values)).is_err(), "{values:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn nquads_and_query_dataset_selection_are_shared_with_the_oracle() -> Result {
+        let store = Store::new()?;
+        store.load_from_slice(
+            RdfFormat::NQuads,
+            concat!(
+                "<urn:default> <urn:p> <urn:o> .\n",
+                "_:shared <urn:p> <urn:o> <urn:g1> .\n",
+                "_:shared <urn:p> <urn:o> <urn:g2> .\n",
+                "<urn:ground> <urn:p> <urn:o> <urn:g1> .\n",
+                "<urn:ground> <urn:p> <urn:o> <urn:g2> .\n",
+            ),
+        )?;
+        assert_eq!(store.len()?, 5);
+        assert_eq!(
+            store
+                .named_graphs()
+                .collect::<std::result::Result<Vec<_>, _>>()?
+                .len(),
+            2
+        );
+        for (query, union, count) in [
+            ("SELECT (COUNT(*) AS ?n) WHERE { ?s ?p ?o }", false, 1),
+            ("SELECT (COUNT(*) AS ?n) WHERE { ?s ?p ?o }", true, 2),
+            (
+                "SELECT (COUNT(*) AS ?n) FROM <urn:g1> FROM <urn:g2> WHERE { ?s ?p ?o }",
+                false,
+                3,
+            ),
+            (
+                "SELECT (COUNT(*) AS ?n) WHERE { GRAPH ?g { ?s ?p ?o } }",
+                true,
+                4,
+            ),
+        ] {
+            let expected = rows(&format!("SELECT ?n WHERE {{ VALUES ?n {{ {count} }} }}"))?;
+            for evaluator in [
+                SparqlEvaluator::new().without_optimizations(),
+                SparqlEvaluator::new(),
+                SparqlEvaluator::new().with_bounded_join_planning(BoundedJoinPlanning::default()),
+            ] {
+                let result = Rows::collect(
+                    prepare(evaluator, query, union)?
+                        .on_store(&store)
+                        .execute()?,
+                )?;
+                assert!(
+                    result.equivalent(&expected, false)?,
+                    "query {query}, union {union}"
+                );
+            }
         }
         Ok(())
     }

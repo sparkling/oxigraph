@@ -1151,6 +1151,14 @@ CLI/HTTP Simple queries now use the native Store view directly; finite profiles
 retain materialization. A memory-backend union regression is fixed alongside
 the switch, with native graph-selection, snapshot, version and metrics tests.
 Continue corpus/resource/tail acceptance work; this is not full G3.2 closure.
+The [parent-path preparation](../../bench/query-benchmark.md#parent-path-baseline-preparation-2026-09-08)
+now has repeated ten-query BSBM and preserved N-Quads LDBC Q7 observations.
+Explicit query-only setup avoids irrelevant statistics work; historical setup
+and statistics-mode verification remain unchanged. Timing noise exceeds the
+proposed 5% gate. Finish representative coverage and DP/fallback resource
+evidence, then obtain programme-decider threshold ratification before a gated
+candidate run. This acceptance support is not new application behavior and
+does not add transaction-writer or harness-evolution prerequisites to G3.2.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 

@@ -417,8 +417,17 @@ The [fixed WatDiv input contract](../../bench/query-benchmark.md#fixed-watdiv-in
 now identifies the intact official 10M archive and six unchanged stress-query
 lines. Explicit diagnostic input ceilings support this dataset without changing
 store/provider defaults or optimizer semantics. Input checks and a greedy pilot
-do not ratify numerical gates or establish full corpus acceptance. LDBC inputs
-and controlled parent-first resource/tail measurements remain open.
+do not ratify numerical gates or establish full corpus acceptance. The
+[parent-path preparation](../../bench/query-benchmark.md#parent-path-baseline-preparation-2026-09-08)
+now includes all ten fixed BSBM SELECT queries and an official-source LDBC Q7
+subset preserving N-Quads graph identity. Explicit query-only diagnostic setup
+does not replace historical statistics setup or bypass a statistics mode's
+verification. Repeated parent measurements expose shared-host p95 variability
+larger than the proposed 5% threshold; that hypothesis is not ratified.
+Representative corpus coverage, DP/fallback resource evidence and repeatable
+parent-first resource/tail measurements remain open. Opt-in acceptance and a
+default-planner promotion are separate decisions; numerical ratification
+belongs to the programme decider, not the candidate implementation.
 
 Promotion requires:
 

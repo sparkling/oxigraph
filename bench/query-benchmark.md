@@ -90,6 +90,25 @@ allocation measurement. Require both exit status zero and the terminal
 `complete` record with matching expected/emitted counts. An output prefix is
 not a successful run. No automatic p95, confidence or speedup verdict is emitted.
 
+### Explicit dataset and setup options
+
+`--format nt|nq` defaults to N-Triples. N-Quads preserves graph names and
+cross-graph blank-node identity. `--default-graph stored|named-union` defaults
+to leaving the parsed query dataset unchanged, including any `FROM` clauses;
+`named-union` explicitly selects the native union of named graphs. The same
+dataset selection is applied to both the independent oracle and every mode.
+
+`--setup statistics|query-only` defaults to the historical statistics setup,
+even for a selected non-statistics mode. Explicit `query-only` skips index
+creation, rebuild/activation and initial verification. It requires one of
+`greedy`, `bounded`, `bounded_conditional_v2`, or `bounded_correlated_v3`;
+statistics modes and the default all-mode selection are rejected. Scan-limit options
+`--max-input-records` and `--max-input-bytes` are also rejected in this setup:
+they do not bound the atomic dataset loader or process memory. The `input`
+record identifies format, dataset selection and setup; skipped statistics
+timings and limits are null, not zero-cost statistics observations. Historical
+statistics runs and query-only runs are different measurement envelopes.
+
 ## Initial observation, 2026-09-08
 
 On Linux x86-64, Ryzen 9 7950X3D, Rust 1.98.0, release profile, RocksDB defaults,
@@ -504,3 +523,88 @@ memory union regression. Production CLI Clippy with `rdf-12` passes; the
 broader test lint lane still fails on seven existing diagnostics in
 `cli/src/service_description/tests.rs`, not in the changed files. No dependency,
 protected baseline, expected semantic result, or entailment profile is changed.
+
+## Parent-path baseline preparation, 2026-09-08
+
+These measurements prepare acceptance; they do not add application behavior,
+ratify a threshold, close G3.2 or promote a planner. Exact source parent is
+`8cd38a54aeb0ec3503e06c25cd942e5979f2f43e`. Local raw JSONL and `time -v` reports
+are retained in `/tmp/oxigraph-g32-baseline-eINjwN`, not uploaded. Runs use Rust
+1.98.0 release/statistics, one reader, no writers, and CPU affinity `taskset -c 8`.
+This shared Ryzen 9 7950X3D host is **not isolated**: CPU 8 has an SMT sibling,
+the unchanged governor is `powersave`, and unrelated host activity remains.
+Our own builds/tests do not overlap these timing runs. Quantiles below use
+nearest rank, excluding the one warm-up and separate feedback execution.
+
+For all ten fixed BSBM SELECT queries above, each of three fresh processes per
+mode ran 100 timed repetitions: `greedy` and `shared_statistics_greedy`, using
+the historical statistics setup. All **6,120 observations** matched the
+optimization-disabled oracle, and all six processes exited zero with exact
+completion counts. Whole-process elapsed time was 3.24–3.79 s / 3.08–3.34 s;
+peak RSS was 114,800–115,104 / 115,160–115,692 KiB respectively. The retained
+parent binary SHA-256 is
+`ad1ec6a77cb089e5d8c05931c8590f2ca38d1cd460edb6a44001840912c63b96`.
+
+Unchanged-query p95 variation exceeds the proposed 5% gate: greedy Q2 ranges
+0.377–0.579 ms and shared-statistics Q5 ranges 1.304–1.680 ms across processes.
+This is a demonstrated measurement limitation, not an optimizer regression or
+permission to loosen a gate until a candidate passes. Do not pool these samples
+into a speedup claim. Complete-only leaf q-error and intermediate observations
+remain in the raw feedback; partial/correlated q-error remains null.
+
+The N-Quads/query-only extension above uses a separately identified binary,
+SHA-256 `2d0b3b0cd684f91bec9daa68b237a2f5e28b3acc73d9cb70293fb4cd6b1101de`.
+The three LDBC members above concatenate, in the listed order without graph
+rewriting, to 150,036 quads with SHA-256
+`e07ecce50009f1246d7c6aa4b8f456eeef991f9db1e8477b6a99bb7f97529839`.
+After verifying the source hashes, reproduce a query-only run with:
+
+```sh
+test ! -e "$ldbc_dir/q7-subset.nq" &&
+  unzip -p "$ldbc_dir/validation_data.zip" generatedCreativeWorks-000004.nq \
+    generatedCreativeWorks-000025.nq generatedCreativeWorks-000102.nq > "$ldbc_dir/q7-subset.nq"
+cargo build --release --locked -p oxigraph --features statistics --example query_benchmark
+/usr/bin/time -v -o "$ldbc_dir/q7-example.time" taskset -c 8 \
+  target/release/examples/query_benchmark "$ldbc_dir/q7-subset.nq" 100 \
+  --mode greedy --format nq --default-graph named-union --setup query-only \
+  --bag "$ldbc_dir/query7.rq" > "$ldbc_dir/q7-example.jsonl"
+```
+
+Three fresh processes completed **306/306 observations**, with the same 12-row
+result as the disabled oracle. Their p50/p95 were 15.588/19.189,
+16.229/20.350 and 23.160/41.982 ms. Whole-process elapsed was 5.42/5.60/7.03 s,
+peak RSS 464,684/463,016/463,544 KiB. Atomic loading is included in that RSS,
+unlike the earlier preloaded CLI measurements; these are not interchangeable
+memory observations. Q7 has 4,140 observed quad-leaf rows; only one of its six
+leaf cardinalities is complete (q-error 2.043956), so there is no six-leaf
+q-error distribution to report. This is still the reviewed Q7 subset, not full
+LDBC/SPB acceptance or exact lexical equality to its official XML expectation.
+
+The same new binary ran the six unchanged WatDiv queries on all 10,916,457
+triples: `--mode greedy --setup query-only`, 30 timed repetitions, CPU 8.
+It exited zero with **192/192 equivalent observations** (186 samples including
+six warm-ups, plus six feedback executions). Observed nearest-rank timings:
+
+| Query | Result rows | p50 ms | p95 ms | Instrumented quad-leaf rows |
+| --- | ---: | ---: | ---: | ---: |
+| Q1 | 0 | 0.038 | 0.046 | 3 |
+| Q2 | 0 | 0.054 | 0.071 | 3 |
+| Q4 | 56 | 186.552 | 262.729 | 36,144 |
+| Q7 | 0 | 215.017 | 267.616 | 21,299 |
+| Q14 | 9,909 | 54.346 | 63.620 | 11,595 |
+| Q17 | 11 | 78.058 | 79.394 | 8,486 |
+
+Total elapsed was 498.43 s, atomic load 321.66 s, peak RSS 21,670,664 KiB.
+Skipping statistics preparation does not bound or substantially reduce atomic
+loader peak memory. This is one shared-host process, not a repeatability gate;
+its setup/repetition/affinity envelope differs from the earlier five-repetition
+WatDiv run, so the two totals are not a product speedup comparison. Raw JSONL
+SHA-256: `b4a11bc3340cacace1ad3c15beb9b165fe45c59984e0733293956d1fc36a71e9`.
+
+Remaining acceptance work is a representative pinned query manifest, current/
+absent/stale/corrupt-statistics correctness, explicit eight-leaf DP and larger
+fallback resource evidence, and repeatable per-query tails. The programme
+decider must ratify numerical thresholds after the parent baseline and before
+a gated candidate run. The already-completed transaction writer matrices are
+not new G3.2 prerequisites; ordinary default-planner promotion is a separate
+decision from acceptance of an opt-in profile.

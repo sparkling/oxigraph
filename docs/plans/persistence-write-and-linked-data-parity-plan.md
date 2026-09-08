@@ -1212,6 +1212,14 @@ The following product slice removes whole-store copying for CLI/HTTP Simple
 queries, retaining native snapshots, graph semantics and terminal metrics.
 It also corrects physical-default leakage in the in-memory union iterator.
 Finite entailment and all separate corpus/numerical acceptance gates remain.
+Parent-only BSBM repeats and the preserved N-Quads LDBC Q7 subset now run through
+the [native comparator](../../bench/query-benchmark.md#parent-path-baseline-preparation-2026-09-08).
+Explicit query-only setup avoids irrelevant statistics preparation without
+changing historical defaults or statistics validation. Shared-host timing
+variation exceeds the proposed 5% gate; representative coverage, DP/fallback
+resource measurements and decider-ratified acceptance remain, not a new planner
+profile or non-gating harness phase. This is acceptance support, not a product
+milestone or full G3.2 completion.
 
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.
