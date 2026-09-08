@@ -1159,6 +1159,10 @@ proposed 5% gate. Finish representative coverage and DP/fallback resource
 evidence, then obtain programme-decider threshold ratification before a gated
 candidate run. This acceptance support is not new application behavior and
 does not add transaction-writer or harness-evolution prerequisites to G3.2.
+The native planner now skips constructing rejected candidate trees, retaining
+the full cost/order/operator tie-break and speculative counts. Its
+[DP/fallback diagnostic](../../bench/query-benchmark.md#planner-only-resource-diagnostic)
+preserves exact parent plans; this does not close the full performance gate.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 

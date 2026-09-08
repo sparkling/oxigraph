@@ -1220,6 +1220,10 @@ variation exceeds the proposed 5% gate; representative coverage, DP/fallback
 resource measurements and decider-ratified acceptance remain, not a new planner
 profile or non-gating harness phase. This is acceptance support, not a product
 milestone or full G3.2 completion.
+The [allocation-only planner correction](../adr/0023-statistics-and-bounded-join-planning.md#avoid-rejected-candidate-tree-construction-2026-09-08)
+now skips rejected candidate tree construction without changing plans or search
+counts. Native eight-leaf and nine/64-leaf fallback diagnostics supplement the
+resource evidence; representative coverage and numerical ratification remain.
 
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.

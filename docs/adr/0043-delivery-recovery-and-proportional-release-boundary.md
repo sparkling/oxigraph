@@ -86,6 +86,10 @@
   or another closed documentation gate. Shared-host tail variation prevents
   ratifying the proposed 5% gate from those observations; remaining scoped
   acceptance work is tracked in ADR-0023 and the native comparison instructions.
+  The next native planner correction avoids constructing rejected candidate
+  trees while retaining exact costs, tie-breaks and search reports. Its native
+  regression and planner-only DP/fallback comparisons are distinct from broad
+  performance acceptance; no profile or default is promoted.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

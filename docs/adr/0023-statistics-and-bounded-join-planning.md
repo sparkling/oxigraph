@@ -411,6 +411,22 @@ eight/nine-leaf, extreme-hint, cancellation and RDF-1.2 checks to V3.
 The native comparison exposes V3 explicitly. These native and workload checks
 do not close full corpus, resource/tail acceptance or default promotion.
 
+### Avoid rejected-candidate tree construction (2026-09-08)
+
+Candidate admission, estimator calls, cost arithmetic and the complete
+`(work, source order, operator)` tie-break remain unchanged. The search now
+clones/builds an expression tree only when that candidate improves the current
+winner. Rejected candidates still increment the speculative candidate count;
+populated states and all three cost identities are unchanged. A native helper
+regression fails when eager construction is restored, and checks that equal
+work with better order/operator still replaces the winner.
+
+The [planner-only diagnostic](../../bench/query-benchmark.md#planner-only-resource-diagnostic)
+checks eight-leaf search and nine/64-leaf fallback without loading a store.
+Exact retained-parent/candidate plans and reports match. These bounded
+synthetic observations supplement, but do not close, representative corpus,
+allocator/resource, tail or numerical acceptance. Default planning is unchanged.
+
 ### Full statistics/planning promotion
 
 The [fixed WatDiv input contract](../../bench/query-benchmark.md#fixed-watdiv-input-and-baseline-preparation)

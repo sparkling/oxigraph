@@ -112,6 +112,31 @@ struct State {
     order: Vec<usize>,
 }
 
+fn consider_candidate(
+    best: &mut Option<(State, u8)>,
+    work: u128,
+    order: &[usize],
+    operator: u8,
+    report: &mut JoinPlanningReport,
+    build: impl FnOnce() -> QueryExpression,
+) {
+    // Count every legal speculative candidate, including those whose trees
+    // need not be allocated. Preserve the entire deterministic tie-break.
+    report.dp_candidates += 1;
+    if best.as_ref().is_none_or(|(old, old_operator)| {
+        (work, order, operator) < (old.work, old.order.as_slice(), *old_operator)
+    }) {
+        *best = Some((
+            State {
+                expression: build(),
+                work,
+                order: order.to_vec(),
+            },
+            operator,
+        ));
+    }
+}
+
 pub(super) fn plan(
     ids: &[usize],
     leaves: &[QueryExpression],
@@ -242,20 +267,6 @@ pub(super) fn plan(
             }
             let mut order = parent.order.clone();
             order.push(id);
-            let mut consider = |expression, work, operator| {
-                report.dp_candidates += 1;
-                let candidate = State {
-                    expression,
-                    work,
-                    order: order.clone(),
-                };
-                if best.as_ref().is_none_or(|(old, old_operator)| {
-                    (candidate.work, &candidate.order, operator)
-                        < (old.work, &old.order, *old_operator)
-                }) {
-                    best = Some((candidate, operator));
-                }
-            };
             // Charge both leaf scans consistently, hash build/probe, and output.
             let hash_work = parent
                 .work
@@ -267,15 +278,13 @@ pub(super) fn plan(
             #[cfg(not(feature = "sep-0006"))]
             let can_probe = false;
             if allow_hash[last] || !can_probe {
-                consider(
+                consider_candidate(&mut best, hash_work, &order, 0, report, || {
                     QueryExpression::join(
                         parent.expression.clone(),
                         leaves[id].clone(),
                         JoinAlgorithm::HashBuildLeftProbeRight { keys },
-                    ),
-                    hash_work,
-                    0,
-                );
+                    )
+                });
             }
             #[cfg(feature = "sep-0006")]
             {
@@ -306,11 +315,9 @@ pub(super) fn plan(
                             )
                             .saturating_add(u128::from(rows[mask]))
                     };
-                    consider(
-                        QueryExpression::lateral(parent.expression.clone(), leaves[id].clone()),
-                        work,
-                        1,
-                    );
+                    consider_candidate(&mut best, work, &order, 1, report, || {
+                        QueryExpression::lateral(parent.expression.clone(), leaves[id].clone())
+                    });
                 }
             }
         }
@@ -436,6 +443,45 @@ mod tests {
         assert_eq!(report.dp_states, 7);
         assert!(report.dp_candidates >= 9);
     }
+    #[test]
+    #[expect(
+        clippy::panic,
+        reason = "A rejected candidate must never invoke its builder"
+    )]
+    fn rejected_candidates_are_counted_without_building_trees() {
+        let input = parse("SELECT * { ?s <urn:p> ?o }");
+        let builds = std::cell::Cell::new(0);
+        let build = || {
+            builds.set(builds.get() + 1);
+            input.clone()
+        };
+        let mut best = None;
+        let mut report = JoinPlanningReport::default();
+        consider_candidate(&mut best, 10, &[2], 1, &mut report, build);
+        assert_eq!(builds.get(), 1);
+        // Worse cost, exactly equal full key, and worse source order must not
+        // construct an expression. All three still count as considered work.
+        for (work, order, operator) in [(11, [0], 0), (10, [2], 1), (10, [3], 0)] {
+            consider_candidate(&mut best, work, &order, operator, &mut report, || {
+                panic!("rejected candidate constructed a tree")
+            });
+        }
+        assert_eq!(report.dp_candidates, 4);
+        assert_eq!(builds.get(), 1);
+        // Equal work can win by source order or, with equal order, operator.
+        for (work, order, operator) in [(10, [1], 1), (10, [1], 0), (9, [9], 1)] {
+            consider_candidate(&mut best, work, &order, operator, &mut report, build);
+            let (winner, winner_operator) = best.as_ref().unwrap();
+            assert_eq!(
+                (winner.work, winner.order.as_slice(), *winner_operator),
+                (work, order.as_slice(), operator)
+            );
+        }
+        assert_eq!(builds.get(), 4);
+        assert_eq!(report.dp_candidates, 7);
+        assert_eq!(report.dp_states, 0);
+    }
+
     #[test]
     fn eight_leaf_bound_and_nine_leaf_fallback_are_deterministic() {
         for model in [

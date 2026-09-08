@@ -171,6 +171,10 @@ Ordinary CLI/HTTP Simple queries now avoid whole-store materialization entirely,
 using the native repeatable-read view. Finite entailment still materializes;
 the [dataset contract](docs/adr/0014-rdf-dataset-graph-topology.md) records
 preserved graph semantics and lazy storage-error timing.
+The opt-in bounded planner also avoids cloning expression trees for rejected
+candidates, without changing costs, tie-breaks or search reports. The
+[planner-only diagnostic](bench/query-benchmark.md#planner-only-resource-diagnostic)
+checks DP/fallback behavior; full performance acceptance remains separate.
 
 G2.2 now provides opt-in `ChangeTrackingTransaction` for backend-neutral Rust
 transactions: inspect pending quad, graph-lifecycle, and namespace changes

@@ -608,3 +608,57 @@ decider must ratify numerical thresholds after the parent baseline and before
 a gated candidate run. The already-completed transaction writer matrices are
 not new G3.2 prerequisites; ordinary default-planner promotion is a separate
 decision from acceptance of an opt-in profile.
+
+## Planner-only resource diagnostic
+
+[`join_planning`](../lib/sparopt/examples/join_planning.rs) separates optimizer
+work from store loading and result collection. It adds no dependency and uses
+a deterministic same-subject star with 2–64 leaves, optional 0–65,536-byte IRI
+padding, 1–1,000 repetitions and explicit `greedy|v1|v2|v3` selection. It parses
+once, obtains an untimed reference plan/report, then checks exact equality
+after every measured optimization. Nine/64-leaf bounded configurations also
+perform an untimed default-greedy comparison. Input cloning, parsing, printing,
+equality checks and the reference runs are outside the reported sample time.
+The full synthetic plan is printed for exact cross-binary comparison.
+
+```sh
+cargo build --release --locked -p sparopt --all-features --example join_planning
+/usr/bin/time -v taskset -c 8 target/release/examples/join_planning 8 0 100 v1
+/usr/bin/time -v taskset -c 8 target/release/examples/join_planning 9 0 100 v1
+/usr/bin/time -v taskset -c 8 target/release/examples/join_planning 64 0 100 v1
+```
+
+The parent `1771b64e` optimizer and the lazy candidate-construction change ran
+all four modes for `(leaves, padding) = (8,0), (9,0), (64,0), (8,16384)`.
+All 32 processes exited zero with `complete 100`, covering 3,200 timed runs.
+Every repeated and cross-binary plan/report matched exactly. Eight-leaf search
+has 255 states and 2,032 candidates for V1/V2, 1,016 for unhinted V3; nine/64
+leaves have zero DP work and exactly match greedy fallback. These are synthetic
+shape checks without statistics, not representative RDF query-result coverage.
+
+Eight-leaf unpadded V1 p50/p95 was 0.653/0.909 ms parent and 0.457/0.495 ms
+candidate. V2 p50 was 0.767/0.957 ms, V3 0.500/0.761 ms, and unchanged
+64-leaf greedy p50 was 56.834/90.455 ms. This variability rules out a general
+speedup conclusion from these shared-host processes. The deterministic gain
+is avoiding rejected tree construction, proven by the native failing-eager /
+passing-lazy regression, not a ratified percentage. Whole-process peak RSS
+was 3,584–4,352 KiB across both binaries; this includes inputs/reference plans
+and does not isolate optimizer allocations or establish a global memory quota.
+
+Local raw output/time reports and both binaries are retained under
+`/tmp/oxigraph-g32-planner-Fw9iLq`. Parent binary SHA-256:
+`feb66058b005d22bceacbca2ebd0098f6c17e58ef21f334fba6f82e5ba78e844`;
+candidate: `590eddf01a8c38d83adf6e297e2db1a90ee96b27d533f3d8cf9bb8347411d9d5`.
+Both use the same diagnostic behavior and Rust 1.98.0 release/all-features;
+the parent diagnostic source precedes formatting-only changes. Raw timings
+are local diagnostics, not protected baselines, qualification or promotion.
+The final diagnostic uses explicit buffered, fallible stdout writes and has
+SHA-256 `e7ade2797decf7198a99eb09c6ca3141b02dfa30f9bca5ec0b1893b2b03f6d22`.
+All 16 final one-repetition plan/report comparisons still equal the retained
+parent, and eight invalid argument cases are rejected. Do not relabel the
+earlier timing binary as this final build. Native optimizer tests pass 19/15
+with all/minimal features, query/statistics checks pass 25 plus six minimal
+query checks, and the pinned Oxigraph SPARQL and optimizer suites pass.
+Library/example Clippy passes in both feature configurations; a broader test
+lint attempt also reported pre-existing test-code diagnostics, not an
+application build failure.
