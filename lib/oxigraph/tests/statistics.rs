@@ -1,4 +1,9 @@
+#![cfg(test)]
 #![cfg(all(unix, feature = "statistics"))]
+#![expect(
+    clippy::panic_in_result_fn,
+    reason = "integration assertions use fallible public constructors"
+)]
 use oxigraph::model::{BlankNode, GraphName, Literal, NamedNode, NamedOrBlankNode, Quad, Term};
 use oxigraph::store::{
     BackupError, DerivedGenerationError, DerivedGenerationLimits, DerivedIndex, DerivedProvider,
@@ -10,8 +15,8 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 use oxigraph::sparql::{
-    CancellationToken, CardinalityFeedbackNode, EstimateBasis, QueryEvaluationError, QueryResults,
-    SparqlEvaluator, StatisticsAvailability,
+    BoundedJoinPlanning, CancellationToken, CardinalityFeedbackNode, EstimateBasis,
+    QueryEvaluationError, QueryResults, SparqlEvaluator, StatisticsAvailability,
 };
 fn leaves(node: &CardinalityFeedbackNode) -> Vec<&CardinalityFeedbackNode> {
     if node.operator == "QuadPattern" {
@@ -31,7 +36,7 @@ fn solution_bag(
     result: QueryResults<'_>,
 ) -> Result<std::collections::HashMap<Vec<(String, Term)>, usize>> {
     let QueryResults::Solutions(rows) = result else {
-        panic!("solutions")
+        return Err("expected solutions".into());
     };
     let mut output = std::collections::HashMap::new();
     for row in rows {
@@ -43,6 +48,68 @@ fn solution_bag(
         *output.entry(row).or_insert(0) += 1;
     }
     Ok(output)
+}
+
+#[test]
+fn bounded_planning_reduces_intermediate_rows_without_changing_solutions() -> Result {
+    let fixture = Fixture::new(
+        (0..10)
+            .map(|i| quad(&format!("a{i}"), "pa", "shared", GraphName::DefaultGraph))
+            .chain(
+                (0..1000).map(|i| quad(&format!("x{i}"), "pb", "shared", GraphName::DefaultGraph)),
+            )
+            .chain([quad("x0", "pc", "shared", GraphName::DefaultGraph)])
+            .chain((1..1000).map(|i| {
+                quad(
+                    &format!("other{i}"),
+                    "pc",
+                    "elsewhere",
+                    GraphName::DefaultGraph,
+                )
+            })),
+    )?;
+    let query = "SELECT ?a ?x ?z WHERE { ?a <urn:pa> ?z . ?x <urn:pb> ?z . ?x <urn:pc> ?z }";
+    let oracle = solution_bag(
+        SparqlEvaluator::new()
+            .without_optimizations()
+            .parse_query(query)?
+            .on_store(&fixture.store)
+            .execute()?,
+    )?;
+    let mut scan_rows = Vec::new();
+    for bounded in [false, true] {
+        let evaluator = if bounded {
+            SparqlEvaluator::new().with_bounded_join_planning(BoundedJoinPlanning::default())
+        } else {
+            SparqlEvaluator::new()
+        };
+        let (results, explanation) = evaluator
+            .parse_query(query)?
+            .on_statistics(
+                capture(&fixture.store)?,
+                &fixture.index,
+                &fixture.provider,
+                fixture.limits.clone(),
+            )?
+            .compute_statistics()
+            .explain()?;
+        assert_eq!(solution_bag(results?)?, oracle);
+        assert_eq!(
+            explanation.join_planning().dp_components,
+            usize::from(bounded)
+        );
+        scan_rows.push(
+            leaves(&explanation.cardinality_feedback().root)
+                .iter()
+                .map(|node| node.observed_rows.unwrap())
+                .sum::<u64>(),
+        );
+    }
+    assert!(
+        scan_rows[1] < scan_rows[0],
+        "bounded/greedy observed leaf rows: {scan_rows:?}"
+    );
+    Ok(())
 }
 
 #[test]
@@ -73,8 +140,16 @@ fn statistics_queries_preserve_solution_bags_across_operators_and_fallbacks() ->
                 .on_store(&fixture.store)
                 .execute()?,
         )?;
-        for index in [&fixture.index, &missing] {
-            let result = SparqlEvaluator::new()
+        for (index, bounded) in [&fixture.index, &missing]
+            .into_iter()
+            .flat_map(|index| [false, true].map(|bounded| (index, bounded)))
+        {
+            let evaluator = if bounded {
+                SparqlEvaluator::new().with_bounded_join_planning(BoundedJoinPlanning::default())
+            } else {
+                SparqlEvaluator::new()
+            };
+            let result = evaluator
                 .parse_query(query)?
                 .on_statistics(
                     capture(&fixture.store)?,
@@ -308,7 +383,7 @@ fn query_feedback_does_not_certify_partial_or_substituted_cardinality() -> Resul
         .compute_statistics()
         .explain()?;
     let QueryResults::Solutions(mut rows) = result? else {
-        panic!("solutions")
+        return Err("expected solutions".into());
     };
     rows.next().unwrap()?;
     assert!(!leaves(&explanation.cardinality_feedback().root)[0].cardinality_complete);
@@ -491,13 +566,13 @@ fn exact_physical_counts_empty_topology_and_rdf_merge_distinction() -> Result {
     assert_eq!(stats.count_quads(Some(&GraphName::DefaultGraph), None), 1);
     assert_eq!(stats.count_quads(Some(&blank.clone().into()), None), 0);
     assert_eq!(stats.graphs().count(), 5);
-    assert!(stats.graphs().any(|g| *g == GraphName::from(blank.clone())));
+    assert!(stats.graphs().any(|g| g.as_ref() == blank.as_ref().into()));
     let result = SparqlEvaluator::new()
         .parse_query("SELECT ?s FROM <urn:g1> FROM <urn:g2> WHERE { ?s <urn:p> ?o }")?
         .on_store(&f.store)
         .execute()?;
     let QueryResults::Solutions(rows) = result else {
-        panic!("SELECT")
+        return Err("expected SELECT results".into());
     };
     assert_eq!(rows.collect::<std::result::Result<Vec<_>, _>>()?.len(), 1); // not physical sum 2
     let empty = Fixture::new([])?.read()?;
@@ -538,14 +613,10 @@ fn bounded_frequency_summaries_enclose_independent_exact_counts() -> Result {
     }
     let candidates = group.frequent_objects()?;
     assert!(candidates.len() <= 32);
-    assert!(
-        candidates
-            .iter()
-            .any(|c| c.value == Term::from(Literal::from("hot")))
-    );
+    assert!(candidates.iter().any(|c| c.value == Literal::from("hot")));
     for candidate in candidates {
         let Term::Literal(value) = candidate.value else {
-            panic!("literal")
+            return Err("expected literal".into());
         };
         let expected = exact[value.value()];
         assert!(candidate.frequency.lower <= expected && expected <= candidate.frequency.upper);
@@ -672,7 +743,7 @@ fn graph_clear_drop_and_all_graph_barriers_preserve_topology() -> Result {
         tx.commit()?;
         f.catch_up()?;
         let stats = f.read()?;
-        assert_eq!(stats.count_quads(None, None), if step < 4 { 1 } else { 0 });
+        assert_eq!(stats.count_quads(None, None), u64::from(step < 4));
         assert_eq!(
             stats.graphs().any(|g| g == &GraphName::from(graph.clone())),
             step == 2 || step == 4

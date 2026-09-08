@@ -47,8 +47,11 @@
   physical statistics provider, exact graph/predicate counts, bounded frequency
   summaries and the shared lifecycle. Opt-in same-snapshot query costs and
   term-free estimated/observed-row, completion and q-error feedback are now
-  implemented with dataset-aware heuristic fallback. G3.2 bounded join planning
-  is next; separate frozen performance/promotion gates remain open.
+  implemented with dataset-aware heuristic fallback. G3.2 now adds opt-in native
+  bounded join planning with deterministic eight-leaf subset search and greedy
+  fallback. Its native differential tests and runnable statistics example do
+  not close the separate frozen-corpus performance/promotion gates; G3.2 stays
+  active for those requirements. No default-planner promotion is claimed.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

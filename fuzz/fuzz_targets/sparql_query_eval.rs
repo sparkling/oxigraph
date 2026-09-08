@@ -5,7 +5,8 @@ use oxigraph::io::{RdfFormat, RdfParser};
 use oxigraph::model::graph::CanonicalizationAlgorithm;
 use oxigraph::model::{Dataset, Graph, NamedNode};
 use oxigraph::sparql::{
-    DefaultServiceHandler, QueryEvaluationError, QueryResults, QuerySolutionIter, SparqlEvaluator,
+    BoundedJoinPlanning, DefaultServiceHandler, QueryEvaluationError, QueryResults,
+    QuerySolutionIter, SparqlEvaluator,
 };
 use oxigraph::store::Store;
 use oxigraph_fuzz::count_triple_blank_nodes;
@@ -38,36 +39,45 @@ fuzz_target!(|data: sparql_smith::Query| {
 
     let query_str = data.to_string();
     if let Ok(query) = SparqlParser::new().parse_query(&query_str) {
-        let with_opt = SparqlEvaluator::new()
-            .with_default_service_handler(StoreServiceHandler {
-                store: store.clone(),
-            })
-            .for_query(query.clone())
-            .on_store(store)
-            .execute();
-        let without_opt = QueryEvaluator::new()
-            .without_optimizations()
-            .with_default_service_handler(DatasetServiceHandler {
-                dataset: dataset.clone(),
-            })
-            .prepare(&query)
-            .execute(dataset);
-        match (with_opt, without_opt) {
-            (Ok(with_opt), Ok(without_opt)) => {
-                assert_eq!(
-                    query_results_key(with_opt, query_str.contains(" REDUCED ")),
-                    query_results_key(without_opt, query_str.contains(" REDUCED "))
-                )
-            }
-            (Err(_), Err(_)) => (),
-            (Ok(r), Err(e)) => {
-                if !matches!(r, QueryResults::Boolean(false)) {
-                    panic!("with optimizations passed whereas without optimizations failed: {e}")
+        for evaluator in [
+            SparqlEvaluator::new(),
+            SparqlEvaluator::new().with_bounded_join_planning(BoundedJoinPlanning::default()),
+        ] {
+            let with_opt = evaluator
+                .with_default_service_handler(StoreServiceHandler {
+                    store: store.clone(),
+                })
+                .for_query(query.clone())
+                .on_store(store)
+                .execute();
+            let without_opt = QueryEvaluator::new()
+                .without_optimizations()
+                .with_default_service_handler(DatasetServiceHandler {
+                    dataset: dataset.clone(),
+                })
+                .prepare(&query)
+                .execute(dataset);
+            match (with_opt, without_opt) {
+                (Ok(with_opt), Ok(without_opt)) => {
+                    assert_eq!(
+                        query_results_key(with_opt, query_str.contains(" REDUCED ")),
+                        query_results_key(without_opt, query_str.contains(" REDUCED "))
+                    )
                 }
-            }
-            (Err(e), Ok(r)) => {
-                if !matches!(r, QueryResults::Boolean(false)) {
-                    panic!("without optimizations passed whereas with optimizations failed: {e}")
+                (Err(_), Err(_)) => (),
+                (Ok(r), Err(e)) => {
+                    if !matches!(r, QueryResults::Boolean(false)) {
+                        panic!(
+                            "with optimizations passed whereas without optimizations failed: {e}"
+                        )
+                    }
+                }
+                (Err(e), Ok(r)) => {
+                    if !matches!(r, QueryResults::Boolean(false)) {
+                        panic!(
+                            "without optimizations passed whereas with optimizations failed: {e}"
+                        )
+                    }
                 }
             }
         }

@@ -85,10 +85,16 @@ snapshot, with heuristic fallback for missing/stale/rejected statistics and
 unsupported merged/union scopes. `compute_statistics` and
 `QueryExplanation::cardinality_feedback` expose term-free leaf estimates,
 intermediate-row observations, completion and q-error without automatic export.
-Partial or correlated scans do not claim complete cardinality. Bounded join
-enumeration remains the next G3.2 slice.
+Partial or correlated scans do not claim complete cardinality.
+`SparqlEvaluator::with_bounded_join_planning(BoundedJoinPlanning::default())`
+opts into deterministic left-deep subset search for connected same-graph basic
+joins up to eight leaves, with greedy fallback beyond the configured bound.
+`QueryExplanation::join_planning` exposes the effective profile and term-free
+search counts. Default planning remains greedy; disabled optimization and
+substitutions bypass the option. This planner requires no statistics feature,
+RocksDB, or added dependency. Frozen performance acceptance remains open.
 Run `cargo run --locked -p oxigraph --features statistics --example statistics`
-for a rollback/catch-up/restart demonstration.
+for a rollback/catch-up/restart and bounded-query demonstration.
 
 A preliminary benchmark [is provided](../bench/README.md). Oxigraph internal design [is described on the wiki](https://github.com/oxigraph/oxigraph/wiki/Architecture).
 

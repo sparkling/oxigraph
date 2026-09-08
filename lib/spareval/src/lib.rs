@@ -37,9 +37,9 @@ use spargebra::update::DeleteInsertOperation;
 use spargebra::{ParsedQuery, Query, SparqlVersion};
 #[cfg(feature = "geosparql")]
 use spargeo::GEOSPARQL_EXTENSION_FUNCTIONS;
-pub use sparopt::CardinalityEstimator;
 use sparopt::Optimizer;
 use sparopt::algebra::QueryExpression;
+pub use sparopt::{BoundedJoinPlanning, CardinalityEstimator, JoinPlanningReport};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -79,6 +79,7 @@ pub struct QueryEvaluator {
     without_optimizations: bool,
     run_stats: bool,
     cardinality_estimator: Option<Arc<dyn CardinalityEstimator>>,
+    bounded_join_planning: Option<BoundedJoinPlanning>,
     cancellation_token: Option<CancellationToken>,
     version: SparqlVersion,
 }
@@ -105,6 +106,7 @@ impl QueryEvaluator {
             without_optimizations: false,
             run_stats: false,
             cardinality_estimator: None,
+            bounded_join_planning: None,
             cancellation_token: None,
             version: SparqlVersion::current(),
         }
@@ -349,6 +351,15 @@ impl QueryEvaluator {
         estimator: impl CardinalityEstimator + 'static,
     ) -> Self {
         self.cardinality_estimator = Some(Arc::new(estimator));
+        self
+    }
+
+    /// Opts into bounded same-graph basic-join search. The default stays greedy
+    /// until separate performance promotion. Updates and substituted queries
+    /// keep their existing planner; disabling optimization bypasses this option.
+    #[must_use]
+    pub fn with_bounded_join_planning(mut self, options: BoundedJoinPlanning) -> Self {
+        self.bounded_join_planning = Some(options);
         self
     }
 
@@ -695,14 +706,22 @@ impl PreparedQuery<'_> {
             None
         };
         let start_planning = Timer::now();
+        let bounded = self
+            .substitutions
+            .is_empty()
+            .then_some(self.evaluator.bounded_join_planning)
+            .flatten();
+        let mut join_planning = JoinPlanningReport::default();
         let (results, plan_node_with_stats, planning_duration) = match self.query {
             Query::Select(query) => {
                 let mut pattern = QueryExpression::from(&query.expression);
                 if !self.evaluator.without_optimizations {
-                    pattern = Optimizer::optimize_query_expression_with_cardinality_estimator(
-                        pattern,
-                        estimator.as_deref(),
-                    );
+                    (pattern, join_planning) =
+                        Optimizer::optimize_query_expression_with_join_planning(
+                            pattern,
+                            estimator.as_deref(),
+                            bounded,
+                        );
                 }
                 let planning_duration = start_planning.elapsed();
                 let (results, explanation) = match self.evaluator.simple_evaluator(
@@ -725,10 +744,12 @@ impl PreparedQuery<'_> {
             Query::Ask(query) => {
                 let mut pattern = QueryExpression::from(&query.expression);
                 if !self.evaluator.without_optimizations {
-                    pattern = Optimizer::optimize_query_expression_with_cardinality_estimator(
-                        pattern,
-                        estimator.as_deref(),
-                    );
+                    (pattern, join_planning) =
+                        Optimizer::optimize_query_expression_with_join_planning(
+                            pattern,
+                            estimator.as_deref(),
+                            bounded,
+                        );
                 }
                 let planning_duration = start_planning.elapsed();
                 let (results, explanation) = match self.evaluator.simple_evaluator(
@@ -751,10 +772,12 @@ impl PreparedQuery<'_> {
             Query::Construct(query) => {
                 let mut pattern = QueryExpression::from(&query.expression);
                 if !self.evaluator.without_optimizations {
-                    pattern = Optimizer::optimize_query_expression_with_cardinality_estimator(
-                        pattern,
-                        estimator.as_deref(),
-                    );
+                    (pattern, join_planning) =
+                        Optimizer::optimize_query_expression_with_join_planning(
+                            pattern,
+                            estimator.as_deref(),
+                            bounded,
+                        );
                 }
                 let planning_duration = start_planning.elapsed();
                 let (results, explanation) = match self.evaluator.simple_evaluator(
@@ -777,10 +800,12 @@ impl PreparedQuery<'_> {
             Query::Describe(query) => {
                 let mut pattern = QueryExpression::from(&query.pattern);
                 if !self.evaluator.without_optimizations {
-                    pattern = Optimizer::optimize_query_expression_with_cardinality_estimator(
-                        pattern,
-                        estimator.as_deref(),
-                    );
+                    (pattern, join_planning) =
+                        Optimizer::optimize_query_expression_with_join_planning(
+                            pattern,
+                            estimator.as_deref(),
+                            bounded,
+                        );
                 }
                 let planning_duration = start_planning.elapsed();
                 let (results, explanation) = match self.evaluator.simple_evaluator(
@@ -805,6 +830,7 @@ impl PreparedQuery<'_> {
             inner: plan_node_with_stats,
             with_stats: self.evaluator.run_stats,
             planning_duration,
+            join_planning,
         };
         (results, explanation)
     }
@@ -1084,9 +1110,17 @@ pub struct QueryExplanation {
     inner: Rc<EvalNodeWithStats>,
     with_stats: bool,
     planning_duration: Option<DayTimeDuration>,
+    join_planning: JoinPlanningReport,
 }
 
 impl QueryExplanation {
+    /// Effective bounded profile and term-free search/fallback work. Bypassed
+    /// optimization or substituted queries report no bounded profile. Counts
+    /// include speculative searches, not just operators in the final plan.
+    pub const fn join_planning(&self) -> &JoinPlanningReport {
+        &self.join_planning
+    }
+
     /// Returns term-free structured feedback. Counts are observations, not
     /// complete cardinalities until the relevant iterator reached EOF without
     /// errors, input bindings or repeated invocations. No query labels or RDF

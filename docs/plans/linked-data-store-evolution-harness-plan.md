@@ -14,7 +14,8 @@
   integration are implemented. G3.4 native spatial queries/catch-up and opt-in
   SPARQL joins are implemented; separate performance/promotion gates remain.
   G3.1 native physical statistics, dataset-scoped cost integration and term-free
-  estimated/observed-row feedback are implemented. G3.2 bounded planning is next.
+  estimated/observed-row feedback are implemented. G3.2 opt-in native bounded
+  planning is implemented; frozen-corpus acceptance and promotion remain open.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
@@ -87,7 +88,8 @@ generations, strict primary reconciliation, atomic activation and G2 hooks.
 G3.3 native text/SPARQL joins and G3.4 native spatial queries/catch-up/SPARQL joins
 are implemented. Separate provider performance/promotion gates remain outstanding.
 G3.1 native physical statistics, dataset-scoped cost integration and explicit
-term-free cardinality feedback are implemented; G3.2 bounded planning is next.
+term-free cardinality feedback are implemented. G3.2 opt-in native bounded
+planning is implemented; its frozen-corpus performance acceptance remains active.
 
 G1.7, ADR-0034 through ADR-0041, Dream Machine, GEPA/AVO, broad Jena/RDF4J
 parity, and the P1-P3 product portfolio remain future work. They require a
@@ -1104,7 +1106,15 @@ strict snapshot identity and shared lifecycle hooks. Its
 [query adapter](../adr/0023-statistics-and-bounded-join-planning.md#g31-native-query-costs-and-feedback-2026-09-08)
 now adds same-source dataset-scoped costs, heuristic fallback and term-free
 estimated/observed-row and q-error feedback with explicit incomplete observations.
-G3.2 bounded planning is next, not non-gating harness expansion.
+The [G3.2 native planner](../adr/0023-statistics-and-bounded-join-planning.md#g32-opt-in-native-bounded-planning-2026-09-08)
+now provides opt-in deterministic left-deep subset search for connected
+same-graph basic joins up to eight leaves and greedy fallback for larger or
+unsupported groups. Public configuration and term-free search reports make the
+bound and cost model explicit; default planning remains greedy. Native
+differential tests and the runnable statistics example establish the callable
+slice, not corpus-wide performance. Task `task-1787603736767-vilwx5` stays
+active for frozen-corpus acceptance, measuring strict statistics admission
+separately from planning/execution. Non-gating harness expansion stays frozen.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 

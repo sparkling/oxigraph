@@ -12,7 +12,7 @@ fn leaf(
 #[cfg(unix)]
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use oxigraph::model::{GraphName, Literal, NamedNode, Quad};
-    use oxigraph::sparql::{QueryResults, SparqlEvaluator};
+    use oxigraph::sparql::{BoundedJoinPlanning, QueryResults, SparqlEvaluator};
     use oxigraph::store::{
         DerivedGenerationError, DerivedGenerationLimits, DerivedIndex, DerivedProvider,
         StatisticsProvider, Store, TransactionKey, TransactionRequest, TransactionStartControl,
@@ -85,7 +85,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         frequency.upper
     )?;
     let (rows, explanation) = SparqlEvaluator::new()
-        .parse_query("SELECT ?s WHERE { ?s <urn:label> ?label }")?
+        .with_bounded_join_planning(BoundedJoinPlanning::default())
+        .parse_query("SELECT ?s WHERE { ?s <urn:label> ?label . ?s <urn:label> ?other }")?
         .on_statistics(source, &index, &provider, limits)?
         .compute_statistics()
         .explain()?;
@@ -101,6 +102,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     writeln!(
         std::io::stdout().lock(),
         "query_rows={actual} estimated_rows=3 q_error=1 complete=true"
+    )?;
+    let planning = explanation.join_planning();
+    if planning.dp_components != 1 {
+        return Err("expected bounded join search".into());
+    }
+    writeln!(
+        std::io::stdout().lock(),
+        "cost_model={} dp_components={} dp_states={} dp_candidates={}",
+        BoundedJoinPlanning::COST_MODEL,
+        planning.dp_components,
+        planning.dp_states,
+        planning.dp_candidates
     )?;
     Ok(())
 }

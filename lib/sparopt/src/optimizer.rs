@@ -12,6 +12,9 @@ use spargebra::term::{GroundTermPattern, NamedNodePattern};
 use spargebra::vocab::sparql;
 use std::cmp::{max, min};
 
+mod bounded;
+pub use bounded::{BoundedJoinPlanning, JoinPlanningReport};
+
 pub struct Optimizer;
 
 impl Optimizer {
@@ -25,11 +28,28 @@ impl Optimizer {
         query_expression: QueryExpression,
         estimator: Option<&dyn CardinalityEstimator>,
     ) -> QueryExpression {
+        Self::optimize_query_expression_with_join_planning(query_expression, estimator, None).0
+    }
+
+    /// Opt-in bounded search; the default entry points retain greedy planning.
+    pub fn optimize_query_expression_with_join_planning(
+        query_expression: QueryExpression,
+        estimator: Option<&dyn CardinalityEstimator>,
+        bounded: Option<BoundedJoinPlanning>,
+    ) -> (QueryExpression, JoinPlanningReport) {
+        let mut report = JoinPlanningReport {
+            bounded,
+            ..JoinPlanningReport::default()
+        };
         let input_types = VariableTypes::default();
         let query_expression = Self::normalize_pattern(query_expression, &input_types);
         let query_expression = Self::push_graph(query_expression, None, &input_types);
-        let query_expression = Self::reorder_joins(query_expression, &input_types, estimator);
-        Self::push_filters(query_expression, Vec::new(), &input_types)
+        let query_expression =
+            Self::reorder_joins(query_expression, &input_types, estimator, &mut report);
+        (
+            Self::push_filters(query_expression, Vec::new(), &input_types),
+            report,
+        )
     }
 
     /// Advisory rows for an unbound pattern. This is not a semantic cardinality
@@ -809,6 +829,7 @@ impl Optimizer {
         query_expression: QueryExpression,
         input_types: &VariableTypes,
         estimator: Option<&dyn CardinalityEstimator>,
+        report: &mut JoinPlanningReport,
     ) -> QueryExpression {
         match query_expression {
             QueryExpression::QuadPattern { .. }
@@ -823,7 +844,7 @@ impl Optimizer {
                         todo.push(*right);
                         todo.push(*left);
                     } else {
-                        to_reorder.push(Self::reorder_joins(e, input_types, estimator));
+                        to_reorder.push(Self::reorder_joins(e, input_types, estimator, report));
                     }
                 }
 
@@ -860,6 +881,36 @@ impl Optimizer {
                         )
                     })
                 {
+                    if let Some(options) = report
+                        .bounded
+                        .filter(|_| same_graph_quad_patterns(&to_reorder))
+                    {
+                        let ids = bounded::component_ids(
+                            next_entry_id,
+                            &to_reorder_types,
+                            &not_yet_reordered_ids,
+                            input_types,
+                            usize::from(options.max_dp_leaves()),
+                        );
+                        if ids.len() > 1 && ids.len() <= usize::from(options.max_dp_leaves()) {
+                            if let Some(output) = bounded::plan(
+                                &ids,
+                                &to_reorder,
+                                &to_reorder_types,
+                                input_types,
+                                estimator,
+                                report,
+                            ) {
+                                for id in ids {
+                                    not_yet_reordered_ids[id] = false;
+                                }
+                                report.dp_components += 1;
+                                output_cartesian_product_joins.push(output);
+                                continue;
+                            }
+                        }
+                    }
+                    report.greedy_components += 1;
                     not_yet_reordered_ids[next_entry_id] = false; // It's now done
                     let mut output = to_reorder[next_entry_id].clone();
                     let mut output_types = to_reorder_types[next_entry_id].clone();
@@ -974,8 +1025,8 @@ impl Optimizer {
             QueryExpression::Lateral { left, right } => {
                 let left_types = infer_query_expression_types(&left, input_types.clone());
                 QueryExpression::lateral(
-                    Self::reorder_joins(*left, input_types, estimator),
-                    Self::reorder_joins(*right, &left_types, estimator),
+                    Self::reorder_joins(*left, input_types, estimator, report),
+                    Self::reorder_joins(*right, &left_types, estimator, report),
                 )
             }
             QueryExpression::LeftJoin {
@@ -984,7 +1035,7 @@ impl Optimizer {
                 expression,
                 ..
             } => {
-                let left = Self::reorder_joins(*left, input_types, estimator);
+                let left = Self::reorder_joins(*left, input_types, estimator, report);
                 let left_types = infer_query_expression_types(&left, input_types.clone());
                 #[cfg(feature = "sep-0006")]
                 {
@@ -1010,8 +1061,12 @@ impl Optimizer {
                             );
 
                         if lateral_cost <= join_cost.saturating_mul(100) {
-                            let right_for_lateral =
-                                Self::reorder_joins((*right).clone(), &left_types, estimator);
+                            let right_for_lateral = Self::reorder_joins(
+                                (*right).clone(),
+                                &left_types,
+                                estimator,
+                                report,
+                            );
                             if is_fit_for_for_loop_join(
                                 &right_for_lateral,
                                 input_types,
@@ -1032,7 +1087,7 @@ impl Optimizer {
                         }
                     }
                 }
-                let right = Self::reorder_joins(*right, input_types, estimator);
+                let right = Self::reorder_joins(*right, input_types, estimator, report);
                 let right_types = infer_query_expression_types(&right, input_types.clone());
                 QueryExpression::left_join(
                     left,
@@ -1044,9 +1099,9 @@ impl Optimizer {
                 )
             }
             QueryExpression::Minus { left, right, .. } => {
-                let left = Self::reorder_joins(*left, input_types, estimator);
+                let left = Self::reorder_joins(*left, input_types, estimator, report);
                 let left_types = infer_query_expression_types(&left, input_types.clone());
-                let right = Self::reorder_joins(*right, input_types, estimator);
+                let right = Self::reorder_joins(*right, input_types, estimator, report);
                 let right_types = infer_query_expression_types(&right, input_types.clone());
                 QueryExpression::minus(
                     left,
@@ -1056,48 +1111,55 @@ impl Optimizer {
                     },
                 )
             }
-            QueryExpression::Graph { graph_name, inner } => {
-                QueryExpression::graph(Self::reorder_joins(*inner, input_types, None), graph_name)
-            }
+            QueryExpression::Graph { graph_name, inner } => QueryExpression::graph(
+                Self::reorder_joins(*inner, input_types, None, report),
+                graph_name,
+            ),
             QueryExpression::Extend {
                 inner,
                 expression,
                 variable,
             } => QueryExpression::extend(
-                Self::reorder_joins(*inner, input_types, estimator),
+                Self::reorder_joins(*inner, input_types, estimator, report),
                 variable,
                 expression,
             ),
             QueryExpression::Filter { inner, expression } => QueryExpression::filter(
-                Self::reorder_joins(*inner, input_types, estimator),
+                Self::reorder_joins(*inner, input_types, estimator, report),
                 expression,
             ),
             QueryExpression::Union { inner } => QueryExpression::union_all(
                 inner
                     .into_iter()
-                    .map(|c| Self::reorder_joins(c, input_types, estimator)),
+                    .map(|c| Self::reorder_joins(c, input_types, estimator, report)),
             ),
             QueryExpression::Slice {
                 inner,
                 offset,
                 limit,
             } => QueryExpression::slice(
-                Self::reorder_joins(*inner, input_types, estimator),
+                Self::reorder_joins(*inner, input_types, estimator, report),
                 offset,
                 limit,
             ),
-            QueryExpression::Distinct { inner } => {
-                QueryExpression::distinct(Self::reorder_joins(*inner, input_types, estimator))
-            }
-            QueryExpression::Reduced { inner } => {
-                QueryExpression::reduced(Self::reorder_joins(*inner, input_types, estimator))
-            }
+            QueryExpression::Distinct { inner } => QueryExpression::distinct(Self::reorder_joins(
+                *inner,
+                input_types,
+                estimator,
+                report,
+            )),
+            QueryExpression::Reduced { inner } => QueryExpression::reduced(Self::reorder_joins(
+                *inner,
+                input_types,
+                estimator,
+                report,
+            )),
             QueryExpression::Project { inner, variables } => QueryExpression::project(
-                Self::reorder_joins(*inner, input_types, estimator),
+                Self::reorder_joins(*inner, input_types, estimator, report),
                 variables,
             ),
             QueryExpression::OrderBy { inner, expression } => QueryExpression::order_by(
-                Self::reorder_joins(*inner, input_types, estimator),
+                Self::reorder_joins(*inner, input_types, estimator, report),
                 expression,
             ),
             QueryExpression::Service { .. } => {
@@ -1109,7 +1171,7 @@ impl Optimizer {
                 variables,
                 aggregates,
             } => QueryExpression::group(
-                Self::reorder_joins(*inner, input_types, estimator),
+                Self::reorder_joins(*inner, input_types, estimator, report),
                 variables,
                 aggregates,
             ),
@@ -1365,12 +1427,15 @@ fn join_key_variables(
     right: &VariableTypes,
     input_types: &VariableTypes,
 ) -> Vec<Variable> {
-    left.iter()
+    let mut keys: Vec<_> = left
+        .iter()
         .filter(|(variable, left_type)| {
             !left_type.undef && !right.get(variable).undef && input_types.get(variable).undef
         })
         .map(|(variable, _)| variable.clone())
-        .collect()
+        .collect();
+    keys.sort_unstable_by(|a, b| a.as_str().cmp(b.as_str()));
+    keys
 }
 
 fn estimate_query_expression_size(

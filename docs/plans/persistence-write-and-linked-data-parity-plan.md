@@ -14,7 +14,8 @@
   integration are implemented. G3.4 native spatial queries/catch-up and opt-in
   SPARQL joins are implemented; separate performance/promotion gates remain.
   G3.1 native physical statistics, dataset-scoped cost integration and term-free
-  estimated/observed-row feedback are implemented. G3.2 bounded planning is next.
+  estimated/observed-row feedback are implemented. G3.2 opt-in native bounded
+  planning is implemented; frozen-corpus acceptance and promotion remain open.
   Backend-neutral writes and the upstream delta are verified. G1.7,
   ADR-0034 through ADR-0041, and P1-P3 breadth are future roadmap work and do
   not gate R1
@@ -154,9 +155,9 @@ receipts are implemented. G2.7 fresh-directory restore and reconciliation close
 the native ADR-0022 boundary. G3.0 native generation lifecycle is implemented;
 G3.3 native text/SPARQL joins and G3.4 native spatial queries/catch-up/SPARQL joins
 are implemented. Separate performance/promotion gates and remaining G3/G4 work
-are outstanding. G3.1 native physical statistics/counts/frequency summaries are
-implemented; dataset-aware optimizer integration and feedback are next, then
-G3.2 bounded join planning.
+are outstanding. G3.1 native physical statistics, dataset-aware optimizer costs
+and feedback are implemented. G3.2 opt-in native bounded join planning is
+implemented; its frozen-corpus performance acceptance is the active next step.
 
 The clone is patch-current with audited `upstream/main` `7ce152a1`. Local
 commit `eb0f0cc2` integrates its merged-default-graph product change plus two
@@ -550,7 +551,7 @@ Evidence grade A applies to this section.
 | G14 | Full-text indexing                         | No index or SPARQL extension                                                                                                                                                                                                                                                                                                                                              | Lucene text dataset and SPARQL property function                                                   | Lucene/Elasticsearch SAIL                                                                                                                                                         | P2 optional derived-index capability                                                                                        |
 | G15 | Spatial indexing                           | GeoSPARQL functions; no persistent transaction-consistent spatial index                                                                                                                                                                                                                                                                                                   | GeoSPARQL module and spatial index management                                                      | GeoSPARQL support                                                                                                                                                                 | P2; preserve correctness without index                                                                                      |
 | G16 | Federation planning                        | Basic `SERVICE`; no source selection, catalog, or federated plan metrics                                                                                                                                                                                                                                                                                                  | ARQ SERVICE controls and extensions                                                                | FedX source selection, joins, timeout, monitoring                                                                                                                                 | P2 after egress and statistics                                                                                              |
-| G17 | Planner statistics                         | Query explain exists; no durable cardinality/statistics subsystem                                                                                                                                                                                                                                                                                                         | Mature ARQ/TDB planning                                                                            | Store estimates and FedX plan logging                                                                                                                                             | P2 statistics with correctness-neutral fallback                                                                             |
+| G17 | Planner statistics                         | G3.1 native statistics, dataset-scoped costs and row feedback; G3.2 opt-in bounded planning                                                                                                                                                                                                                                                                                                         | Mature ARQ/TDB planning                                                                            | Store estimates and FedX plan logging                                                                                                                                             | Native slices implemented; frozen-corpus performance/promotion remains                                                                             |
 | G18 | Transaction participants                   | No stable validator/index/outbox hook                                                                                                                                                                                                                                                                                                                                     | Dataset wrappers/modules                                                                           | Stackable and notifying SAILs                                                                                                                                                     | P1 narrow change-set/participant API, not a class hierarchy                                                                 |
 | G19 | Multi-repository lifecycle                 | One server process/store configuration path                                                                                                                                                                                                                                                                                                                               | Fuseki can manage multiple datasets                                                                | Server manages multiple repositories                                                                                                                                              | P3 product ADR; not a core RDF requirement                                                                                  |
 | G20 | Protocol/file compatibility extras         | Standards-oriented formats and Oxigraph protocols                                                                                                                                                                                                                                                                                                                         | Jena-specific assemblers, RDF Thrift, patch endpoints                                              | RDF4J REST and Binary RDF                                                                                                                                                         | P3 only with a named interoperability user                                                                                  |
@@ -1172,8 +1173,16 @@ Physical counts must not be used as merged-dataset cardinalities. The opt-in
 now bind costs and RDF reads to the same retained source, scope estimates to
 supported physical graphs and retain heuristic fallback otherwise. Explicit
 term-free feedback distinguishes complete cardinalities from partial/failed or
-correlated observations. G3.2 enumeration and frozen performance/promotion gates
-remain; the ordinary heuristic entry point is unchanged.
+correlated observations. The [G3.2 native planner](../adr/0023-statistics-and-bounded-join-planning.md#g32-opt-in-native-bounded-planning-2026-09-08)
+adds explicit one-to-eight-leaf configuration, deterministic left-deep subset
+search inside same-graph basic joins and greedy fallback beyond the bound.
+Query-local reports expose the effective profile and search work. The ordinary
+entry point stays greedy; substitution/optimization bypasses remain intact.
+Native differential tests and the restart/statistics example exercise this
+option. Frozen BSBM/WatDiv/LDBC acceptance remains outstanding, so G3.2 task
+`task-1787603736767-vilwx5` stays in progress. Measure strict statistics admission
+separately from planning and execution; one reduced-scan fixture is not a speed
+or default-promotion claim.
 
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.

@@ -5,8 +5,9 @@
 - Updated: 2026-09-08
 - Deciders: Oxigraph parity programme
 - Implementation status: G3.1 native physical statistics, dataset-scoped cost
-  integration and query-local feedback implemented below; G3.2 bounded planning
-  and frozen performance/promotion gates remain outstanding
+  integration and query-local feedback implemented below; G3.2 opt-in native
+  bounded planning is implemented below, with frozen-corpus performance and
+  promotion gates still outstanding
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
@@ -197,8 +198,9 @@ ordering and result equivalence, absent/stale/corrupt fallback, selected and
 merged graphs, substitutions, disabled optimization, early exit, cancellation,
 and error observations. The existing statistics example now also exhausts a
 SPARQL query and checks three estimated/actual rows with complete q-error one.
-G3.2 bounded planning and the following performance/promotion requirements remain
-open; this native handoff does not make a measured query-speed claim.
+This G3.1 handoff did not implement bounded planning; the subsequent G3.2
+increment below does. The performance/promotion requirements remain open;
+neither native handoff makes a measured query-speed claim.
 
 Required query fuzzing also exposed a pre-existing SEP lateral-rewrite defect:
 the optimizer treated every `OneOrMorePath` as safe to correlate even when its
@@ -214,6 +216,65 @@ the distinct fixed-term and variable-endpoint definitions in
 [SPARQL 1.1 section 18.4](https://www.w3.org/TR/sparql11-query/#defn_evalPropertyPath).
 The discovered fuzz input is retained locally; no frozen expected result or
 historical evidence was replaced to make validation pass.
+
+### G3.2 opt-in native bounded planning (2026-09-08)
+
+[`BoundedJoinPlanning`](../../lib/sparopt/src/optimizer/bounded.rs) exposes an
+explicit leaf bound from one through eight and cost-model identity
+`oxigraph.join-work.v1`. The default option value is eight, but ordinary
+`Optimizer`, `QueryEvaluator` and `SparqlEvaluator` entry points remain greedy.
+Call `with_bounded_join_planning` to opt in, with or without statistics and
+without a RocksDB or new package dependency. SELECT, ASK, CONSTRUCT and DESCRIBE
+use the option. Disabled optimization and variable substitutions bypass it;
+update planning is unchanged.
+
+After existing normalization, only a flattened group consisting entirely of
+same-graph basic quad leaves is eligible. Connected components are separate
+searches; larger components and groups containing other algebra retain greedy
+planning. Discovery stops once a component exceeds the configured bound.
+DP never brings a path, SERVICE or scoped expression into its leaf set, and
+does not cross optional, MINUS, filter, grouping, ordering or slicing boundaries.
+Retained dynamic GRAPH scopes clear external statistics before recursion, and
+SERVICE bodies remain opaque. Existing pre/post optimizer rewrites are retained.
+
+The search keeps one best left-deep state per connected subset, considering
+each legal last leaf. Hash joins use canonical variable-key order. When the
+existing SEP-0006 admission proof allows it, a lateral candidate probes one
+basic quad. Subset row estimates use a fixed ascending-source-ordinal fold of
+leaf hints and the existing shared-key selectivity; they do not depend on the
+chosen physical plan. The cost model charges leaf scans, hash/probe work and
+intermediate rows, using saturating 128-bit work arithmetic. Equal costs select
+original leaf ordinals and then operator rank. Zero hints never remove leaves.
+This is bounded left-deep enumeration, not a bushy or globally optimal planner.
+
+At eight leaves a search has at most 255 populated states and 2,048 candidate
+considerations. These are logical per-component work bounds, not a global
+query deadline or RSS quota; query term sizes and the number of components
+still matter. The public term-free `QueryExplanation::join_planning` report
+identifies the effective profile, DP/greedy components, states and candidates.
+Counts include speculative searches; greedy counts include singleton fallback.
+No query text or RDF terms are automatically exported, and the legacy explicit
+JSON explanation format is unchanged.
+
+Native optimizer tests cover eight/nine-leaf selection, early fallback,
+deterministic plans/keys, disconnected and duplicate leaves, zero/max hints and
+ineligible groups. [Query differential tests](../../lib/oxigraph/tests/bounded_join_planning.rs)
+compare against optimization-disabled evaluation across graph/dataset scope,
+multisets, all query forms, RDF 1.2 term modes and cancellation. Their test-local
+graph-isomorphic result encoding preserves duplicate/empty rows and a consistent
+blank-node bijection across FROM executions; it does not alter RDF merge rules.
+[Statistics tests](../../lib/oxigraph/tests/statistics.rs) compare advisory and
+heuristic planning and show lower observed scan work on one constructed join.
+That fixture is not a representative speed benchmark. Query fuzzing now compares
+both ordinary and opt-in bounded evaluation with the independent unoptimized
+dataset path. The [statistics example](../../lib/oxigraph/examples/statistics.rs)
+exercises the option after rollback, catch-up and restart and prints search counts.
+
+**G3.2 remains in progress for frozen-corpus acceptance.** Before a speed claim
+or default promotion, measure admission separately from planning/execution:
+the strict statistics adapter currently reconstructs primary statistics during
+admission. Native correctness and lower work on one fixture do not establish
+end-to-end improvement on BSBM, WatDiv or LDBC.
 
 ### Full statistics/planning promotion
 

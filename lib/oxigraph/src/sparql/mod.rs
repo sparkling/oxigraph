@@ -50,10 +50,10 @@ use crate::store::EvaluationOperation;
 use crate::store::evaluation_metrics::{EvaluationObservation, observe_query_result};
 use crate::store::{Store, Transaction};
 pub use spareval::{
-    AggregateFunctionAccumulator, CancellationToken, CardinalityFeedback, CardinalityFeedbackNode,
-    DefaultServiceHandler, EstimateBasis, QueryDatasetSpecification, QueryEvaluationError,
-    QueryExplanation, QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter,
-    ServiceHandler,
+    AggregateFunctionAccumulator, BoundedJoinPlanning, CancellationToken, CardinalityFeedback,
+    CardinalityFeedbackNode, DefaultServiceHandler, EstimateBasis, JoinPlanningReport,
+    QueryDatasetSpecification, QueryEvaluationError, QueryExplanation, QueryResults, QuerySolution,
+    QuerySolutionIter, QueryTripleIter, ServiceHandler,
 };
 use spareval::{QueryEvaluator, QueryableDataset};
 use spargebra::SparqlParser;
@@ -465,6 +465,15 @@ impl SparqlEvaluator {
     #[inline]
     pub fn without_optimizations(mut self) -> Self {
         self.inner = self.inner.without_optimizations();
+        self
+    }
+
+    /// Opts into bounded same-graph basic-join search with an explicit <=8-leaf
+    /// ceiling. Larger or ineligible components keep deterministic greedy
+    /// planning. QueryExplanation::join_planning reports the search work.
+    /// This is not a measured-speed or default-planner promotion.
+    pub fn with_bounded_join_planning(mut self, options: BoundedJoinPlanning) -> Self {
+        self.inner = self.inner.with_bounded_join_planning(options);
         self
     }
 

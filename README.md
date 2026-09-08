@@ -107,13 +107,19 @@ counts are not SPARQL merged-dataset estimates. Opt-in `on_statistics` now binds
 dataset-scoped cost hints and RDF evaluation to the same retained snapshot;
 missing/stale/rejected or unsupported hints retain heuristic planning.
 `compute_statistics` plus `cardinality_feedback` exposes term-free estimated and
-observed rows, completion state and q-error. G3.2 bounded join enumeration remains.
+observed rows, completion state and q-error. G3.2 now adds explicit
+`SparqlEvaluator::with_bounded_join_planning(BoundedJoinPlanning::default())`:
+deterministic subset search for connected same-graph basic joins of at most
+eight leaves, with greedy fallback for larger or unsupported groups.
+`QueryExplanation::join_planning` reports the effective profile and search work.
+The ordinary planner stays greedy; frozen performance/promotion gates remain.
 Run
 `cargo run --locked -p oxigraph --features statistics --example statistics`
 ([source](lib/oxigraph/examples/statistics.rs),
 [contract](docs/adr/0023-statistics-and-bounded-join-planning.md#g31-native-physical-statistics-provider-2026-09-08)).
 This adds no dependencies. Catch-up and reconciliation scan the retained source;
-no query-speed claim is made.
+no query-speed claim is made. Bounded planning itself needs neither RocksDB nor
+the `statistics` feature and adds no dependencies.
 
 Build this fork rather than an upstream package to obtain these changes:
 
