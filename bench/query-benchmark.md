@@ -359,3 +359,28 @@ rebuilt and relabelled as a historical parent. Five repetitions are input
 validation, not a controlled p95 baseline or numerical acceptance decision.
 Prepare the controlled parent-only baseline and ratify the resource/tail gates
 before running a gated candidate. Full G3.2 acceptance remains open.
+
+The first greedy input-validation run completed with exit zero and 42/42
+equivalent observations. Lines 1/2/7 returned zero rows; lines 4/14/17 returned
+56/9,909/11. Thus only the latter three establish nonempty shape coverage.
+Keep the empty controls; do not describe them as successful selective retrieval.
+Five-sample medians for lines 4/14/17 were 198/75/106 ms. These are diagnostic
+observations, not p95 bounds or a speedup comparison.
+
+Setup dominated: atomic load 311.7 s, statistics rebuild/activation 493.5 s,
+initial verification 220.7 s; total elapsed 1,202.3 s and whole-process peak
+21,664,748 KiB. Later native compilation overlapped this run, so no isolated-host
+claim is made. An explicitly separate no-statistics setup path and the existing
+bulk loader are candidates for reducing future preparation time; neither may
+silently change the historical setup envelope or waive statistics validation.
+The optimization-disabled oracle remains separate from query latency.
+
+Raw JSONL SHA-256:
+`ee13e776e8622c32ca6cf4dc310064678e58d0dde6e69f3b9cd4fd27009d1e02`.
+The run used retained binary
+`95f6b0d347744f9eff8385d804897f23fac555d5d59d0217d7477289bf66068b`
+from the input-limit patch on `6f2c1014`, before the equivalent parity-test lint
+cleanup. The committed `e6317a1b` binary is separately identified as
+`0fb6e387b8e9519c42fa6c851d5892f62b73a585eaaa661d73d7d6923af82773`
+and passed a 30-observation all-mode BSBM smoke test. Do not relabel the older
+binary as the final source build or these input checks as a candidate gate.
