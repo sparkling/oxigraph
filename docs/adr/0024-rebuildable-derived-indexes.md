@@ -267,6 +267,25 @@ This native API increment is followed by the SPARQL slice below, not completion
 of all G3.3/P2.2. Provider-specific frozen performance/promotion receipts remain
 separate gates; no provider-backed qualification was run.
 
+#### Bounded text candidate enumeration (2026-09-08)
+
+The query path now enumerates one unscored Tantivy weight once, instead of a
+complete count followed by a second collection. It applies the engine's live
+document bitset before charging `max_candidates`, retains at most that many
+addresses, and rejects the first excess live match before RDF/scope filtering.
+Successful candidate counts remain exact. Cancellation/deadline checks surround
+weight/scorer construction and run between cursor steps, including deleted hits
+and terminal exhaustion. An individual engine call is still not preemptible;
+this is not a bound on all internal posting work or wall-clock time.
+
+The native instrumented regression reduces 12-document cursor advances from 24
+to 12 and observes cancellation after two advances rather than twelve. Separate
+checks cover the ceiling, empty indexes, multiple segments, deletions and both
+Boolean query modes against the ordinary engine collector. These are concrete
+resource/control checks, not an end-to-end speedup or full G3.3 performance pass.
+Profile bytes, scoring/order, freshness, payload hydration, independent
+reconciliation and primary verification are unchanged.
+
 ### G3.3 local SPARQL text SERVICE v1 (2026-09-08)
 
 The optional [text binding](../../lib/oxigraph/src/sparql/text_service.rs) adds

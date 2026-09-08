@@ -1303,6 +1303,10 @@ now joins distinct literal candidates to ordinary RDF patterns on the same
 retained snapshot, with bounded caching, fatal cancellation, and row-independent
 eventual lag context. Frozen performance/promotion receipts remain outstanding.
 Neither RAM hydration nor strict full-scan admission is an acceleration claim.
+The [bounded candidate correction](../adr/0024-rebuildable-derived-indexes.md#bounded-text-candidate-enumeration-2026-09-08)
+removes the duplicate engine scan and checks cancellation/overflow during
+enumeration. This closes a native resource/control gap, not the remaining
+frozen performance/promotion gates.
 
 - Define an index provider and a small SPARQL extension surface without making
   Lucene or Elasticsearch types part of the core API.

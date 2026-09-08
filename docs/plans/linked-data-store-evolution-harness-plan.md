@@ -1096,7 +1096,11 @@ strict/explicit-eventual primary verification. The opt-in
 [local SPARQL text SERVICE](../adr/0024-rebuildable-derived-indexes.md#g33-local-sparql-text-service-v1-2026-09-08)
 now adds snapshot-consistent literal/RDF joins, bounded caching and independent
 empty-result lag context. Frozen performance/promotion receipts remain, so
-G3.3 retains only its separately gated performance/promotion work. G3.4 now adds
+G3.3 retains only its separately gated performance/promotion work. Its
+[bounded candidate correction](../adr/0024-rebuildable-derived-indexes.md#bounded-text-candidate-enumeration-2026-09-08)
+now removes the duplicate engine scan and observes cancellation/overflow during
+enumeration; native work/equivalence checks are not full performance acceptance.
+G3.4 now adds
 the optional native CRS84 spatial provider with exact refinement, strict retained
 snapshots and bounded ordered catch-up, plus reopen/backup/restore tests. Its
 profile explicitly rejects invalid/nonfinite/extreme shapes and nonempty geometry

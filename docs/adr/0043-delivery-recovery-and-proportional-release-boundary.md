@@ -104,6 +104,10 @@
   acceptance remains open. No harness-evolution prerequisite is added.
   Its first BSBM comparison passes all 960 oracle checks but regresses Q7
   quad work; diagnose that ordering before the large WatDiv candidate rerun.
+  While that G3.2 performance gate remains open, G3.3 now removes the duplicate
+  text candidate scan and enforces cancellation/overflow during enumeration.
+  Native cursor-work and result checks support this bounded correction, not
+  completion of either provider's frozen performance/promotion gates.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

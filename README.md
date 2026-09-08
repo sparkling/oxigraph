@@ -65,6 +65,9 @@ divergent database copies; this initial correctness path scans primary contents,
 not a fast search engine. G3.3 now adds an optional native Tantivy text provider:
 literal queries with graph/language scope, explicit strict/eventual results,
 primary candidate verification, durable reopen and backup/restore integration.
+Text candidate collection is single-pass, rejects the first excess live match,
+and checks cancellation between cursor steps; result ordering and limits are
+unchanged. Strict admission still scans primary contents.
 An opt-in prepared-query binding now adds local SPARQL text search, joining
 matching literals to ordinary RDF patterns on the same retained snapshot.
 Strict lag is a typed error; explicit eventual results report their lag even

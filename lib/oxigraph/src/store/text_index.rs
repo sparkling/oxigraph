@@ -10,10 +10,10 @@ use std::collections::BTreeSet;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use tantivy::collector::{Count, DocSetCollector};
+use tantivy::collector::DocSetCollector;
 use tantivy::directory::{Directory, RamDirectory};
 use tantivy::indexer::NoMergePolicy;
-use tantivy::query::{AllQuery, BooleanQuery, Occur, Query, TermQuery};
+use tantivy::query::{AllQuery, BooleanQuery, EnableScoring, Occur, Query, TermQuery};
 use tantivy::schema::{Field, IndexRecordOption, STORED, STRING, Schema, Value};
 use tantivy::{DocAddress, DocSet, Index, IndexSettings, IndexWriter, TERMINATED, TantivyDocument};
 
@@ -206,8 +206,9 @@ impl TextIndexProvider {
     /// Results sort by descending matched-term count, then the v1 encoded RDF
     /// quad bytes, independent of engine segment IDs. Candidate overflow fails
     /// the entire query, even for a small output limit. No partial success on
-    /// cancellation. Control checks surround engine calls; they do not preempt
-    /// a Tantivy call already running. The core strict path includes a full scan.
+    /// cancellation. Candidate enumeration stops at the first excess live hit
+    /// and checks control at every cursor step. It does not preempt an individual
+    /// Tantivy call already running. The core strict path includes a full scan.
     pub fn query(
         &self,
         view: &DerivedView<'_>,
@@ -265,15 +266,11 @@ impl TextIndexProvider {
             })
             .collect();
         let engine_query = BooleanQuery::new(clauses);
-        let count = searcher.search(&engine_query, &Count).map_err(engine)?;
-        controlled(limits, started)?;
-        if count > self.limits.max_candidates.get() {
-            return Err(TextError::Limit);
-        }
-        // The searcher is immutable, so the preceding count bounds this set.
-        let candidates = searcher
-            .search(&engine_query, &DocSetCollector)
-            .map_err(engine)?;
+        let candidates =
+            collect_candidates(&searcher, &engine_query, self.limits.max_candidates, || {
+                controlled(limits, started)
+            })?;
+        let count = candidates.len();
         let mut found = Vec::new();
         let mut inspected_bytes = 0_usize;
         for address in candidates {
@@ -583,6 +580,44 @@ impl TextIndexProvider {
         };
         Ok((bytes.to_vec(), quad))
     }
+}
+
+fn collect_candidates(
+    searcher: &tantivy::Searcher,
+    query: &dyn Query,
+    maximum: NonZeroUsize,
+    mut check: impl FnMut() -> Result<(), TextError>,
+) -> Result<Vec<DocAddress>, TextError> {
+    check()?;
+    let weight = query
+        .weight(EnableScoring::disabled_from_searcher(searcher))
+        .map_err(engine)?;
+    check()?;
+    let mut candidates = Vec::new();
+    for (ordinal, segment) in searcher.segment_readers().iter().enumerate() {
+        check()?;
+        let ordinal = u32::try_from(ordinal).map_err(|_| TextError::Limit)?;
+        let mut scorer = weight.scorer(segment, 1.0).map_err(engine)?;
+        check()?;
+        let mut doc = scorer.doc();
+        while doc != TERMINATED {
+            check()?;
+            // Scorers include deleted documents; match the ordinary collector's
+            // live-document filtering before charging the unscoped ceiling.
+            if segment
+                .alive_bitset()
+                .is_none_or(|alive| alive.is_alive(doc))
+            {
+                if candidates.len() == maximum.get() {
+                    return Err(TextError::Limit);
+                }
+                candidates.push(DocAddress::new(ordinal, doc));
+            }
+            doc = scorer.advance();
+        }
+    }
+    check()?;
+    Ok(candidates)
 }
 impl DerivedProvider for TextIndexProvider {
     fn identity(&self) -> super::ContributorIdentity {
