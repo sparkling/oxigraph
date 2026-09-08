@@ -10,7 +10,8 @@
   backup receipts and offline verification are implemented. G2.7 fresh-directory
   restore/reconciliation and local baselined drills are implemented. G3.0 native
   lifecycle includes stable inputs, bounded deltas, durable generation
-  reconciliation/activation and G2 hooks; text/spatial providers remain G3.3/G3.4.
+  reconciliation/activation and G2 hooks. G3.3 native text and opt-in SPARQL
+  integration are implemented; performance gates and G3.4 spatial remain.
   Backend-neutral writes and the upstream delta are verified. G1.7,
   ADR-0034 through ADR-0041, and P1-P3 breadth are future roadmap work and do
   not gate R1
@@ -148,7 +149,8 @@ validation and policy receipt/failure closure are implemented. G2.5 bounded
 operational observations are complete; G2.6 checkpoint packages and backup
 receipts are implemented. G2.7 fresh-directory restore and reconciliation close
 the native ADR-0022 boundary. G3.0 native generation lifecycle is implemented;
-the next approved product slice is G3.3 text, followed by remaining G3/G4 work.
+G3.3 native text and SPARQL joins are implemented, with performance gates still
+open, followed by G3.4 spatial and remaining G3/G4 work.
 
 The clone is patch-current with audited `upstream/main` `7ce152a1`. Local
 commit `eb0f0cc2` integrates its merged-default-graph product change plus two
@@ -967,7 +969,8 @@ implemented, including transaction and Store-bound query/update counters and
 histograms. Denial-attempt and SHACL commit-gate observations close G2.5;
 G2.6 backup receipts and offline verification plus G2.7 fresh-directory restore
 and reconciliation are implemented. G3.0 native inputs, durable generations,
-strict snapshot verification and G2 integration are implemented; G3.3 text is next.
+strict snapshot verification and G2 integration are implemented. G3.3 native text
+and SPARQL joins are implemented; performance gates and G3.4 spatial remain.
 The following frozen-candidate admission conditions apply only to optional
 containment; under ADR-0043 they do not block direct native product work.
 
@@ -1130,7 +1133,8 @@ closed. Optional artifact-bound local baselines report checkpoint-age intervals
 and restore-to-validated/synced-data duration. They do not invent production
 RPO/RTO objectives or measure actual lost changes/full-service recovery; see
 [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md#native-g27-fresh-directory-restore-2026-09-08).
-G3.0 native lifecycle is also implemented; G3.3 text is the next product slice.
+G3.0 native lifecycle and G3.3 native/SPARQL text behavior are implemented;
+G3.3 performance gates and G3.4 spatial remain.
 
 - Restore into a fresh directory, open the store, run its storage validator,
   and verify topology, namespaces, outbox position, and every declared
@@ -1204,9 +1208,11 @@ scope, matched-term score, bounded candidates, strict/explicit-eventual snapshot
 full document/posting reconciliation, reopen and G2 backup/restore. See
 [the exact API boundary](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 It uses the shared lifecycle unchanged; catch-up currently rebuilds a validated
-snapshot. SPARQL extension integration and frozen performance/promotion receipts
-remain outstanding. Neither RAM hydration nor strict full-scan admission is an
-acceleration claim.
+snapshot. The opt-in [local SPARQL text SERVICE](../adr/0024-rebuildable-derived-indexes.md#g33-local-sparql-text-service-v1-2026-09-08)
+now joins distinct literal candidates to ordinary RDF patterns on the same
+retained snapshot, with bounded caching, fatal cancellation, and row-independent
+eventual lag context. Frozen performance/promotion receipts remain outstanding.
+Neither RAM hydration nor strict full-scan admission is an acceleration claim.
 
 - Define an index provider and a small SPARQL extension surface without making
   Lucene or Elasticsearch types part of the core API.

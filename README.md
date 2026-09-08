@@ -63,13 +63,20 @@ divergent database copies; this initial correctness path scans primary contents,
 not a fast search engine. G3.3 now adds an optional native Tantivy text provider:
 literal queries with graph/language scope, explicit strict/eventual results,
 primary candidate verification, durable reopen and backup/restore integration.
-The first Rust API slice does not add SPARQL text syntax or claim acceleration;
-those G3.3 gates and the G3.4 spatial provider remain outstanding.
+An opt-in prepared-query binding now adds local SPARQL text search, joining
+matching literals to ordinary RDF patterns on the same retained snapshot.
+Strict lag is a typed error; explicit eventual results report their lag even
+when empty. This is not a server endpoint or an acceleration claim;
+G3.3 performance gates and the G3.4 spatial provider remain outstanding.
 See the [runnable lifecycle example](lib/oxigraph/examples/derived_generations.rs)
 and [ADR-0024](docs/adr/0024-rebuildable-derived-indexes.md).
 
 Try the [text search example](lib/oxigraph/examples/text_index.rs) with
 `cargo run --locked -p oxigraph --features text-index --example text_index`.
+For a SPARQL join and empty-result lag demonstration, run
+`cargo run --locked -p oxigraph --features text-index --example text_service`
+([source](lib/oxigraph/examples/text_service.rs),
+[query contract](docs/adr/0024-rebuildable-derived-indexes.md#g33-local-sparql-text-service-v1-2026-09-08)).
 `text-index` adds an optional Rust dependency, Tantivy 0.26.1, with engine default
 features disabled; it does not add Node to the application. The locked dependency
 graph declares a Rust 1.90 minimum for this feature; validation used Rust 1.98.

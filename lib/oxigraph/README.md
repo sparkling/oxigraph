@@ -47,10 +47,15 @@ The separate native `text-index` feature provides a Tantivy-backed
 `store::TextIndexProvider` on the shared durable derived-index lifecycle. Its
 Rust API supports literal tokens, graph/predicate/language filters, explicit
 strict/eventual results, primary candidate verification, rebuild and
-backup/restore. It does not change standard SPARQL or add a Node runtime.
+backup/restore. Prepared queries can opt into local text SERVICE joins using
+`on_text_index` or `on_eventual_text_index`, sharing one retained primary snapshot
+and reporting eventual lag independently of result rows. Ordinary SPARQL is
+unchanged; no server route or Node runtime is added.
 Run `cargo run --locked -p oxigraph --features text-index --example text_index`
 from this fork checkout. The locked feature dependencies declare Rust 1.90;
 this lane was tested on Linux/Rust 1.98, not the base crate's declared 1.87 MSRV.
+Run `cargo run --locked -p oxigraph --features text-index --example text_service`
+for the SPARQL example. This is a correctness baseline, not an acceleration claim.
 Strict admission currently scans primary contents; no acceleration is claimed.
 
 A preliminary benchmark [is provided](../bench/README.md). Oxigraph internal design [is described on the wiki](https://github.com/oxigraph/oxigraph/wiki/Architecture).

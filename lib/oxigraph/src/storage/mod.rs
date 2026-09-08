@@ -58,6 +58,8 @@ const TRANSACTION_START_CANCELLATION_POLL_INTERVAL: Duration = Duration::from_mi
 #[derive(Clone, Default)]
 pub struct TransactionStartControl {
     cancellation: spareval::CancellationToken,
+    #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+    query_cancellation: Option<spareval::CancellationToken>,
     timeout: Option<Duration>,
 }
 
@@ -95,7 +97,25 @@ impl TransactionStartControl {
 
     /// Returns whether transaction admission has been cancelled.
     pub fn is_cancelled(&self) -> bool {
+        #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+        if self
+            .query_cancellation
+            .as_ref()
+            .is_some_and(spareval::CancellationToken::is_cancelled)
+        {
+            return true;
+        }
         self.cancellation.is_cancelled()
+    }
+
+    // Preserve the caller's control while also observing the enclosing query.
+    #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+    pub(crate) fn with_query_cancellation(
+        mut self,
+        token: Option<spareval::CancellationToken>,
+    ) -> Self {
+        self.query_cancellation = token;
+        self
     }
 
     /// Returns the configured transaction-admission timeout, if any.
@@ -623,6 +643,18 @@ enum StorageReaderKind<'a> {
     expect(clippy::unnecessary_wraps)
 )]
 impl<'a> StorageReader<'a> {
+    /// Duplicate a reader of the SAME snapshot, never capture a newer one.
+    #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+    pub(crate) fn clone_for_text_query(&self) -> Self {
+        Self {
+            kind: match &self.kind {
+                #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+                StorageReaderKind::RocksDb(reader) => StorageReaderKind::RocksDb(reader.clone()),
+                StorageReaderKind::Memory(reader) => StorageReaderKind::Memory(reader.clone()),
+            },
+        }
+    }
+
     pub fn check_layout(&self) -> Result<(), StorageError> {
         match &self.kind {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]

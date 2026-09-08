@@ -183,6 +183,10 @@ pub struct TextIndexProvider {
     pub limits: TextLimits,
 }
 impl TextIndexProvider {
+    pub(crate) fn checkpoint_binding(checkpoint: &BackupCheckpoint) -> String {
+        payload(checkpoint)
+    }
+
     /// Profile binding also records Unicode tables, RDF codec mode and exact
     /// engine version. A dependency/compiler upgrade may require a rebuild.
     pub fn profile() -> String {
@@ -210,15 +214,34 @@ impl TextIndexProvider {
         query: &TextQuery,
         limits: &DerivedLimits,
     ) -> Result<TextResults, TextError> {
+        self.query_snapshot(
+            view.generation(),
+            view.source(),
+            view.is_eventual(),
+            query,
+            limits,
+        )
+    }
+
+    /// Only the SPARQL adapter may use the owned, already-admitted equivalent
+    /// of a DerivedView. Its source remains immutable for the whole query.
+    pub(crate) fn query_snapshot(
+        &self,
+        generation: &super::DerivedGeneration,
+        source: &DerivedSnapshot,
+        eventual: bool,
+        query: &TextQuery,
+        limits: &DerivedLimits,
+    ) -> Result<TextResults, TextError> {
         let started = Instant::now();
         controlled(limits, started)?;
-        if view.generation().identity() != self.identity() {
+        if generation.identity() != self.identity() {
             return Err(TextError::Profile);
         }
         let terms = query.terms()?;
-        let index = self.open(view.generation().files(), limits, started)?;
+        let index = self.open(generation.files(), limits, started)?;
         if index.load_metas().map_err(engine)?.payload.as_deref()
-            != Some(&payload(view.generation().source()))
+            != Some(&payload(generation.source()))
         {
             return Err(TextError::Profile);
         }
@@ -260,7 +283,7 @@ impl TextIndexProvider {
             let Term::Literal(literal) = &quad.object else {
                 return Err(TextError::NotEquivalent);
             };
-            if !query.in_scope(&quad, literal) || !view.source().contains(&quad)? {
+            if !query.in_scope(&quad, literal) || !source.contains(&quad)? {
                 continue;
             }
             let tokens = tokenize(literal.value())?;
@@ -288,9 +311,9 @@ impl TextIndexProvider {
             matches,
             total_matches,
             candidates: count,
-            applied: view.generation().source().clone(),
-            source: view.source().checkpoint().clone(),
-            eventual: view.is_eventual(),
+            applied: generation.source().clone(),
+            source: source.checkpoint().clone(),
+            eventual,
         })
     }
 

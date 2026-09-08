@@ -154,6 +154,13 @@ impl Store {
 }
 
 impl DerivedSnapshot {
+    // Crate-private: do not make DerivedSnapshot Clone or let a restore
+    // reconciler export the borrowed primary through a public reader API.
+    #[cfg(feature = "text-index")]
+    pub(crate) fn text_query_reader(&self) -> StorageReader<'static> {
+        self.reader.clone_for_text_query()
+    }
+
     /// Checks an exact RDF quad in this retained primary snapshot, not in a
     /// newer Store view. Useful for derived-index candidate verification.
     pub fn contains(&self, quad: &crate::model::Quad) -> Result<bool, StorageError> {

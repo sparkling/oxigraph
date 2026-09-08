@@ -8,6 +8,8 @@ mod error;
 #[cfg(feature = "http-client")]
 mod http;
 pub mod results;
+#[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+mod text_service;
 mod update;
 
 #[cfg(feature = "http-client")]
@@ -45,6 +47,11 @@ use std::marker::PhantomData;
 use std::mem::take;
 #[cfg(feature = "http-client")]
 use std::time::Duration;
+#[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+pub use text_service::{
+    BoundTextSparqlQuery, TEXT_SEARCH_SERVICE, TextQueryContext, TextServiceError,
+    TextSparqlResults,
+};
 
 /// Dataset specification applied while evaluating a prepared SPARQL query.
 pub type QueryDataset = QueryDatasetSpecification;
@@ -595,6 +602,8 @@ impl SparqlEvaluator {
     /// ```
     pub fn for_query(self, query: Query) -> PreparedSparqlQuery {
         let dataset = query.dataset().cloned().map(Into::into).unwrap_or_default();
+        #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+        let cancellation_token = self.cancellation_token.clone();
         let evaluator = self.into_evaluator();
         PreparedSparqlQuery {
             dataset,
@@ -603,6 +612,8 @@ impl SparqlEvaluator {
             #[cfg(feature = "http-client")]
             service_client: evaluator.service_client,
             substitutions: HashMap::new(),
+            #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+            cancellation_token,
         }
     }
 
@@ -724,6 +735,8 @@ impl Default for SparqlEvaluator {
 #[must_use]
 pub struct PreparedSparqlQuery {
     evaluator: QueryEvaluator,
+    #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+    cancellation_token: Option<CancellationToken>,
     #[cfg(feature = "http-client")]
     service_client: Option<HttpClient>,
     query: Query,
@@ -731,6 +744,13 @@ pub struct PreparedSparqlQuery {
     substitutions: HashMap<Variable, Term>,
 }
 
+#[cfg_attr(
+    all(not(target_family = "wasm"), feature = "text-index"),
+    expect(
+        clippy::multiple_inherent_impl,
+        reason = "optional text binding is isolated in text_service"
+    )
+)]
 impl PreparedSparqlQuery {
     /// The SPARQL semantic feature mode used during evaluation.
     #[inline]

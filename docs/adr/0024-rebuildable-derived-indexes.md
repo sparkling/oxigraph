@@ -7,7 +7,7 @@
 - Implementation status: G3.0 native local lifecycle implemented: snapshot/delta
   inputs, durable generation reconciliation/activation, bounded provider output,
   crash recovery and G2 readiness/backup/restore integration. G3.3 adds the native
-  text provider/Rust query slice below. SPARQL text integration, G3.4 spatial,
+  text provider/Rust query and opt-in SPARQL SERVICE slices below. G3.4 spatial,
   and separately gated performance/production promotion remain outstanding
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
@@ -243,9 +243,81 @@ and backup/restore/import. The independent
 extra postings even when all stored quads are correct. Run the
 [usable example](../../lib/oxigraph/examples/text_index.rs) with
 `cargo run --locked -p oxigraph --features text-index --example text_index`.
-This is a delivered native API increment, not completion of all G3.3/P2.2:
-SPARQL integration and provider-specific frozen performance/promotion receipts
-remain separate gates; no provider-backed qualification was run.
+This native API increment is followed by the SPARQL slice below, not completion
+of all G3.3/P2.2. Provider-specific frozen performance/promotion receipts remain
+separate gates; no provider-backed qualification was run.
+
+### G3.3 local SPARQL text SERVICE v1 (2026-09-08)
+
+The optional [text binding](../../lib/oxigraph/src/sparql/text_service.rs) adds
+`PreparedSparqlQuery::on_text_index` and `on_eventual_text_index`. Both consume
+one retained `DerivedSnapshot`, privately clone its exact native reader for
+ordinary RDF evaluation, and register only `urn:oxigraph:text:search:v1`.
+Ordinary `on_store`, HTTP SERVICE policy, SPARQL modes, and service-description
+advertisement remain unchanged. There is no CLI/server route in this increment.
+
+```sparql
+PREFIX text: <urn:oxigraph:text:>
+SELECT ?s ?value ?score WHERE {
+  SERVICE text:search:v1 {
+    ?value text:query "linked search"; text:score ?score
+  }
+  ?s <urn:label> ?value
+}
+```
+
+The body is one BGP of 1–16 distinct fields sharing a literal-result variable.
+The anchor binds the matching literal, not its physical RDF subject. Distinct
+projected SERVICE rows avoid multiplying joins when several subjects contain
+the same literal. Ordinary RDF patterns retrieve subjects under the evaluator's
+existing `FROM` merge/blank-node rules. SERVICE graph filters address physical
+snapshot graphs independently of outer `FROM`/`FROM NAMED`; these filters are
+not an authorization mechanism.
+
+| Fields in the `text:` namespace | v1 contract |
+| --- | --- |
+| `query` | Required constant plain string; native token/byte bounds apply |
+| `mode`, `language` | Constant `text:all` (default) or `text:any`; exact language-tag string |
+| `inGraph`, `defaultGraph`, `inPredicate` | Constant graph IRI or `true` for default graph (mutually exclusive), and predicate IRI |
+| `consistency` | `text:strict` (default); `text:eventual` additionally requires the eventual Rust binder |
+| `limit` | Optional positive integer: SERVICE-wide top-N after projection/equality/deduplication, before outer joins |
+| `literal`, `predicate`, `graph`, `isDefaultGraph`, `score` | Variable outputs; missing required graph output rejects a default-graph hit; score counts matched terms |
+| `eventual`, `applied`, `source` | Variable outputs: boolean and full-checkpoint SHA-256 fingerprints |
+
+Inputs are not correlated with outer bindings. Put `VALUES`, `FILTER`,
+`OPTIONAL`, ordering, and projection outside SERVICE. There is no implicit
+100-result limit. All engine candidates must fit the native ceiling before
+filtering; explicit top-N is not top-N per outer binding.
+
+`BoundTextSparqlQuery::context()` exposes full source/applied checkpoints and
+generation identity before execution. `TextSparqlResults` carries the same
+context beside normal SPARQL results, including zero rows. No admitted generation
+means applied/generation are absent; admission errors remain typed SERVICE errors.
+Strict lag never silently loses additions. Eventual mode may miss additions but
+still filters deleted candidates against the retained primary snapshot.
+
+Ordinary extension errors obey `SERVICE SILENT`. Cancellation and incompatible
+RDF terms retain native fatal query errors, including during result consumption.
+The binding-wide deadline remains an error at the result boundary even if a
+SERVICE-local deadline error was suppressed.
+Both evaluator and caller cancellation controls are observed. The timeout starts
+at binding, includes admission, and is shared across calls and result iteration.
+Cooperative controls do not preempt an engine call already executing.
+
+Identical bodies reuse query-local results. Cache ceilings are 16 distinct
+bodies, the provider's `max_candidates` total retained rows, and
+`max_inspected_bytes` serialized term bytes (conservatively charged before top-N).
+These are logical bounds, not RSS bounds; temporary deduplication and native
+buffers remain outside them. A ceiling failure returns an error, not partial
+SERVICE rows. Index generation contents remain immutable.
+
+The [focused native tests](../../lib/oxigraph/tests/text_service.rs) exercise
+joins, more than 100 matches, dataset merges, retained snapshots, lag and empty
+eventual results, rollback/reopen, typed errors, version modes and cancellation.
+Run the [usable example](../../lib/oxigraph/examples/text_service.rs) with
+`cargo run --locked -p oxigraph --features text-index --example text_service`.
+Frozen performance/promotion gates remain open; this is callable query behavior,
+not a speed, production qualification, or complete G3.3 claim.
 
 ### Complete lifecycle and provider boundary
 

@@ -120,3 +120,7 @@ required-features = ["shacl"]
 [[example]]
 name = "text_index"
 required-features = ["text-index"]
+
+[[example]]
+name = "text_service"
+required-features = ["text-index"]

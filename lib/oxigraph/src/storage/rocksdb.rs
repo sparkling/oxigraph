@@ -937,6 +937,7 @@ fn namespace_mapping_value(iri: &NamedNode) -> Vec<u8> {
 }
 
 #[must_use]
+#[cfg_attr(feature = "text-index", derive(Clone))]
 pub struct RocksDbStorageReader<'a> {
     reader: Reader<'a>,
     storage: RocksDbStorage,

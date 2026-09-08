@@ -10,7 +10,8 @@
   checkpoint packages, backup receipts and offline verification are implemented;
   G2.7 fresh-directory restore/reconciliation and local baselined drills are
   implemented. G3.0 native inputs, durable generation reconciliation/activation
-  and G2 lifecycle hooks are implemented; G3.3 text is the next product slice.
+  and G2 lifecycle hooks are implemented. G3.3 native text and opt-in SPARQL
+  integration are implemented; performance gates and G3.4 spatial remain.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
@@ -80,7 +81,8 @@ verification. G2.7 task `task-1787851233022-antw51` implements fresh-directory
 restore, primary/contributor reconciliation and artifact-bound local baselines.
 G3.0 shared native lifecycle is implemented: snapshot/delta inputs, checksummed
 generations, strict primary reconciliation, atomic activation and G2 hooks.
-The next approved product slice is G3.3 text; G3.4 spatial remains outstanding.
+G3.3 native text and SPARQL joins are implemented; G3.3 performance gates and
+G3.4 spatial remain outstanding.
 
 G1.7, ADR-0034 through ADR-0041, Dream Machine, GEPA/AVO, broad Jena/RDF4J
 parity, and the P1-P3 product portfolio remain future work. They require a
@@ -1079,8 +1081,11 @@ rejecting ungoverned and copied-sibling divergence. This initial scan-based
 correctness path is not a fast search engine or production qualification.
 G3.3 now has an optional native Tantivy provider/Rust query increment, with
 versioned scoped literal search, exact document/posting reconciliation and
-strict/explicit-eventual primary verification. SPARQL integration and frozen
-performance/promotion receipts remain, so G3.3 stays active; G3.4 is next. See
+strict/explicit-eventual primary verification. The opt-in
+[local SPARQL text SERVICE](../adr/0024-rebuildable-derived-indexes.md#g33-local-sparql-text-service-v1-2026-09-08)
+now adds snapshot-consistent literal/RDF joins, bounded caching and independent
+empty-result lag context. Frozen performance/promotion receipts remain, so
+G3.3 stays active; G3.4 is next. See
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 
 | Task                                            | Depends on                                                                                                                          | Size | Exit gate                                                                                                                                                                                                                                                                        |
