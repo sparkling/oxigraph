@@ -132,6 +132,10 @@ fn handle(request: &mut Request<Body>, store: &Store, started: bool) -> Response
             .transaction_metrics()
             .write_prometheus(&mut body)
             .unwrap();
+        store
+            .evaluation_metrics()
+            .write_prometheus(&mut body)
+            .unwrap();
         return response(
             request,
             StatusCode::OK,

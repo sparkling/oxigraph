@@ -34,6 +34,7 @@
 //! ```
 mod change_codec;
 mod contributors;
+pub(crate) mod evaluation_metrics;
 mod namespace;
 pub(crate) mod outbox;
 mod readiness;
@@ -51,6 +52,9 @@ pub use contributors::{
     ContributorCheckpoint, ContributorConsistency, ContributorDeclaration, ContributorError,
     ContributorHealth, ContributorIdentity, ContributorInventory, ContributorInventoryEntry,
     ContributorObservation, ContributorRegistry,
+};
+pub use evaluation_metrics::{
+    EvaluationDurationHistogram, EvaluationMetrics, EvaluationOperation, EvaluationOutcome,
 };
 pub use namespace::{
     Namespace, NamespacePrefix, NamespacePrefixParseError, WritableNamespaceRegistry,
@@ -745,6 +749,18 @@ impl From<StoreOptions> for StorageOptions {
     reason = "transaction traits mirror the Store API; the additive governance API has its own focused module"
 )]
 impl Store {
+    /// Copies Store-bound query/update observations without acquiring a storage writer permit.
+    pub fn evaluation_metrics(&self) -> EvaluationMetrics {
+        self.storage.evaluation_metrics()
+    }
+
+    pub(crate) fn start_evaluation_observation(
+        &self,
+        operation: EvaluationOperation,
+    ) -> evaluation_metrics::EvaluationObservation {
+        self.storage.start_evaluation_observation(operation)
+    }
+
     /// Copies the process-local transaction telemetry without reading storage or acquiring
     /// a writer permit. The bounded metrics lock is never held across storage work.
     pub fn transaction_metrics(&self) -> TransactionMetrics {

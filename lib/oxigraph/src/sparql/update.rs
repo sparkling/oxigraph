@@ -11,11 +11,13 @@ use crate::model::{
 use crate::sparql::dataset::DatasetView;
 use crate::sparql::error::UpdateEvaluationError;
 use crate::storage::{Storage, StorageTransaction};
+use crate::store::evaluation_metrics::EvaluationObservation;
 use crate::store::{
-    ChangeTrackingError, ChangeTrackingTransaction, NegotiatedTransactionalDataset,
-    OutcomeAwareTransactionalDataset, OutcomeAwareWritableDataset, SemanticChangeSet, Store,
-    Transaction, TransactionCommitError, TransactionKey, TransactionRequest,
-    TransactionStartControl, TransactionStartError, TransactionalDataset, WritableDataset,
+    ChangeTrackingError, ChangeTrackingTransaction, EvaluationOperation,
+    NegotiatedTransactionalDataset, OutcomeAwareTransactionalDataset, OutcomeAwareWritableDataset,
+    SemanticChangeSet, Store, Transaction, TransactionCommitError, TransactionKey,
+    TransactionRequest, TransactionStartControl, TransactionStartError, TransactionalDataset,
+    WritableDataset,
 };
 use oxiri::Iri;
 use oxstr::OxString;
@@ -118,6 +120,7 @@ impl PreparedSparqlUpdate {
     /// # Ok::<_, Box<dyn std::error::Error>>(())
     /// ```
     pub fn on_store(self, store: &Store) -> BoundPreparedSparqlUpdate<'_, '_> {
+        let observation = store.start_evaluation_observation(EvaluationOperation::Update);
         let transaction = (|| {
             ensure_update_start_alive(
                 &self.update,
@@ -157,6 +160,7 @@ impl PreparedSparqlUpdate {
             #[cfg(feature = "http-client")]
             client: self.client,
             transaction,
+            observation: Some(observation),
         }
     }
 
@@ -308,6 +312,7 @@ impl PreparedSparqlUpdate {
             #[cfg(feature = "http-client")]
             client: self.client,
             transaction,
+            observation: None,
         }
     }
 }
@@ -646,12 +651,17 @@ pub struct BoundPreparedSparqlUpdate<'a, 'b> {
     #[cfg(feature = "http-client")]
     client: HttpClient,
     transaction: Result<UpdateTransaction<'a, 'b>, UpdateEvaluationError>,
+    observation: Option<EvaluationObservation>,
 }
 
 impl BoundPreparedSparqlUpdate<'_, '_> {
     /// Evaluate the update against the given store.
     pub fn execute(self) -> Result<(), UpdateEvaluationError> {
-        match self.transaction? {
+        let mut observation = self.observation;
+        if let Some(observation) = &mut observation {
+            observation.begin();
+        }
+        let result = (|| match self.transaction? {
             UpdateTransaction::OwnedReadable(mut transaction) => {
                 ReadableUpdateEvaluator {
                     transaction: &mut transaction,
@@ -663,6 +673,9 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
                 }
                 .eval_all(&self.update.operations, &self.using_datasets)?;
                 ensure_update_alive(self.cancellation_token.as_ref())?;
+                if let Some(observation) = &mut observation {
+                    observation.before_commit();
+                }
                 transaction.commit()?;
                 Ok(())
             }
@@ -687,10 +700,17 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
                 }
                 .eval_all(&self.update.operations, &self.using_datasets)?;
                 ensure_update_alive(self.cancellation_token.as_ref())?;
+                if let Some(observation) = &mut observation {
+                    observation.before_commit();
+                }
                 transaction.commit()?;
                 Ok(())
             }
+        })();
+        if let Some(observation) = &mut observation {
+            observation.finish_update(&result);
         }
+        result
     }
 }
 

@@ -12,6 +12,7 @@ use crate::storage::rocksdb::{
     RocksDbStorageReadableTransaction, RocksDbStorageReader, RocksDbStorageTransaction,
 };
 use crate::store::TransactionObservation;
+use crate::store::evaluation_metrics::{EvaluationMetricsState, EvaluationObservation};
 use crate::store::transaction_metrics::{TransactionMetricsState, TransactionObservationGuard};
 use crate::store::{
     CommitReceipt, CommitReceiptOutcome, Namespace, NamespacePrefix, SemanticChangeSet,
@@ -207,6 +208,7 @@ impl StorageOptions {
 pub struct Storage {
     kind: StorageKind,
     transaction_metrics: Arc<TransactionMetricsState>,
+    evaluation_metrics: Arc<EvaluationMetricsState>,
 }
 
 #[derive(Clone)]
@@ -217,6 +219,17 @@ enum StorageKind {
 }
 
 impl Storage {
+    pub(crate) fn evaluation_metrics(&self) -> crate::store::EvaluationMetrics {
+        self.evaluation_metrics.snapshot()
+    }
+
+    pub(crate) fn start_evaluation_observation(
+        &self,
+        operation: crate::store::EvaluationOperation,
+    ) -> EvaluationObservation {
+        self.evaluation_metrics.start(operation)
+    }
+
     pub(crate) fn transaction_metrics(&self) -> crate::store::TransactionMetrics {
         self.transaction_metrics.snapshot()
     }
@@ -235,6 +248,7 @@ impl Storage {
         Ok(Self {
             kind: StorageKind::Memory(MemoryStorage::new()),
             transaction_metrics: Arc::default(),
+            evaluation_metrics: Arc::default(),
         })
     }
 
@@ -243,6 +257,7 @@ impl Storage {
         Ok(Self {
             kind: StorageKind::RocksDb(RocksDbStorage::open(path)?),
             transaction_metrics: Arc::default(),
+            evaluation_metrics: Arc::default(),
         })
     }
 
@@ -257,6 +272,7 @@ impl Storage {
                 },
             )?),
             transaction_metrics: Arc::default(),
+            evaluation_metrics: Arc::default(),
         })
     }
 
@@ -265,6 +281,7 @@ impl Storage {
         Ok(Self {
             kind: StorageKind::RocksDb(RocksDbStorage::open_read_only(path)?),
             transaction_metrics: Arc::default(),
+            evaluation_metrics: Arc::default(),
         })
     }
 

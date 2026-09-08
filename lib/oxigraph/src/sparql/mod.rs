@@ -29,6 +29,8 @@ pub use crate::sparql::update::{
     BoundKeyedSparqlUpdate, BoundNegotiatedSparqlUpdate, BoundPreparedSparqlUpdate,
     BoundTransactionalSparqlUpdate, PreparedSparqlUpdate,
 };
+use crate::store::EvaluationOperation;
+use crate::store::evaluation_metrics::{EvaluationObservation, observe_query_result};
 use crate::store::{Store, Transaction};
 pub use spareval::{
     AggregateFunctionAccumulator, CancellationToken, DefaultServiceHandler,
@@ -746,9 +748,12 @@ impl PreparedSparqlQuery {
 
     /// Bind the prepared query to the [`Store`] it should be evaluated on.
     pub fn on_store(self, store: &Store) -> BoundPreparedSparqlQuery<'static> {
+        let observation = store.start_evaluation_observation(EvaluationOperation::Query);
         let reader = store.storage().snapshot();
         let queryable_dataset = DatasetView::new(reader);
-        self.on_queryable_dataset(queryable_dataset)
+        let mut bound = self.on_queryable_dataset(queryable_dataset);
+        bound.observation = Some(observation);
+        bound
     }
 
     /// Binds this query to an owned store snapshot prepared with an explicit
@@ -759,13 +764,25 @@ impl PreparedSparqlQuery {
         options: &QueryEntailmentOptions,
     ) -> Result<BoundPreparedSparqlQuery<'static, QueryEntailmentDataset>, QueryEntailmentError>
     {
-        let queryable_dataset =
-            QueryEntailmentDataset::from_store_with_query_dataset(store, options, &self.dataset)?;
+        let mut observation = store.start_evaluation_observation(EvaluationOperation::Query);
+        let queryable_dataset = match QueryEntailmentDataset::from_store_with_query_dataset(
+            store,
+            options,
+            &self.dataset,
+        ) {
+            Ok(dataset) => dataset,
+            Err(error) => {
+                observation.finish_error(&error);
+                return Err(error);
+            }
+        };
         // The query dataset has already been constructed and materialized. A
         // second application of FROM/FROM NAMED here would address the source
         // graph names rather than the effective graph topology.
         self.dataset = QueryDatasetSpecification::default();
-        Ok(self.on_queryable_dataset(queryable_dataset))
+        let mut bound = self.on_queryable_dataset(queryable_dataset);
+        bound.observation = Some(observation);
+        Ok(bound)
     }
 
     /// Bind the prepared query to the [`Transaction`] it should be evaluated on.
@@ -790,6 +807,7 @@ impl PreparedSparqlQuery {
             substitutions: self.substitutions,
             dataset: self.dataset,
             marker: PhantomData,
+            observation: None,
         }
     }
 }
@@ -824,6 +842,7 @@ pub struct BoundPreparedSparqlQuery<'a, D: QueryableDataset<'a> = DatasetView<'a
     substitutions: HashMap<Variable, Term>,
     dataset: QueryDatasetSpecification,
     marker: PhantomData<&'a ()>,
+    observation: Option<EvaluationObservation>,
 }
 
 impl<'a, D: QueryableDataset<'a>> BoundPreparedSparqlQuery<'a, D> {
@@ -862,12 +881,16 @@ impl<'a, D: QueryableDataset<'a>> BoundPreparedSparqlQuery<'a, D> {
 
     /// Evaluate the query against the given store.
     pub fn execute(self) -> Result<QueryResults<'a>, QueryEvaluationError> {
+        let mut observation = self.observation;
+        if let Some(observation) = &mut observation {
+            observation.begin();
+        }
         let mut prepared = self.evaluator.prepare(&self.query);
         for (variable, term) in self.substitutions {
             prepared = prepared.substitute_variable(variable, term);
         }
         *prepared.dataset_mut() = self.dataset;
-        prepared.execute(self.queryable_dataset)
+        observe_query_result(prepared.execute(self.queryable_dataset), observation)
     }
 
     /// Compute statistics during evaluation and fills them in the explanation tree.
@@ -904,11 +927,16 @@ impl<'a, D: QueryableDataset<'a>> BoundPreparedSparqlQuery<'a, D> {
         Result<QueryResults<'a>, QueryEvaluationError>,
         QueryExplanation,
     ) {
+        let mut observation = self.observation;
+        if let Some(observation) = &mut observation {
+            observation.begin();
+        }
         let mut prepared = self.evaluator.prepare(&self.query);
         for (variable, term) in self.substitutions {
             prepared = prepared.substitute_variable(variable, term);
         }
         *prepared.dataset_mut() = self.dataset;
-        prepared.explain(self.queryable_dataset)
+        let (result, explanation) = prepared.explain(self.queryable_dataset);
+        (observe_query_result(result, observation), explanation)
     }
 }

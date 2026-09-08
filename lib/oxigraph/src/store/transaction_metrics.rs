@@ -77,7 +77,7 @@ impl TransactionDurationHistogram {
         Duration::from_micros(self.sum_micros)
     }
 
-    fn observe(&mut self, duration: Duration) {
+    pub(crate) fn observe(&mut self, duration: Duration) {
         let micros = u64::try_from(duration.as_micros()).unwrap_or(u64::MAX);
         for (index, count) in self.buckets.iter_mut().enumerate() {
             if BOUNDS_MICROS
@@ -88,6 +88,31 @@ impl TransactionDurationHistogram {
             }
         }
         self.sum_micros = self.sum_micros.saturating_add(micros);
+    }
+
+    pub(crate) fn write_series(
+        &self,
+        output: &mut impl Write,
+        family: &'static str,
+        outcome: &'static str,
+    ) -> fmt::Result {
+        for (label, count) in BOUND_LABELS.iter().zip(self.buckets) {
+            writeln!(
+                output,
+                "{family}_bucket{{outcome=\"{outcome}\",le=\"{label}\"}} {count}"
+            )?;
+        }
+        writeln!(
+            output,
+            "{family}_count{{outcome=\"{outcome}\"}} {}",
+            self.count()
+        )?;
+        writeln!(
+            output,
+            "{family}_sum{{outcome=\"{outcome}\"}} {}.{:06}",
+            self.sum_micros / 1_000_000,
+            self.sum_micros % 1_000_000
+        )
     }
 }
 
@@ -140,24 +165,10 @@ impl TransactionMetrics {
             "# TYPE oxigraph_transaction_duration_seconds histogram"
         )?;
         for outcome in TransactionObservation::ALL {
-            let histogram = self.duration(outcome);
-            let name = outcome.as_str();
-            for (label, count) in BOUND_LABELS.iter().zip(histogram.buckets) {
-                writeln!(
-                    output,
-                    "oxigraph_transaction_duration_seconds_bucket{{outcome=\"{name}\",le=\"{label}\"}} {count}"
-                )?;
-            }
-            writeln!(
+            self.duration(outcome).write_series(
                 output,
-                "oxigraph_transaction_duration_seconds_count{{outcome=\"{name}\"}} {}",
-                histogram.count()
-            )?;
-            writeln!(
-                output,
-                "oxigraph_transaction_duration_seconds_sum{{outcome=\"{name}\"}} {}.{:06}",
-                histogram.sum_micros / 1_000_000,
-                histogram.sum_micros % 1_000_000
+                "oxigraph_transaction_duration_seconds",
+                outcome.as_str(),
             )?;
         }
         writeln!(

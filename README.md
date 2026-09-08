@@ -162,7 +162,13 @@ native Rust observation API, not a full integrity scan or backup proof.
 The CLI exposes these observations separately with
 `--admin-bind 127.0.0.1:9797`: `GET`/`HEAD /health`, `/ready`, and `/metrics`.
 See [listener usage and limits](cli/README.md#local-operational-observations-fork).
-Operation counters/histograms remain G2.5 work;
+`Store::transaction_metrics()` and `Store::evaluation_metrics()` expose fixed
+outcome counters and cumulative duration histograms through that listener.
+Lazy SELECT/CONSTRUCT queries succeed only at observed end-of-stream; early
+drop is abandoned. Update success requires acknowledged commit. Counters are
+shared by Store clones and reset on reopen; they are not durable outcome proof.
+Denied attempts swallowed by `SILENT` and validation-level telemetry remain
+G2.5 work;
 see [ADR-0022](docs/adr/0022-operational-readiness-backup-and-recovery.md).
 
 ```sh

@@ -213,6 +213,10 @@ fn loopback_routes_are_separate_and_head_matches_get() -> Result<()> {
         .filter(|line| {
             !line.starts_with("oxigraph_transaction_")
                 && !line.starts_with("oxigraph_transactions_total")
+                && !line.starts_with("oxigraph_query_")
+                && !line.starts_with("oxigraph_queries_total")
+                && !line.starts_with("oxigraph_update_")
+                && !line.starts_with("oxigraph_updates_total")
         })
         .collect();
     ensure!(
@@ -314,6 +318,32 @@ fn successful_update_and_failed_request_export_distinct_transaction_observations
     ensure!(
         samples == 89,
         "transaction metric cardinality differs: {samples}"
+    );
+    for (family, outcome) in [
+        ("queries", "succeeded"),
+        ("updates", "succeeded"),
+        ("updates", "failed"),
+    ] {
+        ensure!(
+            metrics.body.contains(&format!(
+                "oxigraph_{family}_total{{outcome=\"{outcome}\"}} 1\n"
+            )),
+            "evaluation observation differs: {family}/{outcome}"
+        );
+    }
+    let evaluation_samples = metrics
+        .body
+        .lines()
+        .filter(|line| {
+            line.starts_with("oxigraph_query_")
+                || line.starts_with("oxigraph_queries_total")
+                || line.starts_with("oxigraph_update_")
+                || line.starts_with("oxigraph_updates_total")
+        })
+        .count();
+    ensure!(
+        evaluation_samples == 154,
+        "evaluation metric cardinality differs: {evaluation_samples}"
     );
     Ok(())
 }

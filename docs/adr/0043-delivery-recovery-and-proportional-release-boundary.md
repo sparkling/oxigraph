@@ -22,9 +22,11 @@
   feature-independent lookup, expiry, and injected-failure closure in
   `task-1787670631837-w5ac24`. G2.5 has native bounded readiness observations,
   fixed gauges, canonical contributor validation, and opt-in loopback
-  observation endpoints and transaction terminal counters/duration histograms.
-  Its task `task-1787851231441-1gdfzd` remains active for query/update evaluation,
-  external-denial and validation telemetry; these slices are not full P1.4a completion. Local
+  observation endpoints, transaction terminal and Store-bound query/update
+  counters/duration histograms. Lazy evaluation is counted at EOF, first error,
+  or abandonment, without changing iteration or transaction semantics.
+  Its task `task-1787851231441-1gdfzd` remains active for denial-attempt and
+  validation telemetry; these slices are not full P1.4a completion. Local
   implementation is not publication
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

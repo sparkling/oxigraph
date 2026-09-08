@@ -5,8 +5,9 @@
 - Updated: 2026-09-08
 - Deciders: Oxigraph parity programme
 - Implementation status: G2.5 native observation/contributor API and opt-in
-  loopback observation endpoints and transaction terminal telemetry implemented;
-  query/update evaluation, external-denial and validation telemetry remain in G2.5.
+  loopback observation endpoints, transaction terminal telemetry and Store-bound
+  query/update evaluation telemetry implemented; denial-attempt and validation
+  telemetry remain in G2.5.
   G2.6-G2.7 backup/restore receipt work remains unimplemented
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
@@ -219,8 +220,8 @@ reopen/reset, admission exclusions, histogram boundaries/saturation, and exact
 commit/rollback failure observations. SHACL final-guard tests preserve the
 rejection and rollback detail independently. The real CLI child test exercises
 successful Update, failed whole-request rollback, an ASK verifying absence,
-and bounded metric export. Query/update evaluation, lazy query consumption,
-external-denial and validation-level observations remain in active G2.5; this
+and bounded metric export. At this checkpoint query/update evaluation, lazy query
+consumption, external-denial and validation-level observations remained in G2.5; this
 slice does not close P1.4a or start G2.6/G2.7.
 
 The telemetry slice passes the default native transaction/oracle lane (131
@@ -229,8 +230,60 @@ default CLI lane (153 unit/CLI plus five wire tests), and five no-default CLI
 wire tests. These overlap and are not counts of newly delivered behavior.
 Scoped library Clippy without HTTP and CLI-only Clippy pass with warnings
 denied. HTTP-enabled library Clippy also reaches five pre-existing warnings in
-`http.rs`, `io/loader.rs`, and `sparql/update.rs`; those files are unchanged.
+`http.rs`, `io/loader.rs`, and `sparql/update.rs`; those files were unchanged
+at the transaction-telemetry checkpoint.
 No broader all-features lint or complete no-default CLI pass is claimed.
+
+### Store-bound evaluation telemetry slice (2026-09-08)
+
+`Store::evaluation_metrics()` records query/update observations separately from
+physical transaction results. Only `on_store` and query
+`on_store_with_entailment` bindings are attributed. Generic dataset bindings,
+including those passed a Store, borrowed transactions, parse failures, and
+standalone validation/materialization calls are excluded. This is not an HTTP
+request or response counter. Clones share the per-open counters; reopen resets
+them without changing stored data.
+
+Duration begins before Store binding, covering snapshot/materialization,
+admission, caller delay and lazy consumption. Boolean results finish at execute;
+SELECT and graph results succeed only when the caller observes EOF. The first
+returned error finishes the observation once, without fusing or draining the
+iterator. Dropped bound operations and unfinished result streams are abandoned.
+Existing cancellation checkpoints and iteration semantics are unchanged.
+
+Updates record success only after acknowledged commit. Pre-commit failures
+retain the existing transaction cleanup path; telemetry neither introduces an
+explicit rollback nor relabels Drop as a proven rollback. Commit errors or
+unwinding are indeterminate. Typed cancellation, remote timeout and policy denial
+remain distinct from other evaluation failures. A swallowed `SILENT` denial
+followed by success remains successful; this is not denial-attempt telemetry.
+Classification examines at most 32 known wrapper levels without calling custom
+error methods; unrecognized errors stay failed, not guessed from message text.
+
+Four fixed families export exactly 154 samples: query/update counters and
+cumulative duration histograms, each with seven fixed outcomes. The transaction
+histogram bucket/saturation rules are reused without changing its existing 89
+samples. Together with readiness's at-most-21 gauges, the CLI exports at most
+264 samples. No user-derived labels or raw errors are retained. Each metrics
+snapshot is internally consistent, not an atomic snapshot across all three
+operational APIs. Counters do not affect readiness decisions.
+
+Additive native tests exercise Boolean, SELECT and graph consumption, first
+error, cancellation, abandonment, substitutions/explanation, explicit entailment,
+unattributed bindings, memory/RocksDB updates, whole-request cleanup, reopen,
+read-only admission, bounded histograms, denied operations and `SILENT`, and
+remote deadlines. Isolated guards test ambiguous commit/unwind without adding a
+public fault API. CLI subprocess checks verify successful/failed updates, ASK
+absence, both transaction and evaluation observations, and fixed sample counts.
+Denial-attempt and validation telemetry remain in G2.5; G2.6/G2.7 are not closed.
+
+The evaluation slice passes 90 unit tests plus 13 focused evaluation tests with
+SHACL/RDF-12/HTTP, and the no-default SHACL/RDF-12 unit/evaluation/transaction/
+cancellation/negotiation/capability lane passes 62. Default CLI validation passes
+153 unit/CLI tests plus five wire tests; the five no-default wire tests also
+pass. These are overlapping regression lanes, not new-feature counts. Scoped
+library Clippy without HTTP and CLI-only Clippy pass with warnings denied.
+The previously noted broader lint/no-default CLI limitations remain explicit.
 
 ### Complete ADR boundary
 

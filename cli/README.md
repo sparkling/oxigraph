@@ -126,6 +126,7 @@ succeed. Startup failure exits the process and releases both listeners.
   explicitly degraded is HTTP 200; not-ready is 503 with fixed reason tokens.
 - `GET`/`HEAD /metrics`: the same native observation as at most 21 fixed,
   label-free Prometheus text-format gauges, plus 89 bounded transaction samples
+  and 154 bounded query/update samples
   described below. A storage-not-ready result remains
   HTTP 200 with `oxigraph_ready 0`; a clock-conversion failure is 503.
 
@@ -161,8 +162,23 @@ Counters are shared by Store clones but reset on reopen/restart. They record
 the observed result, not durable outcome lookup: an ambiguous response remains
 indeterminate even if later lookup proves a commit. Drop is abandoned, not a
 claim of successful rollback. Admission failures/wait time, bulk loaders,
-governance maintenance, and external storage adapters are excluded. Query/update
-evaluation, external-denial and validation-level telemetry remain in G2.5. See
+governance maintenance, and external storage adapters are excluded from
+transaction telemetry.
+
+Store-bound SPARQL evaluation separately exports `oxigraph_queries_total`,
+`oxigraph_updates_total`, `oxigraph_query_duration_seconds`, and
+`oxigraph_update_duration_seconds`. Seven fixed outcome labels distinguish
+succeeded, failed, cancelled, timed out, policy denied, indeterminate, and
+abandoned. Duration starts at Store binding, including admission, caller delay,
+and lazy result consumption. SELECT/CONSTRUCT success requires observed EOF;
+the first returned error finishes the observation, while early drop is
+abandoned. Update commit errors are indeterminate, never a replay instruction.
+No extra reads, retries, or rollback calls are introduced. Query and update
+counts are not HTTP response counts: parse failures, serialization failures,
+and generic-dataset or borrowed-transaction bindings are outside this boundary.
+`SILENT` success remains success. Denial-attempt and validation-level telemetry
+remain in G2.5. Each snapshot is internally consistent, but readiness,
+transaction and evaluation snapshots are not one atomic observation. See
 [ADR-0022](../docs/adr/0022-operational-readiness-backup-and-recovery.md).
 
 It is also possible to load RDF data offline using bulk loading:
