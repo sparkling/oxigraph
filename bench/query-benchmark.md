@@ -16,6 +16,16 @@ below retain their original identities and counts.
 This is a local diagnostic, **not frozen-corpus acceptance, qualification, or
 default-planner promotion**. The legacy HTTP BSBM script cannot select these APIs.
 
+`--mode` also accepts a comma-separated subset, for example
+`--mode shared_statistics_greedy,shared_statistics_bounded_correlated_v3`.
+Names must be exact and unique; empty entries and duplicate options are rejected.
+The supplied initial order is preserved, then the existing per-round rotation
+alternates the first mode. Selected modes share one dataset load and statistics
+build/verification; neither admission nor the optimization-disabled oracle is
+skipped. Per-record mode identity and completion counts describe the actual
+subset. Defaults and single-mode behavior are unchanged. This enables paired
+comparisons without repeating the large statistics setup.
+
 ## Machine-checked input identities
 
 Pass `--input-manifest FILE.json` before the query pairs to require an exact

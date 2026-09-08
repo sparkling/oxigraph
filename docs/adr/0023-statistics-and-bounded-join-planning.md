@@ -496,6 +496,9 @@ limitation under heuristic fanout, not evidence of a violated V3 formula.
 Next compare shared verified statistics on these same inputs and establish
 repeatable controls; do not change costs or relax thresholds to fit Q4. See the
 [measured diagnostic and lookup correction](../../bench/query-benchmark.md#watdiv-v3-and-statistics-lookup-diagnostic).
+The native comparator now accepts explicit unique mode subsets, retaining its
+round rotation and oracle checks. A pair can share one verified statistics
+setup; this changes diagnostic selection only, not admission or product APIs.
 
 ## Consequences
 

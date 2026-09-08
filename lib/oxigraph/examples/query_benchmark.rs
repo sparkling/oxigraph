@@ -49,7 +49,7 @@ fn uses_statistics(mode: usize) -> bool {
 }
 
 fn selection(mut args: &[String]) -> Result<(Options, &[String])> {
-    let mut modes = (0..MODE_NAMES.len()).collect();
+    let mut modes: Vec<usize> = (0..MODE_NAMES.len()).collect();
     let mut limits = DerivedGenerationLimits::default();
     let mut format = RdfFormat::NTriples;
     let mut union_default_graph = false;
@@ -69,16 +69,22 @@ fn selection(mut args: &[String]) -> Result<(Options, &[String])> {
         match option.as_str() {
             "--input-manifest" => input_manifest = Some(value.clone()),
             "--mode" => {
-                let mode = MODE_NAMES
-                    .iter()
-                    .position(|name| name == value)
-                    .ok_or_else(|| {
-                        format!(
-                            "unknown mode {value}; expected one of {}",
-                            MODE_NAMES.join(", ")
-                        )
-                    })?;
-                modes = vec![mode];
+                modes.clear();
+                for selected in value.split(',') {
+                    let mode = MODE_NAMES
+                        .iter()
+                        .position(|name| *name == selected)
+                        .ok_or_else(|| {
+                            format!(
+                                "unknown mode {selected}; expected one of {}",
+                                MODE_NAMES.join(", ")
+                            )
+                        })?;
+                    if modes.contains(&mode) {
+                        return Err(format!("duplicate mode {selected}").into());
+                    }
+                    modes.push(mode);
+                }
             }
             "--max-input-records" => limits.input.max_records = value.parse()?,
             "--max-input-bytes" => limits.input.max_bytes = value.parse()?,
@@ -284,7 +290,7 @@ fn main() -> Result {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.len() < 4 || args.len() % 2 != 0 {
         return Err(
-            "usage: query_benchmark DATASET REPETITIONS [--mode MODE] [--format nt|nq] [--default-graph stored|named-union] [--setup statistics|query-only] [--max-input-records N] [--max-input-bytes N] [--input-manifest JSON] (--bag|--ordered) QUERY.rq ...".into(),
+            "usage: query_benchmark DATASET REPETITIONS [--mode MODE[,MODE...]] [--format nt|nq] [--default-graph stored|named-union] [--setup statistics|query-only] [--max-input-records N] [--max-input-bytes N] [--input-manifest JSON] (--bag|--ordered) QUERY.rq ...".into(),
         );
     }
     let repetitions: usize = args[1].parse()?;
@@ -590,6 +596,47 @@ mod tests {
         assert_eq!(
             selection(&selected)?.0.input_manifest.as_deref(),
             Some("inputs.json")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn selected_mode_pairs_preserve_order_and_reject_ambiguous_inputs() -> Result {
+        let args = |value: &str, setup: &str| {
+            ["--mode", value, "--setup", setup, "--bag", "q.rq"].map(str::to_owned)
+        };
+        for (left, left_name) in MODE_NAMES.iter().enumerate() {
+            for (right, right_name) in MODE_NAMES.iter().enumerate() {
+                let value = format!("{left_name},{right_name}");
+                let selected = args(&value, "statistics");
+                if left == right {
+                    assert!(selection(&selected).is_err());
+                    continue;
+                }
+                let (options, queries) = selection(&selected)?;
+                assert_eq!(options.modes, [left, right]);
+                assert_eq!(queries, &selected[4..]);
+                assert_eq!(
+                    selection(&args(&value, "query-only")).is_err(),
+                    uses_statistics(left) || uses_statistics(right)
+                );
+            }
+        }
+        for value in [
+            "",
+            ",",
+            "greedy,",
+            ",bounded",
+            "greedy,,bounded",
+            "greedy,typo",
+            "greedy, bounded",
+        ] {
+            assert!(selection(&args(value, "statistics")).is_err(), "{value:?}");
+        }
+        let selected = args(&MODE_NAMES.join(","), "statistics");
+        assert_eq!(
+            selection(&selected)?.0.modes,
+            (0..MODE_NAMES.len()).collect::<Vec<_>>()
         );
         Ok(())
     }
