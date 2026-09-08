@@ -8,6 +8,7 @@ mod dataset;
 mod error;
 mod eval;
 mod expression;
+mod feedback;
 mod model;
 mod service;
 mod update;
@@ -21,6 +22,7 @@ use crate::eval::{EvalNodeWithStats, SimpleEvaluator, Timer};
 use crate::expression::{
     CustomFunctionRegistry, ExpressionEvaluatorContext, build_expression_evaluator,
 };
+pub use crate::feedback::{CardinalityFeedback, CardinalityFeedbackNode, EstimateBasis};
 pub use crate::model::{QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter};
 use crate::service::ServiceHandlerRegistry;
 pub use crate::service::{DefaultServiceHandler, ServiceHandler};
@@ -35,6 +37,7 @@ use spargebra::update::DeleteInsertOperation;
 use spargebra::{ParsedQuery, Query, SparqlVersion};
 #[cfg(feature = "geosparql")]
 use spargeo::GEOSPARQL_EXTENSION_FUNCTIONS;
+pub use sparopt::CardinalityEstimator;
 use sparopt::Optimizer;
 use sparopt::algebra::QueryExpression;
 use std::collections::HashMap;
@@ -75,6 +78,7 @@ pub struct QueryEvaluator {
     custom_aggregate_functions: CustomAggregateFunctionRegistry,
     without_optimizations: bool,
     run_stats: bool,
+    cardinality_estimator: Option<Arc<dyn CardinalityEstimator>>,
     cancellation_token: Option<CancellationToken>,
     version: SparqlVersion,
 }
@@ -100,6 +104,7 @@ impl QueryEvaluator {
             custom_aggregate_functions: CustomAggregateFunctionRegistry::default(),
             without_optimizations: false,
             run_stats: false,
+            cardinality_estimator: None,
             cancellation_token: None,
             version: SparqlVersion::current(),
         }
@@ -331,6 +336,19 @@ impl QueryEvaluator {
     #[must_use]
     pub fn compute_statistics(mut self) -> Self {
         self.run_stats = true;
+        self
+    }
+
+    /// Installs memory-only, infallible cardinality hints for one exact dataset.
+    /// The caller must bind their graph scope and source to the dataset supplied
+    /// to execution. Missing hints retain the heuristic. No hints are used for
+    /// updates, substituted queries, or optimization-disabled execution.
+    #[must_use]
+    pub fn with_cardinality_estimator(
+        mut self,
+        estimator: impl CardinalityEstimator + 'static,
+    ) -> Self {
+        self.cardinality_estimator = Some(Arc::new(estimator));
         self
     }
 
@@ -671,12 +689,20 @@ impl PreparedQuery<'_> {
         Result<QueryResults<'b>, QueryEvaluationError>,
         QueryExplanation,
     ) {
+        let estimator = if !self.evaluator.without_optimizations && self.substitutions.is_empty() {
+            self.evaluator.cardinality_estimator.clone()
+        } else {
+            None
+        };
         let start_planning = Timer::now();
         let (results, plan_node_with_stats, planning_duration) = match self.query {
             Query::Select(query) => {
                 let mut pattern = QueryExpression::from(&query.expression);
                 if !self.evaluator.without_optimizations {
-                    pattern = Optimizer::optimize_query_expression(pattern);
+                    pattern = Optimizer::optimize_query_expression_with_cardinality_estimator(
+                        pattern,
+                        estimator.as_deref(),
+                    );
                 }
                 let planning_duration = start_planning.elapsed();
                 let (results, explanation) = match self.evaluator.simple_evaluator(
@@ -685,7 +711,9 @@ impl PreparedQuery<'_> {
                     query.base_iri.as_ref(),
                     self.version,
                 ) {
-                    Ok(evaluator) => evaluator.evaluate_select(&pattern, self.substitutions),
+                    Ok(evaluator) => evaluator
+                        .with_cardinality_estimator(estimator.clone())
+                        .evaluate_select(&pattern, self.substitutions),
                     Err(e) => (Err(e), Rc::new(EvalNodeWithStats::empty())),
                 };
                 (
@@ -697,7 +725,10 @@ impl PreparedQuery<'_> {
             Query::Ask(query) => {
                 let mut pattern = QueryExpression::from(&query.expression);
                 if !self.evaluator.without_optimizations {
-                    pattern = Optimizer::optimize_query_expression(pattern);
+                    pattern = Optimizer::optimize_query_expression_with_cardinality_estimator(
+                        pattern,
+                        estimator.as_deref(),
+                    );
                 }
                 let planning_duration = start_planning.elapsed();
                 let (results, explanation) = match self.evaluator.simple_evaluator(
@@ -706,7 +737,9 @@ impl PreparedQuery<'_> {
                     query.base_iri.as_ref(),
                     self.version,
                 ) {
-                    Ok(evaluator) => evaluator.evaluate_ask(&pattern, self.substitutions),
+                    Ok(evaluator) => evaluator
+                        .with_cardinality_estimator(estimator.clone())
+                        .evaluate_ask(&pattern, self.substitutions),
                     Err(e) => (Err(e), Rc::new(EvalNodeWithStats::empty())),
                 };
                 (
@@ -718,7 +751,10 @@ impl PreparedQuery<'_> {
             Query::Construct(query) => {
                 let mut pattern = QueryExpression::from(&query.expression);
                 if !self.evaluator.without_optimizations {
-                    pattern = Optimizer::optimize_query_expression(pattern);
+                    pattern = Optimizer::optimize_query_expression_with_cardinality_estimator(
+                        pattern,
+                        estimator.as_deref(),
+                    );
                 }
                 let planning_duration = start_planning.elapsed();
                 let (results, explanation) = match self.evaluator.simple_evaluator(
@@ -727,9 +763,9 @@ impl PreparedQuery<'_> {
                     query.base_iri.as_ref(),
                     self.version,
                 ) {
-                    Ok(evaluator) => {
-                        evaluator.evaluate_construct(&pattern, &query.template, self.substitutions)
-                    }
+                    Ok(evaluator) => evaluator
+                        .with_cardinality_estimator(estimator.clone())
+                        .evaluate_construct(&pattern, &query.template, self.substitutions),
                     Err(e) => (Err(e), Rc::new(EvalNodeWithStats::empty())),
                 };
                 (
@@ -741,7 +777,10 @@ impl PreparedQuery<'_> {
             Query::Describe(query) => {
                 let mut pattern = QueryExpression::from(&query.pattern);
                 if !self.evaluator.without_optimizations {
-                    pattern = Optimizer::optimize_query_expression(pattern);
+                    pattern = Optimizer::optimize_query_expression_with_cardinality_estimator(
+                        pattern,
+                        estimator.as_deref(),
+                    );
                 }
                 let planning_duration = start_planning.elapsed();
                 let (results, explanation) = match self.evaluator.simple_evaluator(
@@ -750,7 +789,9 @@ impl PreparedQuery<'_> {
                     query.base_iri.as_ref(),
                     self.version,
                 ) {
-                    Ok(evaluator) => evaluator.evaluate_describe(&pattern, self.substitutions),
+                    Ok(evaluator) => evaluator
+                        .with_cardinality_estimator(estimator.clone())
+                        .evaluate_describe(&pattern, self.substitutions),
                     Err(e) => (Err(e), Rc::new(EvalNodeWithStats::empty())),
                 };
                 (
@@ -1046,6 +1087,19 @@ pub struct QueryExplanation {
 }
 
 impl QueryExplanation {
+    /// Returns term-free structured feedback. Counts are observations, not
+    /// complete cardinalities until the relevant iterator reached EOF without
+    /// errors, input bindings or repeated invocations. No query labels or RDF
+    /// terms are exported here; the legacy explicit JSON explanation is unchanged.
+    pub fn cardinality_feedback(&self) -> CardinalityFeedback {
+        CardinalityFeedback {
+            planning_seconds: self
+                .planning_duration
+                .map(|d| f64::from(oxsdatatypes::Double::from(d.as_seconds()))),
+            root: self.inner.cardinality_feedback(self.with_stats),
+        }
+    }
+
     /// Writes the explanation as JSON.
     pub fn write_in_json(&self, writer: impl io::Write) -> io::Result<()> {
         let mut serializer = WriterJsonSerializer::new(writer);
@@ -1088,6 +1142,32 @@ mod tests {
 
     struct FailingDataset {
         fail_reads: bool,
+    }
+
+    #[test]
+    fn failed_iterator_is_not_complete_cardinality_feedback() {
+        let query = SparqlParser::new()
+            .parse_query("SELECT * WHERE { ?s <http://example.com/right> ?o }")
+            .unwrap();
+        let evaluator = QueryEvaluator::new().compute_statistics();
+        let (result, explanation) = evaluator
+            .prepare(&query)
+            .explain(FailingDataset { fail_reads: true });
+        let QueryResults::Solutions(rows) = result.unwrap() else {
+            panic!("solutions")
+        };
+        assert!(rows.collect::<Result<Vec<_>, _>>().is_err());
+        fn check(node: &CardinalityFeedbackNode) {
+            assert!(!node.cardinality_complete);
+            assert_eq!(node.q_error, None);
+            if node.operator == "QuadPattern" {
+                assert_eq!(node.failed_invocations, 1);
+            }
+            for child in &node.children {
+                check(child);
+            }
+        }
+        check(&explanation.cardinality_feedback().root);
     }
 
     impl<'a> QueryableDataset<'a> for FailingDataset {

@@ -81,3 +81,77 @@ fn triple_term_equality_recursively_uses_same_value() {
         Some(true)
     );
 }
+#[cfg(feature = "sep-0006")]
+#[test]
+fn nullable_path_join_does_not_invent_an_absent_graph_node() {
+    let node = |s| NamedNode::new_unchecked(s);
+    let dataset = Dataset::from_iter([Quad::new(
+        node("urn:s"),
+        node("urn:p"),
+        node("urn:o"),
+        GraphName::DefaultGraph,
+    )]);
+    // Sequence translates to independent joined path patterns. The open
+    // nullable right side ranges over nodes(G), not the absent left constant.
+    // https://www.w3.org/TR/sparql11-query/#defn_evalPropertyPath
+    for (query, expected) in [
+        (
+            "ASK { <urn:absent> <urn:q>? / ^(^(<urn:r>*)+ | <urn:t>) ?o }",
+            false,
+        ),
+        ("ASK { <urn:absent> <urn:q>? / (<urn:r>*)+ ?o }", false),
+        ("ASK { <urn:absent> <urn:q>? / <urn:r>* ?o }", false),
+        ("ASK { <urn:absent> <urn:q>? / <urn:r>? ?o }", false),
+        ("ASK { <urn:absent> (<urn:r>*)+ ?o }", true),
+    ] {
+        let query = SparqlParser::new().parse_query(query).unwrap();
+        for evaluator in [
+            QueryEvaluator::new(),
+            QueryEvaluator::new().without_optimizations(),
+        ] {
+            let (result, explanation) = evaluator.prepare(&query).explain(&dataset);
+            let QueryResults::Boolean(result) = result.unwrap() else {
+                panic!("ASK")
+            };
+            assert_eq!(
+                result, expected,
+                "nullable path join scope: {query}\n{explanation:?}"
+            );
+        }
+    }
+}
+
+#[cfg(all(feature = "sparql-12", feature = "sep-0006"))]
+#[test]
+fn nullable_triple_pattern_path_join_preserves_open_endpoint_domain() {
+    let dataset = Dataset::from_iter([Quad::new(
+        NamedNode::new_unchecked("urn:s"),
+        NamedNode::new_unchecked("urn:p"),
+        NamedNode::new_unchecked("urn:o"),
+        GraphName::DefaultGraph,
+    )]);
+    for path in ["<urn:r>*", "<urn:r>?", "(<urn:r>*)+"] {
+        for pattern in [
+            "<<( ?s <urn:p> ?o )>>",
+            "<<( <urn:s> ?p <urn:o> )>>",
+            "<<( <urn:s> <urn:p> <<( ?s ?p ?o )>> )>>",
+        ] {
+            for (subject, object) in [(pattern, "?x"), ("?x", pattern)] {
+                let text = format!(
+                    "SELECT * WHERE {{ VALUES (?s ?p ?o) {{ (<urn:s> <urn:p> <urn:o>) }} {subject} {path} {object} }}"
+                );
+                let query = SparqlParser::new().parse_query(&text).unwrap();
+                for evaluator in [
+                    QueryEvaluator::new(),
+                    QueryEvaluator::new().without_optimizations(),
+                ] {
+                    let (results, explanation) = evaluator.prepare(&query).explain(&dataset);
+                    let QueryResults::Solutions(results) = results.unwrap() else {
+                        panic!("SELECT")
+                    };
+                    assert_eq!(results.count(), 0, "{text}\n{explanation:?}");
+                }
+            }
+        }
+    }
+}

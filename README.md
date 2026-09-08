@@ -103,8 +103,12 @@ The locked `geo` dependency declares Rust 1.88; this lane was tested on Linux/Ru
 G3.1 now adds an opt-in native `statistics` provider: exact physical graph/
 predicate counts, empty-graph topology, bounded frequency summaries, strict
 snapshot freshness and the shared reopen/backup/restore lifecycle. Physical
-counts are not SPARQL merged-dataset estimates; optimizer integration and
-estimated/actual-row feedback remain the next step. Run
+counts are not SPARQL merged-dataset estimates. Opt-in `on_statistics` now binds
+dataset-scoped cost hints and RDF evaluation to the same retained snapshot;
+missing/stale/rejected or unsupported hints retain heuristic planning.
+`compute_statistics` plus `cardinality_feedback` exposes term-free estimated and
+observed rows, completion state and q-error. G3.2 bounded join enumeration remains.
+Run
 `cargo run --locked -p oxigraph --features statistics --example statistics`
 ([source](lib/oxigraph/examples/statistics.rs),
 [contract](docs/adr/0023-statistics-and-bounded-join-planning.md#g31-native-physical-statistics-provider-2026-09-08)).

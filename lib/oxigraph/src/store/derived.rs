@@ -156,7 +156,11 @@ impl Store {
 impl DerivedSnapshot {
     // Crate-private: do not make DerivedSnapshot Clone or let a restore
     // reconciler export the borrowed primary through a public reader API.
-    #[cfg(any(feature = "text-index", feature = "spatial-index"))]
+    #[cfg(any(
+        feature = "text-index",
+        feature = "spatial-index",
+        feature = "statistics"
+    ))]
     pub(crate) fn index_query_reader(&self) -> StorageReader<'static> {
         self.reader.clone_for_index_query()
     }

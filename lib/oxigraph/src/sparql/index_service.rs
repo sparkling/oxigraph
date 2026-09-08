@@ -1,9 +1,12 @@
 //! Shared query-local row storage and consumer controls for native index bindings.
-use super::{
-    QueryEvaluationError, QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter,
-};
-use crate::model::{Term, Variable};
+#[cfg(any(feature = "text-index", feature = "spatial-index"))]
+use super::QuerySolution;
+use super::{QueryEvaluationError, QueryResults, QuerySolutionIter, QueryTripleIter};
+#[cfg(any(feature = "text-index", feature = "spatial-index"))]
+use crate::model::Term;
+use crate::model::Variable;
 use crate::store::TransactionStartControl;
+#[cfg(any(feature = "text-index", feature = "spatial-index"))]
 use spargebra::algebra::QueryExpression;
 use std::sync::Arc;
 use std::time::Instant;
@@ -106,16 +109,19 @@ mod tests {
 }
 
 #[derive(Default)]
+#[cfg(any(feature = "text-index", feature = "spatial-index"))]
 pub(super) struct Cache {
     pub entries: Vec<(QueryExpression, CachedRows)>,
     pub rows: usize,
     pub bytes: usize,
 }
 #[derive(Clone)]
+#[cfg(any(feature = "text-index", feature = "spatial-index"))]
 pub(super) struct CachedRows {
     pub variables: Arc<[Variable]>,
     pub rows: Arc<[Vec<Option<Term>>]>,
 }
+#[cfg(any(feature = "text-index", feature = "spatial-index"))]
 impl CachedRows {
     pub fn iter(
         &self,

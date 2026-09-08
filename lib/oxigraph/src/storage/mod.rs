@@ -60,7 +60,11 @@ pub struct TransactionStartControl {
     cancellation: spareval::CancellationToken,
     #[cfg(all(
         not(target_family = "wasm"),
-        any(feature = "text-index", feature = "spatial-index")
+        any(
+            feature = "text-index",
+            feature = "spatial-index",
+            feature = "statistics"
+        )
     ))]
     query_cancellation: Option<spareval::CancellationToken>,
     timeout: Option<Duration>,
@@ -102,7 +106,11 @@ impl TransactionStartControl {
     pub fn is_cancelled(&self) -> bool {
         #[cfg(all(
             not(target_family = "wasm"),
-            any(feature = "text-index", feature = "spatial-index")
+            any(
+                feature = "text-index",
+                feature = "spatial-index",
+                feature = "statistics"
+            )
         ))]
         if self
             .query_cancellation
@@ -117,7 +125,11 @@ impl TransactionStartControl {
     // Preserve the caller's control while also observing the enclosing query.
     #[cfg(all(
         not(target_family = "wasm"),
-        any(feature = "text-index", feature = "spatial-index")
+        any(
+            feature = "text-index",
+            feature = "spatial-index",
+            feature = "statistics"
+        )
     ))]
     pub(crate) fn with_query_cancellation(
         mut self,
@@ -655,7 +667,11 @@ impl<'a> StorageReader<'a> {
     /// Duplicate a reader of the SAME snapshot, never capture a newer one.
     #[cfg(all(
         not(target_family = "wasm"),
-        any(feature = "text-index", feature = "spatial-index")
+        any(
+            feature = "text-index",
+            feature = "spatial-index",
+            feature = "statistics"
+        )
     ))]
     pub(crate) fn clone_for_index_query(&self) -> Self {
         Self {

@@ -80,7 +80,13 @@ same generation lifecycle, without a new dependency. It exposes exact physical
 graph/predicate counts and bounded subject/object frequencies, retaining empty
 graphs and strict source/generation identity. Physical graph sums are not SPARQL
 `FROM`-merge counts, and heavy-hitter candidates are not exact top-K rankings.
-Query planning and automatic feedback remain unchanged in this provider slice.
+`PreparedSparqlQuery::on_statistics` binds costs and RDF reads to one retained
+snapshot, with heuristic fallback for missing/stale/rejected statistics and
+unsupported merged/union scopes. `compute_statistics` and
+`QueryExplanation::cardinality_feedback` expose term-free leaf estimates,
+intermediate-row observations, completion and q-error without automatic export.
+Partial or correlated scans do not claim complete cardinality. Bounded join
+enumeration remains the next G3.2 slice.
 Run `cargo run --locked -p oxigraph --features statistics --example statistics`
 for a rollback/catch-up/restart demonstration.
 

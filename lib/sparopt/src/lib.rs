@@ -4,8 +4,10 @@
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/oxigraph/oxigraph/main/logo.svg")]
 #![doc(html_logo_url = "https://raw.githubusercontent.com/oxigraph/oxigraph/main/logo.svg")]
 
+pub use crate::cardinality::CardinalityEstimator;
 pub use crate::optimizer::Optimizer;
 
 pub mod algebra;
+mod cardinality;
 mod optimizer;
 mod type_inference;

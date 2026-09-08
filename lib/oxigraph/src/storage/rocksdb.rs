@@ -937,7 +937,14 @@ fn namespace_mapping_value(iri: &NamedNode) -> Vec<u8> {
 }
 
 #[must_use]
-#[cfg_attr(any(feature = "text-index", feature = "spatial-index"), derive(Clone))]
+#[cfg_attr(
+    any(
+        feature = "text-index",
+        feature = "spatial-index",
+        feature = "statistics"
+    ),
+    derive(Clone)
+)]
 pub struct RocksDbStorageReader<'a> {
     reader: Reader<'a>,
     storage: RocksDbStorage,

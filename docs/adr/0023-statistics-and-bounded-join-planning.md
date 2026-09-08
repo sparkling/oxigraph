@@ -4,9 +4,9 @@
 - **Date**: 2026-08-24
 - Updated: 2026-09-08
 - Deciders: Oxigraph parity programme
-- Implementation status: G3.1 native physical statistics provider implemented
-  below; dataset-aware optimizer integration, estimated/actual-row feedback,
-  G3.2 planning and frozen performance/promotion gates remain outstanding
+- Implementation status: G3.1 native physical statistics, dataset-scoped cost
+  integration and query-local feedback implemented below; G3.2 bounded planning
+  and frozen performance/promotion gates remain outstanding
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
@@ -77,8 +77,9 @@ always represented. Exact counts are available per physical graph/predicate and
 as physical-dataset totals. Clear preserves graph topology; drop removes it.
 **Physical graph sums are not SPARQL `FROM`/union cardinalities.** A triple present
 in two graphs contributes two physical occurrences but can collapse to one under
-RDF merge. No merged-dataset or subject/object-conjunction estimator is offered
-in this increment; ordinary evaluator and optimizer behavior remain unchanged.
+RDF merge. No merged-dataset or subject/object-conjunction estimator was offered
+in the provider increment. The query adapter below subsequently adds marginal
+upper cost hints, not exact conjunction counts.
 
 Each populated graph/predicate scope has separate subject/object frequency
 tables. Canonical RDF term bytes are hashed with SHA-256, with separate row and
@@ -139,9 +140,80 @@ Run the [usable example](../../lib/oxigraph/examples/statistics.rs) with
 No query text or RDF values are automatically exported as metrics; calling
 `frequent_objects` explicitly returns RDF data and is not a telemetry endpoint.
 
-Next, bind dataset-aware estimates to optimizer input and collect estimated versus
-actual rows without changing answers or error ordering. That feedback work,
-G3.2 bounded planning, and the following promotion requirements remain open.
+### G3.1 native query costs and feedback (2026-09-08)
+
+[`PreparedSparqlQuery::on_statistics`](../../lib/oxigraph/src/sparql/statistics.rs)
+strictly admits and independently reads the statistics generation, then binds
+ordinary RDF evaluation to a reader of the **same retained `DerivedSnapshot`**.
+It never opens a newer Store snapshot. Context exposes the exact source,
+optional generation fingerprint and fixed current/missing/stale/rejected
+classification. Admission does not repair, activate or replace a generation.
+Cancellation/deadlines remain fatal before evaluation and at consumer boundaries;
+unavailable, stale, incompatible or corrupt statistics select heuristic planning.
+
+The memory-only [`CardinalityEstimator`](../../lib/sparopt/src/cardinality.rs)
+seam has no storage dependency or planning-time I/O. Its native adapter scopes
+counts to the physical default graph, one selected `FROM` graph (deduplicating
+repeated selection of that same graph), or an allowed constant `GRAPH` name.
+An empty selected dataset or excluded graph supplies a zero **cost hint**, never
+an algebra-elimination rule. Merged/union defaults, variable graphs, paths,
+repeated-variable equality, triple patterns and unsupported marginals use the
+existing deterministic heuristic. Constant subject/object marginals supply the
+minimum of their conservative upper bounds and the exact scope total, not an
+independence estimate or exact conjunction. Query substitutions and disabled
+optimization bypass external hints; update and staged-transaction paths are
+unchanged.
+
+Costs feed the existing greedy ordering only within flattened same-graph basic
+quad joins. The adapter does not move operations across `SERVICE`, retained
+`GRAPH`, optional/filter/group/slice or other non-basic boundaries. Retained
+dynamic graph scopes clear hints before descending. Existing heuristic formulas
+and tie ordering remain the fallback; zero estimates never remove RDF reads.
+G3.2 dynamic programming and its frozen eight-leaf bound are **not implemented
+by this increment**.
+
+[`QueryExplanation::cardinality_feedback`](../../lib/spareval/src/feedback.rs)
+provides explicit query-local, term-free structured observations: fixed operator
+class, quad-leaf estimated rows and statistics/heuristic basis, observed rows
+including intermediate operators, invocation/EOF/failure/abandonment/input-bound
+counts, planning duration and q-error. It exports no query text, variable names,
+RDF values or file paths, and does not automatically publish metrics. The legacy
+explicit JSON explanation retains its existing term-bearing format.
+Leaf estimates are hypothetical unbound per-invocation costs, recomputed from
+the deterministic retained estimator when evaluation is constructed; they are
+not historical records of a correlated probe's planning-time cost.
+
+Only one unbound invocation exhausted without error/abandonment is a complete
+cardinality observation. ASK short-circuit, LIMIT, dropped iterators, correlated
+or repeated probes and failed scans cannot claim complete leaf q-error.
+Q-error uses `max(estimate,1)` and `max(actual,1)` and is a floating diagnostic;
+the integer observations are separately available. Non-leaf estimates/q-error
+are not claimed in this profile. Failure and abandonment counters may overlap
+when a failed iterator is dropped before EOF. Timing failure no longer truncates
+the statistics-wrapped result iterator.
+
+Native regressions cover same-snapshot reads after a new write, selective join
+ordering and result equivalence, absent/stale/corrupt fallback, selected and
+merged graphs, substitutions, disabled optimization, early exit, cancellation,
+and error observations. The existing statistics example now also exhausts a
+SPARQL query and checks three estimated/actual rows with complete q-error one.
+G3.2 bounded planning and the following performance/promotion requirements remain
+open; this native handoff does not make a measured query-speed claim.
+
+Required query fuzzing also exposed a pre-existing SEP lateral-rewrite defect:
+the optimizer treated every `OneOrMorePath` as safe to correlate even when its
+operand could match zero length, such as `(p*)+`. A recursive nullability check
+now preserves independent variable-endpoint path evaluation in that case.
+Endpoint checks recurse through RDF 1.2 triple patterns, including nested
+subject, predicate and object variables. A separate regression reproduced an
+incorrect lateral identity match before this recursive check and passes after
+it. Both path regressions explicitly enable the SEP-0006 rewrite they exercise.
+It does **not** reject standalone zero-length paths at fixed RDF terms outside
+the graph. Native optimized/unoptimized tests cover both boundaries, following
+the distinct fixed-term and variable-endpoint definitions in
+[SPARQL 1.1 section 18.4](https://www.w3.org/TR/sparql11-query/#defn_evalPropertyPath).
+The discovered fuzz input is retained locally; no frozen expected result or
+historical evidence was replaced to make validation pass.
 
 ### Full statistics/planning promotion
 

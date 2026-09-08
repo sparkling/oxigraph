@@ -13,8 +13,8 @@
   reconciliation/activation and G2 hooks. G3.3 native text and opt-in SPARQL
   integration are implemented. G3.4 native spatial queries/catch-up and opt-in
   SPARQL joins are implemented; separate performance/promotion gates remain.
-  G3.1 native physical statistics/counts/frequency summaries are implemented;
-  dataset-aware optimizer integration and estimated/actual-row feedback remain.
+  G3.1 native physical statistics, dataset-scoped cost integration and term-free
+  estimated/observed-row feedback are implemented. G3.2 bounded planning is next.
   Backend-neutral writes and the upstream delta are verified. G1.7,
   ADR-0034 through ADR-0041, and P1-P3 breadth are future roadmap work and do
   not gate R1
@@ -1167,9 +1167,13 @@ now implements exact physical graph/predicate counts and empty topology, bounded
 frequency tables/heavy-hitter candidates, full source/generation identity, strict
 admission and shared backup/restore/reopen. Catch-up validates the durable delta
 then recomputes the supplied source; no incremental or speed claim is made.
-Physical counts must not be used as merged-dataset cardinalities. Dataset-aware
-optimizer integration, estimated/actual-row feedback, G3.2 enumeration and frozen
-performance/promotion gates remain; the ordinary heuristic is unchanged.
+Physical counts must not be used as merged-dataset cardinalities. The opt-in
+[query adapter and feedback](../adr/0023-statistics-and-bounded-join-planning.md#g31-native-query-costs-and-feedback-2026-09-08)
+now bind costs and RDF reads to the same retained source, scope estimates to
+supported physical graphs and retain heuristic fallback otherwise. Explicit
+term-free feedback distinguishes complete cardinalities from partial/failed or
+correlated observations. G3.2 enumeration and frozen performance/promotion gates
+remain; the ordinary heuristic entry point is unchanged.
 
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.

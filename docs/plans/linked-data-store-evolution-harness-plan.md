@@ -13,8 +13,8 @@
   and G2 lifecycle hooks are implemented. G3.3 native text and opt-in SPARQL
   integration are implemented. G3.4 native spatial queries/catch-up and opt-in
   SPARQL joins are implemented; separate performance/promotion gates remain.
-  G3.1 native physical statistics/counts/frequency summaries are implemented;
-  dataset-aware optimizer integration and estimated/actual-row feedback remain.
+  G3.1 native physical statistics, dataset-scoped cost integration and term-free
+  estimated/observed-row feedback are implemented. G3.2 bounded planning is next.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
@@ -86,8 +86,8 @@ G3.0 shared native lifecycle is implemented: snapshot/delta inputs, checksummed
 generations, strict primary reconciliation, atomic activation and G2 hooks.
 G3.3 native text/SPARQL joins and G3.4 native spatial queries/catch-up/SPARQL joins
 are implemented. Separate provider performance/promotion gates remain outstanding.
-G3.1 native physical statistics/counts/frequency summaries are implemented;
-dataset-aware optimizer integration and feedback are next, then G3.2 planning.
+G3.1 native physical statistics, dataset-scoped cost integration and explicit
+term-free cardinality feedback are implemented; G3.2 bounded planning is next.
 
 G1.7, ADR-0034 through ADR-0041, Dream Machine, GEPA/AVO, broad Jena/RDF4J
 parity, and the P1-P3 product portfolio remain future work. They require a
@@ -1100,9 +1100,12 @@ fatal cancellation and explicit SILENT success filtering. Frozen performance/
 promotion gates remain active. G3.1 now supplies the
 [native physical statistics provider](../adr/0023-statistics-and-bounded-join-planning.md#g31-native-physical-statistics-provider-2026-09-08):
 exact graph/predicate counts, empty topology, bounded frequency summaries,
-strict snapshot identity and shared lifecycle hooks. Dataset-aware optimizer
-integration and estimated/actual-row feedback remain next, then G3.2 planning,
-not non-gating harness expansion. See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
+strict snapshot identity and shared lifecycle hooks. Its
+[query adapter](../adr/0023-statistics-and-bounded-join-planning.md#g31-native-query-costs-and-feedback-2026-09-08)
+now adds same-source dataset-scoped costs, heuristic fallback and term-free
+estimated/observed-row and q-error feedback with explicit incomplete observations.
+G3.2 bounded planning is next, not non-gating harness expansion.
+See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 
 | Task                                            | Depends on                                                                                                                          | Size | Exit gate                                                                                                                                                                                                                                                                        |

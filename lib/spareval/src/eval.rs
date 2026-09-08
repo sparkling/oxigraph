@@ -13,6 +13,7 @@ use crate::service::ServiceHandlerRegistry;
 use crate::{
     AggregateFunctionAccumulator, CustomAggregateFunctionRegistry, QueryDatasetSpecification,
 };
+use crate::{CardinalityFeedbackNode, EstimateBasis};
 use json_event_parser::{JsonEvent, WriterJsonSerializer};
 use oxiri::Iri;
 #[cfg(feature = "sparql-12")]
@@ -33,6 +34,7 @@ use sparopt::algebra::{
     AggregateExpression, Expression, JoinAlgorithm, LeftJoinAlgorithm, MinusAlgorithm,
     OrderExpression, QueryExpression,
 };
+use sparopt::{CardinalityEstimator, Optimizer};
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::fmt::Write;
@@ -700,6 +702,7 @@ pub struct SimpleEvaluator<'a, D: QueryableDataset<'a>> {
     custom_functions: Rc<CustomFunctionRegistry>,
     custom_aggregate_functions: Rc<CustomAggregateFunctionRegistry>,
     run_stats: bool,
+    cardinality_estimator: Option<Arc<dyn CardinalityEstimator>>,
 }
 
 impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
@@ -722,7 +725,16 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             custom_functions,
             custom_aggregate_functions,
             run_stats,
+            cardinality_estimator: None,
         })
+    }
+
+    pub fn with_cardinality_estimator(
+        mut self,
+        estimator: Option<Arc<dyn CardinalityEstimator>>,
+    ) -> Self {
+        self.cardinality_estimator = estimator;
+        self
     }
 
     pub fn evaluate_select(
@@ -1006,9 +1018,41 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         };
         let stats = Rc::new(EvalNodeWithStats {
             label: eval_node_label(query_expression),
+            operator: feedback_operator(query_expression),
+            estimate: if let QueryExpression::QuadPattern {
+                subject,
+                predicate,
+                object,
+                graph_name,
+            } = query_expression
+            {
+                Some(
+                    self.cardinality_estimator
+                        .as_ref()
+                        .and_then(|e| {
+                            e.estimate_quad_pattern(subject, predicate, object, graph_name.as_ref())
+                        })
+                        .map_or_else(
+                            || {
+                                (
+                                    Optimizer::estimate_cardinality(query_expression, None),
+                                    EstimateBasis::Heuristic,
+                                )
+                            },
+                            |rows| (rows, EstimateBasis::Statistics),
+                        ),
+                )
+            } else {
+                None
+            },
             children: stat_children,
             exec_count: Cell::new(0),
             exec_duration: Cell::new(self.run_stats.then(DayTimeDuration::default)),
+            invocations: Cell::new(0),
+            completed: Cell::new(0),
+            failed: Cell::new(0),
+            abandoned: Cell::new(0),
+            bound: Cell::new(0),
         });
         let mut evaluator = match evaluator {
             Ok(e) => e,
@@ -1017,6 +1061,12 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         if self.run_stats {
             let stats = Rc::clone(&stats);
             evaluator = Rc::new(move |tuple| {
+                stats
+                    .invocations
+                    .set(stats.invocations.get().saturating_add(1));
+                if tuple.graph_name.is_some() || tuple.inner.iter().any(Option::is_some) {
+                    stats.bound.set(stats.bound.get().saturating_add(1));
+                }
                 let start = Timer::now();
                 let inner = evaluator(tuple);
                 let duration = start.elapsed();
@@ -1029,6 +1079,8 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                 Box::new(StatsIterator {
                     inner,
                     stats: Rc::clone(&stats),
+                    finished: false,
+                    failed: false,
                 })
             })
         }
@@ -1342,7 +1394,12 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         encoded_variables: &mut Vec<Variable>,
         stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
     ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
-        let (child, child_stats) = self.query_expression_evaluator(inner, encoded_variables);
+        // A retained GRAPH wrapper carries dynamic evaluation scope; None on
+        // its inner quads does not mean the physical default graph.
+        let (child, child_stats) = self
+            .clone()
+            .with_cardinality_estimator(None)
+            .query_expression_evaluator(inner, encoded_variables);
         stat_children.push(child_stats);
         let child = child?;
         let graph_name_selector =
@@ -2445,6 +2502,7 @@ impl<'a, D: QueryableDataset<'a>> Clone for SimpleEvaluator<'a, D> {
             custom_functions: Rc::clone(&self.custom_functions),
             custom_aggregate_functions: Rc::clone(&self.custom_aggregate_functions),
             run_stats: self.run_stats,
+            cardinality_estimator: self.cardinality_estimator.clone(),
         }
     }
 }
@@ -4199,6 +4257,8 @@ impl<T: Hash> InternalTupleSet<T> {
 struct StatsIterator<'a, T> {
     inner: InternalTuplesIterator<'a, T>,
     stats: Rc<EvalNodeWithStats>,
+    finished: bool,
+    failed: bool,
 }
 
 impl<T> Iterator for StatsIterator<'_, T> {
@@ -4207,34 +4267,116 @@ impl<T> Iterator for StatsIterator<'_, T> {
     fn next(&mut self) -> Option<Self::Item> {
         let start = Timer::now();
         let result = self.inner.next();
-        let duration = start.elapsed()?;
+        let duration = start.elapsed();
         self.stats.exec_duration.set(
             self.stats
                 .exec_duration
                 .get()
-                .and_then(|d| d.checked_add(duration)),
+                .and_then(|d| d.checked_add(duration?)),
         );
+        // Timing failure must never truncate query results or row observations.
         if matches!(result, Some(Ok(_))) {
-            self.stats.exec_count.set(self.stats.exec_count.get() + 1);
+            self.stats
+                .exec_count
+                .set(self.stats.exec_count.get().saturating_add(1));
+        }
+        if matches!(result, Some(Err(_))) && !self.failed {
+            self.stats
+                .failed
+                .set(self.stats.failed.get().saturating_add(1));
+            self.failed = true;
+        }
+        if result.is_none() && !self.finished {
+            self.stats
+                .completed
+                .set(self.stats.completed.get().saturating_add(1));
+            self.finished = true;
+        } else if result.is_some() && self.finished {
+            // Preserve non-fused iterator behavior without claiming a prior EOF
+            // still completes this invocation.
+            self.stats
+                .completed
+                .set(self.stats.completed.get().saturating_sub(1));
+            self.finished = false;
         }
         result
     }
 }
 
+impl<T> Drop for StatsIterator<'_, T> {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.stats
+                .abandoned
+                .set(self.stats.abandoned.get().saturating_add(1));
+        }
+    }
+}
+
 pub struct EvalNodeWithStats {
     pub label: String,
+    pub operator: &'static str,
+    pub estimate: Option<(u64, EstimateBasis)>,
     pub children: Vec<Rc<EvalNodeWithStats>>,
     pub exec_count: Cell<usize>,
     pub exec_duration: Cell<Option<DayTimeDuration>>,
+    pub invocations: Cell<u64>,
+    pub completed: Cell<u64>,
+    pub failed: Cell<u64>,
+    pub abandoned: Cell<u64>,
+    pub bound: Cell<u64>,
 }
 
 impl EvalNodeWithStats {
     pub(crate) fn empty() -> Self {
         Self {
             label: String::new(),
+            operator: "Empty",
+            estimate: None,
             children: Vec::new(),
             exec_count: Cell::new(0),
             exec_duration: Cell::new(None),
+            invocations: Cell::new(0),
+            completed: Cell::new(0),
+            failed: Cell::new(0),
+            abandoned: Cell::new(0),
+            bound: Cell::new(0),
+        }
+    }
+
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "q-error is a floating-point diagnostic; exact integer observations are exposed alongside it"
+    )]
+    pub(crate) fn cardinality_feedback(&self, enabled: bool) -> CardinalityFeedbackNode {
+        let complete = enabled
+            && self.invocations.get() == 1
+            && self.completed.get() == 1
+            && self.failed.get() == 0
+            && self.abandoned.get() == 0
+            && self.bound.get() == 0;
+        let rows = u64::try_from(self.exec_count.get()).unwrap_or(u64::MAX);
+        CardinalityFeedbackNode {
+            operator: self.operator,
+            estimated_rows: self.estimate.map(|(rows, _)| rows),
+            estimate_basis: self.estimate.map(|(_, basis)| basis),
+            observed_rows: enabled.then_some(rows),
+            invocations: self.invocations.get(),
+            completed_invocations: self.completed.get(),
+            failed_invocations: self.failed.get(),
+            abandoned_invocations: self.abandoned.get(),
+            bound_invocations: self.bound.get(),
+            cardinality_complete: complete,
+            q_error: self.estimate.filter(|_| complete).map(|(estimate, _)| {
+                let estimate = estimate.max(1) as f64;
+                let actual = rows.max(1) as f64;
+                estimate.max(actual) / estimate.min(actual)
+            }),
+            children: self
+                .children
+                .iter()
+                .map(|c| c.cardinality_feedback(enabled))
+                .collect(),
         }
     }
 
@@ -4266,6 +4408,10 @@ impl EvalNodeWithStats {
     }
 }
 
+#[expect(
+    clippy::missing_fields_in_debug,
+    reason = "preserve the legacy explanation format; new counters have a separate term-free API"
+)]
 impl fmt::Debug for EvalNodeWithStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut obj = f.debug_struct("Node");
@@ -4281,6 +4427,30 @@ impl fmt::Debug for EvalNodeWithStats {
             obj.field("children", &self.children);
         }
         obj.finish()
+    }
+}
+
+fn feedback_operator(node: &QueryExpression) -> &'static str {
+    match node {
+        QueryExpression::QuadPattern { .. } => "QuadPattern",
+        QueryExpression::Path { .. } => "Path",
+        QueryExpression::Graph { .. } => "Graph",
+        QueryExpression::Join { .. } => "Join",
+        QueryExpression::LeftJoin { .. } => "LeftJoin",
+        #[cfg(feature = "sep-0006")]
+        QueryExpression::Lateral { .. } => "Lateral",
+        QueryExpression::Filter { .. } => "Filter",
+        QueryExpression::Union { .. } => "Union",
+        QueryExpression::Minus { .. } => "Minus",
+        QueryExpression::Values { .. } => "Values",
+        QueryExpression::Extend { .. } => "Extend",
+        QueryExpression::OrderBy { .. } => "OrderBy",
+        QueryExpression::Project { .. } => "Project",
+        QueryExpression::Distinct { .. } => "Distinct",
+        QueryExpression::Reduced { .. } => "Reduced",
+        QueryExpression::Slice { .. } => "Slice",
+        QueryExpression::Group { .. } => "Group",
+        QueryExpression::Service { .. } => "Service",
     }
 }
 

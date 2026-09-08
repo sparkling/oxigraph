@@ -9,15 +9,23 @@ mod error;
 mod http;
 #[cfg(all(
     not(target_family = "wasm"),
-    any(feature = "text-index", feature = "spatial-index")
+    any(
+        feature = "text-index",
+        feature = "spatial-index",
+        feature = "statistics"
+    )
 ))]
 mod index_service;
 pub mod results;
 #[cfg(all(not(target_family = "wasm"), feature = "spatial-index"))]
 mod spatial_service;
+#[cfg(all(not(target_family = "wasm"), feature = "statistics"))]
+mod statistics;
 #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
 mod text_service;
 mod update;
+#[cfg(all(not(target_family = "wasm"), feature = "statistics"))]
+pub use statistics::{BoundStatisticsSparqlQuery, StatisticsAvailability, StatisticsQueryContext};
 
 #[cfg(feature = "http-client")]
 use crate::http::HttpClient;
@@ -42,9 +50,10 @@ use crate::store::EvaluationOperation;
 use crate::store::evaluation_metrics::{EvaluationObservation, observe_query_result};
 use crate::store::{Store, Transaction};
 pub use spareval::{
-    AggregateFunctionAccumulator, CancellationToken, DefaultServiceHandler,
-    QueryDatasetSpecification, QueryEvaluationError, QueryExplanation, QueryResults, QuerySolution,
-    QuerySolutionIter, QueryTripleIter, ServiceHandler,
+    AggregateFunctionAccumulator, CancellationToken, CardinalityFeedback, CardinalityFeedbackNode,
+    DefaultServiceHandler, EstimateBasis, QueryDatasetSpecification, QueryEvaluationError,
+    QueryExplanation, QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter,
+    ServiceHandler,
 };
 use spareval::{QueryEvaluator, QueryableDataset};
 use spargebra::SparqlParser;
@@ -616,7 +625,11 @@ impl SparqlEvaluator {
         let dataset = query.dataset().cloned().map(Into::into).unwrap_or_default();
         #[cfg(all(
             not(target_family = "wasm"),
-            any(feature = "text-index", feature = "spatial-index")
+            any(
+                feature = "text-index",
+                feature = "spatial-index",
+                feature = "statistics"
+            )
         ))]
         let cancellation_token = self.cancellation_token.clone();
         let evaluator = self.into_evaluator();
@@ -629,7 +642,11 @@ impl SparqlEvaluator {
             substitutions: HashMap::new(),
             #[cfg(all(
                 not(target_family = "wasm"),
-                any(feature = "text-index", feature = "spatial-index")
+                any(
+                    feature = "text-index",
+                    feature = "spatial-index",
+                    feature = "statistics"
+                )
             ))]
             cancellation_token,
         }
@@ -755,7 +772,11 @@ pub struct PreparedSparqlQuery {
     evaluator: QueryEvaluator,
     #[cfg(all(
         not(target_family = "wasm"),
-        any(feature = "text-index", feature = "spatial-index")
+        any(
+            feature = "text-index",
+            feature = "spatial-index",
+            feature = "statistics"
+        )
     ))]
     cancellation_token: Option<CancellationToken>,
     #[cfg(feature = "http-client")]
@@ -768,7 +789,11 @@ pub struct PreparedSparqlQuery {
 #[cfg_attr(
     all(
         not(target_family = "wasm"),
-        any(feature = "text-index", feature = "spatial-index")
+        any(
+            feature = "text-index",
+            feature = "spatial-index",
+            feature = "statistics"
+        )
     ),
     expect(
         clippy::multiple_inherent_impl,

@@ -1,7 +1,18 @@
 //! `cargo run --locked -p oxigraph --features statistics --example statistics`
 #[cfg(unix)]
+fn leaf(
+    node: &oxigraph::sparql::CardinalityFeedbackNode,
+) -> Option<&oxigraph::sparql::CardinalityFeedbackNode> {
+    if node.operator == "QuadPattern" {
+        Some(node)
+    } else {
+        node.children.iter().find_map(leaf)
+    }
+}
+#[cfg(unix)]
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use oxigraph::model::{GraphName, Literal, NamedNode, Quad};
+    use oxigraph::sparql::{QueryResults, SparqlEvaluator};
     use oxigraph::store::{
         DerivedGenerationError, DerivedGenerationLimits, DerivedIndex, DerivedProvider,
         StatisticsProvider, Store, TransactionKey, TransactionRequest, TransactionStartControl,
@@ -72,6 +83,24 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         "reopened_quads=3 rollback_absent=true prior_not_fresh={not_fresh} red_frequency={}..{}",
         frequency.lower,
         frequency.upper
+    )?;
+    let (rows, explanation) = SparqlEvaluator::new()
+        .parse_query("SELECT ?s WHERE { ?s <urn:label> ?label }")?
+        .on_statistics(source, &index, &provider, limits)?
+        .compute_statistics()
+        .explain()?;
+    let QueryResults::Solutions(rows) = rows? else {
+        return Err("expected solutions".into());
+    };
+    let actual = rows.collect::<Result<Vec<_>, _>>()?.len();
+    let feedback = explanation.cardinality_feedback();
+    let leaf = leaf(&feedback.root).ok_or("missing scan feedback")?;
+    if actual != 3 || leaf.estimated_rows != Some(3) || leaf.q_error != Some(1.) {
+        return Err("unexpected query feedback".into());
+    }
+    writeln!(
+        std::io::stdout().lock(),
+        "query_rows={actual} estimated_rows=3 q_error=1 complete=true"
     )?;
     Ok(())
 }
