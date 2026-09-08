@@ -77,6 +77,10 @@
   retaining the existing materialization and topology contracts; a same-data
   CLI comparison preserves all 12 result rows. Full performance acceptance is
   still separate from this measured product repair.
+  CLI/HTTP Simple queries now use the native snapshot path without whole-store
+  materialization; the corresponding in-memory union-default exclusion defect
+  is fixed. Focused dataset/streaming tests and a retained-parent LDBC comparison
+  support this slice, not full G3.2 acceptance. Finite entailment is unchanged.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

@@ -4,7 +4,6 @@
 use oxigraph::io::RdfFormat;
 use oxigraph::model::vocab::{rdf, xsd};
 use oxigraph::model::*;
-#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use oxigraph::sparql::{QueryResults, SparqlEvaluator};
 use oxigraph::store::Store;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -158,6 +157,15 @@ fn test_load_graph_on_disk() -> Result<(), Box<dyn Error>> {
 fn test_merged_default_graph_on_disk() -> Result<(), Box<dyn Error>> {
     let dir = TempDir::new()?;
     let store = Store::open(&dir)?;
+    assert_merged_default_graph(&store)
+}
+
+#[test]
+fn test_merged_default_graph_in_memory() -> Result<(), Box<dyn Error>> {
+    assert_merged_default_graph(&Store::new()?)
+}
+
+fn assert_merged_default_graph(store: &Store) -> Result<(), Box<dyn Error>> {
     let s1 = NamedNode::new_unchecked("urn:s1");
     let s2 = NamedNode::new_unchecked("urn:s2");
     let s3 = NamedNode::new_unchecked("urn:s3");
@@ -197,7 +205,7 @@ fn test_merged_default_graph_on_disk() -> Result<(), Box<dyn Error>> {
         let query = format!("SELECT * FROM <urn:g1> FROM <urn:g2> WHERE {{ {pattern} }}");
         let QueryResults::Solutions(solutions) = SparqlEvaluator::new()
             .parse_query(&query)?
-            .on_store(&store)
+            .on_store(store)
             .execute()?
         else {
             unreachable!()
@@ -211,7 +219,7 @@ fn test_merged_default_graph_on_disk() -> Result<(), Box<dyn Error>> {
 
     let mut query = SparqlEvaluator::new().parse_query("SELECT * WHERE { ?s ?p ?o }")?;
     query.dataset_mut().set_default_graph_as_union();
-    let QueryResults::Solutions(solutions) = query.on_store(&store).execute()? else {
+    let QueryResults::Solutions(solutions) = query.on_store(store).execute()? else {
         unreachable!()
     };
     assert_eq!(solutions.collect::<Result<Vec<_>, _>>()?.len(), 4);

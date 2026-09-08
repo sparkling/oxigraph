@@ -1208,6 +1208,10 @@ LDBC Q7 preparation exposed a concrete materialization bottleneck: graph copying
 scanned all quads once per named graph. Existing graph-prefix iteration now
 removes that superlinear work, preserving topology and the exact parent result
 bag. This product repair does not close the full G3.2 performance gate.
+The following product slice removes whole-store copying for CLI/HTTP Simple
+queries, retaining native snapshots, graph semantics and terminal metrics.
+It also corrects physical-default leakage in the in-memory union iterator.
+Finite entailment and all separate corpus/numerical acceptance gates remain.
 
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.

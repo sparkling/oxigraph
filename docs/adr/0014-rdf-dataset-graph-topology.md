@@ -141,6 +141,18 @@ standardization are unchanged. The native preservation tests and the same-data
 [LDBC query comparison](../../bench/query-benchmark.md#ldbc-q7-materialization-diagnostic)
 support this performance correction, not new entailment or promotion claims.
 
+Ordinary CLI and HTTP Simple queries now bind the native repeatable-read Store
+view instead of copying the whole dataset. Explicit finite profiles and the
+public owned `on_store_with_entailment` API are unchanged. The in-memory union
+iterator now excludes the physical default graph before deduplication, matching
+RocksDB and this ADR. Native tests cover both backends, source-scoped blank
+nodes, repeated/protocol-selected graphs, empty topology, snapshot retention,
+SPARQL versions, cancellation and evaluation metrics. Simple storage errors
+are now encountered lazily; this path is not a whole-store integrity scan, and
+errors may occur during HTTP result streaming. No eager error-timing guarantee
+is made. See [the focused HTTP tests](../../cli/src/simple_query_tests.rs) and
+[native store regressions](../../lib/oxigraph/tests/store.rs).
+
 ### SPARQL 1.2 `LOAD`
 
 The [SPARQL update evaluator](../../lib/oxigraph/src/sparql/update.rs) applies

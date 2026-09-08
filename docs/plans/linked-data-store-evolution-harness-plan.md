@@ -1147,6 +1147,10 @@ The LDBC Q7 diagnostic now drives a native product repair: indexed graph copies
 replace per-graph full scans during query-time materialization. Same-data CLI
 results and topology/entailment tests preserve semantics; default planning and
 separate corpus/promotion gates remain unchanged.
+CLI/HTTP Simple queries now use the native Store view directly; finite profiles
+retain materialization. A memory-backend union regression is fixed alongside
+the switch, with native graph-selection, snapshot, version and metrics tests.
+Continue corpus/resource/tail acceptance work; this is not full G3.2 closure.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 

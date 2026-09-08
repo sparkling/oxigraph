@@ -778,7 +778,14 @@ impl<'a> StorageReader<'a> {
                             .collect::<Vec<_>>();
                         Box::new(iters.into_iter().flatten())
                     } else {
-                        Box::new(self.quads_for_pattern(subject, predicate, object, None))
+                        // Storage's unconstrained iterator includes the physical
+                        // default graph. The query union is named-graph-only.
+                        Box::new(
+                            self.quads_for_pattern(subject, predicate, object, None)
+                                .filter(|quad| {
+                                    !matches!(quad, Ok(quad) if quad.graph_name.is_default_graph())
+                                }),
+                        )
                     };
                 Box::new(hash_deduplicate(iter.map(|quad| {
                     let mut quad = quad?;

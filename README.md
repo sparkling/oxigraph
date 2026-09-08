@@ -167,6 +167,10 @@ This is benchmark preparation, not a full G3.2 performance pass.
 The LDBC pilot also exposed and fixed repeated whole-dataset scans during
 named-graph materialization; [the same-data CLI comparison](bench/query-benchmark.md#ldbc-q7-materialization-diagnostic)
 preserves results without changing inference or planner defaults.
+Ordinary CLI/HTTP Simple queries now avoid whole-store materialization entirely,
+using the native repeatable-read view. Finite entailment still materializes;
+the [dataset contract](docs/adr/0014-rdf-dataset-graph-topology.md) records
+preserved graph semantics and lazy storage-error timing.
 
 G2.2 now provides opt-in `ChangeTrackingTransaction` for backend-neutral Rust
 transactions: inspect pending quad, graph-lifecycle, and namespace changes

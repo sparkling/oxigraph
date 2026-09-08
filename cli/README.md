@@ -68,6 +68,14 @@ Some build options (cargo features) are available:
 
 Run `oxigraph serve --location my_data_storage_directory` to start the server where `my_data_storage_directory` is the directory where you want Oxigraph data to be stored. It listens by default on `localhost:7878`.
 
+The default `simple` entailment mode, in both `query` and the server, reads a
+native repeatable snapshot without first copying the whole store. Explicit
+finite entailment profiles still materialize their effective query dataset.
+Simple queries preserve `FROM`, protocol graph selection, empty named graphs
+and the named-graph-only `--union-default-graph` contract. Reads and their errors
+are lazy, so querying is not a whole-store integrity check; failures encountered
+after HTTP headers are sent use the existing streaming-error behavior.
+
 The server provides an HTML UI, based on [YASGUI](https://yasgui.triply.cc), with a form to execute SPARQL requests.
 
 It provides the following REST actions:

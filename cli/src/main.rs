@@ -61,6 +61,8 @@ mod protocol_wire_tests;
 mod rdf_response;
 mod service_description;
 #[cfg(test)]
+mod simple_query_tests;
+#[cfg(test)]
 mod wire_http_tests;
 
 const MAX_HTTP_BODY_SIZE: u64 = 1024 * 1024 * 128; // 128MB
@@ -366,12 +368,23 @@ pub fn main() -> anyhow::Result<()> {
             if union_default_graph {
                 prepared.dataset_mut().set_default_graph_as_union();
             }
-            let options = QueryEntailmentOptions::new(entailment.into());
-            let mut prepared = prepared.on_store_with_entailment(&store, &options)?;
-            if stats {
-                prepared = prepared.compute_statistics();
-            }
-            let (results, explanation) = prepared.explain();
+            let entailment = QueryEntailment::from(entailment);
+            let (results, explanation) = if entailment == QueryEntailment::Simple {
+                // Simple queries need only the native repeatable-read view, not
+                // an owned copy of every graph in the store.
+                let mut bound = prepared.on_store(&store);
+                if stats {
+                    bound = bound.compute_statistics();
+                }
+                bound.explain()
+            } else {
+                let options = QueryEntailmentOptions::new(entailment);
+                let mut bound = prepared.on_store_with_entailment(&store, &options)?;
+                if stats {
+                    bound = bound.compute_statistics();
+                }
+                bound.explain()
+            };
             let print_result = (|| {
                 match results? {
                     QueryResults::Solutions(solutions) => {
@@ -1731,12 +1744,16 @@ fn evaluate_sparql_query(
         );
     }
 
-    let entailment_options = QueryEntailmentOptions::new(entailment).with_timeout(timeout);
-    let results = prepared
-        .on_store_with_entailment(store, &entailment_options)
-        .map_err(query_request_refused)?
-        .execute()
-        .map_err(internal_server_error)?;
+    let results = if entailment == QueryEntailment::Simple {
+        prepared.on_store(store).execute()
+    } else {
+        let options = QueryEntailmentOptions::new(entailment).with_timeout(timeout);
+        prepared
+            .on_store_with_entailment(store, &options)
+            .map_err(query_request_refused)?
+            .execute()
+    }
+    .map_err(internal_server_error)?;
     match results {
         QueryResults::Solutions(solutions) => {
             let selected = query_results_content_negotiation(request, true)?;
@@ -3739,6 +3756,35 @@ mod tests {
             .assert()
             .success();
         output_file.assert("?s\n<http://example.com/s>\n");
+        Ok(())
+    }
+
+    #[test]
+    fn cli_simple_query_stats_preserve_union_dataset() -> Result<()> {
+        let store_dir = initialized_cli_store(concat!(
+            "<urn:default> <urn:p> <urn:o> . ",
+            "<urn:g1> { <urn:named> <urn:p> <urn:o> } ",
+            "<urn:g2> { <urn:named> <urn:p> <urn:o> }",
+        ))?;
+        let explanation = NamedTempFile::new("explain.json")?;
+        cli_command()
+            .arg("query")
+            .arg("--location")
+            .arg(store_dir.path())
+            .arg("--query")
+            .arg("SELECT ?s WHERE { ?s <urn:p> <urn:o> }")
+            .arg("--union-default-graph")
+            .arg("--entailment")
+            .arg("simple")
+            .arg("--stats")
+            .arg("--explain-file")
+            .arg(explanation.path())
+            .arg("--results-format")
+            .arg("csv")
+            .assert()
+            .stdout("s\r\nurn:named\r\n")
+            .success();
+        explanation.assert(predicate::str::contains("number of results"));
         Ok(())
     }
 

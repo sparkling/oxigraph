@@ -463,3 +463,44 @@ agree. One datetime is serialized as `.92` rather than `.920`; the raw lexical
 bags therefore differ. DateTime-value normalization gives equal bags, with all
 other terms compared exactly. Preserve both observations; do not claim raw
 term equality to the official file or silently update its expected values.
+
+### Native Simple query path
+
+The next CLI/HTTP repair binds Simple queries directly to the native Store
+snapshot. Finite entailment and the public owned entailment adapter retain
+materialization. A discovered in-memory union bug is corrected at the same
+time: exclude the physical default graph before deduplicating named triples.
+
+On the same Q7 store and query above, three sequential parent/candidate pairs
+gave the following whole-process observations (`/usr/bin/time -v`, all exit 0):
+
+| Run | Parent `0bac1f00` seconds / peak KiB | Native Simple seconds / peak KiB |
+| --- | --- | --- |
+| 1 | 6.33 / 513,716 | 0.06 / 34,304 |
+| 2 | 6.23 / 510,064 | 0.06 / 34,304 |
+| 3 | 5.48 / 508,712 | 0.05 / 34,048 |
+
+All six outputs match the retained parent columns and exact 12-row term bag.
+Candidate binary SHA-256:
+`97a7a535372ce8526ac3b4e04e6879e6cfe5effa01b1cc441cc029b6f8697a8f`.
+Each candidate JSON has SHA-256
+`41983091e3b4991d16087d07d0be4b4ac8d69ab7d94bc3ccd572f4b3c01ce9ba`.
+The three parent JSON hashes are
+`5250ecf3d7339a4f7e53ed71938fc9cfbd73827b12a0b5b7f2e876276739af9d`,
+`cdb9ad93e416df4983a4d71ccedede5934365f1a5263d5f398916177d466bde0`,
+and `e6404251ccf5a38c96d03f6b6b559261a0325a7ff2c0ef48575f2c141ad60c28`.
+Local raw outputs, time reports and candidate binary are retained under
+`/tmp/oxigraph-simple-query-8P6z8s`; input reproduction is above. This is a
+shared-host diagnostic, without cache eviction or randomized order, not p95,
+a universal speedup, or default-planner promotion. First-parent-run setup
+overlapped the end of a short lint check; no exclusive-host claim is made.
+
+Validation: all 158 CLI tests pass, including the new `--stats` path; the
+focused HTTP tests cover memory/reopened-disk datasets, merged blank-node scope,
+empty/missing graph slots, protocol precedence, lazy snapshots, cancellation,
+version rejection and terminal metrics. The affected library matrix passes
+67 tests; the no-default-features lanes pass three HTTP tests and the new
+memory union regression. Production CLI Clippy with `rdf-12` passes; the
+broader test lint lane still fails on seven existing diagnostics in
+`cli/src/service_description/tests.rs`, not in the changed files. No dependency,
+protected baseline, expected semantic result, or entailment profile is changed.
