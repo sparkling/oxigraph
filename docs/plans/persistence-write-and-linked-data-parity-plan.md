@@ -1183,6 +1183,14 @@ option. Frozen BSBM/WatDiv/LDBC acceptance remains outstanding, so G3.2 task
 `task-1787603736767-vilwx5` stays in progress. Measure strict statistics admission
 separately from planning and execution; one reduced-scan fixture is not a speed
 or default-promotion claim.
+The [initial native BSBM pilot](../../bench/query-benchmark.md) now measures this
+admission bottleneck, and explicit shared verified statistics avoid repeating
+the full-data scan with a private live-store identity check as well as the full
+checkpoint, excluding copied-sibling and reopen confusion. It also records a bounded
+planner regression. G3.2 has no frozen corpus/numeric promotion gate yet:
+BSBM breadth, reproducible WatDiv/LDBC inputs, controlled parent-first baselines
+and per-query resource/tail gates remain the concrete next work, not a claim
+that an existing acceptance suite passed.
 
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.

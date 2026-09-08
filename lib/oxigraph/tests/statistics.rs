@@ -12,6 +12,7 @@ use oxigraph::store::{
 };
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 use std::time::Duration;
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 use oxigraph::sparql::{
@@ -123,6 +124,7 @@ fn statistics_queries_preserve_solution_bags_across_operators_and_fallbacks() ->
         fixture.dir.path().join("no-stats"),
         fixture.provider.identity(),
     )?;
+    let shared = Arc::new(fixture.read()?);
     for query in [
         "SELECT ?s ?o ?v WHERE { ?s <urn:p> ?o . ?s <urn:q> ?v }",
         "SELECT ?o WHERE { ?s <urn:p> ?o . ?s <urn:q> ?v }",
@@ -159,6 +161,22 @@ fn statistics_queries_preserve_solution_bags_across_operators_and_fallbacks() ->
                 )?
                 .execute()?;
             assert_eq!(solution_bag(result)?, expected, "{query}");
+        }
+        for bounded in [false, true] {
+            let evaluator = if bounded {
+                SparqlEvaluator::new().with_bounded_join_planning(BoundedJoinPlanning::default())
+            } else {
+                SparqlEvaluator::new()
+            };
+            let result = evaluator
+                .parse_query(query)?
+                .on_statistics_snapshot(
+                    capture(&fixture.store)?,
+                    Arc::clone(&shared),
+                    TransactionStartControl::new(),
+                )?
+                .execute()?;
+            assert_eq!(solution_bag(result)?, expected, "shared: {query}");
         }
     }
     Ok(())
@@ -213,6 +231,195 @@ fn query_statistics_and_evaluation_retain_one_snapshot() -> Result {
         leaves(&explanation.cardinality_feedback().root)[0].estimate_basis,
         Some(EstimateBasis::Heuristic)
     );
+    Ok(())
+}
+
+#[test]
+fn shared_statistics_require_exact_source_and_retain_owned_observations() -> Result {
+    let f = Fixture::new([quad("a", "p", "red", GraphName::DefaultGraph)])?;
+    let statistics = Arc::new(f.read()?);
+    let old = capture(&f.store)?;
+    // Explicit reuse reads no generation files after independent verification.
+    let payload = f.index.active(&f.limits)?.directory().join("statistics.v1");
+    std::fs::write(&payload, b"corrupt after verification")?;
+    f.store
+        .insert(quad("b", "p", "blue", GraphName::DefaultGraph))?;
+    let query = "SELECT * { ?s <urn:p> ?o . ?s <urn:p> ?other }";
+    let evaluator =
+        SparqlEvaluator::new().with_bounded_join_planning(BoundedJoinPlanning::default());
+    let bound = evaluator
+        .clone()
+        .parse_query(query)?
+        .on_statistics_snapshot(old, Arc::clone(&statistics), TransactionStartControl::new())?
+        .compute_statistics();
+    assert_eq!(
+        bound.context().availability,
+        StatisticsAvailability::Current
+    );
+    assert_eq!(bound.context().generation, Some(*statistics.generation()));
+    let (result, explanation) = bound.explain()?;
+    assert_eq!(consume(result?)?, 1);
+    assert!(
+        leaves(&explanation.cardinality_feedback().root)
+            .iter()
+            .all(|leaf| leaf.estimate_basis == Some(EstimateBasis::Statistics))
+    );
+    let foreign = Fixture::new([quad("a", "p", "red", GraphName::DefaultGraph)])?;
+    for store in [&f.store, &foreign.store] {
+        let bound = evaluator
+            .clone()
+            .parse_query(query)?
+            .on_statistics_snapshot(
+                capture(store)?,
+                Arc::clone(&statistics),
+                TransactionStartControl::new(),
+            )?
+            .compute_statistics();
+        assert_eq!(bound.context().availability, StatisticsAvailability::Stale);
+        assert_eq!(bound.context().generation, None);
+        let (result, explanation) = bound.explain()?;
+        assert_eq!(
+            solution_bag(result?)?,
+            solution_bag(
+                evaluator
+                    .clone()
+                    .without_optimizations()
+                    .parse_query(query)?
+                    .on_store(store)
+                    .execute()?
+            )?
+        );
+        assert!(
+            leaves(&explanation.cardinality_feedback().root)
+                .iter()
+                .all(|leaf| leaf.estimate_basis == Some(EstimateBasis::Heuristic))
+        );
+    }
+    assert_eq!(Arc::strong_count(&statistics), 1);
+    Ok(())
+}
+
+#[test]
+fn shared_statistics_reject_copied_siblings_and_reopened_stores() -> Result {
+    let dir = tempfile::tempdir()?;
+    let a = Store::open(dir.path().join("a"))?;
+    a.insert(quad("base", "p", "base", GraphName::DefaultGraph))?;
+    a.backup(dir.path().join("b"))?;
+    let b = Store::open(dir.path().join("b"))?;
+    a.insert(quad("x", "p", "a", GraphName::DefaultGraph))?;
+    b.insert(quad("y", "p", "b", GraphName::DefaultGraph))?;
+    let source = capture(&a)?;
+    assert_eq!(
+        source.checkpoint(),
+        capture(&b)?.checkpoint(),
+        "copied sibling fixture must share the entire physical checkpoint"
+    );
+    let limits = DerivedGenerationLimits::default();
+    let provider = StatisticsProvider::default();
+    let mut index = DerivedIndex::create(dir.path().join("stats"), provider.identity())?;
+    let generation = index.rebuild(&source, &provider, &limits)?;
+    index.activate(&generation, &source, &provider, &limits)?;
+    let statistics = Arc::new(provider.read(&index.strict(&source, &limits)?, &limits.input)?);
+    let bind = |store: &Store| -> Result<_> {
+        Ok(SparqlEvaluator::new()
+            .parse_query("SELECT * { ?s <urn:p> ?o }")?
+            .on_statistics_snapshot(
+                capture(store)?,
+                Arc::clone(&statistics),
+                TransactionStartControl::new(),
+            )?
+            .compute_statistics())
+    };
+    // A Store clone is the same live instance, not another disk open.
+    let cloned = a.clone();
+    assert_eq!(
+        bind(&cloned)?.context().availability,
+        StatisticsAvailability::Current
+    );
+    let bound = bind(&b)?;
+    assert_eq!(bound.context().availability, StatisticsAvailability::Stale);
+    let (result, explanation) = bound.explain()?;
+    assert_eq!(
+        solution_bag(result?)?,
+        solution_bag(
+            SparqlEvaluator::new()
+                .parse_query("SELECT * { ?s <urn:p> ?o }")?
+                .on_store(&b)
+                .execute()?
+        )?
+    );
+    assert_eq!(
+        leaves(&explanation.cardinality_feedback().root)[0].estimate_basis,
+        Some(EstimateBasis::Heuristic)
+    );
+    drop(source);
+    drop(cloned);
+    drop(a);
+    let reopened = Store::open(dir.path().join("a"))?;
+    assert_eq!(statistics.source(), capture(&reopened)?.checkpoint());
+    assert_eq!(
+        bind(&reopened)?.context().availability,
+        StatisticsAvailability::Stale
+    );
+    // Fresh independent verification after reopen creates a new admissible handle.
+    let fresh = capture(&reopened)?;
+    let verified = Arc::new(provider.read(&index.strict(&fresh, &limits)?, &limits.input)?);
+    assert_eq!(
+        SparqlEvaluator::new()
+            .parse_query("SELECT * { ?s <urn:p> ?o }")?
+            .on_statistics_snapshot(fresh, verified, TransactionStartControl::new())?
+            .context()
+            .availability,
+        StatisticsAvailability::Current
+    );
+    Ok(())
+}
+
+#[test]
+fn shared_statistics_preserve_cancellation_before_binding_and_during_consumption() -> Result {
+    let f = Fixture::new([quad("a", "p", "red", GraphName::DefaultGraph)])?;
+    let statistics = Arc::new(f.read()?);
+    let query = "SELECT * { ?s <urn:p> ?o }";
+    let token = CancellationToken::new();
+    token.cancel();
+    assert!(matches!(
+        SparqlEvaluator::new()
+            .with_cancellation_token(token)
+            .parse_query(query)?
+            .on_statistics_snapshot(
+                capture(&f.store)?,
+                Arc::clone(&statistics),
+                TransactionStartControl::new()
+            ),
+        Err(QueryEvaluationError::Cancelled)
+    ));
+    let token = CancellationToken::new();
+    let bound = SparqlEvaluator::new()
+        .with_cancellation_token(token.clone())
+        .parse_query(query)?
+        .on_statistics_snapshot(
+            capture(&f.store)?,
+            Arc::clone(&statistics),
+            TransactionStartControl::new(),
+        )?;
+    let QueryResults::Solutions(mut rows) = bound.execute()? else {
+        return Err("expected solutions".into());
+    };
+    token.cancel();
+    assert!(matches!(
+        rows.next(),
+        Some(Err(QueryEvaluationError::Cancelled))
+    ));
+    assert!(matches!(
+        SparqlEvaluator::new()
+            .parse_query(query)?
+            .on_statistics_snapshot(
+                capture(&f.store)?,
+                Arc::clone(&statistics),
+                TransactionStartControl::new().with_timeout(Duration::ZERO)
+            ),
+        Err(QueryEvaluationError::Dataset(_))
+    ));
     Ok(())
 }
 

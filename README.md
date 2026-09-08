@@ -120,6 +120,13 @@ Run
 This adds no dependencies. Catch-up and reconciliation scan the retained source;
 no query-speed claim is made. Bounded planning itself needs neither RocksDB nor
 the `statistics` feature and adds no dependencies.
+`on_statistics_snapshot` additionally accepts an explicitly shared, independently
+verified `Arc<StatisticsSnapshot>`, avoiding per-query reconstruction only when
+its private live-store identity and complete source checkpoint match. Copies
+and reopened stores cannot reuse an old handle; stale or foreign inputs fall
+back; the strict file-reading API is unchanged. The [native comparison](bench/query-benchmark.md)
+measures admission separately and records the pilot's bounded-planner regression
+as well as the reusable-snapshot improvement; full corpus acceptance stays open.
 
 Build this fork rather than an upstream package to obtain these changes:
 

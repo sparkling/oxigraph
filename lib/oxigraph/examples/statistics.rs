@@ -66,7 +66,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let store = Store::open(directory.path().join("db"))?;
     let index = DerivedIndex::open(directory.path().join("stats"), provider.identity())?;
     let source = store.derived_snapshot(&TransactionStartControl::new())?;
-    let stats = provider.read(&index.strict(&source, &limits)?, &limits.input)?;
+    let stats =
+        std::sync::Arc::new(provider.read(&index.strict(&source, &limits)?, &limits.input)?);
     let group = stats
         .scope(&GraphName::DefaultGraph, &predicate)
         .ok_or("missing scope")?;
@@ -87,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (rows, explanation) = SparqlEvaluator::new()
         .with_bounded_join_planning(BoundedJoinPlanning::default())
         .parse_query("SELECT ?s WHERE { ?s <urn:label> ?label . ?s <urn:label> ?other }")?
-        .on_statistics(source, &index, &provider, limits)?
+        .on_statistics_snapshot(source, stats, TransactionStartControl::new())?
         .compute_statistics()
         .explain()?;
     let QueryResults::Solutions(rows) = rows? else {

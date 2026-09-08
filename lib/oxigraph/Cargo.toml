@@ -140,3 +140,7 @@ required-features = ["spatial-index"]
 [[example]]
 name = "statistics"
 required-features = ["statistics"]
+
+[[example]]
+name = "query_benchmark"
+required-features = ["statistics"]

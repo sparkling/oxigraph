@@ -260,6 +260,10 @@ pub struct Storage {
     transaction_metrics: Arc<TransactionMetricsState>,
     evaluation_metrics: Arc<EvaluationMetricsState>,
     policy_metrics: Arc<crate::store::policy_metrics::PolicyMetricsState>,
+    // Process-local open-instance identity. Never serialized or inferred from
+    // RocksDB IDs, which copied directories can share. Store clones share it.
+    #[cfg(all(not(target_family = "wasm"), feature = "statistics"))]
+    statistics_origin: Arc<()>,
 }
 
 #[derive(Clone)]
@@ -270,6 +274,10 @@ enum StorageKind {
 }
 
 impl Storage {
+    #[cfg(all(not(target_family = "wasm"), feature = "statistics"))]
+    pub(crate) fn statistics_origin(&self) -> Arc<()> {
+        Arc::clone(&self.statistics_origin)
+    }
     pub(crate) fn policy_metrics_state(
         &self,
     ) -> Arc<crate::store::policy_metrics::PolicyMetricsState> {
@@ -306,6 +314,8 @@ impl Storage {
             transaction_metrics: Arc::default(),
             evaluation_metrics: Arc::default(),
             policy_metrics: Arc::default(),
+            #[cfg(all(not(target_family = "wasm"), feature = "statistics"))]
+            statistics_origin: Arc::new(()),
         })
     }
 
@@ -316,6 +326,8 @@ impl Storage {
             transaction_metrics: Arc::default(),
             evaluation_metrics: Arc::default(),
             policy_metrics: Arc::default(),
+            #[cfg(feature = "statistics")]
+            statistics_origin: Arc::new(()),
         })
     }
 
@@ -332,6 +344,8 @@ impl Storage {
             transaction_metrics: Arc::default(),
             evaluation_metrics: Arc::default(),
             policy_metrics: Arc::default(),
+            #[cfg(feature = "statistics")]
+            statistics_origin: Arc::new(()),
         })
     }
 
@@ -342,6 +356,8 @@ impl Storage {
             transaction_metrics: Arc::default(),
             evaluation_metrics: Arc::default(),
             policy_metrics: Arc::default(),
+            #[cfg(feature = "statistics")]
+            statistics_origin: Arc::new(()),
         })
     }
 

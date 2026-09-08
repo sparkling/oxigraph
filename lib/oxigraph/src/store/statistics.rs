@@ -312,8 +312,13 @@ pub struct StatisticsSnapshot {
     data: Data,
     source: BackupCheckpoint,
     generation: [u8; 32],
+    origin: std::sync::Arc<()>,
 }
 impl StatisticsSnapshot {
+    pub(crate) fn matches_source(&self, source: &DerivedSnapshot) -> bool {
+        std::sync::Arc::ptr_eq(&self.origin, source.statistics_origin())
+            && self.source() == source.checkpoint()
+    }
     pub const fn source(&self) -> &BackupCheckpoint {
         &self.source
     }
@@ -420,6 +425,7 @@ impl StatisticsProvider {
             data,
             source: view.source().checkpoint().clone(),
             generation: view.generation().fingerprint(),
+            origin: std::sync::Arc::clone(view.source().statistics_origin()),
         })
     }
     fn write(

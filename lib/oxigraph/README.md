@@ -86,6 +86,13 @@ unsupported merged/union scopes. `compute_statistics` and
 `QueryExplanation::cardinality_feedback` expose term-free leaf estimates,
 intermediate-row observations, completion and q-error without automatic export.
 Partial or correlated scans do not claim complete cardinality.
+For repeated queries, `on_statistics_snapshot` reuses an independently verified
+`Arc<StatisticsSnapshot>` only against an exactly matching physical source
+checkpoint and private live-store identity. Store clones share identity; a
+reopen or copied directory requires fresh verification even with matching disk
+identifiers. A mismatch selects heuristic planning. It performs no generation
+file read or full-data reconstruction; initial verification remains explicit.
+This does not make old statistics current or change `on_statistics` admission.
 `SparqlEvaluator::with_bounded_join_planning(BoundedJoinPlanning::default())`
 opts into deterministic left-deep subset search for connected same-graph basic
 joins up to eight leaves, with greedy fallback beyond the configured bound.

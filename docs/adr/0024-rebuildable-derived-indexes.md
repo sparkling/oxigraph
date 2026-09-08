@@ -140,6 +140,12 @@ rebuilding observation; cancellation/limit errors remain errors. Eventual views
 are explicitly opt-in and expose applied/source checkpoints. Shared identities
 and monotonic sequences are compatibility checks, **not proof of ancestry**.
 
+The explicit [statistics-reuse adapter](0023-statistics-and-bounded-join-planning.md#explicit-verified-snapshot-reuse-and-diagnostic-baseline-2026-09-08)
+therefore pairs an independently verified observation with a private live-store
+identity as well as its full checkpoint. Copies and reopens do not inherit this
+process-local identity; Store clones do. This additive optimization does not
+weaken generic strict generation checks or change persisted evidence/profiles.
+
 This correctness baseline scans primary contents and verifies payloads; it makes
 no accelerated-query/throughput claim. G3.3/G3.4 must measure this cost before any
 separately reviewed optimization, preserving strict completeness. Checksums detect

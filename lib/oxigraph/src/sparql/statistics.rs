@@ -13,6 +13,7 @@ use crate::store::{
 };
 use spareval::CardinalityEstimator;
 use spargebra::term::{GroundTermPattern, NamedNodePattern};
+use std::sync::Arc;
 use std::time::Instant;
 
 /// Fixed admission classification; contains no query text, RDF terms or paths.
@@ -106,16 +107,67 @@ impl PreparedSparqlQuery {
             }
             Err(_) => StatisticsAvailability::Rejected,
         };
+        self.bind_statistics(
+            source,
+            read.ok().map(Arc::new),
+            availability,
+            control,
+            started,
+        )
+    }
+
+    /// Reuses an independently verified, immutable statistics snapshot without
+    /// reopening its generation or reconstructing primary statistics per query.
+    /// Obtain it using [`StatisticsProvider::read`], then share it using [`Arc`].
+    ///
+    /// Both the private live-store identity and complete physical checkpoint
+    /// must match the supplied retained source. Store clones share identity;
+    /// a reopen or a copied database does not, even with identical disk IDs.
+    /// A mismatch selects heuristic costs and reports `Stale`; it never changes
+    /// the RDF source or refreshes statistics. The owned observations remain
+    /// valid for their exact source even if generation files subsequently change.
+    /// This is explicit snapshot reuse, not a cache of current-store statistics.
+    /// Dataset scope, cancellation, deadlines and fallback rules are unchanged.
+    pub fn on_statistics_snapshot(
+        mut self,
+        source: DerivedSnapshot,
+        statistics: Arc<StatisticsSnapshot>,
+        control: TransactionStartControl,
+    ) -> Result<BoundStatisticsSparqlQuery, QueryEvaluationError> {
+        let started = Instant::now();
+        let control = control.with_query_cancellation(self.cancellation_token.take());
+        check(&control, started)?;
+        let current = statistics.matches_source(&source);
+        self.bind_statistics(
+            source,
+            current.then_some(statistics),
+            if current {
+                StatisticsAvailability::Current
+            } else {
+                StatisticsAvailability::Stale
+            },
+            control,
+            started,
+        )
+    }
+
+    fn bind_statistics(
+        mut self,
+        source: DerivedSnapshot,
+        statistics: Option<Arc<StatisticsSnapshot>>,
+        availability: StatisticsAvailability,
+        control: TransactionStartControl,
+        started: Instant,
+    ) -> Result<BoundStatisticsSparqlQuery, QueryEvaluationError> {
+        check(&control, started)?;
         let context = StatisticsQueryContext {
             source: source.checkpoint().clone(),
-            generation: read
+            generation: statistics
                 .as_ref()
-                .ok()
-                .map(StatisticsSnapshot::generation)
-                .copied(),
+                .map(|statistics| *statistics.generation()),
             availability,
         };
-        if let Ok(statistics) = read {
+        if let Some(statistics) = statistics {
             self.evaluator = self.evaluator.with_cardinality_estimator(DatasetEstimator {
                 statistics,
                 dataset: self.dataset.clone(),
@@ -160,7 +212,7 @@ fn check(control: &TransactionStartControl, started: Instant) -> Result<(), Quer
 }
 
 struct DatasetEstimator {
-    statistics: StatisticsSnapshot,
+    statistics: Arc<StatisticsSnapshot>,
     dataset: QueryDatasetSpecification,
 }
 impl CardinalityEstimator for DatasetEstimator {

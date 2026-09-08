@@ -52,6 +52,13 @@
   fallback. Its native differential tests and runnable statistics example do
   not close the separate frozen-corpus performance/promotion gates; G3.2 stays
   active for those requirements. No default-planner promotion is claimed.
+  A first BSBM pilot exposed per-query statistics reconstruction as a bottleneck;
+  explicit verified-snapshot reuse now avoids it only for an exact matching
+  physical checkpoint and private live-store identity, excluding copied-sibling
+  divergence. This is callable product progress, separate from the
+  diagnostic runner/docs. The pilot also found a bounded-without-statistics
+  regression and confirmed missing frozen corpus/threshold assets, so it closes
+  neither the full G3.2 performance gate nor the wider programme.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

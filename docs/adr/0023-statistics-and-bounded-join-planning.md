@@ -276,6 +276,51 @@ the strict statistics adapter currently reconstructs primary statistics during
 admission. Native correctness and lower work on one fixture do not establish
 end-to-end improvement on BSBM, WatDiv or LDBC.
 
+### Explicit verified-snapshot reuse and diagnostic baseline (2026-09-08)
+
+The first small native BSBM pilot demonstrated that strict per-query statistics
+reconstruction dominates short queries. `PreparedSparqlQuery::on_statistics_snapshot`
+now accepts `Arc<StatisticsSnapshot>` obtained from the existing independent
+`StatisticsProvider::read` verification. Its fields remain private and immutable.
+The supplied `DerivedSnapshot` must match the **entire physical checkpoint**
+and a private process-local open-instance identity; otherwise the adapter reports `Stale`, supplies no
+generation hint, and evaluates that supplied source with heuristic costs.
+Dataset scoping, optimization/substitution bypass and cancellation/deadlines
+remain in the shared query adapter. This adds no dependency or implicit cache.
+
+Checkpoint equality alone is insufficient: copied sibling stores can have
+identical persisted IDs, sequences and receipts but divergent contents, as
+already established in ADR-0024. Storage creates an unexported `Arc` identity
+per open and shares it only with Store clones and their derived snapshots;
+independent statistics verification retains that token. Pointer identity plus
+checkpoint equality admits reuse without a primary scan. A reopen, read-only
+reopen or copied directory conservatively needs new verification, even if its
+RDF is unchanged. The token retains neither a database handle nor an MVCC
+reader, is never serialized, and changes no persisted profile or manifest.
+
+An owned, verified observation remains usable for its exact retained source
+after a later primary write or generation-file corruption. It is not a current
+file-integrity claim, and never reads a newer store or refreshes a generation.
+The original `on_statistics` and `StatisticsProvider::read` contracts still
+reopen/verify/reconstruct on each call. Callers choose explicit reuse and must
+account for initial verification and retained memory/snapshot costs. Native
+tests cover source drift, a different store with identical RDF, copied siblings
+with equal physical checkpoints but different contents, Store clone versus
+reopen behavior, retained old
+results after a write, corruption after verification, cancellation, deadline,
+and greedy/bounded result equivalence through the shared path.
+
+The [native SELECT comparison](../../bench/query-benchmark.md) reports byte
+identities, uninstrumented latency samples, separately instrumented feedback,
+exact result comparisons and a completion marker. Its 100-product BSBM Q1/Q2
+pilot identifies the avoided admission scan but also a bounded-without-statistics
+Q1 regression. Default greedy planning is therefore unchanged. It is a small,
+noisy same-binary diagnostic, not a historical-parent qualification or frozen
+BSBM/WatDiv/LDBC acceptance. At parent `8b5b6002`, the required G3.2 corpus
+manifests and numeric thresholds did not exist; candidate percentages in the
+plan were only hypotheses. G3.2 stays active for broader corpus preparation,
+controlled parent-first baselining, resource/tail gates and threshold review.
+
 ### Full statistics/planning promotion
 
 Promotion requires:

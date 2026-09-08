@@ -5,6 +5,9 @@ The [Berlin SPARQL Benchmark (BSBM)](http://wifo5-03.informatik.uni-mannheim.de/
 
 It provides a dataset generator and multiple sets of queries grouped by "use cases".
 
+For this fork's opt-in planner/statistics APIs, use the [native query comparison](query-benchmark.md).
+Its small pilot is separate from the historical results below and makes no default-promotion claim.
+
 ## Results
 
 We compare here Oxigraph 0.2 and 0.3 with some existing SPARQL implementations (Blazegraph, GraphDB, Jena, and Virtuoso).

@@ -1115,6 +1115,17 @@ differential tests and the runnable statistics example establish the callable
 slice, not corpus-wide performance. Task `task-1787603736767-vilwx5` stays
 active for frozen-corpus acceptance, measuring strict statistics admission
 separately from planning/execution. Non-gating harness expansion stays frozen.
+The [initial native pilot](../../bench/query-benchmark.md) exposed full-data
+reconstruction at query admission; explicit verified-snapshot reuse now avoids
+that scan while checking the full checkpoint and private live-store identity
+(including copied-sibling/reopen rejection). It also exposed a bounded
+planner regression. This is not a frozen-corpus pass: at `8b5b6002` no G3.2
+corpus manifest or numerical gate existed, and WatDiv/LDBC inputs were absent.
+Next: broaden reviewed BSBM inputs, obtain reproducible WatDiv/LDBC subsets,
+baseline the retained parent path under controlled conditions, then review
+numeric gates and address measured plan regressions. Keep G3.2 active and the
+default planner unchanged; do not turn the missing assets into another harness
+evolution phase.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 

@@ -57,6 +57,8 @@ pub enum DerivedError {
 pub struct DerivedSnapshot {
     reader: StorageReader<'static>,
     checkpoint: BackupCheckpoint,
+    #[cfg(feature = "statistics")]
+    statistics_origin: std::sync::Arc<()>,
 }
 
 /// Successful complete scan of a source snapshot, not an index-semantic proof.
@@ -146,6 +148,8 @@ impl Store {
                 return Ok(DerivedSnapshot {
                     reader,
                     checkpoint: before,
+                    #[cfg(feature = "statistics")]
+                    statistics_origin: self.storage.statistics_origin(),
                 });
             }
         }
@@ -154,6 +158,11 @@ impl Store {
 }
 
 impl DerivedSnapshot {
+    #[cfg(feature = "statistics")]
+    pub(crate) fn statistics_origin(&self) -> &std::sync::Arc<()> {
+        &self.statistics_origin
+    }
+
     // Crate-private: do not make DerivedSnapshot Clone or let a restore
     // reconciler export the borrowed primary through a public reader API.
     #[cfg(any(
