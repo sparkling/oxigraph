@@ -1143,6 +1143,10 @@ the corpus or performance gate and does not change the default planner.
 WatDiv archive/data hashes and six unchanged query lines are now fixed in the
 native comparison instructions, with explicit diagnostic input ceilings.
 Controlled baselines, LDBC input semantics and numerical ratification remain.
+The LDBC Q7 diagnostic now drives a native product repair: indexed graph copies
+replace per-graph full scans during query-time materialization. Same-data CLI
+results and topology/entailment tests preserve semantics; default planning and
+separate corpus/promotion gates remain unchanged.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 

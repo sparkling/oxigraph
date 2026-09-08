@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-27
-- Updated: 2026-09-07
+- Updated: 2026-09-08
 - Deciders: Oxigraph parity programme
 - Implementation status: implemented for the surfaces and boundaries named
   below
@@ -132,6 +132,14 @@ registers its target named graph before inserting inferred quads, so a valid
 materialization with no inferred quads still has the requested graph lifecycle.
 This does not broaden the snapshot and materialization guarantees in
 ADR-0009.
+
+The 2026-09-08 materialization repair uses the existing graph-prefix index for
+selected-graph copying, including explicit merged-default inputs. Previously,
+each named graph caused another full quad scan. Default-graph exclusion,
+ground-triple deduplication, empty graph registration and per-source blank-node
+standardization are unchanged. The native preservation tests and the same-data
+[LDBC query comparison](../../bench/query-benchmark.md#ldbc-q7-materialization-diagnostic)
+support this performance correction, not new entailment or promotion claims.
 
 ### SPARQL 1.2 `LOAD`
 

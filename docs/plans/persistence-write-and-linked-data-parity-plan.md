@@ -1204,6 +1204,10 @@ WatDiv/LDBC assets and baseline-first numerical ratification remain open.
 The intact official WatDiv 10M data and six unchanged stress-query lines now
 have an exact input contract and explicit diagnostic limits. LDBC inputs and
 controlled baseline-first numerical acceptance are still outstanding.
+LDBC Q7 preparation exposed a concrete materialization bottleneck: graph copying
+scanned all quads once per named graph. Existing graph-prefix iteration now
+removes that superlinear work, preserving topology and the exact parent result
+bag. This product repair does not close the full G3.2 performance gate.
 
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.

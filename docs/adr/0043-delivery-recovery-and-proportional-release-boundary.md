@@ -72,6 +72,11 @@
   costs and conservative unhinted probe selection; the native Q8-shaped
   red/green regression preserves results and avoids unrelated full scans.
   V1/V2/defaults remain unchanged and full G3.2 acceptance remains open.
+  The first LDBC input then exposed per-named-graph full scans in query-time
+  materialization. Graph-prefix copying now removes that superlinear work while
+  retaining the existing materialization and topology contracts; a same-data
+  CLI comparison preserves all 12 result rows. Full performance acceptance is
+  still separate from this measured product repair.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

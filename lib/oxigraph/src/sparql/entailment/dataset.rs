@@ -198,10 +198,10 @@ fn copy_graph_into_merged_default(
     used_blank_nodes: &mut HashSet<BlankNode>,
     target: &mut Dataset,
 ) {
-    for quad in source
-        .iter()
-        .filter(|quad| quad.graph_name == *source_graph)
-    {
+    // Both indexes order a fixed graph by subject/predicate/object. Restrict
+    // the range before decoding; scanning every quad per graph is quadratic
+    // for datasets with many small named graphs.
+    for quad in source.quads_for_graph_name(source_graph) {
         target.insert(Quad::new(
             rewrite_subject(&quad.subject, blank_nodes, used_blank_nodes),
             quad.predicate.clone(),
@@ -217,10 +217,7 @@ fn copy_graph(
     target_graph: &GraphName,
     target: &mut Dataset,
 ) {
-    for quad in source
-        .iter()
-        .filter(|quad| quad.graph_name == *source_graph)
-    {
+    for quad in source.quads_for_graph_name(source_graph) {
         target.insert(Quad::new(
             quad.subject.clone(),
             quad.predicate.clone(),
@@ -358,6 +355,94 @@ impl<'a> QueryableDataset<'a> for QueryEntailmentDataset {
 mod tests {
     use super::*;
     use crate::model::NamedNode;
+
+    #[test]
+    fn indexed_graph_copies_preserve_contents_and_membership() {
+        let mut source = Dataset::new();
+        let predicate = NamedNode::new("urn:p").unwrap();
+        let shared = BlankNode::new("shared").unwrap();
+        let mut graphs = vec![
+            GraphName::DefaultGraph,
+            BlankNode::new("graph").unwrap().into(),
+        ];
+        graphs.extend((0..64).map(|n| NamedNode::new(format!("urn:g{n}")).unwrap().into()));
+        for graph in &graphs {
+            source.insert(Quad::new(
+                NamedNode::new("urn:ground").unwrap(),
+                predicate.clone(),
+                NamedNode::new("urn:shared-object").unwrap(),
+                graph.clone(),
+            ));
+            for n in 0..3 {
+                source.insert(Quad::new(
+                    shared.clone(),
+                    predicate.clone(),
+                    NamedNode::new(format!("urn:o{n}")).unwrap(),
+                    graph.clone(),
+                ));
+            }
+        }
+        source.insert(Quad::new(
+            NamedNode::new("urn:default-only").unwrap(),
+            predicate.clone(),
+            NamedNode::new("urn:excluded").unwrap(),
+            GraphName::DefaultGraph,
+        ));
+        let empty = NamedNode::new("urn:empty").unwrap();
+        source.insert_named_graph(empty.clone());
+        graphs.extend([empty.into(), NamedNode::new("urn:absent").unwrap().into()]);
+        for graph in &graphs {
+            let expected = source
+                .iter()
+                .filter(|q| q.graph_name == *graph)
+                .collect::<Vec<_>>();
+            let mut copied = Dataset::new();
+            copy_graph(&source, graph, &GraphName::DefaultGraph, &mut copied);
+            let mut baseline = Dataset::new();
+            for quad in expected {
+                baseline.insert(Quad::new(
+                    quad.subject,
+                    quad.predicate,
+                    quad.object,
+                    GraphName::DefaultGraph,
+                ));
+            }
+            assert_eq!(copied, baseline);
+        }
+        let mut specification = QueryDatasetSpecification::new();
+        specification.set_default_graph_as_union();
+        let names = source.named_graphs().collect::<Vec<_>>();
+        let (effective, _) = effective_query_dataset(&source, &names, &specification);
+        assert!(effective.contains_named_graph(&NamedNode::new("urn:empty").unwrap()));
+        assert!(!effective.contains_named_graph(&NamedNode::new("urn:absent").unwrap()));
+        assert_eq!(
+            effective
+                .quads_for_graph_name(&GraphName::DefaultGraph)
+                .count(),
+            4
+        );
+
+        let mut used = collect_blank_nodes(&source);
+        let mut merged = Dataset::new();
+        for graph in &graphs[1..3] {
+            copy_graph_into_merged_default(
+                &source,
+                graph,
+                &mut HashMap::new(),
+                &mut used,
+                &mut merged,
+            );
+        }
+        assert_eq!(merged.len(), 7); // Ground quad dedups; blank labels stay distinct across FROM graphs.
+        assert_eq!(
+            merged
+                .iter()
+                .map(|q| q.subject)
+                .collect::<HashSet<_>>()
+                .len(),
+            3
+        );
+    }
 
     fn assert_selected_empty_graph_topology(profile: QueryEntailment) {
         let store = Store::new().unwrap();

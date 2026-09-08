@@ -384,3 +384,82 @@ cleanup. The committed `e6317a1b` binary is separately identified as
 `0fb6e387b8e9519c42fa6c851d5892f62b73a585eaaa661d73d7d6923af82773`
 and passed a 30-observation all-mode BSBM smoke test. Do not relabel the older
 binary as the final source build or these input checks as a candidate gate.
+
+## LDBC Q7 materialization diagnostic
+
+This uses the official [SPB 2.0.2 source](https://github.com/ldbc/ldbc_spb_bm_2.0/tree/ce6323c0936306729408233dc70d26f2389b34c6),
+commit `ce6323c0936306729408233dc70d26f2389b34c6`, under its Apache-2.0 license
+and NOTICE. It is an ordinary-SPARQL validation subset, **not** the full SPB
+workload or its inference/performance qualification. The public generator needs
+a populated endpoint; it is not an endpoint-free way to regenerate this data.
+
+Use the official `datasets_and_queries/validation/data/validation_data.zip`,
+retaining these three members as N-Quads. Together they contain 150,036 quads
+and all 12 Q7 validation result resources. Do not flatten their graph names.
+
+| Input | SHA-256 |
+| --- | --- |
+| `validation_data.zip` | `bc3ed99a3b6e0f3270c6dd5a24b3dac2db17946c9e257540feec454b831a3057` |
+| `generatedCreativeWorks-000004.nq` | `316ac8ca67011ba96ef5abb97b83d9d649eb8c3fda46ebd8afe3b23265fab80f` |
+| `generatedCreativeWorks-000025.nq` | `08dcdddd9db93d993d3ab8073d67b88dabae2f5496f70e587b4a739ad08133ab` |
+| `generatedCreativeWorks-000102.nq` | `19a4233af9ecd3a92b87b4cd37b7499d89ef9fab018ce7f25b15d32e9e1eb035` |
+| `sparql/basic/aggregation_standard/query7.txt` | `a031c4c49fee5c423e814fa166413dcdb479ecc33c4cb99d1c90fec6dbd678ff` |
+| `validation/basic/standard/query7Validation.txt` | `c30f2854f9b66f00a591a41082f6610284b6374eaeef4bc0ed3bec8ce38f3a51` |
+
+The official parameters are `cwork:NewsItem` and the half-open UTC interval
+`2011-02-08T21:01:00.000Z` to `2011-02-08T22:01:00.000Z`. Instantiate only the
+two upstream placeholders. Verify downloaded and extracted hashes above before
+loading; keep the original validation output unchanged:
+
+```sh
+ldbc_dir=$(mktemp -d /tmp/oxigraph-ldbc-XXXXXX)
+ldbc_source=https://raw.githubusercontent.com/ldbc/ldbc_spb_bm_2.0/ce6323c0936306729408233dc70d26f2389b34c6/datasets_and_queries
+curl --fail --location --output "$ldbc_dir/validation_data.zip" "$ldbc_source/validation/data/validation_data.zip"
+curl --fail --location --output "$ldbc_dir/query7.txt" "$ldbc_source/sparql/basic/aggregation_standard/query7.txt"
+curl --fail --location --output "$ldbc_dir/query7Validation.txt" "$ldbc_source/validation/basic/standard/query7Validation.txt"
+sha256sum "$ldbc_dir/validation_data.zip" "$ldbc_dir/query7.txt" "$ldbc_dir/query7Validation.txt"
+unzip -n "$ldbc_dir/validation_data.zip" generatedCreativeWorks-000004.nq \
+  generatedCreativeWorks-000025.nq generatedCreativeWorks-000102.nq -d "$ldbc_dir"
+sha256sum "$ldbc_dir"/*.nq
+sed -e 's|{{{cwType}}}|cwork:NewsItem|g' \
+  -e 's|{{{cwFilterdateCreatediedCondition}}}|FILTER(?dateCreated >= "2011-02-08T21:01:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> \&\& ?dateCreated < "2011-02-08T22:01:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime>) .|g' \
+  "$ldbc_dir/query7.txt" > "$ldbc_dir/query7.rq"
+cargo build --locked --release -p oxigraph-cli --bin oxigraph
+target/release/oxigraph load --location "$ldbc_dir/db" --file \
+  "$ldbc_dir/generatedCreativeWorks-000004.nq" "$ldbc_dir/generatedCreativeWorks-000025.nq" \
+  "$ldbc_dir/generatedCreativeWorks-000102.nq"
+/usr/bin/time -v -o "$ldbc_dir/query7.time" target/release/oxigraph query \
+  --location "$ldbc_dir/db" --query-file "$ldbc_dir/query7.rq" \
+  --union-default-graph --results-file "$ldbc_dir/query7.json"
+```
+
+Instantiated query SHA-256:
+`e1ca83475c854ca2d7e355caa39bca2a424fee7e205626fcf113e61f528ffd28`.
+Q5/Q9/Q11 require reference knowledge and/or entailment; running them over these
+raw files does not establish their official result contracts. This CLI run
+does not select bounded-planner or statistics profiles.
+
+The old query-time materializer copied each named graph by scanning the entire
+dataset, doing work proportional to graphs × quads. The native repair uses the
+existing GSPO graph-prefix range in both ordinary and merged-default copies.
+It retains materialization, snapshot isolation, topology, graph selection and
+per-source blank-node rewriting. It does not yet eliminate whole-store copying
+or add materialization cancellation.
+
+On the same persisted data, old CLI binary
+`4aa5f8394e58079a536eda97de6a601d38745f199184840523d6d7c723d677e4`
+at `e6317a1b` took 204.73 s; the indexed-copy binary
+`f1675348ed7ef8c13d5319174b9ae09ce05a0b4a62d4f67ac4ee30d49fc0a8f9`
+took 6.30 s. Both exited zero with the exact same 12-row term bag. Peak RSS was
+512,024/512,136 KiB; memory was not improved. These are single diagnostic runs
+on a shared host, not p95, a universal speedup, or numerical promotion evidence.
+Parent/candidate JSON hashes are respectively
+`63e2ddcc714254a3130f0fbaa93a69f6dba32de8fdcf24e76cfa4f418f0772a8`
+and `576a778347c125a2fd24a1c31d75ca40938250fe5c34a2b85636d77a4663bae0`;
+serialization order can differ while the bags agree.
+
+Against the official XML expectation, all six columns and all 12 resources
+agree. One datetime is serialized as `.92` rather than `.920`; the raw lexical
+bags therefore differ. DateTime-value normalization gives equal bags, with all
+other terms compared exactly. Preserve both observations; do not claim raw
+term equality to the official file or silently update its expected values.

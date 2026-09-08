@@ -164,6 +164,9 @@ continue across milestones.
 Planner acceptance work now includes a checksum-pinned, six-query subset over
 the intact official WatDiv 10M dataset; see [native comparison inputs and limits](bench/query-benchmark.md#fixed-watdiv-input-and-baseline-preparation).
 This is benchmark preparation, not a full G3.2 performance pass.
+The LDBC pilot also exposed and fixed repeated whole-dataset scans during
+named-graph materialization; [the same-data CLI comparison](bench/query-benchmark.md#ldbc-q7-materialization-diagnostic)
+preserves results without changing inference or planner defaults.
 
 G2.2 now provides opt-in `ChangeTrackingTransaction` for backend-neutral Rust
 transactions: inspect pending quad, graph-lifecycle, and namespace changes
