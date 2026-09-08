@@ -1156,8 +1156,10 @@ now has repeated ten-query BSBM and preserved N-Quads LDBC Q7 observations.
 Explicit query-only setup avoids irrelevant statistics work; historical setup
 and statistics-mode verification remain unchanged. Timing noise exceeds the
 proposed 5% gate. Finish representative coverage and DP/fallback resource
-evidence, then obtain programme-decider threshold ratification before a gated
-candidate run. This acceptance support is not new application behavior and
+evidence, then deliberately freeze thresholds and noise rules after baselining
+and before a gated candidate run. The added manual pre-run prerequisite from
+`1771b64e` is corrected in ADR-0023; default promotion remains separate.
+This acceptance support is not new application behavior and
 does not add transaction-writer or harness-evolution prerequisites to G3.2.
 The native planner now skips constructing rejected candidate trees, retaining
 the full cost/order/operator tie-break and speculative counts. Its

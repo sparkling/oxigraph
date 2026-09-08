@@ -1217,7 +1217,7 @@ the [native comparator](../../bench/query-benchmark.md#parent-path-baseline-prep
 Explicit query-only setup avoids irrelevant statistics preparation without
 changing historical defaults or statistics validation. Shared-host timing
 variation exceeds the proposed 5% gate; representative coverage, DP/fallback
-resource measurements and decider-ratified acceptance remain, not a new planner
+resource measurements and baseline-first frozen acceptance remain, not a new planner
 profile or non-gating harness phase. This is acceptance support, not a product
 milestone or full G3.2 completion.
 The [allocation-only planner correction](../adr/0023-statistics-and-bounded-join-planning.md#avoid-rejected-candidate-tree-construction-2026-09-08)

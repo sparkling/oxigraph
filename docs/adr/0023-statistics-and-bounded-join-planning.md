@@ -442,8 +442,13 @@ verification. Repeated parent measurements expose shared-host p95 variability
 larger than the proposed 5% threshold; that hypothesis is not ratified.
 Representative corpus coverage, DP/fallback resource evidence and repeatable
 parent-first resource/tail measurements remain open. Opt-in acceptance and a
-default-planner promotion are separate decisions; numerical ratification
-belongs to the programme decider, not the candidate implementation.
+default-planner promotion are separate decisions. The stronger separate
+programme-decider pre-run prerequisite introduced in `1771b64e` was a reviewer
+interpretation, not the original acceptance contract, and is corrected here.
+Ordinary opt-in acceptance requires deliberately freezing the versioned corpus,
+thresholds and noise rules after parent-first baselining and before its gated
+candidate run. It does not require another manual approval round. This grants
+no default promotion, protected-evidence refresh or qualification authority.
 
 Promotion requires:
 
@@ -455,6 +460,21 @@ Promotion requires:
 - bounded memory and planning time for both dynamic programming and fallback;
 - no semantic, topology, cancellation, or error-order regression; and
 - numeric promotion thresholds frozen only after parent-first baselining.
+
+The native statistics-state matrix now adds 200 exact solution-bag comparisons
+for ten SELECT shapes across greedy, optimization-disabled and V1/V2/V3 planning.
+It distinguishes stale file admission, corrupt files at matching checkpoints,
+stale shared observations and still-valid owned observations after file corruption.
+The stale case includes a newly inserted join whose predicate had a zero count
+in the old statistics. Together with the existing current/missing tests, this
+closes that focused fallback-coverage gap, not representative performance or
+default promotion. Fixtures are private temporary stores; no pinned evidence
+is corrupted or replaced by these tests.
+An additional 48 executions compare complete serialized plans (excluding only
+wall-clock planning duration), exact search reports and solution bags using
+one verified, retained statistics snapshot: V1/V2/V3 at eight-leaf DP and
+nine-leaf greedy fallback. This closes the native retained-snapshot determinism
+check; synthetic estimator determinism is no longer its only evidence.
 
 ## Consequences
 

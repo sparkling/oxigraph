@@ -263,7 +263,7 @@ option; do not attribute a new-runner result to an unchanged historical binary.
 
 Full G3.2 still needs reproducible WatDiv/LDBC subsets, parent-first controlled
 measurements including complete/null q-error coverage, per-query tails and
-resource bounds. The programme decider must ratify numerical gates after the
+resource bounds. Deliberately freeze numerical gates and noise rules after the
 parent baseline and before the gated candidate run; no pilot observation is
 retroactively an acceptance threshold. Opt-in acceptance does not require
 changing the ordinary greedy default.
@@ -603,9 +603,12 @@ SHA-256: `b4a11bc3340cacace1ad3c15beb9b165fe45c59984e0733293956d1fc36a71e9`.
 
 Remaining acceptance work is a representative pinned query manifest, current/
 absent/stale/corrupt-statistics correctness, explicit eight-leaf DP and larger
-fallback resource evidence, and repeatable per-query tails. The programme
-decider must ratify numerical thresholds after the parent baseline and before
-a gated candidate run. The already-completed transaction writer matrices are
+fallback resource evidence, and repeatable per-query tails. Deliberately freeze
+numerical thresholds and noise rules after the parent baseline and before
+a gated candidate run. The separate manual pre-run approval introduced in
+`1771b64e` was not required by the original contract; see the correction in
+[ADR-0023](../docs/adr/0023-statistics-and-bounded-join-planning.md#full-statisticsplanning-promotion).
+The already-completed transaction writer matrices are
 not new G3.2 prerequisites; ordinary default-planner promotion is a separate
 decision from acceptance of an opt-in profile.
 

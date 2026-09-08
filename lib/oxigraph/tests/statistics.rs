@@ -11,6 +11,7 @@ use oxigraph::store::{
     TransactionKey, TransactionRequest, TransactionStartControl, WritableDataset,
 };
 use std::collections::BTreeMap;
+use std::fmt::Write;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -187,6 +188,185 @@ fn statistics_queries_preserve_solution_bags_across_operators_and_fallbacks() ->
                 )?
                 .execute()?;
             assert_eq!(solution_bag(result)?, expected, "shared: {query}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn every_planner_preserves_results_with_stale_or_corrupt_statistics() -> Result {
+    for corrupt in [false, true] {
+        let fixture = Fixture::new(
+            (0..12)
+                .map(|i| quad(&format!("s{i}"), "p", "red", GraphName::DefaultGraph))
+                .chain((0..4).map(|i| quad(&format!("s{i}"), "q", "blue", GraphName::DefaultGraph)))
+                .chain([
+                    quad("named", "p", "red", NamedNode::new("urn:g")?.into()),
+                    quad("named", "q", "blue", NamedNode::new("urn:g")?.into()),
+                ]),
+        )?;
+        let shared = Arc::new(fixture.read()?);
+        let generation = fixture.index.active(&fixture.limits)?;
+        // The zero count for :new in the old generation must never suppress the
+        // newly written join. A separate fixture tests corruption at a matching
+        // checkpoint, using only its private temporary provider payload.
+        if corrupt {
+            std::fs::write(generation.directory().join("statistics.v1"), b"corrupt")?;
+        } else {
+            fixture.store.load_from_slice(
+                oxigraph::io::RdfFormat::Turtle,
+                "<urn:added> <urn:p> 'red'; <urn:q> 'blue'; <urn:new> 'yes' .",
+            )?;
+        }
+        let queries = [
+            "SELECT ?s ?o ?v { ?s <urn:p> ?o . ?s <urn:q> ?v }",
+            "SELECT ?o { ?s <urn:p> ?o . ?s <urn:q> ?v }",
+            "SELECT ?s ?v { ?s <urn:p> ?o OPTIONAL { ?s <urn:q> ?v } }",
+            "SELECT ?s { ?s <urn:p> ?o MINUS { ?s <urn:q> ?v } }",
+            "SELECT ?s { { ?s <urn:p> ?o } UNION { ?s <urn:q> ?v } }",
+            "SELECT (COUNT(*) AS ?n) { ?s <urn:p> ?o . ?s <urn:q> ?v FILTER(?v = 'blue') }",
+            "SELECT ?s { ?s <urn:p> ?o . ?s <urn:q> ?v } ORDER BY ?s LIMIT 2",
+            "SELECT ?s { ?s <urn:p> ?o FILTER EXISTS { ?s <urn:q> ?v } }",
+            "SELECT ?s { ?s <urn:p> ?o . ?s <urn:new> 'yes' }",
+            "SELECT ?s FROM <urn:g> { ?s <urn:p> ?o . ?s <urn:q> ?v }",
+        ];
+        // Expectations are evaluated on the current primary, never reconstructed
+        // from statistics or merely compared by row count.
+        let expected = queries
+            .iter()
+            .map(|query| {
+                solution_bag(
+                    SparqlEvaluator::new()
+                        .without_optimizations()
+                        .parse_query(query)?
+                        .on_store(&fixture.store)
+                        .execute()?,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(expected[8].values().sum::<usize>(), usize::from(!corrupt));
+        for (query, expected) in queries.iter().zip(&expected) {
+            for evaluator in [
+                SparqlEvaluator::new(),
+                SparqlEvaluator::new().without_optimizations(),
+                SparqlEvaluator::new().with_bounded_join_planning(BoundedJoinPlanning::default()),
+                SparqlEvaluator::new().with_bounded_join_planning(
+                    BoundedJoinPlanning::default()
+                        .with_cost_model(BoundedJoinCostModel::ConditionalV2),
+                ),
+                SparqlEvaluator::new().with_bounded_join_planning(
+                    BoundedJoinPlanning::default()
+                        .with_cost_model(BoundedJoinCostModel::CorrelatedV3),
+                ),
+            ] {
+                // Owned observations are still valid for their exact source
+                // despite later file corruption, but never for a newer source.
+                let bound = evaluator
+                    .clone()
+                    .parse_query(query)?
+                    .on_statistics_snapshot(
+                        capture(&fixture.store)?,
+                        Arc::clone(&shared),
+                        TransactionStartControl::new(),
+                    )?;
+                assert_eq!(
+                    bound.context().availability,
+                    if corrupt {
+                        StatisticsAvailability::Current
+                    } else {
+                        StatisticsAvailability::Stale
+                    }
+                );
+                assert_eq!(bound.context().generation.is_some(), corrupt);
+                assert_eq!(&solution_bag(bound.execute()?)?, expected, "shared {query}");
+                let bound = evaluator.clone().parse_query(query)?.on_statistics(
+                    capture(&fixture.store)?,
+                    &fixture.index,
+                    &fixture.provider,
+                    fixture.limits.clone(),
+                )?;
+                assert_eq!(
+                    bound.context().availability,
+                    if corrupt {
+                        StatisticsAvailability::Rejected
+                    } else {
+                        StatisticsAvailability::Stale
+                    }
+                );
+                assert_eq!(bound.context().generation, None);
+                assert_eq!(&solution_bag(bound.execute()?)?, expected, "fresh {query}");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn retained_statistics_produce_deterministic_dp_and_fallback_plans() -> Result {
+    let fixture = Fixture::new((0..9).flat_map(|predicate| {
+        (predicate..10).map(move |subject| {
+            quad(
+                &format!("s{subject}"),
+                &format!("p{predicate}"),
+                "value",
+                GraphName::DefaultGraph,
+            )
+        })
+    }))?;
+    let shared = Arc::new(fixture.read()?);
+    for leaf_count in [8, 9] {
+        let mut patterns = String::new();
+        for i in 0..leaf_count {
+            write!(patterns, "?s <urn:p{i}> ?v{i} .")?;
+        }
+        let query = format!("SELECT * {{ {patterns} }}");
+        let expected = solution_bag(
+            SparqlEvaluator::new()
+                .without_optimizations()
+                .parse_query(&query)?
+                .on_store(&fixture.store)
+                .execute()?,
+        )?;
+        for model in [
+            BoundedJoinCostModel::IndependentV1,
+            BoundedJoinCostModel::ConditionalV2,
+            BoundedJoinCostModel::CorrelatedV3,
+        ] {
+            let mut first = None;
+            for _ in 0..8 {
+                let bound = SparqlEvaluator::new()
+                    .with_bounded_join_planning(
+                        BoundedJoinPlanning::default().with_cost_model(model),
+                    )
+                    .parse_query(&query)?
+                    .on_statistics_snapshot(
+                        capture(&fixture.store)?,
+                        Arc::clone(&shared),
+                        TransactionStartControl::new(),
+                    )?;
+                assert_eq!(
+                    bound.context().availability,
+                    StatisticsAvailability::Current
+                );
+                let (result, explanation) = bound.explain()?;
+                assert_eq!(solution_bag(result?)?, expected);
+                let report = explanation.join_planning();
+                assert_eq!(report.dp_states, if leaf_count == 8 { 255 } else { 0 });
+                assert_eq!(report.greedy_components, usize::from(leaf_count == 9));
+                let mut serialized = Vec::new();
+                explanation.write_in_json(&mut serialized)?;
+                let mut json: serde_json::Value = serde_json::from_slice(&serialized)?;
+                // Wall-clock planning duration is not part of plan identity.
+                json.as_object_mut()
+                    .ok_or("expected explanation object")?
+                    .remove("planning duration in seconds");
+                let actual = (json, report.clone());
+                if let Some(first) = &first {
+                    assert_eq!(&actual, first);
+                } else {
+                    first = Some(actual);
+                }
+            }
         }
     }
     Ok(())
