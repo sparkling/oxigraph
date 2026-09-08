@@ -59,11 +59,18 @@ mod derived_generation;
 mod restore;
 #[cfg(all(not(target_family = "wasm"), feature = "spatial-index"))]
 mod spatial_index;
+#[cfg(all(not(target_family = "wasm"), feature = "statistics"))]
+mod statistics;
 #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
 mod text_index;
 #[cfg(all(not(target_family = "wasm"), feature = "spatial-index"))]
 pub use spatial_index::{
     SpatialError, SpatialIndexProvider, SpatialLimits, SpatialQuery, SpatialResults,
+};
+#[cfg(all(not(target_family = "wasm"), feature = "statistics"))]
+pub use statistics::{
+    FrequencyBounds, FrequentValue, GraphPredicateStatistics, StatisticsError, StatisticsLimits,
+    StatisticsProvider, StatisticsSnapshot,
 };
 
 pub use crate::storage::TransactionStartControl;

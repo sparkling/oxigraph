@@ -43,8 +43,10 @@
   catch-up, strict freshness and the same backup/restore lifecycle. Opt-in local
   spatial SPARQL joins now share the retained snapshot and preserve fatal
   cancellation, with explicit SERVICE SILENT success filtering. G3.3/G3.4
-  retain their separate performance/promotion gates; statistics and bounded
-  join planning are the next approved product work, not harness expansion.
+  retain their separate performance/promotion gates. G3.1 now supplies the native
+  physical statistics provider, exact graph/predicate counts, bounded frequency
+  summaries and the shared lifecycle. Dataset-aware optimizer integration and
+  estimated/actual-row feedback remain next, then G3.2 bounded join planning.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

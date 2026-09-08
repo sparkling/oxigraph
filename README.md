@@ -100,6 +100,17 @@ arithmetic range. No coordinate transformation or speed claim is made. See
 The locked `geo` dependency declares Rust 1.88; this lane was tested on Linux/Rust
 1.98, not the base workspace's 1.87 minimum.
 
+G3.1 now adds an opt-in native `statistics` provider: exact physical graph/
+predicate counts, empty-graph topology, bounded frequency summaries, strict
+snapshot freshness and the shared reopen/backup/restore lifecycle. Physical
+counts are not SPARQL merged-dataset estimates; optimizer integration and
+estimated/actual-row feedback remain the next step. Run
+`cargo run --locked -p oxigraph --features statistics --example statistics`
+([source](lib/oxigraph/examples/statistics.rs),
+[contract](docs/adr/0023-statistics-and-bounded-join-planning.md#g31-native-physical-statistics-provider-2026-09-08)).
+This adds no dependencies. Catch-up and reconciliation scan the retained source;
+no query-speed claim is made.
+
 Build this fork rather than an upstream package to obtain these changes:
 
 ```sh

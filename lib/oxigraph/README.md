@@ -75,6 +75,15 @@ for a SPARQL join after rollback and restart.
 This adds optional `rstar` 0.13.0, not Node. The locked `geo` declares Rust 1.88;
 Linux/Rust 1.98 was tested. Full-scan reconciliation makes no acceleration claim.
 
+The optional native `statistics` feature adds `store::StatisticsProvider` on the
+same generation lifecycle, without a new dependency. It exposes exact physical
+graph/predicate counts and bounded subject/object frequencies, retaining empty
+graphs and strict source/generation identity. Physical graph sums are not SPARQL
+`FROM`-merge counts, and heavy-hitter candidates are not exact top-K rankings.
+Query planning and automatic feedback remain unchanged in this provider slice.
+Run `cargo run --locked -p oxigraph --features statistics --example statistics`
+for a rollback/catch-up/restart demonstration.
+
 A preliminary benchmark [is provided](../bench/README.md). Oxigraph internal design [is described on the wiki](https://github.com/oxigraph/oxigraph/wiki/Architecture).
 
 The main entry point of Oxigraph is the [`Store`](store::Store) struct:

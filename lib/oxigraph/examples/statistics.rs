@@ -1,0 +1,81 @@
+//! `cargo run --locked -p oxigraph --features statistics --example statistics`
+#[cfg(unix)]
+fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use oxigraph::model::{GraphName, Literal, NamedNode, Quad};
+    use oxigraph::store::{
+        DerivedGenerationError, DerivedGenerationLimits, DerivedIndex, DerivedProvider,
+        StatisticsProvider, Store, TransactionKey, TransactionRequest, TransactionStartControl,
+        WritableDataset,
+    };
+    use std::io::Write;
+    let directory = tempfile::tempdir()?;
+    let store = Store::open(directory.path().join("db"))?;
+    let predicate = NamedNode::new("urn:label")?;
+    let quad = |name| {
+        Quad::new(
+            NamedNode::new_unchecked(name),
+            predicate.clone(),
+            Literal::from("red"),
+            GraphName::DefaultGraph,
+        )
+    };
+    let mut tx = store
+        .start_governed_transaction(TransactionRequest::default(), TransactionKey::new([1; 16]))?
+        .into_transaction();
+    tx.insert(quad("urn:a"))?;
+    tx.insert(quad("urn:b"))?;
+    tx.commit()?;
+    let provider = StatisticsProvider::default();
+    let limits = DerivedGenerationLimits::default();
+    let mut index = DerivedIndex::create(directory.path().join("stats"), provider.identity())?;
+    let source = store.derived_snapshot(&TransactionStartControl::new())?;
+    let generation = index.rebuild(&source, &provider, &limits)?;
+    index.activate(&generation, &source, &provider, &limits)?;
+    let mut tx = store
+        .start_governed_transaction(TransactionRequest::default(), TransactionKey::new([2; 16]))?
+        .into_transaction();
+    tx.insert(quad("urn:aborted"))?;
+    tx.rollback()?;
+    let mut tx = store
+        .start_governed_transaction(TransactionRequest::default(), TransactionKey::new([3; 16]))?
+        .into_transaction();
+    tx.insert(quad("urn:c"))?;
+    tx.commit()?;
+    drop(source);
+    let source = store.derived_snapshot(&TransactionStartControl::new())?;
+    let not_fresh = matches!(
+        index.strict(&source, &limits),
+        Err(DerivedGenerationError::NotFresh)
+    );
+    let generation = index.catch_up(&source, &provider, &limits)?;
+    index.activate(&generation, &source, &provider, &limits)?;
+    drop(source);
+    drop(index);
+    drop(store);
+    let store = Store::open(directory.path().join("db"))?;
+    let index = DerivedIndex::open(directory.path().join("stats"), provider.identity())?;
+    let source = store.derived_snapshot(&TransactionStartControl::new())?;
+    let stats = provider.read(&index.strict(&source, &limits)?, &limits.input)?;
+    let group = stats
+        .scope(&GraphName::DefaultGraph, &predicate)
+        .ok_or("missing scope")?;
+    let frequency = group.object_frequency(&Literal::from("red").into())?;
+    if !not_fresh
+        || stats.count_quads(None, None) != 3
+        || !frequency.is_exact()
+        || frequency.lower != 3
+    {
+        return Err("unexpected statistics".into());
+    }
+    writeln!(
+        std::io::stdout().lock(),
+        "reopened_quads=3 rollback_absent=true prior_not_fresh={not_fresh} red_frequency={}..{}",
+        frequency.lower,
+        frequency.upper
+    )?;
+    Ok(())
+}
+#[cfg(not(unix))]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    Err("requires Unix native RocksDB".into())
+}

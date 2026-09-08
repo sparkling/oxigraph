@@ -17,6 +17,7 @@ build = "build.rs"
 [features]
 default = ["rocksdb"]
 rocksdb = ["oxrocksdb-sys"]
+statistics = ["rocksdb"]
 js = [
   "getrandom/wasm_js",
   "oxsdatatypes/js",
@@ -135,3 +136,7 @@ required-features = ["spatial-index"]
 [[example]]
 name = "spatial_service"
 required-features = ["spatial-index"]
+
+[[example]]
+name = "statistics"
+required-features = ["statistics"]
