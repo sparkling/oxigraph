@@ -29,8 +29,11 @@
   bounded G2.5/P1.4a contract in task `task-1787851231441-1gdfzd`.
   G2.6 task `task-1787851232211-6fiarr` adds checkpoint-bound manifests, frozen
   contributor file checksums, completion-last receipts, offline verification,
-  and the read-only WAL checkpoint repair. G2.7 restore validation is next. Local
-  implementation is not publication
+  and the read-only WAL checkpoint repair. G2.7 task `task-1787851233022-antw51`
+  adds fresh-directory restore, full retained-outbox/storage validation,
+  contributor reconciliation and artifact-bound local recovery baselines.
+  G3.0 shared derived-index lifecycle is next. Local implementation is not
+  publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
   `programme-controls/oxigraph-six-hour-delivery-course-correction-v1`

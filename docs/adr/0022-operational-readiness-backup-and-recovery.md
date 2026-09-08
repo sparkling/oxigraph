@@ -1,6 +1,6 @@
 # ADR-0022: Operational readiness, backup, and recovery
 
-- **Status**: Proposed
+- **Status**: Implemented (native Rust and local CLI scope)
 - **Date**: 2026-08-24
 - Updated: 2026-09-08
 - Deciders: Oxigraph parity programme
@@ -9,7 +9,9 @@
   query/update evaluation, denied-attempt and SHACL commit-gate telemetry
   implemented. The bounded G2.5 observation surface is complete.
   G2.6 native checkpoint packages, completion-last backup receipts and offline
-  file verification are implemented. G2.7 fresh-directory restore remains open
+  file verification are implemented. G2.7 fresh-directory restore, reconciliation
+  and measured local drills are implemented; production recovery qualification
+  requires separately frozen objectives and an activated operational boundary
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
 - **Related**:
@@ -24,8 +26,8 @@
 The store can create a backup, optimize RocksDB, and validate storage, but a
 successful method return is not a recovery contract. At programme entry there
 was no completed backup receipt tying primary state to its authoritative outbox
-and declared contributor positions. G2.6 now supplies it; an automated
-fresh-directory restore drill remains required. There was also no stable
+and declared contributor positions. G2.6 now supplies it; G2.7 supplies automated
+fresh-directory restore and local recovery drills. There was also no stable
 readiness or bounded-label metrics surface; G2.5 now supplies that surface.
 
 Operations must distinguish liveness from readiness and must not promote a
@@ -349,9 +351,9 @@ This closes G2.5/P1.4a's bounded native metrics, readiness, contributor and
 loopback observation contract. Zero counters do not claim a capability is
 enabled; the current CLI has no SHACL policy configuration. Circuit state is
 observed, not automatically tripped, and required/eventual contributor policy is
-unchanged. Automatic workload admission belongs to G4.2. G2.6 backup receipts
-and G2.7 fresh-directory restore remain required; this ADR stays Proposed until
-its complete boundary below is satisfied.
+unchanged. Automatic workload admission belongs to G4.2. At this checkpoint,
+G2.6 backup receipts and G2.7 fresh-directory restore remained required; the
+following slices close the native boundary.
 
 ### Native G2.6 checkpoint package (2026-09-08)
 
@@ -400,13 +402,67 @@ caller byte limits are checked during provider copying and inventory hashing,
 not an atomic native-checkpoint disk reservation. Cancellation is cooperative;
 native checkpoint I/O cannot be interrupted. Exclusively owned directories are
 required, not a hostile concurrent path-replacement guarantee. Keep completed
-packages immutable. G2.7 must still copy to a fresh destination, validate storage,
-and reconcile receipt-bound primary and contributor state. No production RPO/RTO
-threshold, restore completion, or promotion is claimed; this ADR stays Proposed.
+packages immutable. Package verification alone does not validate storage or
+reconcile primary/contributor state; the separate G2.7 operation below does so.
+Backup creation claims neither restore completion nor production promotion.
+
+### Native G2.7 fresh-directory restore (2026-09-08)
+
+`Store::restore_backup` in [`restore.rs`](../../lib/oxigraph/src/store/restore.rs)
+and CLI `restore --backup ... --destination ...` restore a verified package into
+an exclusively owned fresh directory outside the source. Source and copied
+regular-file inventories, sizes and checksums are verified before RocksDB open.
+The copy passes `Store::validate`, exact physical/governed checkpoint and
+primary/topology/namespace content reconciliation, and paged validation of the
+**entire retained outbox**, including records beyond readiness's bounded prefix.
+Schema-1, plain stores, retention genesis and expired history remain explicit;
+no synthetic governed commits or history are invented.
+
+`RestoreOptions` supplies the exact canonical contributor policy and a unique
+trusted `RestoreContributor` adapter for each present provider. An absent
+optional fallback requires its declaration but no adapter. Adapters inspect
+their copied files and a borrowed `RestorePrimary` view exposing only checkpoint,
+contents and owned primary receipt lookup: no clonable Store or expected
+observation is passed. Returned observations must reproduce the receipt's exact
+canonical inventory. Core rehashes all files after reconciliation. Unknown,
+duplicate, missing-required, stale, altered or cursor-mismatched contributions
+reject. Adapters remain trusted semantic implementations; checksums alone do
+not establish index semantics.
+
+All read-only handles close before writable handoff. The copied backup manifest
+becomes `oxigraph-backup.source`; `oxigraph-restore.complete` is published last.
+Pre-publication failure leaves an incomplete destination without that marker;
+post-publication sync failure returns `CompletionIndeterminate`. There is no
+overwrite, resume, automatic cleanup, or hostile concurrent-filesystem promise.
+Unix directory synchronization and cooperative cancellation are required.
+`RestoreReceipt::read` checks historical completion and source binding, not the
+integrity of a database modified after restoration.
+
+An optional immutable `RecoveryBaseline` binds backup fingerprint, reference
+time, maximum checkpoint age and maximum restore duration. No default threshold
+is supplied. Checkpoint-age bounds derive from source start/end observations;
+duration runs from API entry through validation and data/directory sync, before
+completion-record publication. These are numeric local recovery observations,
+not actual lost-change RPO or full-service RTO. Over-age preflight rejects before
+destination creation; over-duration returns measured observations without a
+completion marker. Successful receipts bind the exact baseline fingerprint.
+
+The CLI fixture measured 22 ms restoration and a 98–117 ms checkpoint-age
+interval against an explicitly frozen 60,000 ms/60,000 ms **test-only** baseline;
+the unconfigured run measured 23 ms. These are one local drill's observations,
+not a production baseline or performance promise. Native tests cover source
+removal, writable query/rollback/new commit/restart, namespaces and empty graphs,
+257-record outbox paging, legacy state, corrupt secondary indexes and a corrupt
+middle outbox record, logical receipt drift despite valid file hashes, provider
+reconciliation, interruption, limits and completion-record corruption. See
+[`restore_receipts.rs`](../../lib/oxigraph/tests/restore_receipts.rs) and
+the [CLI journey](../../cli/tests/restore_receipts.rs).
 
 ### Complete ADR boundary
 
-This ADR may move to Implemented only when:
+The following native conditions are now implemented and tested by G2.5–G2.7.
+Production promotion remains conditional on the final item; this implementation
+does not activate or qualify a production recovery profile:
 
 - metric names, units, label bounds, and privacy tests are stable;
 - liveness and readiness failure fixtures cover storage, feed, cancellation,

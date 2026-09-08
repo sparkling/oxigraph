@@ -160,6 +160,66 @@ pub fn main() -> anyhow::Result<()> {
             )?;
             Ok(())
         }
+        Command::Restore {
+            backup,
+            destination,
+            max_backup_age_ms,
+            max_restore_time_ms,
+        } => {
+            use oxigraph::store::{
+                BackupReceipt, GovernanceTime, RecoveryBaseline, RestoreOptions,
+            };
+            let mut options = RestoreOptions::default();
+            if let (Some(age), Some(duration)) = (max_backup_age_ms, max_restore_time_ms) {
+                let receipt = BackupReceipt::verify(&backup, &options.control)?;
+                options.baseline = Some(RecoveryBaseline::new(
+                    &receipt,
+                    GovernanceTime::now()?,
+                    Duration::from_millis(age),
+                    Duration::from_millis(duration),
+                )?);
+            }
+            let receipt = match Store::restore_backup(backup, destination, &options) {
+                Err(oxigraph::store::RestoreError::RestoreDurationExceeded { observation }) => {
+                    anyhow::bail!(
+                        "restore_complete=false restore_ms={} max_restore_ms={}; no completion marker published",
+                        observation.restore_duration().as_millis(),
+                        observation
+                            .baseline()
+                            .map_or(0, |baseline| baseline.max_restore_duration().as_millis())
+                    );
+                }
+                result => result?,
+            };
+            let (youngest, oldest) = receipt.checkpoint_age_range();
+            let mut output = stdout().lock();
+            write!(
+                output,
+                "restore_complete=true quads={} outbox_records={} restore_ms={} checkpoint_age_min_ms={} checkpoint_age_max_ms={} baseline={}",
+                receipt.backup().contents().quads(),
+                receipt.validated_outbox_records(),
+                receipt.restore_duration().as_millis(),
+                youngest.as_millis(),
+                oldest.as_millis(),
+                if receipt.baseline().is_some() {
+                    "met"
+                } else {
+                    "unconfigured"
+                }
+            )?;
+            write!(output, " backup_fingerprint=")?;
+            for byte in receipt.backup().fingerprint() {
+                write!(output, "{byte:02x}")?;
+            }
+            if let Some(baseline) = receipt.baseline() {
+                write!(output, " baseline_fingerprint=")?;
+                for byte in baseline.fingerprint() {
+                    write!(output, "{byte:02x}")?;
+                }
+            }
+            writeln!(output)?;
+            Ok(())
+        }
         Command::Load {
             location,
             file,

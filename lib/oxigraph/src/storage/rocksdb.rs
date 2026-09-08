@@ -2805,6 +2805,93 @@ mod tests {
     #[expect(
         clippy::missing_assert_message,
         clippy::panic_in_result_fn,
+        reason = "isolated restore compatibility and logical-corruption fixtures"
+    )]
+    fn restore_validates_legacy_state_secondary_indexes_and_middle_outbox_records()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use super::*;
+        use crate::store::{
+            BackupOptions, RestoreOptions, RestoreReceipt, Store, TransactionRequest,
+        };
+        let directory = tempfile::tempdir()?;
+        for mode in 0..3 {
+            let source_path = directory.path().join(format!("source{mode}"));
+            let source = Store::open(&source_path)?;
+            if mode == 1 {
+                let node = NamedNode::new_unchecked("urn:restore");
+                source.insert(Quad::new(
+                    node.clone(),
+                    node.clone(),
+                    node,
+                    GraphName::DefaultGraph,
+                ))?;
+            }
+            if mode == 2 {
+                for n in 1..=3 {
+                    source
+                        .start_governed_transaction(
+                            TransactionRequest::default(),
+                            TransactionKey::new([n; 16]),
+                        )?
+                        .into_transaction()
+                        .commit()?;
+                }
+            }
+            drop(source);
+            {
+                let storage = RocksDbStorage::open(&source_path)?;
+                match mode {
+                    0 => {
+                        let hex = "01010101010101010101010101010101010000000000000004059570c219db7d76c3ff0620696221c739fda4c15b877d039a86d4eecb0b84ec";
+                        let state = (0..hex.len())
+                            .step_by(2)
+                            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        storage
+                            .db
+                            .insert(&storage.default_cf, GOVERNANCE_STATE_KEY, &state)?;
+                    }
+                    1 => {
+                        let reader = storage.db.snapshot();
+                        let records = reader.scan_prefix(&storage.dpos_cf, &[]);
+                        let key = records.key().ok_or("secondary key")?.to_vec();
+                        let mut damage = storage.db.start_readable_transaction()?;
+                        damage.remove(&storage.dpos_cf, &key);
+                        damage.commit()?;
+                    }
+                    _ => storage.db.insert(
+                        &storage.default_cf,
+                        &outbox_record_key(2),
+                        b"corrupt middle record",
+                    )?,
+                }
+            }
+            let source = Store::open_read_only(&source_path)?;
+            let package = directory.path().join(format!("backup{mode}"));
+            let backup = source.backup_with_receipt(&package, &BackupOptions::default())?;
+            let target = directory.path().join(format!("restore{mode}"));
+            let result = Store::restore_backup(&package, &target, &RestoreOptions::default());
+            if mode == 0 {
+                let restored = result?;
+                assert_eq!(restored.backup().checkpoint(), backup.checkpoint());
+                assert_eq!(restored.backup().checkpoint().governance_schema(), Some(1));
+                assert_eq!(restored.validated_outbox_records(), 0);
+                assert_eq!(RestoreReceipt::read(&target)?, restored);
+            } else {
+                result
+                    .err()
+                    .ok_or("logical corruption accepted by restore")?;
+                assert!(!target.join(RestoreReceipt::manifest_name()).exists());
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[expect(
+        clippy::missing_assert_message,
+        clippy::panic_in_result_fn,
         reason = "isolated literal v1 compatibility fixture"
     )]
     fn backup_preserves_v1_history_and_later_outbox_coverage_origin()

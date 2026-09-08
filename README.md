@@ -54,8 +54,9 @@ receipts. G2.5 adds native readiness observations and a bounded contributor
 inventory, opt-in loopback operational endpoints, and per-Store transaction,
 query/update, denied-attempt and SHACL commit-gate counters and cumulative
 duration histograms. G2.6 now adds checkpoint packages, completion-last receipts,
-and offline package verification. G2.7 fresh-directory restore and reconciliation
-is the next product step.
+and offline package verification. G2.7 adds fresh-directory restore, primary and
+contributor reconciliation, and measured local recovery drills. G3.0 shared
+derived-index lifecycle is the next product step.
 
 Build this fork rather than an upstream package to obtain these changes:
 
@@ -177,8 +178,13 @@ namespace content hashes, frozen contributor files, and exact file checksums.
 The CLI adds `backup --with-receipt` and `verify-backup`; see
 [backup usage and limits](cli/README.md#receipt-bearing-backups-fork).
 Receipt creation requires Unix directory synchronization. Package verification
-does not open or modify RocksDB; automated fresh-directory restore remains G2.7;
-see [ADR-0022](docs/adr/0022-operational-readiness-backup-and-recovery.md).
+does not open or modify RocksDB. G2.7's separate `Store::restore_backup` and
+`restore` CLI command copy to a fresh directory, validate storage and the entire
+retained outbox, and reconcile receipt-bound state before completion. The result
+can be opened writable at `<destination>/store`. Optional artifact-bound local
+baselines measure checkpoint age and restore duration, not actual data loss or
+full-service availability; see [restore usage](cli/README.md#fresh-directory-restore-fork)
+and [ADR-0022](docs/adr/0022-operational-readiness-backup-and-recovery.md).
 
 ```sh
 cargo run --locked -p oxigraph --example operational_readiness

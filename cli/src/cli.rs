@@ -138,6 +138,21 @@ pub enum Command {
         #[arg(short, long, value_hint = ValueHint::DirPath)]
         location: PathBuf,
     },
+    /// Restore a completed backup into a fresh root; serve its store/ subdirectory
+    Restore {
+        /// Immutable receipt-bearing backup package
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        backup: PathBuf,
+        /// Fresh restore root; existing paths are never overwritten
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
+        destination: PathBuf,
+        /// Local drill limit for checkpoint age at baseline creation, in milliseconds
+        #[arg(long, requires = "max_restore_time_ms")]
+        max_backup_age_ms: Option<u64>,
+        /// Local drill limit through synchronized/validated files, excluding result recording
+        #[arg(long, requires = "max_backup_age_ms")]
+        max_restore_time_ms: Option<u64>,
+    },
     /// Load file(s) into the store
     ///
     /// Feel free to enable the --lenient option if you know your input is valid to get better performances, or if you want to load slightly invalid files like Wikidata dumps.

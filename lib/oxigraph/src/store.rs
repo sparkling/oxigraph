@@ -51,6 +51,8 @@ mod transactional;
 // Native on-disk package APIs are separate from backend-neutral governance.
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod backup;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+mod restore;
 
 pub use crate::storage::TransactionStartControl;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -77,6 +79,11 @@ pub use readiness::{
 };
 pub use receipt::{
     CommitId, CommitReceipt, CommitReceiptOutcome, GovernedTransaction, StoreIdentity,
+};
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+pub use restore::{
+    RecoveryBaseline, RestoreContributor, RestoreError, RestoreOptions, RestorePrimary,
+    RestoreReceipt,
 };
 pub use retention::{
     ExpiredCommitReceipt, GovernanceError, GovernanceHealth, GovernanceTime, OutboxLease,

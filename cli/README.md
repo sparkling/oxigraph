@@ -218,7 +218,8 @@ indeterminate: inspect and verify the existing package instead of overwriting it
 Successful verification checks the exact regular-file inventory, sizes, hashes,
 and receipt bindings without opening the database. Keep the package immutable;
 opening its `store/` writable can invalidate it. This is not an automated restore
-drill or a production RPO/RTO claim; G2.7 supplies that next boundary.
+drill or a production RPO/RTO claim. Use the separate restore command below to
+validate a writable recovery copy.
 
 Receipt creation currently requires Unix directory synchronization. The manifest
 is bounded to 64 MiB, 100,000 data files, and 128 contributors. The CLI declares
@@ -229,6 +230,49 @@ not a concurrent untrusted-filesystem sandbox. Native checkpoint I/O is not
 interruptible; Rust cancellation is checked between native calls and copy chunks.
 The existing plain `backup` command keeps its directory format. Both paths now
 preserve recovered WAL writes when backing up a closed source read-only.
+
+## Fresh-directory restore (fork)
+
+Restore a receipt-bearing package without opening or modifying its source:
+
+```sh
+oxigraph restore --backup ./backup-new --destination ./restore-new
+oxigraph serve --location ./restore-new/store --bind 127.0.0.1:7878
+```
+
+The destination must not exist and must be outside the backup. Restore verifies
+the source and copied file inventories before opening the copy read-only, runs
+the storage validator, compares topology, namespaces and primary/checkpoint
+identity, and validates the entire retained outbox. It closes read-only handles
+and synchronizes copied files/directories before publishing
+`oxigraph-restore.complete`. The original manifest becomes
+`oxigraph-backup.source` in the destination; the backup itself stays immutable.
+The restored `store/` is then available for normal writable use.
+
+Output identifies the backup fingerprint, quad/outbox counts, checkpoint-age
+interval, and measured restore duration. By default `baseline=unconfigured`:
+there is no invented recovery objective. To check a local drill against an
+explicit policy, supply both `--max-backup-age-ms` and `--max-restore-time-ms`.
+The CLI freezes those limits, reference time, and backup identity before restore
+and reports the baseline fingerprint. Age is elapsed time since checkpoint
+observations, not a count of lost changes. Duration ends at validated, synced
+data, before completion-record publication; it is not full-service RTO.
+
+Pre-publication errors, cancellation, or exceeded limits leave an incomplete
+destination without a completion marker. Do not reuse or overwrite it. A final
+directory-sync failure after publication is explicitly indeterminate, not a
+successful return. Rust `RestoreReceipt::read` verifies the historical completion
+record and its source-manifest binding; it does not revalidate a database changed
+by subsequent writes or prove power-loss durability retroactively.
+
+The CLI declares an empty contributor inventory. Packages with declared
+contributors require Rust `RestoreOptions` with the exact policy and trusted
+`RestoreContributor` adapters for present providers. Adapters inspect their
+copied files and primary receipt lookups, not the expected observation; unknown,
+duplicate, missing-required or mismatched state fails closed. Core rehashes files
+after adapters run. Native restore currently requires Unix directory sync,
+exclusively owned destinations, and cooperative cancellation around native I/O.
+These are local recovery checks, not production recovery qualification.
 
 ## Using a Docker image
 

@@ -29,7 +29,7 @@ mapping.
 | [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md)                           | Implemented | Give remote loading and SERVICE one policy/cancellation boundary and derive claims from effective evaluator capabilities                            |
 | [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md) | Implemented (native scope) | G2.1 namespaces, G2.2 capture, G2.3a-b receipts/outbox, and G2.3c bounded retention, fenced leases, expired receipts, backpressure, and governance health; operational/HTTP adapters remain separate |
 | [ADR-0021 — Transaction-time SHACL validation](0021-transaction-time-shacl-validation.md)                                                       | Implemented    | Validate the complete resulting staged view under the same isolation gate as commit                                                                 |
-| [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)                                     | Proposed    | Separate liveness from readiness and prove receipt-bound backup through fresh-directory restore                                                     |
+| [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)                                     | Implemented    | Separate liveness from readiness and prove receipt-bound backup through fresh-directory restore                                                     |
 | [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)                                                 | Proposed    | Add optional snapshot-scoped statistics, bounded join search, and a correctness-neutral fallback                                                    |
 | [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md)                                                                   | Proposed    | Share one crash-safe rebuild/activation lifecycle, then keep text and spatial providers optional with explicit strict/eventual freshness contracts  |
 | [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md)                                                                   | Proposed    | Optimize only explicit SERVICE clauses within endpoint, egress, resource, and SILENT-semantics bounds                                               |
@@ -58,12 +58,15 @@ artifact, and authorized handoff determine R1 completion. An unresolved release
 hold never satisfies acceptance. The six-hour review continues across
 programme milestones.
 
-ADR-0018 and ADR-0022 through ADR-0041 remain Proposed for their outstanding
+ADR-0018 and ADR-0023 through ADR-0041 remain Proposed for their outstanding
 scope. ADR-0019 is Implemented, and ADR-0020's native G2.1–G2.3c scope is
 Implemented: namespaces, normalized effects, receipts/outbox, bounded retention,
 fenced leases, backpressure, and governance health. ADR-0021 is Implemented:
 G2.4a-b staged-view SHACL validation, bounded policy receipts, and native failure
-closure. G2.5 operational readiness is next. ADR-0034 through ADR-0041 are
+closure. ADR-0022 is Implemented for native G2.5–G2.7 readiness, backup and
+fresh-directory restore with local baselined drills; production recovery
+qualification remains separate. G3.0 derived-index lifecycle is next.
+ADR-0034 through ADR-0041 are
 preserved future containment work; their
 internal gates do not block direct product implementation.
 

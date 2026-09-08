@@ -16,7 +16,7 @@ use std::time::Instant;
 const MANIFEST: &str = "oxigraph-backup.complete";
 const PENDING: &str = "oxigraph-backup.pending";
 const MAGIC: &[u8] = b"oxigraph.backup.v1\0";
-const MAX_MANIFEST: usize = 64 * 1024 * 1024;
+pub(super) const MAX_MANIFEST: usize = 64 * 1024 * 1024;
 const MAX_FILES: usize = 100_000;
 const MAX_CONTRIBUTORS: usize = 128;
 
@@ -584,7 +584,10 @@ impl Store {
     }
 }
 
-fn check(control: &TransactionStartControl, started: Instant) -> Result<(), BackupError> {
+pub(super) fn check(
+    control: &TransactionStartControl,
+    started: Instant,
+) -> Result<(), BackupError> {
     if control.is_cancelled() {
         return Err(BackupError::Cancelled);
     }
@@ -609,7 +612,7 @@ fn check_name(name: &str) -> Result<(), BackupError> {
     }
     Ok(())
 }
-fn fresh_destination(target: &Path, source: &Path) -> Result<PathBuf, BackupError> {
+pub(super) fn fresh_destination(target: &Path, source: &Path) -> Result<PathBuf, BackupError> {
     if target
         .components()
         .any(|part| matches!(part, Component::ParentDir))
@@ -631,13 +634,13 @@ fn fresh_destination(target: &Path, source: &Path) -> Result<PathBuf, BackupErro
     }
     Ok(destination)
 }
-fn check_directory(path: &Path) -> Result<(), BackupError> {
+pub(super) fn check_directory(path: &Path) -> Result<(), BackupError> {
     if !fs::symlink_metadata(path)?.is_dir() {
         return Err(BackupError::InvalidPath);
     }
     Ok(())
 }
-fn open_regular(path: &Path) -> Result<File, BackupError> {
+pub(super) fn open_regular(path: &Path) -> Result<File, BackupError> {
     if !fs::symlink_metadata(path)?.is_file() {
         return Err(BackupError::InvalidPath);
     }
@@ -689,7 +692,7 @@ fn hash_file(
     }
     Ok((total, hash.finalize().into()))
 }
-fn copy_artifact(
+pub(super) fn copy_artifact(
     artifact: &BackupArtifact,
     destination: &Path,
     control: &TransactionStartControl,
@@ -725,7 +728,7 @@ fn copy_artifact(
     target.sync_all()?;
     Ok(())
 }
-fn provider_name(identity: ContributorIdentity) -> String {
+pub(super) fn provider_name(identity: ContributorIdentity) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut name = String::with_capacity(41);
     for byte in identity.provider() {
@@ -821,7 +824,7 @@ fn scan_files(
     files.sort_unstable_by(|a, b| a.path.cmp(&b.path));
     Ok(files)
 }
-fn sync_directory(path: &Path) -> io::Result<()> {
+pub(super) fn sync_directory(path: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
         File::open(path)?.sync_all()
@@ -835,7 +838,7 @@ fn sync_directory(path: &Path) -> io::Result<()> {
         ))
     }
 }
-fn sync_directories(root: &Path) -> Result<(), BackupError> {
+pub(super) fn sync_directories(root: &Path) -> Result<(), BackupError> {
     for entry in fs::read_dir(root.join("contributors"))? {
         sync_directory(&entry?.path())?;
     }
@@ -1033,7 +1036,7 @@ impl BackupCheckpoint {
     reason = "private manifest codec separated from public verification API"
 )]
 impl BackupReceipt {
-    fn encode(&self) -> Vec<u8> {
+    pub(super) fn encode(&self) -> Vec<u8> {
         let mut output = MAGIC.to_vec();
         self.checkpoint.encode(&mut output);
         for value in [&self.source_start, &self.source_end] {
@@ -1065,7 +1068,7 @@ impl BackupReceipt {
         output.extend_from_slice(&checksum);
         output
     }
-    fn decode(bytes: &[u8]) -> Result<Self, BackupError> {
+    pub(super) fn decode(bytes: &[u8]) -> Result<Self, BackupError> {
         if bytes.len() < MAGIC.len() + 32 || bytes.len() > MAX_MANIFEST {
             return Err(BackupError::InvalidManifest);
         }
@@ -1205,7 +1208,7 @@ impl BackupReceipt {
 }
 // Decode the existing canonical contributor format without changing its bytes.
 // Native creation still uses ContributorRegistry::evaluate for storage lineage.
-fn read_inventory(
+pub(super) fn read_inventory(
     bytes: &[u8],
 ) -> Result<(ContributorRegistry, Vec<ContributorObservation>), BackupError> {
     use super::{
@@ -1396,6 +1399,42 @@ mod tests {
     use crate::model::{GraphName, NamedNode, Quad};
     use crate::store::{TransactionKey, TransactionRequest};
     type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+
+    #[test]
+    fn restore_reconciles_primary_fields_beyond_manifest_file_hashes() -> TestResult {
+        let directory = tempfile::tempdir()?;
+        let source = Store::open(directory.path().join("source"))?;
+        let package = directory.path().join("backup");
+        let backup = source.backup_with_receipt(&package, &BackupOptions::default())?;
+        for mode in 0..4 {
+            let mut changed = backup.clone();
+            match mode {
+                0 => changed.contents.quads += 1,
+                1 => changed.contents.sha256 = [0; 32],
+                2 => changed.checkpoint.database_id[0] ^= 1,
+                _ => {
+                    changed.checkpoint.rocksdb_sequence += 1;
+                    changed.source_start.rocksdb_sequence += 1;
+                    changed.source_end.rocksdb_sequence += 1;
+                }
+            }
+            // Isolated, deliberately false metadata with a valid outer checksum.
+            // Package verification does not itself claim to inspect primary state.
+            fs::write(package.join(MANIFEST), changed.encode())?;
+            BackupReceipt::verify(&package, &TransactionStartControl::new())?;
+            let target = directory.path().join(format!("restore{mode}"));
+            assert!(matches!(
+                Store::restore_backup(&package, &target, &crate::store::RestoreOptions::default()),
+                Err(crate::store::RestoreError::StateMismatch)
+            ));
+            assert!(
+                !target
+                    .join(crate::store::RestoreReceipt::manifest_name())
+                    .exists()
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn manifest_rejects_contribution_digest_drift_even_with_fresh_outer_checksum() -> TestResult {
