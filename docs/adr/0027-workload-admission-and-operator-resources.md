@@ -396,15 +396,18 @@ These supplement rather than refresh pinned qualification evidence. Other
 operator counters, active disconnect, workload reload, exported admission/resource
 telemetry and complete G4.2 acceptance remain outstanding.
 
-Validation also found an unresolved **unbudgeted** query-fuzzer OOM:
+Validation also found a separate **unbudgeted** query-fuzzer OOM:
 `oom-1007e2363b10d32274268b884b4bc2ef68bd4a7a` (raw SHA256
 `8e7514804b9502d275ba630ed762e9c6428c0f235fbe9de6acc20e0ef8b78231`).
-The exact input reproduces libFuzzer exit 71 above its unchanged 2048 MiB cap;
-the update lane completes its 60-second run. A separate unoptimized native
-evaluation of the decoded query returned successfully, so the responsible
-fuzz/optimizer variant is not yet isolated. The new budget is not claimed to
-repair this failure, and the query fuzz lane is not reported green. Preserve
-the input and investigate it next; do not raise the cap or weaken the oracle.
+It originally reproduced libFuzzer exit 71 above its unchanged 2048 MiB cap.
+Stage isolation located the failure in optimized evaluation: greedy joins
+materialized accumulated path fan-out as their hash-build input. The separate
+[ADR-0023 planner correction](0023-statistics-and-bounded-join-planning.md#greedy-hash-build-orientation-correction-2026-09-09)
+now builds the smaller estimated side while retaining nullable-path and SERVICE
+semantics. The original input completes in 166.361 seconds with no cap or oracle
+change, and fresh query/update fuzz runs pass. This is not a repair supplied by
+the optional build-row budget, nor a general CPU/RSS guarantee: the streamed
+fan-out remains expensive. The raw input is preserved unchanged.
 
 ### Remaining staged acceptance
 

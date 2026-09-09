@@ -197,6 +197,11 @@ build rows across a request, including multi-operation updates. Exhaustion is
 typed and sticky, with owned-update rollback; streaming joins, other buffers,
 row widths and RSS are outside this named counter. Broader resource accounting, active-work disconnect
 propagation and full G4.2 acceptance remain open.
+The planner also avoids materializing large accumulated path fan-outs when
+a smaller hash-build input is available. Native result/budget regressions and
+the original OOM-input replay verify this
+[targeted memory-failure correction](docs/adr/0023-statistics-and-bounded-join-planning.md#greedy-hash-build-orientation-correction-2026-09-09);
+it is not a general query-time or memory guarantee.
 See [ADR-0026](docs/adr/0026-service-identity-and-authorization.md#native-acceptance-closure-2026-09-09).
 RocksDB remains the persistent backend. The custom-backend tests prove the
 public extension contract, not deployment of a separate replacement backend.

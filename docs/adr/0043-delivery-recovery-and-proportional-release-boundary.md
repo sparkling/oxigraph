@@ -167,6 +167,10 @@
   handlers. Streaming joins, other buffers and RSS are explicitly outside this
   counter. Broader resource/fairness/reload/metrics acceptance remains open;
   full G4.2 is not complete.
+  The subsequent unbudgeted query-fuzzer OOM is repaired by choosing the smaller
+  hash-build input in greedy joins, without changing nullable-path domains or
+  SERVICE binding order. Exact-input replay and fresh query/update fuzz lanes
+  pass; the expensive streamed fan-out and broader G4.2 work remain open.
   Native CLI subprocess tests now preserve their selected transport features,
   avoiding a shared-binary overwrite that broke the combined integration run.
   Local implementation is not publication or production recovery qualification

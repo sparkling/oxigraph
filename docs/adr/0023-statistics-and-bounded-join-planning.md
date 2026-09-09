@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-09-08
+- Updated: 2026-09-09
 - Deciders: Oxigraph parity programme
 - Implementation status: G3.1 native physical statistics, dataset-scoped cost
   integration and query-local feedback implemented below; G3.2 opt-in native
@@ -216,6 +216,35 @@ the distinct fixed-term and variable-endpoint definitions in
 [SPARQL 1.1 section 18.4](https://www.w3.org/TR/sparql11-query/#defn_evalPropertyPath).
 The discovered fuzz input is retained locally; no frozen expected result or
 historical evidence was replaced to make validation pass.
+
+### Greedy hash-build orientation correction (2026-09-09)
+
+The preserved query-fuzzer input
+`oom-1007e2363b10d32274268b884b4bc2ef68bd4a7a` exposed a different failure:
+parsing and planning completed with small memory use, but evaluation of every
+tested optimized profile built a hash table from an accumulated fan-out of
+repeated split paths. Optimization-disabled evaluation returned `false`.
+The nullable pieces must remain independently evaluated to preserve their
+graph-node domain; making them lateral probes would reintroduce the earlier
+semantic defect.
+
+The existing greedy connected-join path now builds from the smaller estimated
+input when a lateral probe is not admissible. Equal estimates retain the
+accumulated output as build; a next `SERVICE` remains the probe to preserve
+its existing binding/evaluation order. This changes hash-build orientation,
+not leaf discovery, nullable-path admission, join keys, estimator formulas,
+bounded-profile identities or default-profile selection. The correction also
+applies without SEP-0006 and to mixed path groups that use greedy fallback.
+
+Native regressions check smaller/larger/equal orientation, SERVICE ordering,
+bounded build rows, absent graph nodes and exact duplicate-preserving result
+bags under greedy and V1–V4. The exact original input completes under the
+unchanged 2048 MiB fuzz cap in 166.361 seconds; a sampled resident-set reading
+was 43,468 KiB, not a measured peak. Fresh 60-second query and update fuzz
+runs complete successfully. This repairs the reproduced memory failure, not
+the expensive streamed fan-out or all possible query OOMs. No frozen oracle,
+expected result, dependency or promotion boundary changes. Full G3.2 corpus
+performance acceptance remains open.
 
 ### G3.2 opt-in native bounded planning (2026-09-08)
 

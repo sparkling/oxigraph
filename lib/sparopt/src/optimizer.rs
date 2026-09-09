@@ -965,31 +965,25 @@ impl Optimizer {
                             {
                                 QueryExpression::lateral(output, next)
                             } else {
-                                QueryExpression::join(
+                                hash_join_building_smaller_side(
                                     output,
+                                    &output_types,
                                     next,
-                                    JoinAlgorithm::HashBuildLeftProbeRight {
-                                        keys: join_key_variables(
-                                            &output_types,
-                                            &to_reorder_types[next_id],
-                                            input_types,
-                                        ),
-                                    },
+                                    &to_reorder_types[next_id],
+                                    input_types,
+                                    estimator,
                                 )
                             };
                         }
                         #[cfg(not(feature = "sep-0006"))]
                         {
-                            output = QueryExpression::join(
+                            output = hash_join_building_smaller_side(
                                 output,
+                                &output_types,
                                 next,
-                                JoinAlgorithm::HashBuildLeftProbeRight {
-                                    keys: join_key_variables(
-                                        &output_types,
-                                        &to_reorder_types[next_id],
-                                        input_types,
-                                    ),
-                                },
+                                &to_reorder_types[next_id],
+                                input_types,
+                                estimator,
                             );
                         }
                         output_types.intersect_with(to_reorder_types[next_id].clone());
@@ -1594,6 +1588,40 @@ fn estimate_lateral_cost(
         .saturating_mul(estimate_query_expression_size(right, left_types, estimator))
 }
 
+/// Hash-joins the accumulated greedy output with a leaf that cannot become a
+/// lateral probe, building the table from the smaller estimated input.
+///
+/// Always building the accumulated output materializes every row produced so
+/// far. Repeated split property paths chain their fan-out scans first, and a
+/// nullable path piece with a bound end must stay a hash join, so such a
+/// build grows exponentially while the path side stays bounded by the graph.
+/// Ties keep the accumulated output on the build side.
+fn hash_join_building_smaller_side(
+    output: QueryExpression,
+    output_types: &VariableTypes,
+    next: QueryExpression,
+    next_types: &VariableTypes,
+    input_types: &VariableTypes,
+    estimator: Option<&dyn CardinalityEstimator>,
+) -> QueryExpression {
+    let keys = join_key_variables(output_types, next_types, input_types);
+    // A SERVICE stays the probe input: a variable endpoint depends on the
+    // accumulated bindings and foreign evaluation order is preserved.
+    let (build, probe) = if !matches!(next, QueryExpression::Service { .. })
+        && estimate_query_expression_size(&next, input_types, estimator)
+            < estimate_query_expression_size(&output, input_types, estimator)
+    {
+        (next, output)
+    } else {
+        (output, next)
+    };
+    QueryExpression::join(
+        build,
+        probe,
+        JoinAlgorithm::HashBuildLeftProbeRight { keys },
+    )
+}
+
 fn estimate_triple_pattern_size(
     subject_bound: bool,
     predicate_bound: bool,
@@ -1783,6 +1811,73 @@ mod tests {
         assert_eq!(estimate_slice_size(2, Some(1)), 1);
         assert_eq!(estimate_slice_size(6, Some(1)), 0);
         assert_eq!(estimate_slice_size(2, None), 3);
+    }
+
+    #[cfg(feature = "sep-0006")]
+    #[test]
+    fn nullable_path_piece_builds_the_hash_table_when_smaller()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Regression for fuzz artifact sparql_query_eval/oom-1007e2363b10d32274268b884b4bc2ef68bd4a7a:
+        // the accumulated fan-out output must not be materialized as the build
+        // side when the non-lateral leaf is estimated to be smaller.
+        fn optimized_join(
+            query: &str,
+        ) -> Result<(QueryExpression, QueryExpression, Vec<Variable>), Box<dyn std::error::Error>>
+        {
+            let Query::Select(query) = SparqlParser::new().parse_query(query)? else {
+                return Err("expected SELECT query".into());
+            };
+            let optimized =
+                Optimizer::optimize_query_expression(QueryExpression::from(&query.expression));
+            let QueryExpression::Project { inner, .. } = optimized else {
+                return Err("expected projected query".into());
+            };
+            let QueryExpression::Join {
+                left,
+                right,
+                algorithm: JoinAlgorithm::HashBuildLeftProbeRight { keys },
+            } = *inner
+            else {
+                return Err("expected a hash join for the nullable path piece".into());
+            };
+            Ok((*left, *right, keys))
+        }
+        let (build, probe, keys) = optimized_join(
+            "SELECT * WHERE { ?s <urn:p> ?o1 . ?s <urn:p> ?o2 . ?s <urn:p> ?o3 . ?s <urn:p> ?o4 . ?s <urn:p> ?o5 . ?x <urn:q>? ?o1 }",
+        )?;
+        if !matches!(
+            build,
+            QueryExpression::Path {
+                path: PropertyPathExpression::ZeroOrOnePath(_),
+                ..
+            }
+        ) {
+            return Err(format!(
+                "the smaller nullable path piece must be the build side: {build:?}"
+            )
+            .into());
+        }
+        if !matches!(probe, QueryExpression::Lateral { .. }) {
+            return Err("the accumulated fan-out must be streamed as the probe side".into());
+        }
+        assert_eq!(keys, vec![Variable::new_unchecked("o1")]);
+        // A smaller accumulated output remains on the build side.
+        let (build, _, _) = optimized_join("SELECT * WHERE { ?s <urn:p> ?o1 . ?x <urn:q>? ?o1 }")?;
+        if !matches!(build, QueryExpression::QuadPattern { .. }) {
+            return Err("the smaller accumulated output must remain the build side".into());
+        }
+        // Four correlated scans and the nullable path both estimate 10^9 rows.
+        let (build, probe, _) = optimized_join(
+            "SELECT * WHERE { ?s <urn:p> ?o1 . ?s <urn:p> ?o2 . ?s <urn:p> ?o3 . ?s <urn:p> ?o4 . ?x <urn:q>? ?o1 }",
+        )?;
+        assert_eq!(
+            estimate_query_expression_size(&build, &VariableTypes::default(), None),
+            estimate_query_expression_size(&probe, &VariableTypes::default(), None)
+        );
+        if !matches!(build, QueryExpression::Lateral { .. }) {
+            return Err("equal estimates must keep the accumulated output as build".into());
+        }
+        Ok(())
     }
 
     #[cfg(feature = "sep-0006")]

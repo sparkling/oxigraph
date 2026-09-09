@@ -1422,8 +1422,12 @@ empty 503 before successful headers and failed streams after headers. Establishe
 errors and HEAD/304 metadata are preserved. Optional cumulative inner-join
 build-row budgets now cover native Cartesian/hash destination rows across each
 request and every update operation, with typed sticky failure and owned rollback.
-Streaming joins, other operator buffers and RSS are excluded; no optimizer change
-or broad query whitelist is imposed. Broader operator budgets, fairness, workload
+Streaming joins, other operator buffers and RSS are excluded; the budget does
+not change optimizer behavior or impose a broad query whitelist. A separate
+ADR-0023 correction now builds the smaller estimated side of greedy hash joins,
+repairing the reproduced split-path OOM with unchanged results and fuzz limits.
+Exact-input replay and fresh query/update fuzz runs pass; streamed fan-out cost
+is not eliminated. Broader operator budgets, fairness, workload
 reload, exported counters and full ADR-0027 acceptance remain open.
 Separate ADR-0026 frozen promotion and
 future facade compatibility remain open; native delivery does not claim
