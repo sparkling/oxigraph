@@ -79,7 +79,10 @@ impl<W: Write> std::fmt::Write for ResultBodyWriter<W> {
 
 /// Preserve resource failure before existing 406/500 semantic/error mappings.
 pub(super) fn http_error(error: io::Error, fallback: fn(io::Error) -> HttpError) -> HttpError {
-    if matches!(error.get_ref(), Some(inner) if inner.is::<ResponseBodyLimitExceeded>()) {
+    if matches!(error.get_ref(), Some(inner) if inner.is::<ResponseBodyLimitExceeded>()
+        || matches!(inner.downcast_ref::<oxigraph::sparql::QueryEvaluationError>(),
+            Some(oxigraph::sparql::QueryEvaluationError::ResourceLimitExceeded { .. })))
+    {
         (StatusCode::SERVICE_UNAVAILABLE, String::new())
     } else if error.kind() == io::ErrorKind::TimedOut
         || matches!(error.get_ref(), Some(inner) if inner.is::<WorkloadError>())

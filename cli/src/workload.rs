@@ -1,5 +1,5 @@
 //! ADR-0027: process-local admission, deadlines and opt-in request/result bytes.
-//! These do not implement evaluator budgets or hard process isolation.
+//! Optional inner-join row budgets are cooperative, not hard process isolation.
 //!
 //! Profiles are explicit and immutable for this controller's lifetime. All
 //! requests have one priority; eligible requests are FIFO, skipping a saturated
@@ -7,7 +7,7 @@
 use crate::access::{ListenerKind, RequestContext};
 use oxhttp::model::header::{CACHE_CONTROL, RETRY_AFTER};
 use oxhttp::model::{Body, Extensions, Response, StatusCode};
-use oxigraph::sparql::CancellationToken;
+use oxigraph::sparql::{CancellationToken, InnerJoinBuildBudget};
 use serde::Deserialize;
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
@@ -48,7 +48,7 @@ impl From<RequestBodyBudget> for oxhttp::RequestBodyLimits {
 
 /// No capacity defaults: the operator supplies every limit. This version only
 /// promises admission limits, optional cooperative request deadlines and entity
-/// byte limits, not evaluator budgets, per-principal fairness or live reload.
+/// byte/inner-join build-row limits, not per-principal fairness or live reload.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkloadPolicy {
@@ -66,6 +66,8 @@ pub struct WorkloadPolicy {
     request_body_limits: Option<RequestBodyBudget>,
     #[serde(default)]
     max_result_bytes: Option<u64>,
+    #[serde(default)]
+    max_inner_join_build_rows: Option<u64>,
     retry_after_seconds: u32,
     classes: BTreeMap<String, ClassLimits>,
 }
@@ -548,6 +550,11 @@ impl AdmissionController {
             class: entry.class.clone(),
             operator: entry.operator,
             cancellation: entry.cancellation.clone(),
+            inner_join_build_budget: self
+                .0
+                .policy
+                .max_inner_join_build_rows
+                .map(InnerJoinBuildBudget::new),
         })))
     }
 }
@@ -579,8 +586,14 @@ struct LeaseInner {
     class: String,
     operator: bool,
     cancellation: CancellationToken,
+    inner_join_build_budget: Option<InnerJoinBuildBudget>,
 }
 impl WorkloadLease {
+    /// One cumulative handle created at admission, shared by every native
+    /// query/update evaluator in this request. A getter never resets it.
+    pub fn inner_join_build_budget(&self) -> Option<&InnerJoinBuildBudget> {
+        self.0.inner_join_build_budget.as_ref()
+    }
     /// Serialized/emitted result bytes; excludes HTTP framing and host memory.
     pub fn result_byte_limit(&self) -> Option<oxhttp::ResponseBodyLimit> {
         self.0

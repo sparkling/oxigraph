@@ -52,9 +52,9 @@ use crate::store::{Store, Transaction};
 pub use spareval::{
     AggregateFunctionAccumulator, BoundedJoinCostModel, BoundedJoinPlanning, CancellationReason,
     CancellationToken, CardinalityFeedback, CardinalityFeedbackNode, DefaultServiceHandler,
-    EstimateBasis, JoinPlanningReport, QueryDatasetSpecification, QueryEvaluationError,
-    QueryExplanation, QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter,
-    ServiceHandler,
+    EstimateBasis, InnerJoinBuildBudget, JoinPlanningReport, QueryDatasetSpecification,
+    QueryEvaluationError, QueryExplanation, QueryResource, QueryResourcePhase, QueryResults,
+    QuerySolution, QuerySolutionIter, QueryTripleIter, ServiceHandler,
 };
 use spareval::{QueryEvaluator, QueryableDataset};
 use spargebra::SparqlParser;
@@ -519,6 +519,14 @@ impl SparqlEvaluator {
     pub fn with_cancellation_token(mut self, cancellation_token: CancellationToken) -> Self {
         self.cancellation_token = Some(cancellation_token.clone());
         self.inner = self.inner.with_cancellation_token(cancellation_token);
+        self
+    }
+
+    /// Attaches an explicitly shared cumulative native inner-join build budget.
+    /// Clones and all operations of an update share it. Create a fresh budget
+    /// for each independent request. Other operator buffers are not bounded.
+    pub fn with_inner_join_build_budget(mut self, budget: InnerJoinBuildBudget) -> Self {
+        self.inner = self.inner.with_inner_join_build_budget(budget);
         self
     }
 

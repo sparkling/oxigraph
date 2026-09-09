@@ -1,4 +1,5 @@
 use crate::expression::ExpressionEvaluationError;
+use crate::{QueryResource, QueryResourcePhase};
 use oxrdf::{NamedNode, Term, Variable};
 use spargebra::{SparqlSyntaxError, SparqlVersion};
 use std::convert::Infallible;
@@ -53,6 +54,13 @@ pub enum QueryEvaluationError {
     Cancelled,
     #[error("The SPARQL operation deadline has elapsed")]
     TimedOut,
+    /// A configured cooperative resource budget was exhausted.
+    #[error("SPARQL resource {resource} exceeded limit {limit} during {phase}")]
+    ResourceLimitExceeded {
+        resource: QueryResource,
+        phase: QueryResourcePhase,
+        limit: u64,
+    },
     #[doc(hidden)]
     #[error(transparent)]
     Unexpected(Box<dyn Error + Send + Sync>),
@@ -77,7 +85,8 @@ impl QueryEvaluationError {
             QueryEvaluationError::UnsupportedSparqlVersion(_)
             | QueryEvaluationError::IncompatibleTerm { .. }
             | QueryEvaluationError::Cancelled
-            | QueryEvaluationError::TimedOut => false,
+            | QueryEvaluationError::TimedOut
+            | QueryEvaluationError::ResourceLimitExceeded { .. } => false,
         }
     }
 }

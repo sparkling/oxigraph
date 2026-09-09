@@ -238,6 +238,47 @@ fn cancellation_is_typed(result: &Result<(), UpdateEvaluationError>) -> bool {
     matches!(result, Err(UpdateEvaluationError::Cancelled))
 }
 
+#[test]
+fn inner_join_budget_spans_operations_and_rolls_back_the_owned_request()
+-> Result<(), Box<dyn Error>> {
+    use oxigraph::sparql::{InnerJoinBuildBudget, QueryResource, QueryResourcePhase};
+    for limit in [3, 4] {
+        let initial = three_quads();
+        let dataset =
+            CancellationProbeDataset::new(initial.clone(), CancellationToken::new(), None);
+        let budget = InnerJoinBuildBudget::new(limit);
+        let result = SparqlEvaluator::new().without_optimizations()
+            .with_inner_join_build_budget(budget.clone())
+            .parse_update("INSERT DATA { <urn:start> <urn:p> <urn:o> };
+                INSERT { ?s <urn:first> ?o } WHERE { VALUES ?s { <urn:a> <urn:b> } VALUES ?o { <urn:o> } };
+                INSERT { ?s <urn:second> ?o } WHERE { VALUES ?s { <urn:a> <urn:b> } VALUES ?o { <urn:o> } };
+                INSERT DATA { <urn:end> <urn:p> <urn:o> }")?
+            .on_dataset(&dataset).execute();
+        if limit == 3 {
+            assert!(matches!(
+                result,
+                Err(UpdateEvaluationError::ResourceLimitExceeded {
+                    resource: QueryResource::InnerJoinBuildRows,
+                    phase: QueryResourcePhase::JoinBuild,
+                    limit: 3
+                })
+            ));
+            assert_eq!(dataset.snapshot(), initial);
+            assert_eq!(dataset.state.commits.get(), 0);
+            assert_eq!(dataset.state.rollbacks.get(), 1);
+            assert_eq!(dataset.state.mutations.get(), 3);
+        } else {
+            result?;
+            assert_eq!(dataset.snapshot().len(), initial.len() + 6);
+            assert_eq!(dataset.state.commits.get(), 1);
+            assert_eq!(dataset.state.rollbacks.get(), 0);
+            budget.check()?;
+        }
+        assert_eq!(budget.charged_rows(), limit);
+    }
+    Ok(())
+}
+
 fn quad(subject: &str) -> Quad {
     Quad::new(
         NamedNode::new_unchecked(subject.to_owned()),

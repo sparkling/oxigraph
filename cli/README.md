@@ -331,6 +331,30 @@ after a commit never establishes rollback. The cap is not an evaluator-work,
 row-count or RSS bound: query state, serializer-private rows/terms, Graph Store
 snapshot/ETag preparation and allocator capacity remain outside it.
 
+Optional `max_inner_join_build_rows` is an unsigned cumulative cap on rows
+inserted into native Cartesian/hash **inner-join build tables**. For example,
+`"max_inner_join_build_rows": 100000` is an illustrative operator choice, not
+a production default. Admission creates one shared handle for the whole
+request, including every operation of a SPARQL Update. Omission adds no cap;
+zero permits queries/writes without such materialization. Exactly-at-limit
+work succeeds; the next attempted insertion permanently exhausts that request's
+budget. Duplicate rows and repeated/nested builds count separately.
+
+This does not change the optimizer or require a different physical plan. A
+streaming lateral join has no build table and does not charge this counter.
+Scans/probes, term width, other operators' buffers, planning/inference, remote
+SERVICE execution and RSS/CPU are not bounded by it. Operators without a build
+table are not rejected. Native joins inside subqueries/EXISTS share the handle;
+SILENT or a custom handler using the same handle cannot hide its exhaustion.
+
+Before successful headers, exhausted queries/updates return empty noncacheable
+503 without retry advice; after headers, the stream fails without a terminating
+chunk. Owned updates check before commit and roll back the entire request.
+Embedded callers may attach `InnerJoinBuildBudget` using
+`SparqlEvaluator::with_inner_join_build_budget`; clones deliberately share it,
+so independent requests need fresh handles. Borrowed transactions remain the
+caller's rollback responsibility. This is not a general query-work/RSS quota.
+
 Optional `request_timeout_ms` (positive milliseconds) starts one absolute
 monotonic deadline **before queueing**. It is not renewed on admission, body
 read, evaluation, writer acquisition or serialization. Omitting it retains

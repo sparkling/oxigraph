@@ -704,6 +704,7 @@ pub struct SimpleEvaluator<'a, D: QueryableDataset<'a>> {
     custom_aggregate_functions: Rc<CustomAggregateFunctionRegistry>,
     run_stats: bool,
     cardinality_estimator: Option<Arc<dyn CardinalityEstimator>>,
+    inner_join_build_budget: Option<crate::InnerJoinBuildBudget>,
 }
 
 impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
@@ -727,7 +728,24 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             custom_aggregate_functions,
             run_stats,
             cardinality_estimator: None,
+            inner_join_build_budget: None,
         })
+    }
+
+    pub fn with_inner_join_build_budget(
+        mut self,
+        budget: Option<crate::InnerJoinBuildBudget>,
+    ) -> Self {
+        self.inner_join_build_budget = budget;
+        self
+    }
+
+    fn ensure_alive(&self) -> Result<(), QueryEvaluationError> {
+        self.dataset.cancellation_token.ensure_alive()?;
+        if let Some(budget) = &self.inner_join_build_budget {
+            budget.check()?;
+        }
+        Ok(())
     }
 
     pub fn with_cardinality_estimator(
@@ -761,6 +779,7 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                 self.dataset.clone(),
                 eval(from),
                 Arc::from(variables),
+                self.inner_join_build_budget.clone(),
             )),
             stats,
         )
@@ -790,17 +809,11 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                 error.get_or_insert(e);
             } else {
                 // We have found a valid tuple
-                return (
-                    self.dataset
-                        .cancellation_token
-                        .ensure_alive()
-                        .map(|()| true),
-                    stats,
-                );
+                return (self.ensure_alive().map(|()| true), stats);
             }
         }
         (
-            if let Err(e) = self.dataset.cancellation_token.ensure_alive() {
+            if let Err(e) = self.ensure_alive() {
                 Err(e)
             } else if let Some(e) = error {
                 Err(e)
@@ -853,17 +866,14 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             Err(e) => return (Err(e), stats),
         };
         (
-            Ok(QueryTripleIter::new(cancellable_iter(
-                ConstructIterator {
-                    eval: self.clone(),
-                    iter: eval(from),
-                    template,
-                    buffered_results: Vec::default(),
-                    already_emitted_results: FxHashSet::default(),
-                    bnodes: Vec::default(),
-                },
-                self.dataset.cancellation_token.clone(),
-            ))),
+            Ok(self.triple_results(ConstructIterator {
+                eval: self.clone(),
+                iter: eval(from),
+                template,
+                buffered_results: Vec::default(),
+                already_emitted_results: FxHashSet::default(),
+                bnodes: Vec::default(),
+            })),
             stats,
         )
     }
@@ -887,18 +897,27 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             Err(e) => return (Err(e), stats),
         };
         (
-            Ok(QueryTripleIter::new(cancellable_iter(
-                DescribeIterator {
-                    eval: self.clone(),
-                    tuples_to_describe: eval(from),
-                    nodes_described: FxHashSet::default(),
-                    nodes_to_describe: Vec::default(),
-                    quads: Box::new(empty()),
-                },
-                self.dataset.cancellation_token.clone(),
-            ))),
+            Ok(self.triple_results(DescribeIterator {
+                eval: self.clone(),
+                tuples_to_describe: eval(from),
+                nodes_described: FxHashSet::default(),
+                nodes_to_describe: Vec::default(),
+                quads: Box::new(empty()),
+            })),
             stats,
         )
+    }
+
+    fn triple_results(
+        &self,
+        iter: impl Iterator<Item = Result<Triple, QueryEvaluationError>> + 'a,
+    ) -> QueryTripleIter<'a> {
+        let iter = cancellable_iter(iter, self.dataset.cancellation_token.clone());
+        if let Some(budget) = &self.inner_join_build_budget {
+            QueryTripleIter::new(crate::resources::budgeted_iter(iter, budget.clone()))
+        } else {
+            QueryTripleIter::new(iter)
+        }
     }
 
     pub fn query_expression_evaluator(
@@ -1073,6 +1092,18 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             Ok(e) => e,
             Err(e) => return (Err(e), stats),
         };
+        if let Some(budget) = &self.inner_join_build_budget {
+            let budget = budget.clone();
+            evaluator = Rc::new(move |tuple| {
+                if let Err(error) = budget.check() {
+                    return Box::new(once(Err(error)));
+                }
+                Box::new(crate::resources::budgeted_iter(
+                    evaluator(tuple),
+                    budget.clone(),
+                ))
+            });
+        }
         if self.run_stats {
             let stats = Rc::clone(&stats);
             evaluator = Rc::new(move |tuple| {
@@ -1536,10 +1567,24 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             JoinAlgorithm::HashBuildLeftProbeRight { keys } => {
                 let build = left;
                 let probe = right;
+                let budget = self.inner_join_build_budget.clone();
                 if keys.is_empty() {
                     // Cartesian product
                     Ok(Rc::new(move |from| {
-                        let built_values = build(from.clone()).collect::<Result<Vec<_>, _>>();
+                        let built_values = if let Some(budget) = &budget {
+                            // Do not reserve from the input's untrusted size hint.
+                            let mut rows = Vec::new();
+                            build(from.clone())
+                                .try_for_each(|row| {
+                                    let row = row?;
+                                    budget.charge()?;
+                                    rows.push(row);
+                                    Ok(())
+                                })
+                                .map(|()| rows)
+                        } else {
+                            build(from.clone()).collect::<Result<Vec<_>, _>>()
+                        };
                         if built_values.as_ref().is_err_and(|e| !e.can_be_silent()) {
                             // We return non-silent errors proactively to abort execution
                             return Box::new(built_values.err().into_iter().map(Err));
@@ -1571,7 +1616,18 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                         .collect::<Vec<_>>();
                     Ok(Rc::new(move |from| {
                         let mut built_values = InternalTupleSet::new(keys.clone());
-                        let error = built_values.extend(build(from.clone())).err();
+                        let error = if let Some(budget) = &budget {
+                            build(from.clone())
+                                .try_for_each(|row| {
+                                    let row = row?;
+                                    budget.charge()?;
+                                    built_values.insert(row);
+                                    Ok(())
+                                })
+                                .err()
+                        } else {
+                            built_values.extend(build(from.clone())).err()
+                        };
                         if error.as_ref().is_some_and(|e| !e.can_be_silent()) {
                             // We return non-silent errors proactively to abort execution
                             return Box::new(error.into_iter().map(Err));
@@ -2183,11 +2239,11 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             Term::NamedNode(service_name) => service_name,
             term => return Err(QueryEvaluationError::InvalidServiceName(term)),
         };
-        self.dataset.cancellation_token.ensure_alive()?;
+        self.ensure_alive()?;
         let iter =
             self.service_handler
                 .handle(&service_name, query_expression, self.base_iri.as_ref());
-        self.dataset.cancellation_token.ensure_alive()?;
+        self.ensure_alive()?;
         Ok(self.encode_bindings(variables, iter?))
     }
 
@@ -2494,7 +2550,7 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
     ) -> InternalTuplesIterator<'a, D::InternalTerm> {
         let dataset = self.dataset.clone();
         let checked = cancellable_iter(iter, dataset.cancellation_token.clone());
-        Box::new(checked.map(move |solution| {
+        let encoded = checked.map(move |solution| {
             dataset.cancellation_token.ensure_alive()?;
             let mut encoded_terms = InternalTuple::with_capacity(variables.len());
             for (variable, term) in &solution? {
@@ -2506,7 +2562,12 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                 );
             }
             Ok(encoded_terms)
-        }))
+        });
+        if let Some(budget) = &self.inner_join_build_budget {
+            Box::new(crate::resources::budgeted_iter(encoded, budget.clone()))
+        } else {
+            Box::new(encoded)
+        }
     }
 }
 
@@ -2521,6 +2582,7 @@ impl<'a, D: QueryableDataset<'a>> Clone for SimpleEvaluator<'a, D> {
             custom_aggregate_functions: Rc::clone(&self.custom_aggregate_functions),
             run_stats: self.run_stats,
             cardinality_estimator: self.cardinality_estimator.clone(),
+            inner_join_build_budget: self.inner_join_build_budget.clone(),
         }
     }
 }
@@ -2613,21 +2675,27 @@ fn decode_bindings<'a, D: QueryableDataset<'a>>(
     dataset: EvalDataset<'a, D>,
     iter: InternalTuplesIterator<'a, D::InternalTerm>,
     variables: Arc<[Variable]>,
+    budget: Option<crate::InnerJoinBuildBudget>,
 ) -> QuerySolutionIter<'a> {
     let tuple_size = variables.len();
     let iter = cancellable_iter(iter, dataset.cancellation_token.clone());
-    QuerySolutionIter::from_tuples(
-        variables,
-        Box::new(iter.map(move |values| {
-            let mut result = vec![None; tuple_size];
-            for (i, value) in values?.iter().enumerate() {
-                if let Some(term) = value {
-                    result[i] = Some(dataset.externalize_term(term)?)
-                }
+    let decoded = iter.map(move |values| {
+        let mut result = vec![None; tuple_size];
+        for (i, value) in values?.iter().enumerate() {
+            if let Some(term) = value {
+                result[i] = Some(dataset.externalize_term(term)?)
             }
-            Ok(result)
-        })),
-    )
+        }
+        Ok(result)
+    });
+    if let Some(budget) = budget {
+        QuerySolutionIter::from_tuples(
+            variables,
+            Box::new(crate::resources::budgeted_iter(decoded, budget)),
+        )
+    } else {
+        QuerySolutionIter::from_tuples(variables, Box::new(decoded))
+    }
 }
 
 /// Check both sides of a possibly foreign iterator call, including clean EOF.

@@ -1,7 +1,7 @@
 use crate::io::RdfParseError;
 use crate::model::{NamedNode, Term, Variable};
 use crate::store::{CorruptionError, StorageError};
-use spareval::QueryEvaluationError;
+use spareval::{QueryEvaluationError, QueryResource, QueryResourcePhase};
 use spargebra::SparqlSyntaxError;
 use std::convert::Infallible;
 use std::error::Error;
@@ -17,6 +17,13 @@ pub enum UpdateEvaluationError {
     /// The absolute request deadline elapsed before its commit attempt began.
     #[error("SPARQL update deadline elapsed")]
     TimedOut,
+    /// A cooperative resource limit failed before the commit attempt.
+    #[error("SPARQL resource {resource} exceeded limit {limit} during {phase}")]
+    ResourceLimitExceeded {
+        resource: QueryResource,
+        phase: QueryResourcePhase,
+        limit: u64,
+    },
     /// An error from the storage.
     #[error(transparent)]
     Storage(#[from] StorageError),
@@ -67,6 +74,15 @@ impl From<QueryEvaluationError> for UpdateEvaluationError {
         match error {
             QueryEvaluationError::Cancelled => Self::Cancelled,
             QueryEvaluationError::TimedOut => Self::TimedOut,
+            QueryEvaluationError::ResourceLimitExceeded {
+                resource,
+                phase,
+                limit,
+            } => Self::ResourceLimitExceeded {
+                resource,
+                phase,
+                limit,
+            },
             QueryEvaluationError::Dataset(error) => Self::from_boxed_dataset_error(error),
             QueryEvaluationError::Service(error) => Self::Service(error),
             QueryEvaluationError::UnexpectedDefaultGraph => Self::Storage(
@@ -109,6 +125,7 @@ impl From<UpdateEvaluationError> for io::Error {
         match error {
             UpdateEvaluationError::Cancelled => Self::new(io::ErrorKind::Interrupted, error),
             UpdateEvaluationError::TimedOut => Self::new(io::ErrorKind::TimedOut, error),
+            UpdateEvaluationError::ResourceLimitExceeded { .. } => Self::other(error),
             UpdateEvaluationError::Storage(error) => error.into(),
             UpdateEvaluationError::GraphParsing(error) => error.into(),
             UpdateEvaluationError::Dataset(error)

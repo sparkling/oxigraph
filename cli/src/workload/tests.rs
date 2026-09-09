@@ -410,6 +410,36 @@ fn deadline_is_absolute_including_queue_wait_and_keeps_active_ownership() -> Res
 }
 
 #[test]
+fn join_budget_getters_share_state_but_new_admissions_do_not() -> Result<()> {
+    let mut policy = controller(1, 0, 1, 0)?.0.policy.clone();
+    ensure!(
+        acquire(&AdmissionController::new(policy.clone())?, "default")?
+            .inner_join_build_budget()
+            .is_none()
+    );
+    policy.max_inner_join_build_rows = Some(2);
+    let controller = AdmissionController::new(policy)?;
+    let first = acquire(&controller, "default")?;
+    let retained = first.inner_join_build_budget().unwrap().clone();
+    let evaluator = oxigraph::sparql::SparqlEvaluator::new()
+        .without_optimizations()
+        .with_inner_join_build_budget(first.inner_join_build_budget().unwrap().clone());
+    evaluator
+        .parse_query("ASK { VALUES ?x { 1 2 } VALUES ?y { 3 } }")?
+        .on_store(&oxigraph::store::Store::new()?)
+        .execute()?;
+    ensure!(
+        retained.charged_rows() == 2
+            && first.inner_join_build_budget().unwrap().charged_rows() == 2
+    );
+    drop(first);
+    let second = acquire(&controller, "default")?;
+    ensure!(second.inner_join_build_budget().unwrap().charged_rows() == 0);
+    ensure!(retained.charged_rows() == 2);
+    Ok(())
+}
+
+#[test]
 fn expired_tokens_fail_before_fast_admission_and_final_activation() -> Result<()> {
     let controller = controller(1, 0, 1, 0)?;
     let expired = CancellationToken::new().with_deadline(Instant::now());

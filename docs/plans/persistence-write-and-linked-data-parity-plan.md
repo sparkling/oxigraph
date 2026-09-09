@@ -1419,12 +1419,15 @@ decompression-expanded requests before RDF work on both listeners; native tests
 preserve trailers, HEAD metadata, deadlines and write/rollback/restart behavior.
 Result-byte caps now cover generation and transmission independently, with
 empty 503 before successful headers and failed streams after headers. Established
-errors and HEAD/304 metadata are preserved. Next: bounded evaluator work and
-explicit unsupported resource profiles. These byte caps are not RSS limits; broader resource
-budgets, fairness, reload, exported counters and full ADR-0027 acceptance remain open.
+errors and HEAD/304 metadata are preserved. Optional cumulative inner-join
+build-row budgets now cover native Cartesian/hash destination rows across each
+request and every update operation, with typed sticky failure and owned rollback.
+Streaming joins, other operator buffers and RSS are excluded; no optimizer change
+or broad query whitelist is imposed. Broader operator budgets, fairness, workload
+reload, exported counters and full ADR-0027 acceptance remain open.
 Separate ADR-0026 frozen promotion and
 future facade compatibility remain open; native delivery does not claim
-fine-grained SPARQL filtering or evaluator resource quotas.
+fine-grained SPARQL filtering or general evaluator resource quotas.
 
 The programme now records the named decisions admitted by this user:
 

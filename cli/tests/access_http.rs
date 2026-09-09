@@ -1170,6 +1170,142 @@ fn result_limits_exact_boolean_and_generated_operator_failures() -> Result<()> {
 }
 
 #[test]
+fn inner_join_limits_rollback_multi_operation_updates_and_release_the_request() -> Result<()> {
+    for limit in [3, 4] {
+        let mut profile = workload(1, 1, 1000);
+        profile["max_inner_join_build_rows"] = json!(limit);
+        let running = start_with_workload(&config(), false, Some(&profile))?;
+        ensure!(
+            sparql(
+                &running,
+                WRITER,
+                "/update",
+                "INSERT DATA {
+            <urn:a> <urn:p> 1; <urn:q> 2 . <urn:b> <urn:p> 3; <urn:q> 4 . }"
+            )?
+            .status
+                == 204
+        );
+        let query = "SELECT ?s WHERE { ?s <urn:p> ?p . ?other <urn:q> ?q }";
+        ensure!(sparql(&running, READER, "/query", query)?.status == 200);
+        let update = "INSERT DATA { <urn:marker> <urn:start> true };
+            INSERT { ?s <urn:first> ?p } WHERE { ?s <urn:p> ?p . ?other <urn:q> ?q };
+            INSERT { ?s <urn:second> ?p } WHERE { ?s <urn:p> ?p . ?other <urn:q> ?q };
+            INSERT DATA { <urn:marker> <urn:end> true }";
+        let response = sparql(&running, WRITER, "/update", update)?;
+        if limit == 3 {
+            ensure!(
+                response.status == 503 && response.body.is_empty(),
+                "{} {}",
+                response.status,
+                response.body
+            );
+            ensure!(
+                response.head.contains("cache-control: no-store")
+                    && !response.head.contains("retry-after:")
+            );
+            let absent = sparql(
+                &running,
+                READER,
+                "/query",
+                "ASK { <urn:marker> <urn:start> true }",
+            )?;
+            ensure!(absent.body.contains("false"), "{}", absent.body);
+            let absent = sparql(&running, READER, "/query", "ASK { ?s <urn:first> ?o }")?;
+            ensure!(absent.body.contains("false"));
+        } else {
+            ensure!(
+                response.status == 204,
+                "{} {}",
+                response.status,
+                response.body
+            );
+            ensure!(
+                sparql(
+                    &running,
+                    READER,
+                    "/query",
+                    "ASK { <urn:marker> <urn:end> true }"
+                )?
+                .body
+                .contains("true")
+            );
+        }
+        // A new admission gets a new budget and the single active slot back.
+        ensure!(sparql(&running, READER, "/query", query)?.status == 200);
+        write_rollback_and_restart(running)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn inner_join_limits_buffered_refusal_and_failed_stream_are_not_success() -> Result<()> {
+    let mut profile = workload(1, 1, 1000);
+    profile["max_inner_join_build_rows"] = json!(1);
+    let running = start_with_workload(&config(), false, Some(&profile))?;
+    ensure!(
+        sparql(
+            &running,
+            WRITER,
+            "/update",
+            "INSERT DATA {
+        <urn:a> <urn:p> 1; <urn:q> 2 . <urn:b> <urn:p> 3; <urn:q> 4 . }"
+        )?
+        .status
+            == 204
+    );
+    let query = "SELECT ?s WHERE { ?s <urn:p> ?p . ?other <urn:q> ?q }";
+    let buffered = request(
+        running.public,
+        "POST",
+        "/query",
+        &format!(
+            "{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json; version=1.1\r\n",
+            identity(READER, 1)?
+        ),
+        query,
+    )?;
+    ensure!(
+        buffered.status == 503 && buffered.body.is_empty(),
+        "{} {}",
+        buffered.status,
+        buffered.body
+    );
+    let graph = request(
+        running.public,
+        "POST",
+        "/query",
+        &format!(
+            "{}Content-Type: application/sparql-query\r\nAccept: application/n-triples; version=1.1\r\n",
+            identity(READER, 1)?
+        ),
+        "CONSTRUCT { ?s <urn:out> ?p } WHERE { ?s <urn:p> ?p . ?other <urn:q> ?q }",
+    )?;
+    ensure!(
+        graph.status == 503 && graph.body.is_empty(),
+        "{} {}",
+        graph.status,
+        graph.body
+    );
+    let raw = raw_wire_bytes(running.public, format!(
+        "POST /query HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json\r\nContent-Length: {}\r\n\r\n{query}", identity(READER, 1)?, query.len()).as_bytes())?;
+    ensure!(raw.starts_with("HTTP/1.1 200 "), "{raw}");
+    ensure!(
+        decode_wire(&raw).is_err() && !raw.ends_with("0\r\n\r\n") && !raw.contains("exceeded"),
+        "{raw}"
+    );
+    let ask = sparql(
+        &running,
+        READER,
+        "/query",
+        "ASK { ?s <urn:p> ?p . ?other <urn:q> ?q }",
+    )?;
+    ensure!(ask.status == 503 && ask.body.is_empty());
+    ensure!(sparql(&running, READER, "/query", "ASK { ?s <urn:p> ?p }")?.status == 200);
+    Ok(())
+}
+
+#[test]
 fn result_limits_buffered_streaming_conditional_and_persistent_journey() -> Result<()> {
     let mut profile = workload(1, 1, 1000);
     profile["max_result_bytes"] = json!(512);

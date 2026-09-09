@@ -191,7 +191,11 @@ decompression-expanded bodies before RDF work on both listeners. Encoded entity
 bytes and decoded bytes have separate explicit caps; this is not a hard memory
 bound. Optional result-byte limits now bound generated and transmitted entities:
 oversized buffered success becomes empty 503, while late serialization failures
-close as failed streams, never error text plus successful EOF. Broader resource accounting, active-work disconnect
+close as failed streams, never error text plus successful EOF. Optional
+`max_inner_join_build_rows` now caps cumulative native Cartesian/hash inner-join
+build rows across a request, including multi-operation updates. Exhaustion is
+typed and sticky, with owned-update rollback; streaming joins, other buffers,
+row widths and RSS are outside this named counter. Broader resource accounting, active-work disconnect
 propagation and full G4.2 acceptance remain open.
 See [ADR-0026](docs/adr/0026-service-identity-and-authorization.md#native-acceptance-closure-2026-09-09).
 RocksDB remains the persistent backend. The custom-backend tests prove the

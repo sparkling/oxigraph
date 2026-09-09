@@ -1826,6 +1826,13 @@ fn evaluate_sparql_query(
         evaluator = evaluator.with_cancellation_token(cancellation.clone());
     }
 
+    if let Some(budget) = request
+        .extensions()
+        .get::<oxigraph_cli::workload::WorkloadLease>()
+        .and_then(oxigraph_cli::workload::WorkloadLease::inner_join_build_budget)
+    {
+        evaluator = evaluator.with_inner_join_build_budget(budget.clone());
+    }
     let parsed = evaluator.parse_query(query);
     check_request(request)?;
     let mut prepared = parsed.map_err(bad_request)?;
@@ -1867,7 +1874,7 @@ fn evaluate_sparql_query(
             .map_err(query_request_refused)?
             .execute()
     }
-    .map_err(internal_server_error)?;
+    .map_err(query_evaluation_error)?;
     match results {
         QueryResults::Solutions(solutions) => {
             let selected = query_results_content_negotiation(request, true)?;
@@ -1878,7 +1885,7 @@ fn evaluate_sparql_query(
                     .serialize_solutions_to_writer(&mut body, solutions.variables().to_vec())
                     .map_err(result_body::internal_error)?;
                 for solution in solutions {
-                    let solution = solution.map_err(internal_server_error)?;
+                    let solution = solution.map_err(query_evaluation_error)?;
                     serializer.serialize(&solution).map_err(|error| {
                         result_body::http_error(error, query_results_not_acceptable)
                     })?;
@@ -1932,7 +1939,7 @@ fn evaluate_sparql_query(
                     .map_err(internal_server_error)?
                     .for_writer(ResultBodyWriter::new(Vec::new(), request));
                 for triple in triples {
-                    let triple = triple.map_err(internal_server_error)?;
+                    let triple = triple.map_err(query_evaluation_error)?;
                     selected
                         .ensure_triple(&triple)
                         .map_err(rdf_response_not_acceptable)?;
@@ -2045,6 +2052,13 @@ fn evaluate_sparql_update(
     if let Some(cancellation) = request_cancellation(request) {
         evaluator = evaluator.with_cancellation_token(cancellation);
     }
+    if let Some(budget) = request
+        .extensions()
+        .get::<oxigraph_cli::workload::WorkloadLease>()
+        .and_then(oxigraph_cli::workload::WorkloadLease::inner_join_build_budget)
+    {
+        evaluator = evaluator.with_inner_join_build_budget(budget.clone());
+    }
     let parsed = evaluator.parse_update(update);
     check_request(request)?;
     let mut prepared = parsed.map_err(bad_request)?;
@@ -2084,14 +2098,31 @@ fn evaluate_sparql_update(
             using.set_available_named_graphs(named_graph_uris.clone());
         }
     }
-    prepared
-        .on_store(store)
-        .execute()
-        .map_err(internal_server_error)?;
+    prepared.on_store(store).execute().map_err(|error| {
+        if matches!(
+            error,
+            oxigraph::sparql::UpdateEvaluationError::ResourceLimitExceeded { .. }
+        ) {
+            (StatusCode::SERVICE_UNAVAILABLE, String::new())
+        } else {
+            internal_server_error(error)
+        }
+    })?;
     Response::builder()
         .status(StatusCode::NO_CONTENT)
         .body(Body::empty())
         .map_err(internal_server_error)
+}
+
+fn query_evaluation_error(error: oxigraph::sparql::QueryEvaluationError) -> HttpError {
+    if matches!(
+        error,
+        oxigraph::sparql::QueryEvaluationError::ResourceLimitExceeded { .. }
+    ) {
+        (StatusCode::SERVICE_UNAVAILABLE, String::new())
+    } else {
+        internal_server_error(error)
+    }
 }
 
 fn rdf_content_negotiation(request: &Request<Body>) -> Result<RdfResponseFormat, HttpError> {

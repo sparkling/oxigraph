@@ -10,6 +10,7 @@ mod eval;
 mod expression;
 mod feedback;
 mod model;
+mod resources;
 mod service;
 mod update;
 
@@ -24,6 +25,7 @@ use crate::expression::{
 };
 pub use crate::feedback::{CardinalityFeedback, CardinalityFeedbackNode, EstimateBasis};
 pub use crate::model::{QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter};
+pub use crate::resources::{InnerJoinBuildBudget, QueryResource, QueryResourcePhase};
 use crate::service::ServiceHandlerRegistry;
 pub use crate::service::{DefaultServiceHandler, ServiceHandler};
 pub use crate::update::{DeleteInsertIter, DeleteInsertQuad};
@@ -83,6 +85,7 @@ pub struct QueryEvaluator {
     cardinality_estimator: Option<Arc<dyn CardinalityEstimator>>,
     bounded_join_planning: Option<BoundedJoinPlanning>,
     cancellation_token: Option<CancellationToken>,
+    inner_join_build_budget: Option<InnerJoinBuildBudget>,
     version: SparqlVersion,
 }
 
@@ -110,6 +113,7 @@ impl QueryEvaluator {
             cardinality_estimator: None,
             bounded_join_planning: None,
             cancellation_token: None,
+            inner_join_build_budget: None,
             version: SparqlVersion::current(),
         }
     }
@@ -586,6 +590,20 @@ impl QueryEvaluator {
         }
     }
 
+    /// Attaches a shared cumulative inner-join build-row budget.
+    /// Evaluator clones and repeated executions share it, including native
+    /// DELETE/INSERT operations. Use a fresh budget for an independent request.
+    #[must_use]
+    pub fn with_inner_join_build_budget(mut self, budget: InnerJoinBuildBudget) -> Self {
+        self.inner_join_build_budget = Some(budget);
+        self
+    }
+
+    /// Returns the explicitly attached shared budget, if any.
+    pub fn inner_join_build_budget(&self) -> Option<&InnerJoinBuildBudget> {
+        self.inner_join_build_budget.as_ref()
+    }
+
     fn simple_evaluator<'a, D: QueryableDataset<'a>>(
         &self,
         dataset: D,
@@ -593,6 +611,9 @@ impl QueryEvaluator {
         base_iri: Option<&Iri<OxString>>,
         version: SparqlVersion,
     ) -> Result<SimpleEvaluator<'a, D>, QueryEvaluationError> {
+        if let Some(budget) = &self.inner_join_build_budget {
+            budget.check()?;
+        }
         SimpleEvaluator::new(
             dataset,
             base_iri.cloned(),
@@ -604,6 +625,9 @@ impl QueryEvaluator {
             self.run_stats,
             version,
         )
+        .map(|evaluator| {
+            evaluator.with_inner_join_build_budget(self.inner_join_build_budget.clone())
+        })
     }
 }
 

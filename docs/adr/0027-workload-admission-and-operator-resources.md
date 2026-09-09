@@ -7,7 +7,9 @@
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
   and response-flush lifetime are implemented. Optional absolute request
-  deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and transactional paths. Opt-in encoded/decoded request-body and generated/emitted result-byte caps are implemented. Broader resource budgets,
+  deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and
+  transactional paths. Opt-in encoded/decoded request-body, generated/emitted
+  result-byte and native inner-join build-row caps are implemented. Other operator budgets,
   excluded deadline paths, active-work disconnect, reload and full acceptance remain open.
   Observed queued socket errors now release admission; FIN-only/silent loss uses timeouts
 - Programme task: `task-1787728711461-3isex6`
@@ -356,8 +358,53 @@ This is not a cap on query state, rows, serializer-private term buffers, Graph
 Store snapshot/ETag preparation, heap capacity or RSS. Accepted empty mutation
 and access-policy-reload acknowledgments can succeed at zero. A response failure
 after commit cannot prove rollback. No source dependency, protected evidence,
-qualification or production default changes. Next: bounded evaluator work and
-explicit unsupported resource profiles; full G4.2 remains open.
+qualification or production default changes. Full G4.2 remains open.
+
+### Native inner-join build-row limit (2026-09-09)
+
+`spareval::InnerJoinBuildBudget` is an explicit shared cumulative handle, attached
+through `QueryEvaluator` or `SparqlEvaluator`. Evaluator/prepared clones and all
+native DELETE/INSERT operations retain the same counter. CLI startup option
+`max_inner_join_build_rows` creates a fresh handle once per admitted lease.
+Omission preserves the uninstrumented path. Zero permits no destination rows;
+exactly-at-cap succeeds; only a denied next charge latches failure. Charges
+occur before Cartesian/hash inner-join insertion, including duplicate rows and
+repeated/nested builds, without reserving from the source iterator's size hint.
+
+`ResourceLimitExceeded { resource: InnerJoinBuildRows, phase: JoinBuild, limit }`
+is typed in query and update errors. Iterator pre/post/EOF checkpoints, ASK's
+terminal check and SERVICE dispatch/iteration checks preserve the shared sticky
+failure even under EXISTS, UNION, aggregates, empty probes or SILENT. Owned
+updates check admission, operations, mutation application and final precommit;
+borrowed transactions retain the existing caller-discard requirement. There is
+no new post-commit rollback claim. Before headers exhaustion maps to empty
+noncacheable 503; late failure remains failed I/O, not well-formed truncation.
+Existing fixed-label evaluation metrics classify exhaustion as Failed.
+
+This counter promises only native inner-join destination rows. Streaming lateral
+joins, probes/scans, row width, other operator buffers, planning, inference,
+foreign SERVICE work and RSS/CPU are excluded. Physical plans are unchanged;
+there is no broad query whitelist and no claim to bound all evaluator work.
+Custom handlers may explicitly share the handle, but opaque remote work is not
+accounted. Capacity growth is allocator behavior, not charged row count.
+
+Native tests cover 64-row builds with empty probes (cap 8 fails on the ninth
+consumed row; cap 64 succeeds), keyed/Cartesian joins, duplicates/nesting,
+masking, exactly-at-cap and zero, multi-operation atomicity through every owned
+binding, and CLI buffered/streamed failures with slot release and restart.
+These supplement rather than refresh pinned qualification evidence. Other
+operator counters, active disconnect, workload reload, exported admission/resource
+telemetry and complete G4.2 acceptance remain outstanding.
+
+Validation also found an unresolved **unbudgeted** query-fuzzer OOM:
+`oom-1007e2363b10d32274268b884b4bc2ef68bd4a7a` (raw SHA256
+`8e7514804b9502d275ba630ed762e9c6428c0f235fbe9de6acc20e0ef8b78231`).
+The exact input reproduces libFuzzer exit 71 above its unchanged 2048 MiB cap;
+the update lane completes its 60-second run. A separate unoptimized native
+evaluation of the decoded query returned successfully, so the responsible
+fuzz/optimizer variant is not yet isolated. The new budget is not claimed to
+repair this failure, and the query fuzz lane is not reported green. Preserve
+the input and investigate it next; do not raise the cap or weaken the oracle.
 
 ### Remaining staged acceptance
 
