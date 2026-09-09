@@ -7,6 +7,7 @@ use oxigraph::store::{
     ReadinessPolicy, ReadinessReason, Store, TransactionStartControl,
 };
 use oxigraph_cli::access::{AccessController, ListenerKind};
+use oxigraph_cli::workload::{AdmissionController, AdmissionMetrics, WorkloadError};
 use std::fmt::Write as _;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -18,7 +19,7 @@ pub(super) fn spawn(
     address: SocketAddr,
     started: Arc<AtomicBool>,
     access: Arc<AccessController>,
-    workload: Option<oxigraph_cli::workload::AdmissionController>,
+    workload: Option<AdmissionController>,
 ) -> std::io::Result<ListeningServer> {
     // Also defend this private seam, independent of Clap validation.
     if !address.ip().is_loopback() || address.port() == 0 {
@@ -31,6 +32,9 @@ pub(super) fn spawn(
     let connection_limit = workload.as_ref().map_or(2, |controller| {
         controller.connection_limit(ListenerKind::Operator)
     });
+    // The handler observes the same shared controller that admitted it: a
+    // `/metrics` scrape therefore sees its own operator lease as active.
+    let telemetry = workload.clone();
     Server::new(move |request| {
         if let Err(error) = AccessController::prepare_request(request) {
             return oxigraph_cli::access::denial(error);
@@ -40,7 +44,12 @@ pub(super) fn spawn(
                 return response;
             }
         }
-        handle(request, &store, started.load(Ordering::Acquire))
+        handle(
+            request,
+            &store,
+            started.load(Ordering::Acquire),
+            telemetry.as_ref(),
+        )
     })
     .with_request_admission(move |head, connection| {
         let mut context = admission.admit(head, connection, ListenerKind::Operator)?;
@@ -155,7 +164,29 @@ fn generated_response(
     }
 }
 
-fn handle(request: &mut Request<Body>, store: &Store, started: bool) -> Response<Body> {
+/// Without a workload policy the admission families are absent, not zero.
+/// An unobservable controller fails the whole scrape closed with a bounded
+/// diagnostic rather than exporting zeros or a raw error.
+fn admission_metrics(
+    request: &Request<Body>,
+    metrics: Option<Result<AdmissionMetrics, WorkloadError>>,
+) -> Result<Option<AdmissionMetrics>, Box<Response<Body>>> {
+    metrics.transpose().map_err(|_| {
+        Box::new(response(
+            request,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "application/json",
+            "{\"error\":\"admission_metrics_unavailable\"}\n".into(),
+        ))
+    })
+}
+
+fn handle(
+    request: &mut Request<Body>,
+    store: &Store,
+    started: bool,
+    workload: Option<&AdmissionController>,
+) -> Response<Body> {
     const JSON: &str = "application/json";
     let path = request.uri().path();
     if !matches!(path, "/health" | "/ready" | "/metrics") {
@@ -185,6 +216,15 @@ fn handle(request: &mut Request<Body>, store: &Store, started: bool) -> Response
     if path == "/health" {
         return response(request, StatusCode::OK, JSON, "{\"live\":true}\n".into());
     }
+    // Observe admission before any store probe; it never dequeues or releases.
+    let admission = if path == "/metrics" {
+        match admission_metrics(request, workload.map(AdmissionController::metrics)) {
+            Ok(admission) => admission,
+            Err(response) => return *response,
+        }
+    } else {
+        None
+    };
     let Ok(now) = GovernanceTime::now() else {
         return response(
             request,
@@ -234,7 +274,10 @@ fn handle(request: &mut Request<Body>, store: &Store, started: bool) -> Response
                 }
                 store.transaction_metrics().write_prometheus(body)?;
                 store.evaluation_metrics().write_prometheus(body)?;
-                store.policy_metrics().write_prometheus(body)
+                store.policy_metrics().write_prometheus(body)?;
+                admission
+                    .as_ref()
+                    .map_or(Ok(()), |metrics| metrics.write_prometheus(body))
             },
         );
     }
@@ -317,7 +360,7 @@ mod tests {
                 .uri(format!("http://localhost{path}"))
                 .body(Body::empty())?;
             ensure!(
-                handle(&mut request, &store, false).status() == expected,
+                handle(&mut request, &store, false, None).status() == expected,
                 "partial startup operational status differs"
             );
         }
@@ -333,6 +376,99 @@ mod tests {
             calls.load(Ordering::Relaxed) == 1,
             "activated handler did not run once"
         );
+        Ok(())
+    }
+
+    fn scrape(
+        store: &Store,
+        workload: Option<&AdmissionController>,
+    ) -> Result<(StatusCode, String)> {
+        let mut request = Request::builder()
+            .uri("http://localhost/metrics")
+            .body(Body::empty())?;
+        let mut response = handle(&mut request, store, true, workload);
+        let body = std::io::read_to_string(response.body_mut())?;
+        Ok((response.status(), body))
+    }
+
+    #[test]
+    fn metrics_omit_admission_without_policy_and_fail_closed_when_unobservable() -> Result<()> {
+        let store = Store::new()?;
+        let (status, baseline) = scrape(&store, None)?;
+        ensure!(status == StatusCode::OK, "baseline scrape failed");
+        ensure!(
+            !baseline.contains("admission"),
+            "no-workload output changed: admission families present"
+        );
+        let controller = AdmissionController::new(oxigraph_cli::workload::WorkloadPolicy::from_json(
+            serde_json::json!({"format":"oxigraph-admission-v1","policy_id":"private-policy","version":1,
+            "max_active":1,"max_queued":0,"operator_max_active":1,"operator_max_queued":0,
+            "queue_timeout_ms":1000,"retry_after_seconds":1,
+            "classes":{"private-class":{"max_active":1,"max_queued":0},"default":{"max_active":1,"max_queued":0}}})
+            .to_string()
+            .as_bytes(),
+        )?)?;
+        // `handle` is called directly here, so no operator lease exists: the
+        // served endpoint additionally counts its own admitted scrape.
+        let held = controller.acquire(
+            "private-class",
+            ListenerKind::Data,
+            oxigraph::sparql::CancellationToken::new(),
+        )?;
+        let (status, body) = scrape(&store, Some(&controller))?;
+        ensure!(status == StatusCode::OK, "workload scrape failed");
+        ensure!(
+            body.starts_with(
+                &baseline[..baseline.find("oxigraph_transactions_total").unwrap_or(0)]
+            ),
+            "readiness gauges changed"
+        );
+        let admission = body
+            .lines()
+            .filter(|line| !line.starts_with('#') && line.contains("admission"))
+            .count();
+        ensure!(
+            admission == AdmissionMetrics::SAMPLES,
+            "admission sample count differs: {admission}"
+        );
+        ensure!(
+            body.contains("oxigraph_admission_active{pool=\"data\"} 1\n")
+                && body.contains("oxigraph_admission_active{pool=\"operator\"} 0\n")
+                && body.contains(
+                    "oxigraph_admissions_total{pool=\"data\",disposition=\"admitted\"} 1\n"
+                ),
+            "active lease not exported"
+        );
+        ensure!(
+            !body.contains("private") && !body.contains("default"),
+            "class or policy identity leaked"
+        );
+        drop(held);
+        // Fail closed with a bounded diagnostic; the Store families are withheld
+        // rather than exported next to zeros or a raw error.
+        let mut request = Request::builder()
+            .uri("http://localhost/metrics")
+            .body(Body::empty())?;
+        let unavailable = admission_metrics(&request, Some(Err(WorkloadError::Unavailable)))
+            .err()
+            .map(|response| *response);
+        let Some(mut unavailable) = unavailable else {
+            anyhow::bail!("unavailable admission telemetry was exported");
+        };
+        let diagnostic = std::io::read_to_string(unavailable.body_mut())?;
+        ensure!(
+            unavailable.status() == StatusCode::SERVICE_UNAVAILABLE
+                && diagnostic == "{\"error\":\"admission_metrics_unavailable\"}\n"
+                && unavailable.headers()[CACHE_CONTROL] == "no-store",
+            "fail-closed diagnostic differs"
+        );
+        ensure!(
+            admission_metrics(&request, None).is_ok_and(|metrics| metrics.is_none())
+                && admission_metrics(&request, Some(Ok(AdmissionMetrics::default())))
+                    .is_ok_and(|metrics| metrics.is_some()),
+            "observable telemetry was withheld"
+        );
+        drop(request);
         Ok(())
     }
 }

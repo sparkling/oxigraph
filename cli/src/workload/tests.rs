@@ -24,6 +24,10 @@ fn acquire(controller: &AdmissionController, class: &str) -> Result<WorkloadLeas
     Ok(controller.acquire(class, ListenerKind::Data, CancellationToken::new())?)
 }
 
+fn raw(controller: &AdmissionController, class: &str) -> Result<WorkloadLease, WorkloadError> {
+    controller.acquire(class, ListenerKind::Data, CancellationToken::new())
+}
+
 fn wait_queued(controller: &AdmissionController, count: usize) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(3);
     while controller.snapshot()?.queued != count {
@@ -542,5 +546,460 @@ fn queue_residence_does_not_restart_an_earlier_caller_deadline() -> Result<()> {
     let lease = worker.join().unwrap()?;
     ensure!(lease.deadline() == Some(deadline));
     ensure!(lease.check().is_ok());
+    Ok(())
+}
+
+fn dispositions(
+    metrics: &AdmissionMetrics,
+    pool: AdmissionPool,
+) -> Vec<(AdmissionDisposition, u64, u64)> {
+    AdmissionDisposition::ALL
+        .into_iter()
+        .map(|disposition| {
+            (
+                disposition,
+                metrics.count(pool, disposition),
+                metrics.queued_count(pool, disposition),
+            )
+        })
+        .filter(|(_, total, queued)| *total != 0 || *queued != 0)
+        .collect()
+}
+
+fn queue_totals(metrics: &AdmissionMetrics, pool: AdmissionPool) -> (u64, u64) {
+    let queued = AdmissionDisposition::ALL
+        .into_iter()
+        .map(|disposition| metrics.queued_count(pool, disposition))
+        .sum::<u64>();
+    (queued, metrics.queue_wait(pool).count())
+}
+
+#[test]
+fn immediate_dispositions_count_once_and_exclusions_record_nothing() -> Result<()> {
+    use AdmissionDisposition::{
+        Admitted, Cancelled, RefusedClass, RefusedGlobal, RefusedOperator, RequestTimedOut,
+        UnknownClass,
+    };
+    let admission = controller(1, 0, 1, 0)?;
+    ensure!(admission.metrics()? == AdmissionMetrics::default());
+    let held = acquire(&admission, "default")?;
+    ensure!(matches!(
+        raw(&admission, "default"),
+        Err(WorkloadError::Overloaded(AdmissionScope::Global))
+    ));
+    let operator =
+        admission.acquire("default", ListenerKind::Operator, CancellationToken::new())?;
+    ensure!(matches!(
+        admission.acquire("default", ListenerKind::Operator, CancellationToken::new()),
+        Err(WorkloadError::Overloaded(AdmissionScope::Operator))
+    ));
+    ensure!(matches!(
+        raw(&admission, "missing"),
+        Err(WorkloadError::UnknownClass)
+    ));
+    let cancelled = CancellationToken::new();
+    cancelled.cancel();
+    ensure!(matches!(
+        admission.acquire("default", ListenerKind::Data, cancelled),
+        Err(WorkloadError::Cancelled)
+    ));
+    ensure!(matches!(
+        admission.acquire(
+            "default",
+            ListenerKind::Data,
+            CancellationToken::new().with_deadline(Instant::now())
+        ),
+        Err(WorkloadError::RequestTimedOut)
+    ));
+    let metrics = admission.metrics()?;
+    ensure!(
+        dispositions(&metrics, AdmissionPool::Data)
+            == [
+                (Admitted, 1, 0),
+                (RefusedGlobal, 1, 0),
+                (UnknownClass, 1, 0),
+                (Cancelled, 1, 0),
+                (RequestTimedOut, 1, 0)
+            ],
+        "{metrics:?}"
+    );
+    ensure!(
+        dispositions(&metrics, AdmissionPool::Operator)
+            == [(Admitted, 1, 0), (RefusedOperator, 1, 0)],
+        "{metrics:?}"
+    );
+    for pool in AdmissionPool::ALL {
+        ensure!(
+            queue_totals(&metrics, pool) == (0, 0),
+            "immediate results observed a queue wait"
+        );
+        ensure!(metrics.active(pool) == 1 && metrics.queued(pool) == 0);
+    }
+    // Exclusions: denial rendering, a missing trusted access context and
+    // capacity release are not admission outcomes.
+    drop(admission.denial(WorkloadError::Overloaded(AdmissionScope::Class)));
+    ensure!(
+        admission
+            .admit(&mut Extensions::new(), ListenerKind::Data)
+            .is_err()
+    );
+    drop((held, operator));
+    let released = admission.metrics()?;
+    ensure!(
+        released.active(AdmissionPool::Data) == 0 && released.active(AdmissionPool::Operator) == 0
+    );
+    for pool in AdmissionPool::ALL {
+        ensure!(dispositions(&released, pool) == dispositions(&metrics, pool));
+    }
+    ensure!(admission.snapshot()? == AdmissionSnapshot::default());
+
+    let classes = controller(2, 1, 1, 0)?;
+    let held = acquire(&classes, "default")?;
+    ensure!(matches!(
+        raw(&classes, "default"),
+        Err(WorkloadError::Overloaded(AdmissionScope::Class))
+    ));
+    let metrics = classes.metrics()?;
+    ensure!(
+        dispositions(&metrics, AdmissionPool::Data) == [(Admitted, 1, 0), (RefusedClass, 1, 0)]
+    );
+    ensure!(dispositions(&metrics, AdmissionPool::Operator).is_empty());
+    drop(held);
+    let mut text = String::new();
+    classes.metrics()?.write_prometheus(&mut text)?;
+    ensure!(
+        !text.contains("class=")
+            && !text.contains("\"default\"")
+            && !text.contains("\"second\"")
+            && !text.contains("\"test\""),
+        "class or policy names exported"
+    );
+    Ok(())
+}
+
+#[test]
+fn queued_cancellation_purged_before_the_waiter_observes_counts_once() -> Result<()> {
+    let controller = controller(1, 2, 1, 2)?;
+    let held = acquire(&controller, "default")?;
+    let token = CancellationToken::new();
+    let child = controller.clone();
+    let waiter = {
+        let token = token.clone();
+        thread::spawn(move || child.acquire("default", ListenerKind::Data, token))
+    };
+    wait_queued(&controller, 1)?;
+    {
+        // Cancel and purge under the same lock: the waiter can only observe
+        // its cancellation on a later locked pass, after its entry is gone.
+        let mut state = controller.lock()?;
+        token.cancel();
+        AdmissionController::purge(&mut state, Instant::now());
+        ensure!(state.queue.is_empty(), "cancelled entry survived purge");
+    }
+    ensure!(matches!(
+        waiter.join().unwrap(),
+        Err(WorkloadError::Cancelled)
+    ));
+    let metrics = controller.metrics()?;
+    ensure!(
+        dispositions(&metrics, AdmissionPool::Data)
+            == [
+                (AdmissionDisposition::Admitted, 1, 0),
+                (AdmissionDisposition::Cancelled, 1, 1)
+            ],
+        "{metrics:?}"
+    );
+    ensure!(queue_totals(&metrics, AdmissionPool::Data) == (1, 1));
+    ensure!(metrics.queued(AdmissionPool::Data) == 0 && metrics.active(AdmissionPool::Data) == 1);
+    drop(held);
+    Ok(())
+}
+
+#[test]
+fn queued_expiry_purged_early_and_later_admission_count_wait_once() -> Result<()> {
+    let mut policy = controller(1, 2, 1, 2)?.0.policy.clone();
+    policy.queue_timeout_ms = 200;
+    let controller = AdmissionController::new(policy)?;
+    let held = acquire(&controller, "default")?;
+    let child = controller.clone();
+    let expiring = thread::spawn(move || {
+        child.acquire("default", ListenerKind::Data, CancellationToken::new())
+    });
+    wait_queued(&controller, 1)?;
+    let deadline = {
+        // Virtual-clock purge removes the entry before its real deadline; the
+        // waiter still returns exactly one queue-timeout at that deadline.
+        let mut state = controller.lock()?;
+        let deadline = state.queue.front().map(|entry| entry.deadline);
+        AdmissionController::purge(&mut state, deadline.unwrap());
+        ensure!(state.queue.is_empty(), "expired entry survived purge");
+        deadline.unwrap()
+    };
+    ensure!(matches!(
+        expiring.join().unwrap(),
+        Err(WorkloadError::AdmissionTimedOut)
+    ));
+    ensure!(Instant::now() >= deadline);
+    let child = controller.clone();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let admitted = thread::spawn(move || {
+        let lease = child.acquire("default", ListenerKind::Data, CancellationToken::new());
+        sender.send(()).unwrap();
+        lease
+    });
+    wait_queued(&controller, 1)?;
+    ensure!(receiver.try_recv().is_err());
+    drop(held);
+    let lease = admitted.join().unwrap()?;
+    let metrics = controller.metrics()?;
+    ensure!(
+        dispositions(&metrics, AdmissionPool::Data)
+            == [
+                (AdmissionDisposition::Admitted, 2, 1),
+                (AdmissionDisposition::QueueTimedOut, 1, 1)
+            ],
+        "{metrics:?}"
+    );
+    let histogram = metrics.queue_wait(AdmissionPool::Data);
+    ensure!(queue_totals(&metrics, AdmissionPool::Data) == (2, 2));
+    // The expired wait is at least ~200ms: absent from the 10ms bucket, present in +Inf.
+    let buckets: Vec<_> = histogram.buckets().collect();
+    ensure!(buckets[2].1 <= 1 && buckets[7].1 == 2, "{buckets:?}");
+    ensure!(
+        histogram.sum() >= Duration::from_millis(150),
+        "{:?}",
+        histogram.sum()
+    );
+    ensure!(metrics.active(AdmissionPool::Data) == 1);
+    drop(lease);
+    ensure!(controller.snapshot()? == AdmissionSnapshot::default());
+    Ok(())
+}
+
+#[test]
+fn queued_request_deadline_is_a_distinct_queued_disposition() -> Result<()> {
+    let mut policy = controller(1, 1, 1, 1)?.0.policy.clone();
+    policy.request_timeout_ms = Some(40);
+    let controller = AdmissionController::new(policy)?;
+    let held = acquire(&controller, "default")?;
+    ensure!(matches!(
+        raw(&controller, "default"),
+        Err(WorkloadError::RequestTimedOut)
+    ));
+    let metrics = controller.metrics()?;
+    ensure!(
+        dispositions(&metrics, AdmissionPool::Data)
+            == [
+                (AdmissionDisposition::Admitted, 1, 0),
+                (AdmissionDisposition::RequestTimedOut, 1, 1)
+            ],
+        "{metrics:?}"
+    );
+    ensure!(queue_totals(&metrics, AdmissionPool::Data) == (1, 1));
+    ensure!(metrics.queue_wait(AdmissionPool::Data).sum() >= Duration::from_millis(30));
+    drop(held);
+    Ok(())
+}
+
+#[test]
+fn lease_clone_drop_cancel_and_unwind_release_without_observations() -> Result<()> {
+    let controller = controller(1, 0, 1, 0)?;
+    let lease = acquire(&controller, "default")?;
+    let clone = lease.clone();
+    lease.cancellation_token().cancel();
+    drop(lease);
+    ensure!(controller.metrics()?.active(AdmissionPool::Data) == 1);
+    drop(clone);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _lease = acquire(&controller, "default").unwrap();
+        panic!("injected handler unwind");
+    }));
+    ensure!(result.is_err());
+    let metrics = controller.metrics()?;
+    ensure!(
+        dispositions(&metrics, AdmissionPool::Data) == [(AdmissionDisposition::Admitted, 2, 0)],
+        "release or unwind produced observations: {metrics:?}"
+    );
+    ensure!(metrics.active(AdmissionPool::Data) == 0);
+    Ok(())
+}
+
+#[test]
+fn concurrent_snapshots_are_internally_consistent() -> Result<()> {
+    let controller = controller(2, 4, 2, 4)?;
+    let workers: Vec<_> = (0..4)
+        .map(|_| {
+            let child = controller.clone();
+            thread::spawn(move || -> Result<(), WorkloadError> {
+                for _ in 0..20 {
+                    drop(child.acquire("default", ListenerKind::Data, CancellationToken::new())?);
+                }
+                Ok(())
+            })
+        })
+        .collect();
+    for _ in 0..200 {
+        let metrics = controller.metrics()?;
+        for pool in AdmissionPool::ALL {
+            let (queued, observed) = queue_totals(&metrics, pool);
+            ensure!(
+                queued == observed,
+                "queued counts and waits diverged: {metrics:?}"
+            );
+            let total: u64 = AdmissionDisposition::ALL
+                .into_iter()
+                .map(|disposition| metrics.count(pool, disposition))
+                .sum();
+            ensure!(queued <= total);
+            ensure!(metrics.active(pool) <= 2 && metrics.queued(pool) <= 4);
+        }
+        thread::yield_now();
+    }
+    for worker in workers {
+        worker.join().unwrap()?;
+    }
+    let metrics = controller.metrics()?;
+    ensure!(metrics.count(AdmissionPool::Data, AdmissionDisposition::Admitted) == 80);
+    ensure!(
+        dispositions(&metrics, AdmissionPool::Data)
+            .iter()
+            .all(|(disposition, _, _)| *disposition == AdmissionDisposition::Admitted),
+        "{metrics:?}"
+    );
+    ensure!(dispositions(&metrics, AdmissionPool::Operator).is_empty());
+    ensure!(controller.snapshot()? == AdmissionSnapshot::default());
+    Ok(())
+}
+
+#[test]
+fn poisoned_state_fails_telemetry_closed_and_counts_unavailable() -> Result<()> {
+    let controller = controller(1, 1, 1, 1)?;
+    drop(acquire(&controller, "default")?);
+    let poison = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = controller.0.state.lock().unwrap();
+        panic!("isolated poison");
+    }));
+    ensure!(poison.is_err());
+    ensure!(controller.metrics() == Err(WorkloadError::Unavailable));
+    ensure!(controller.snapshot() == Err(WorkloadError::Unavailable));
+    ensure!(matches!(
+        raw(&controller, "default"),
+        Err(WorkloadError::Unavailable)
+    ));
+    // The export fails closed, but the terminal result was still recorded once.
+    let recorded = controller.0.metrics.lock().unwrap().clone();
+    ensure!(
+        dispositions(&recorded, AdmissionPool::Data)
+            == [
+                (AdmissionDisposition::Admitted, 1, 0),
+                (AdmissionDisposition::Unavailable, 1, 0)
+            ],
+        "{recorded:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn operator_queue_observations_are_independent_and_count_each_return_once() -> Result<()> {
+    let mut policy = controller(1, 1, 1, 1)?.0.policy.clone();
+    policy.operator_max_queued = 1;
+    let controller = AdmissionController::new(policy)?;
+    let data = acquire(&controller, "default")?;
+    let operator =
+        controller.acquire("default", ListenerKind::Operator, CancellationToken::new())?;
+    let wait_operator = || -> Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while controller.snapshot()?.operator_queued != 1 {
+            ensure!(Instant::now() < deadline, "operator did not queue");
+            thread::yield_now();
+        }
+        Ok(())
+    };
+    let token = CancellationToken::new();
+    let child = controller.clone();
+    let cancelled = {
+        let token = token.clone();
+        thread::spawn(move || child.acquire("default", ListenerKind::Operator, token))
+    };
+    wait_operator()?;
+    token.cancel();
+    ensure!(matches!(
+        cancelled.join().unwrap(),
+        Err(WorkloadError::Cancelled)
+    ));
+    let child = controller.clone();
+    let admitted = thread::spawn(move || {
+        child.acquire("default", ListenerKind::Operator, CancellationToken::new())
+    });
+    wait_operator()?;
+    drop(operator);
+    let lease = admitted.join().unwrap()?;
+    let metrics = controller.metrics()?;
+    ensure!(
+        dispositions(&metrics, AdmissionPool::Operator)
+            == [
+                (AdmissionDisposition::Admitted, 2, 1),
+                (AdmissionDisposition::Cancelled, 1, 1),
+            ],
+        "{metrics:?}"
+    );
+    ensure!(queue_totals(&metrics, AdmissionPool::Operator) == (2, 2));
+    ensure!(
+        dispositions(&metrics, AdmissionPool::Data) == [(AdmissionDisposition::Admitted, 1, 0),]
+    );
+    ensure!(queue_totals(&metrics, AdmissionPool::Data) == (0, 0));
+    ensure!(
+        metrics.active(AdmissionPool::Data) == 1 && metrics.active(AdmissionPool::Operator) == 1
+    );
+    drop((data, lease));
+    ensure!(controller.snapshot()? == AdmissionSnapshot::default());
+    Ok(())
+}
+
+#[test]
+fn poisoned_queued_waiter_releases_ticket_and_records_one_unavailable_wait() -> Result<()> {
+    let controller = controller(1, 1, 1, 1)?;
+    let held = acquire(&controller, "default")?;
+    let child = controller.clone();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let waiter = thread::spawn(move || {
+        sender
+            .send(child.acquire("default", ListenerKind::Data, CancellationToken::new()))
+            .unwrap();
+    });
+    wait_queued(&controller, 1)?;
+    let poison = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = controller.0.state.lock().unwrap();
+        panic!("isolated queued state poison");
+    }));
+    ensure!(poison.is_err());
+    controller.0.changed.notify_all();
+    ensure!(matches!(
+        receiver.recv_timeout(Duration::from_secs(3))?,
+        Err(WorkloadError::Unavailable)
+    ));
+    waiter.join().unwrap();
+    drop(held);
+    let state = controller
+        .0
+        .state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    ensure!(
+        state.queue.is_empty() && state.active == 0,
+        "poisoned cleanup retained capacity"
+    );
+    drop(state);
+    let recorded = controller.0.metrics.lock().unwrap().clone();
+    ensure!(
+        dispositions(&recorded, AdmissionPool::Data)
+            == [
+                (AdmissionDisposition::Admitted, 1, 0),
+                (AdmissionDisposition::Unavailable, 1, 1),
+            ],
+        "{recorded:?}"
+    );
+    ensure!(queue_totals(&recorded, AdmissionPool::Data) == (1, 1));
+    ensure!(controller.metrics() == Err(WorkloadError::Unavailable));
     Ok(())
 }

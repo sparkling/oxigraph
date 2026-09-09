@@ -431,7 +431,7 @@ fixed-length and chunked half-closed request fixtures remain successful.
 
 Still pending: active-work disconnect propagation, deadline support for the
 explicitly excluded paths above, finer parser/evaluator work counters,
-per-principal/priority scheduling, atomic workload reload, exported metrics and
+per-principal/priority scheduling, atomic workload reload, resource-use metrics and
 operational qualification. Cooperative admission is not a hard RSS/CPU/fd/disk
 guarantee; use external process/container controls. This stage does not complete
 G4.2 or promote the Proposed ADR.
@@ -462,8 +462,9 @@ succeed. Startup failure exits the process and releases both listeners.
   explicitly degraded is HTTP 200; not-ready is 503 with fixed reason tokens.
 - `GET`/`HEAD /metrics`: the same native observation as at most 21 fixed,
   label-free Prometheus text-format gauges, plus 89 bounded transaction samples
-  and 154 bounded query/update samples plus 143 policy samples (at most 407 total)
-  described below. A storage-not-ready result remains
+  and 154 bounded query/update samples plus 143 policy samples (at most 407 total).
+  A workload policy adds 60 admission samples (at most 467 total), described below.
+  A storage-not-ready result remains
   HTTP 200 with `oxigraph_ready 0`; a clock-conversion failure is 503.
 
 HEAD performs the same observation and suppresses its body. Responses use
@@ -528,8 +529,34 @@ pre-commit Drop, unwinding, and standalone validation are excluded. The current
 CLI does not configure a SHACL policy, so those counters remain zero; zero is
 not a claim that validation or remote egress is enabled.
 
+With `--workload-policy`, five additional families observe admission:
+
+- `oxigraph_admission_active` and `oxigraph_admission_queued`: current requests
+  in the fixed `data` and `operator` pools.
+- `oxigraph_admissions_total` and `oxigraph_admissions_queued_total`: all returned
+  acquisition results and the queued subset. Fixed dispositions distinguish
+  admission, global/class/operator refusal, unknown class, cancellation,
+  request timeout, queue timeout and unavailability.
+- `oxigraph_admission_queue_wait_seconds`: cumulative wait histograms for each
+  pool, with the same microsecond resolution and fixed buckets as transaction
+  telemetry. Only attempts that entered the queue contribute, from enqueue to
+  their terminal scheduling observation (or observation of unavailability).
+  This can include time after another thread has purged the entry.
+
+Counters are shared by controller clones and reset on restart/new controller;
+counts and sums saturate. These observations neither drive readiness nor claim
+request success or rollback. Missing trusted context, authentication/authorization
+refusals, idle connections, and denial rendering are excluded. Lease clones,
+late cancellation, drop and unwind do not count an admitted attempt again.
+An authorized scrape includes its own active operator lease. No class/policy
+names, identities, queries, RDF or endpoints are exported. Without a workload
+policy these families are absent, not zero. An unavailable controller snapshot
+fails the scrape with bounded HTTP 503; configured result-byte limits still apply.
+The additive Rust view is `AdmissionController::metrics()`; the original
+four-field `snapshot()` remains unchanged.
+
 Each snapshot is internally consistent, but readiness, transaction, evaluation,
-and policy snapshots are not one atomic observation. See
+policy and admission snapshots are not one atomic observation. See
 [ADR-0022](../docs/adr/0022-operational-readiness-backup-and-recovery.md).
 
 It is also possible to load RDF data offline using bulk loading:

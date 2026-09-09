@@ -419,6 +419,32 @@ fn silent_policy_denials_remain_visible_without_failed_operation_counts() -> Res
 }
 
 #[test]
+fn metrics_without_workload_policy_export_no_admission_families() -> Result<()> {
+    let running = start(None, false)?;
+    for method in ["GET", "HEAD"] {
+        let metrics = wire(running.admin, method, "/metrics")?;
+        ensure!(metrics.status == 200, "scrape failed");
+        ensure!(
+            !metrics.body.contains("admission"),
+            "admission telemetry exported without a workload policy"
+        );
+    }
+    let metrics = wire(running.admin, "GET", "/metrics")?;
+    let families: Vec<_> = metrics
+        .body
+        .lines()
+        .filter(|line| line.starts_with("# TYPE "))
+        .collect();
+    // Readiness gauges plus the three Store telemetry slices: unchanged output.
+    ensure!(
+        families.len() <= 21 + 3 + 4 + 4 && metrics.body.ends_with('\n'),
+        "family inventory drifted: {}",
+        families.len()
+    );
+    Ok(())
+}
+
+#[test]
 fn backpressure_is_not_ready_but_process_is_live_after_reopen() -> Result<()> {
     let directory = assert_fs::TempDir::new()?;
     let location = directory.path().join("store");

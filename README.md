@@ -199,8 +199,12 @@ row widths and RSS are outside this named counter. Independent
 `max_sort_buffer_rows` now caps cumulative native `ORDER BY` buffer rows before
 decoded sort-key construction and insertion, preserving order and duplicates.
 It shares the same typed-failure, rollback and failed-stream behavior; earlier
-expression work and comparator CPU are not bounded. Broader resource accounting,
-active-work disconnect propagation and full G4.2 acceptance remain open.
+expression work and comparator CPU are not bounded. With a workload policy,
+operator `/metrics` now exports active/queued pool gauges, terminal admission
+counts and queue-wait histograms: 60 fixed-label samples without request data.
+Admission is not execution success; lease release is not proof of rollback.
+Broader resource accounting, active-work disconnect propagation, fairness,
+workload reload and full G4.2 acceptance remain open.
 The planner also avoids materializing large accumulated path fan-outs when
 a smaller hash-build input is available. Native result/budget regressions and
 the original OOM-input replay verify this

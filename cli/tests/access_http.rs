@@ -2126,6 +2126,275 @@ fn workload_queue_times_out_before_continue_and_remains_usable() -> Result<()> {
     Ok(())
 }
 
+fn scrape(running: &Running, method: &str) -> Result<Wire> {
+    request(
+        running.admin,
+        method,
+        "/metrics",
+        &identity(OPERATOR, 1)?,
+        "",
+    )
+}
+
+fn admission_sample(body: &str, family: &str, labels: &str) -> Result<u64> {
+    let prefix = format!("{family}{{{labels}}} ");
+    let line = body
+        .lines()
+        .find(|line| line.starts_with(&prefix))
+        .with_context(|| format!("missing sample {prefix}"))?;
+    Ok(line[prefix.len()..].parse()?)
+}
+
+const ADMISSION_DISPOSITIONS: [&str; 9] = [
+    "admitted",
+    "refused_global",
+    "refused_class",
+    "refused_operator",
+    "unknown_class",
+    "cancelled",
+    "request_timed_out",
+    "queue_timed_out",
+    "unavailable",
+];
+
+/// Every admission sample of one pool: (disposition, total, queued).
+fn pool_dispositions(body: &str, pool: &str) -> Result<Vec<(&'static str, u64, u64)>> {
+    ADMISSION_DISPOSITIONS
+        .into_iter()
+        .map(|disposition| {
+            let labels = format!("pool=\"{pool}\",disposition=\"{disposition}\"");
+            Ok((
+                disposition,
+                admission_sample(body, "oxigraph_admissions_total", &labels)?,
+                admission_sample(body, "oxigraph_admissions_queued_total", &labels)?,
+            ))
+        })
+        .collect()
+}
+
+#[test]
+fn workload_admission_metrics_export_bounded_pool_dispositions() -> Result<()> {
+    for (queued, class_queued, disposition, status) in [
+        (0, 0, "refused_global", 503),
+        (1, 0, "refused_class", 429),
+        (1, 1, "queue_timed_out", 503),
+    ] {
+        let running =
+            start_with_workload(&config(), false, Some(&workload(queued, class_queued, 40)))?;
+        let before = scrape(&running, "GET")?;
+        ensure!(before.status == 200, "authorized scrape failed");
+        let lines: Vec<_> = before
+            .body
+            .lines()
+            .filter(|line| line.contains("admission"))
+            .collect();
+        ensure!(
+            lines.iter().filter(|line| !line.starts_with('#')).count() == 60
+                && lines
+                    .iter()
+                    .filter(|line| line.starts_with("# TYPE "))
+                    .count()
+                    == 5,
+            "admission sample cardinality drifted: {}",
+            lines.len()
+        );
+        for line in &lines {
+            ensure!(
+                line.starts_with("oxigraph_admission")
+                    || line.starts_with("# TYPE oxigraph_admission"),
+                "family drift: {line}"
+            );
+            for private in [
+                OPERATOR,
+                WRITER,
+                READER,
+                "wire-test",
+                "class=",
+                "default",
+                "urn:",
+                "private",
+                "endpoint",
+                "principal",
+            ] {
+                ensure!(!line.contains(private), "private material exported: {line}");
+            }
+        }
+        // The scrape is served through its own admitted operator lease.
+        ensure!(
+            admission_sample(
+                &before.body,
+                "oxigraph_admission_active",
+                "pool=\"operator\""
+            )? == 1
+                && admission_sample(
+                    &before.body,
+                    "oxigraph_admission_queued",
+                    "pool=\"operator\""
+                )? == 0
+                && admission_sample(&before.body, "oxigraph_admission_active", "pool=\"data\"")?
+                    == 0
+                && admission_sample(&before.body, "oxigraph_admission_queued", "pool=\"data\"")?
+                    == 0,
+            "gauges differ before load"
+        );
+        let operator_before = pool_dispositions(&before.body, "operator")?;
+        let admitted_before = operator_before[0].1;
+        ensure!(
+            admitted_before >= 1
+                && operator_before[1..]
+                    .iter()
+                    .all(|(_, total, queued)| *total == 0 && *queued == 0)
+                && operator_before[0].2 == 0,
+            "operator dispositions before load: {operator_before:?}"
+        );
+        ensure!(
+            pool_dispositions(&before.body, "data")?
+                .iter()
+                .all(|(_, total, queued)| *total == 0 && *queued == 0),
+            "data pool observed before any data request"
+        );
+        // Access rejection precedes admission: denied scrapes are never counted.
+        ensure!(
+            request(running.admin, "GET", "/metrics", &identity(READER, 1)?, "")?.status == 403
+        );
+        ensure!(request(running.admin, "GET", "/metrics", "", "")?.status == 401);
+
+        let occupied = occupy_admission(&running)?;
+        let body = if disposition == "queue_timed_out" {
+            "Content-Length: 100"
+        } else {
+            "Content-Length: invalid"
+        };
+        let denied = wire(
+            running.public,
+            &format!(
+                "POST /update HTTP/1.1\r\nHost: localhost\r\n{}Expect: 100-continue\r\n{body}\r\n\r\n",
+                identity(WRITER, 1)?
+            ),
+        )?;
+        ensure!(
+            denied.status == status && denied.body.is_empty(),
+            "wrong overload: {}",
+            denied.status
+        );
+        // HEAD performs the same bounded observation and is itself admitted.
+        let head = scrape(&running, "HEAD")?;
+        ensure!(
+            head.status == 200
+                && head.body.is_empty()
+                && head.head.to_ascii_lowercase().contains("content-length: "),
+            "operator HEAD scrape differs"
+        );
+        let after = scrape(&running, "GET")?;
+        ensure!(
+            after.status == 200,
+            "occupied data slot consumed the operator reserve"
+        );
+        let operator_after = pool_dispositions(&after.body, "operator")?;
+        ensure!(
+            operator_after[0] == ("admitted", admitted_before + 2, 0)
+                && operator_after[1..] == operator_before[1..],
+            "denied scrapes were counted or authorized ones were not: {operator_after:?}"
+        );
+        let data_after = pool_dispositions(&after.body, "data")?;
+        let queued_expected = u64::from(disposition == "queue_timed_out");
+        ensure!(
+            data_after.iter().all(|(name, total, queued)| match *name {
+                "admitted" => (*total, *queued) == (1, 0),
+                name if name == disposition => (*total, *queued) == (1, queued_expected),
+                _ => (*total, *queued) == (0, 0),
+            }),
+            "data dispositions differ: {data_after:?}"
+        );
+        ensure!(
+            admission_sample(&after.body, "oxigraph_admission_active", "pool=\"data\"")? == 1
+                && admission_sample(&after.body, "oxigraph_admission_queued", "pool=\"data\"")?
+                    == 0
+                && admission_sample(
+                    &after.body,
+                    "oxigraph_admission_active",
+                    "pool=\"operator\""
+                )? == 1,
+            "gauges differ under load"
+        );
+        let wait_count = admission_sample(
+            &after.body,
+            "oxigraph_admission_queue_wait_seconds_count",
+            "pool=\"data\"",
+        )?;
+        ensure!(
+            wait_count == queued_expected,
+            "queue wait observations: {wait_count}"
+        );
+        ensure!(
+            admission_sample(
+                &after.body,
+                "oxigraph_admission_queue_wait_seconds_count",
+                "pool=\"operator\"",
+            )? == 0,
+            "operator requests never queued"
+        );
+        if disposition == "queue_timed_out" {
+            // At least the 40ms queue timeout elapsed: absent from the 10ms bucket.
+            ensure!(
+                admission_sample(
+                    &after.body,
+                    "oxigraph_admission_queue_wait_seconds_bucket",
+                    "pool=\"data\",le=\"0.01\"",
+                )? == 0
+                    && admission_sample(
+                        &after.body,
+                        "oxigraph_admission_queue_wait_seconds_bucket",
+                        "pool=\"data\",le=\"+Inf\"",
+                    )? == 1,
+                "queue wait buckets differ"
+            );
+            let sum = after
+                .body
+                .lines()
+                .find_map(|line| {
+                    line.strip_prefix("oxigraph_admission_queue_wait_seconds_sum{pool=\"data\"} ")
+                })
+                .context("missing wait sum")?
+                .parse::<f64>()?;
+            ensure!(sum >= 0.03, "queue wait sum too small: {sum}");
+        }
+        drop(occupied);
+        // Release after observed disconnect, then a successful write is admitted.
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let response = sparql(
+                &running,
+                WRITER,
+                "/update",
+                "INSERT DATA { <urn:admitted> <urn:p> <urn:o> }",
+            )?;
+            if response.status == 204 {
+                break;
+            }
+            ensure!(
+                [429, 503].contains(&response.status) && Instant::now() < deadline,
+                "slot did not release: {}",
+                response.status
+            );
+            thread::yield_now();
+        }
+        let released = scrape(&running, "GET")?;
+        let data_released = pool_dispositions(&released.body, "data")?;
+        ensure!(
+            data_released[0].1 >= 2
+                && admission_sample(&released.body, "oxigraph_admission_active", "pool=\"data\"")?
+                    == 0,
+            "release and later admission not observed: {data_released:?}"
+        );
+        ensure!(
+            pool_dispositions(&released.body, "operator")?[0].1 == admitted_before + 3,
+            "operator scrapes not counted exactly"
+        );
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn workload_queued_reset_frees_slot_and_half_closed_write_survives_restart() -> Result<()> {

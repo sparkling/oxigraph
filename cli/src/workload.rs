@@ -5,6 +5,11 @@
 //! Profiles are explicit and immutable for this controller's lifetime. All
 //! requests have one priority; eligible requests are FIFO, skipping a saturated
 //! class so it cannot block another class. Operator capacity is a separate pool.
+//!
+//! Admission telemetry ([`metrics`]) is process-local and observational only:
+//! every returned `acquire` result is counted exactly once, queue waits are the
+//! measured from enqueue to the terminal scheduling observation, and reading a
+//! snapshot never mutates admission.
 use crate::access::{ListenerKind, RequestContext};
 use oxhttp::model::header::{CACHE_CONTROL, RETRY_AFTER};
 use oxhttp::model::{Body, Extensions, Response, StatusCode};
@@ -16,6 +21,9 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+
+mod metrics;
+pub use metrics::{AdmissionDisposition, AdmissionMetrics, AdmissionPool, QueueWaitHistogram};
 
 const MAX_PROFILE_BYTES: u64 = 64 * 1024;
 // Cooperative queue-token observation, not an end-to-end cancellation claim.
@@ -216,6 +224,9 @@ struct Inner {
     policy: WorkloadPolicy,
     state: Mutex<State>,
     changed: Condvar,
+    // Fixed-size telemetry only. Locked after `state` when both are needed and
+    // never held across scheduling, storage or transport work.
+    metrics: Mutex<AdmissionMetrics>,
 }
 
 /// One controller must be shared by both data and operator listeners.
@@ -256,6 +267,7 @@ impl AdmissionController {
             policy,
             state: Mutex::new(State::default()),
             changed: Condvar::new(),
+            metrics: Mutex::new(AdmissionMetrics::default()),
         })))
     }
 
@@ -278,6 +290,49 @@ impl AdmissionController {
         })
     }
 
+    /// One consistent telemetry view: counters and the instantaneous gauges are
+    /// copied while both controller locks are held, so no admission, purge,
+    /// dequeue or release can interleave. No scheduling work runs here. A
+    /// poisoned lock fails closed instead of reporting zeros.
+    pub fn metrics(&self) -> Result<AdmissionMetrics, WorkloadError> {
+        let state = self.lock()?;
+        let metrics = self
+            .0
+            .metrics
+            .lock()
+            .map_err(|_| WorkloadError::Unavailable)?
+            .clone();
+        let snapshot = AdmissionSnapshot {
+            active: state.active,
+            queued: state.queue.iter().filter(|entry| !entry.operator).count(),
+            operator_active: state.operator_active,
+            operator_queued: state.queue.iter().filter(|entry| entry.operator).count(),
+        };
+        drop(state);
+        Ok(metrics.with_gauges(snapshot))
+    }
+
+    /// The single terminal observation of one acquisition attempt. Called after
+    /// the state lock is released; `denial` rendering and lease/ticket drops
+    /// never record anything, so purge, late cancellation or unwind of the
+    /// admitted work cannot produce a second count.
+    fn record(
+        &self,
+        listener: ListenerKind,
+        result: &Result<WorkloadLease, WorkloadError>,
+        queue_wait: Option<Duration>,
+    ) {
+        self.0
+            .metrics
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .record(
+                listener.into(),
+                AdmissionDisposition::of(result),
+                queue_wait,
+            );
+    }
+
     /// Queue cancellation is checked at least every 10ms of scheduled execution.
     /// Caller-provided classes/listener kinds are trusted server inputs, never
     /// values copied directly from HTTP headers. No body/storage/egress access.
@@ -296,6 +351,22 @@ impl AdmissionController {
         listener: ListenerKind,
         cancellation: CancellationToken,
         abort: Option<&oxhttp::AdmissionAbort>,
+    ) -> Result<WorkloadLease, WorkloadError> {
+        let mut queue_wait = None;
+        let result = self.try_acquire(class, listener, cancellation, abort, &mut queue_wait);
+        self.record(listener, &result, queue_wait);
+        result
+    }
+
+    /// `queue_wait` is set only when the request entered the queue: from its
+    /// locked enqueue to the locked scheduling pass that decided its result.
+    fn try_acquire(
+        &self,
+        class: &str,
+        listener: ListenerKind,
+        cancellation: CancellationToken,
+        abort: Option<&oxhttp::AdmissionAbort>,
+        queue_wait: &mut Option<Duration>,
     ) -> Result<WorkloadLease, WorkloadError> {
         let now = Instant::now();
         let cancellation = if let Some(timeout) = self.0.policy.request_timeout_ms {
@@ -323,6 +394,8 @@ impl AdmissionController {
         let deadline = entry.deadline;
         let cancellation = entry.cancellation.clone();
         state.queue.push_back(entry);
+        let enqueued = Instant::now();
+        *queue_wait = Some(Duration::ZERO);
         // Declare after the mutex guard, but release the guard before leaving:
         // ticket drop must never recursively lock the same mutex.
         drop(state);
@@ -334,8 +407,15 @@ impl AdmissionController {
             if abort.is_some_and(oxhttp::AdmissionAbort::is_aborted) {
                 cancellation.cancel();
             }
-            let mut state = self.lock()?;
+            let mut state = match self.lock() {
+                Ok(state) => state,
+                Err(error) => {
+                    *queue_wait = Some(enqueued.elapsed());
+                    return Err(error);
+                }
+            };
             let now = Instant::now();
+            *queue_wait = Some(now.saturating_duration_since(enqueued));
             let failure = if let Some(reason) = cancellation.cancellation_reason() {
                 Some(match reason {
                     oxigraph::sparql::CancellationReason::TimedOut => {
@@ -376,10 +456,11 @@ impl AdmissionController {
             let wait = deadline
                 .saturating_duration_since(now)
                 .min(CANCELLATION_POLL);
-            let result = self.0.changed.wait_timeout(state, wait);
-            match result {
-                Ok((guard, _)) => drop(guard),
-                Err(_) => return Err(WorkloadError::Unavailable),
+            if let Ok((guard, _)) = self.0.changed.wait_timeout(state, wait) {
+                drop(guard);
+            } else {
+                *queue_wait = Some(enqueued.elapsed());
+                return Err(WorkloadError::Unavailable);
             }
         }
     }

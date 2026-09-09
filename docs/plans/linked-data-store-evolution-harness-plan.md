@@ -1297,8 +1297,13 @@ Exact-input replay and fresh query/update fuzz runs pass; streamed fan-out cost
 is not eliminated. An independent cumulative ORDER BY buffer-row cap now
 charges before decoded sort-key construction/insertion, with preserved ordering,
 duplicate results, typed sticky failure and owned-update rollback. Earlier
-expression work and comparator CPU remain outside it. Broader operator budgets,
-fairness, workload reload, exported counters and full ADR-0027 acceptance remain open.
+expression work and comparator CPU remain outside it. The existing operator
+metrics endpoint now exports 60 fixed-label admission samples for data/operator
+occupancy, returned dispositions and queued waits. Native and authenticated wire
+tests preserve refusal, cancellation, lease ownership and persistent journeys;
+no-workload output and readiness decisions are unchanged. Broader operator
+budgets, fairness, workload reload, resource-use telemetry and full ADR-0027
+acceptance remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no
 fine-grained SPARQL policy or general evaluator resource quotas are claimed.
 

@@ -10,8 +10,10 @@
   deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and
   transactional paths. Opt-in encoded/decoded request-body, generated/emitted
   result-byte, native inner-join build-row and ORDER BY buffer-row caps are
-  implemented. Other operator budgets, excluded deadline paths, active-work
-  disconnect, reload and full acceptance remain open.
+  implemented. Fixed-pool admission counts, occupancy and queue-wait metrics
+  are exported through the existing operator listener. Other operator budgets,
+  excluded deadline paths, active-work disconnect, reload and full acceptance
+  remain open.
   Observed queued socket errors now release admission; FIN-only/silent loss uses timeouts
 - Programme task: `task-1787728711461-3isex6`
 - **Depends on**:
@@ -439,6 +441,52 @@ upstream Extend operator; their work/allocations, row width, comparator CPU,
 other buffers, inference and RSS remain outside this counter. This closes the
 native sort-buffer slice, not full G4.2 or a promotion gate. No dependency,
 numeric default, semantic fixture or protected evidence is changed.
+
+### Native admission telemetry (2026-09-09)
+
+`AdmissionController::metrics()` adds a fixed-size process-local observation
+without changing the original four-field `AdmissionSnapshot`. Clones share
+counters; a new controller starts at zero. One returned acquisition result is
+counted once, independently of queue purge/ticket cleanup, lease cloning, drop,
+unwind of admitted work and later cancellation. Admission means a lease was
+returned, not execution success, commit or proven rollback. Attempts rejected
+before acquisition (missing trusted context or access denial), idle connections,
+startup validation and denial rendering are excluded.
+
+The fixed pools are `data` and `operator`. Nine dispositions distinguish
+admitted, global/class/operator refusal, unknown class, cancellation, request
+timeout, queue timeout and unavailable. Queued outcomes form a separate subset;
+only those attempts enter the pool's cumulative wait histogram. Wait runs from
+locked enqueue to the waiter's terminal scheduling observation, or observation
+of an unavailable lock. It may include time after another thread purges the
+entry; it is neither evaluation latency nor purely physical queue residence.
+Seven inclusive bounds from 100 microseconds through 60 seconds plus infinity
+reuse G2.5's measurement resolution, not performance thresholds. Counts and
+microsecond sums saturate; exact counter differences are meaningful only before
+saturation.
+
+Snapshots copy fixed counters and occupancy consistently, without purging,
+dequeueing, releasing leases or performing storage work. A separate metrics-only
+mutex uses state-before-metrics lock ordering. Serialization runs after locks
+are released. No arbitrary strings, class/policy names, request data, identities
+or endpoint labels enter the exported values. Poisoned snapshots fail closed.
+
+With a workload policy, authorized operator `/metrics` appends five families:
+`oxigraph_admission_active`, `oxigraph_admission_queued`,
+`oxigraph_admissions_total`, `oxigraph_admissions_queued_total`, and
+`oxigraph_admission_queue_wait_seconds`. They produce exactly 60 samples, for
+at most 467 with existing Store observations. Without a policy they are absent.
+A served scrape counts itself as admitted/active in the operator pool. Admission
+observation failure returns bounded 503 before storage probing; generated and
+emitted result-byte limits remain enforced. Readiness decisions are unchanged.
+
+Native tests cover immediate/queued dispositions, purge-before-observation,
+operator reserve, cancellation, clone/drop/unwind ownership, concurrent views,
+poisoned queued cleanup, histogram boundaries/saturation, bounded formatting and
+privacy. Default/no-default HTTP fixtures verify authorized scrapes, excluded
+access denials, overload and HEAD behavior; persistent write/rollback/restart
+journeys remain passing. This closes the native admission-observation slice,
+not resource-use telemetry, full G4.2 acceptance or production promotion.
 
 ### Remaining staged acceptance
 

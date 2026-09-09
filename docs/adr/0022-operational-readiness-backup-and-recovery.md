@@ -2,7 +2,7 @@
 
 - **Status**: Implemented (native Rust and local CLI scope)
 - **Date**: 2026-08-24
-- Updated: 2026-09-08
+- Updated: 2026-09-09
 - Deciders: Oxigraph parity programme
 - Implementation status: G2.5 native observation/contributor API and opt-in
   loopback observation endpoints, transaction terminal telemetry and Store-bound
@@ -363,6 +363,24 @@ observed, not automatically tripped, and required/eventual contributor policy is
 unchanged. Automatic workload admission belongs to G4.2. At this checkpoint,
 G2.6 backup receipts and G2.7 fresh-directory restore remained required; the
 following slices close the native boundary.
+
+### G4.2 admission observation integration (2026-09-09)
+
+With an explicit workload policy, the existing operator `/metrics` endpoint now
+appends ADR-0027's fixed data/operator occupancy gauges, returned admission
+dispositions and queue-wait histograms. Five families add exactly 60 samples,
+for at most 467 combined samples. Without a workload policy the existing output
+is unchanged. Authorization still precedes admission; a served scrape observes
+its own operator lease. Unavailable admission observations fail the scrape with
+bounded 503, not fabricated zeros. Response-byte limits still apply.
+
+The additive `AdmissionController::metrics()` view shares process-local counters
+across controller clones and resets with a new controller. It does not change
+readiness, Store telemetry, transaction outcomes or durable state. No class,
+policy, request or identity values are retained as labels. Native lifecycle,
+poisoned-lock, saturation, privacy and authenticated HTTP fixtures cover this
+integration; it does not complete G4.2 or qualify workload-aware production
+readiness. See [ADR-0027's exact observation boundary](0027-workload-admission-and-operator-resources.md#native-admission-telemetry-2026-09-09).
 
 ### Native G2.6 checkpoint package (2026-09-08)
 

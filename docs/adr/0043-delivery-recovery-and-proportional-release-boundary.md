@@ -175,6 +175,11 @@
   construction, preserving order, duplicates, shared failure and owned-update
   rollback. Earlier expression work, comparator CPU and other buffers remain
   outside it; full workload-governance and promotion gates stay open.
+  Native admission telemetry now adds 60 fixed-label operator metric samples
+  for pool occupancy, returned admission dispositions and queue waits, without
+  changing readiness or counting lease release as execution success. Default
+  and no-default unit/wire tests cover denial, overload and persistent journeys;
+  full G4.2 resource/fairness/reload acceptance remains open.
   Native CLI subprocess tests now preserve their selected transport features,
   avoiding a shared-binary overwrite that broke the combined integration run.
   Local implementation is not publication or production recovery qualification
