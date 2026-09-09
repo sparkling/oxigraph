@@ -150,10 +150,11 @@ fn start_with_workload_entailment(
 fn wait_ready(running: &mut Running) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        ensure!(
-            running.child.0.try_wait()?.is_none(),
-            "CLI exited before startup"
-        );
+        if let Some(status) = running.child.0.try_wait()? {
+            let stderr = std::fs::read_to_string(running.directory.path().join("stderr.log"))
+                .context("reading CLI startup failure log")?;
+            anyhow::bail!("CLI exited before startup ({status}): {stderr}");
+        }
         if request(running.admin, "GET", "/health", "", "")
             .is_ok_and(|response| response.status == 200)
         {
@@ -162,6 +163,34 @@ fn wait_ready(running: &mut Running) -> Result<()> {
         ensure!(Instant::now() < deadline, "startup timed out");
         thread::sleep(Duration::from_millis(10));
     }
+}
+
+#[test]
+fn startup_failure_reports_exit_status_and_cli_diagnostic() -> Result<()> {
+    let directory = assert_fs::TempDir::new()?;
+    let mut command = Command::new(binary());
+    command
+        .arg("--oxigraph-test-invalid-option")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(std::fs::File::create(directory.path().join("stderr.log"))?);
+    let mut running = Running {
+        child: ChildGuard(command.spawn()?),
+        command,
+        public: (Ipv4Addr::LOCALHOST, 0).into(),
+        admin: (Ipv4Addr::LOCALHOST, 0).into(),
+        policy: directory.path().join("unused.json"),
+        directory,
+    };
+    let error = wait_ready(&mut running).unwrap_err().to_string();
+    let status = running.child.0.wait()?;
+    ensure!(!status.success());
+    ensure!(
+        error.contains(&format!("CLI exited before startup ({status}):")),
+        "{error}"
+    );
+    ensure!(error.contains("--oxigraph-test-invalid-option"), "{error}");
+    Ok(())
 }
 
 #[test]
