@@ -405,6 +405,15 @@ precedence; do not require failure at lower efforts before honoring an explicit
 selection. Do not route or pause on subscription usage budgets, and never
 silently change models when a native subscription is unavailable.
 
+The owner explicitly authorizes native `claude -p --model fable` as the fallback
+for permitted repository work affected by a Codex content-display or routing
+block. Keep the original task, its constraints and the observed error; this is
+not authority to evade a genuine safety refusal or relax safeguards. Use only
+native subscription authentication and retain one Git writer. If Claude or Fable
+is unavailable, report its exact client/model/error instead of substituting again.
+Await native validation jobs before the print-mode client exits: background
+jobs terminated at handoff are not passing tests.
+
 | Work | Default recommendation |
 | --- | --- |
 | Recovery leadership and consequential judgment | Astra High/Xhigh; Fable for a targeted independent review |
