@@ -1319,7 +1319,8 @@ Native G3.3/P2.2 is complete at `e865c7aa`. The 2026-09-09 literal-gate review
 matched the acceptance below to native lifecycle, posting, SERVICE and fixed
 oracle/resource evidence. Performance/production promotion remains open under
 ADR-0024; it does not require further arbitrary text optimizations or block the
-next approved product task (G4.1 service identity/authorization).
+subsequent native G4.1 service identity/authorization task (now complete).
+G4.2 workload admission is the current successor.
 
 - Define an index provider and a small SPARQL extension surface without making
   Lucene or Elasticsearch types part of the core API.
@@ -1384,7 +1385,7 @@ Acceptance:
 
 ### P3 — explicit linked-data platform decisions
 
-G4.1 is active after native G3.3 completion. Its first ADR-0026 slice enforces
+G4.1 native implementation is complete after native G3.3. Its first ADR-0026 slice enforces
 explicit anonymous non-loopback startup consent before store open, including
 the Docker default; loopback remains usable. The source-vendored existing
 OxHTTP dependency now provides socket context and optional per-request
@@ -1394,8 +1395,11 @@ provider/authorizer traits, trusted-peer identity, whole-operation/direct Graph
 Store permissions, explicit operator access, bounded audit and atomic policy
 reload. Native default/no-default tests include denied requests before body
 decoding, valid write/query/rollback/restart and fresh keep-alive admission.
-Separate ADR-0026 frozen acceptance/promotion gates remain open; native delivery
-does not claim fine-grained SPARQL filtering or workload quotas.
+Evaluator-only `2d54ddfa` closes its remaining native acceptance matrix against
+product `21e1d2c8`, including direct-IRI access and observable zero work under
+denial. G4.2 workload admission is next. Separate ADR-0026 frozen promotion and
+future facade compatibility remain open; native delivery does not claim
+fine-grained SPARQL filtering or workload quotas.
 
 The programme now records the named decisions admitted by this user:
 

@@ -1208,8 +1208,8 @@ Native G3.3 (`task-1787851233862-4l1tii`) is complete at `e865c7aa`. The
 lifecycle/posting/SERVICE tests and the fixed three-scale oracle/resource
 observations. ADR-0024 still requires frozen evidence before performance or
 production promotion; those requirements are preserved, not treated as a
-missing native feature or an invented speedup gate. G4.1 is the next active
-product task; G3.2's failed corpus-performance gate remains open.
+missing native feature or an invented speedup gate. Native G4.1 followed and
+is now complete; G4.2 is active. G3.2's failed corpus-performance gate remains open.
 
 The current optimizer's fixed large cardinalities and constant join-key
 selectivity make statistics the highest-leverage performance seam after P0.
@@ -1252,7 +1252,7 @@ widens core RDF semantics implicitly.
 | G4.7 Incremental entailment projections        | G2.3c, G2.7                            |          XL | Insert/delete/clear/drop truth maintenance differentially matches full recomputation; unsupported recursion/deletion shapes rebuild or fail typed                       |
 | G4.8 Analytical and WCOJ research path         | G3.2; G4.2 for server/`Auto` promotion | Research/XL | A separate optional executor beats frozen cyclic workloads within resource ceilings while matching the ordinary evaluator exactly and preserving its fallback           |
 
-G4.1 is active: the native anonymous startup boundary now requires explicit
+G4.1 native implementation is complete: the anonymous startup boundary requires explicit
 non-loopback consent before store open and binds the exact validated address
 set. Its transport prerequisite now provides immutable socket context and
 optional pre-body admission in the source-vendored existing OxHTTP dependency;
@@ -1261,8 +1261,11 @@ authenticated profile now adds bounded trusted-proxy identity, public embedding
 traits, whole-operation/direct Graph Store authorization, protected operators,
 bounded pseudonymous audit and atomic policy reload. Native default/no-default
 tests include write/query/rollback/restart, provider/late failures, redaction,
-and in-flight/keep-alive policy isolation. G4.1 retains its separate frozen
-acceptance/promotion gates; no fine-grained SPARQL policy or G4.2 quotas are claimed.
+and in-flight/keep-alive policy isolation. Evaluator-only `2d54ddfa` closes the
+authenticated route/provider/time matrix, direct-IRI allow case and measured
+no-work-under-denial gates against product `21e1d2c8`. G4.2 is the next active
+native delivery task. Separate frozen promotion and future G4.4 compatibility
+remain open; no fine-grained SPARQL policy or workload quotas are claimed.
 
 ## Evaluator DAG
 

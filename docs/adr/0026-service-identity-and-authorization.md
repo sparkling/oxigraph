@@ -6,7 +6,8 @@
 - Deciders: Oxigraph parity programme
 - Implementation status: native anonymous/proxy profiles, pre-body identity and
   coarse authorization, public embedding seam, bounded audit and atomic reload
-  implemented; separate frozen evaluator/promotion acceptance remains open
+  implemented and natively verified; G4.1 native task complete, separate
+  promotion/future-facade acceptance remains open
 - Programme task: `task-1787670631989-m5vxqk`
 - **Depends on**:
   [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md)
@@ -202,7 +203,35 @@ reload including in-flight/keep-alive behavior. Default and no-default lanes
 pass; the existing default CLI and anonymous operator/listener suites retain
 compatibility. These are native implementation results, not frozen promotion.
 
-### Separate acceptance and promotion gates
+### Native acceptance closure (2026-09-09)
+
+Evaluator-only commit `2d54ddfa` adds an independent
+[route/policy matrix](../../cli/src/access/tests.rs) and
+[exact policy fixture](../../cli/tests/fixtures/access-policy-v1.json) against
+implementation `21e1d2c8`. It verifies 360 authenticated route/method decisions,
+576 provider-failure cases with zero authorizer calls, nine fixed-clock identity
+boundaries, whole-operation non-composition, and strict selectors. Real CLI
+tests add allowed direct-IRI PUT/GET/HEAD, equivalent indirect selection,
+unchanged transaction/evaluation/egress counters under denial, a zero-connect
+loopback egress observer, stderr redaction and admitted-work positive controls.
+
+Five native library tests, ten CLI wire tests and the external embedding test
+pass with default and no-default features. The ten wire tests also pass against
+the retained `21e1d2c8` optimized binary, including write/query/rollback/restart.
+Independent read-only review found no blocking gap. This closes the literal
+native G4.1 delivery task, not production promotion or the wider programme.
+Exact commands, fixture/test/artifact digests and result scope are retained in
+repository memory at
+`programme-reviews/oxigraph-g41-native-acceptance-2026-09-09-v1`.
+
+### Separate promotion and future compatibility gates
+
+The native results above satisfy the current implementation requirements in
+items 1–3 and the existing-route portions of item 4. Promotion retains the
+exact-artifact/configuration receipt boundary below; future RDF4J facade tests
+attach to G4.4 when that implementation exists, not to the already-verified
+native G4.1 task. No native completion enables advertisement or production use
+by itself.
 
 1. **Identity seam:** freeze compile fixtures for a custom provider and
    authorizer, plus wire tests for anonymous, authenticated, malformed,
@@ -258,5 +287,6 @@ points are [Jena Fuseki's data-access-control
 documentation](https://jena.apache.org/documentation/fuseki2/fuseki-data-access-control)
 and [RDF4J Server's servlet role
 constraints](https://rdf4j.org/documentation/tools/server-workbench/#access-rights-and-security).
-This ADR remains Proposed until G4.1's frozen evaluator and implementation
-receipts pass.
+This ADR remains Proposed at the promotion boundary until the exact frozen
+promotion receipts pass. The native G4.1 implementation task is complete;
+G4.2 now consumes its trusted context and operator-defined workload class.

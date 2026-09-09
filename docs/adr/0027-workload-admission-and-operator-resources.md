@@ -2,9 +2,10 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-08-26
+- Updated: 2026-09-09
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; planned by G4.2
+- Implementation status: G4.2 active after native G4.1 acceptance; workload
+  scheduling/resource budgets are not implemented yet
 - Programme task: `task-1787728711461-3isex6`
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),

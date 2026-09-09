@@ -129,6 +129,10 @@
   Native denial/rollback/restart and compatibility tests verify this product
   slice; ADR-0026's separate evaluator/promotion gates remain open. No G1.7,
   provider-backed qualification or authorization advertisement is implied.
+  Evaluator-only `2d54ddfa` closes native G4.1: authenticated route decisions,
+  provider/time boundaries, allowed direct graph access and observable absence
+  of work under denial pass. The next native task is G4.2 workload admission;
+  separate promotion and future facade requirements remain on the roadmap.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
