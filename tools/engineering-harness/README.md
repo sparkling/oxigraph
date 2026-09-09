@@ -11,7 +11,7 @@ lifecycle scripts. Runtime publication and OpenRouter transport are forbidden.
 ## GPT-6 Astra routing
 
 Schema-v2 contracts may select native Codex model `gpt-6-astra` with exactly
-one explicit effort: `low`, `medium`, `high`, `xhigh`, or `max`. A pure policy
+one explicit effort: `low`, `medium`, `high`, `xhigh`, `max`, or `ultra`. A pure policy
 helper recommends `low` for short triage, `medium` for a bounded component,
 `high` for substantive implementation or independent review, and `xhigh` for
 cross-component concurrency, durability, or recovery work. It recommends
@@ -20,6 +20,14 @@ evaluator that can distinguish the next result; this compatibility slice does
 not authenticate that evidence or activate a registered task. Astra prompts
 explicitly require follow-through, concise structured output, routine
 assumptions, genuine stopping conditions, and proportional validation.
+
+Capability support does not make Astra, Max or Ultra the default for ordinary
+delivery. [ADR-0043](../../docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md#9-match-model-use-to-the-work)
+selects Terra/Medium for bounded implementation, Luna/Low for narrow language
+work, and stronger models only for a named difficult part. Parallel work uses
+explicit, compact, per-subtask selections rather than inheriting the lead's
+highest effort. This ordinary-delivery policy does not rewrite frozen harness
+contracts, native argument identities, qualification evidence or router history.
 
 The effort is bound as the one admitted Codex `--config` value and into the
 schema-v2 request identity. Non-Astra contracts admit no effort field and keep

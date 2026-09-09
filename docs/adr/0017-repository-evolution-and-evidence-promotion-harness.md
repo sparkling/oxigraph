@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-09-07
+- Updated: 2026-09-10
 - Deciders: Oxigraph parity programme
 - 2026-09-07 scope amendment: [ADR-0043](0043-delivery-recovery-and-proportional-release-boundary.md)
   restores product behavior and proportional native tests as delivery
@@ -100,7 +100,13 @@
   restrictions. Focused local tests cover effort admission, canonical native
   arguments, and schema-v2 contracts; this is not a live Ultra execution claim.
   Automatic work-class recommendations remain unchanged, and Ultra is not
-  selected by default.
+  selected by default. The 2026-09-10 amendment to
+  [ADR-0043's model policy](0043-delivery-recovery-and-proportional-release-boundary.md#9-match-model-use-to-the-work)
+  also makes routine delivery explicitly Terra/Medium, narrow language work
+  Luna/Low, and Max/Ultra a bounded exception rather than a consequence of
+  parallel work. Capability admission is not a default execution choice.
+  This affects ordinary native delivery dispatch, not frozen task identities,
+  qualification registrations, protected receipts or the quality router.
   A pure planning helper recommends `low` for short triage, `medium` for
   bounded single-component changes, `high` for substantive implementation and
   independent review, and `xhigh` for cross-component concurrency, durability,

@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-09-07
-- Updated: 2026-09-09
+- Updated: 2026-09-10
 - Deciders: Oxigraph parity programme
 - Implementation status: the product and validation slice is implemented in
   `eb0f0cc2`; the six-hour scheduler is installed and its wake-up path is
@@ -453,8 +453,10 @@ reviews must surface that mismatch and must not treat `queued`, `pending`, or
 ### 9. Match model use to the work
 
 Use native subscription clients and the currently available model catalogue.
-Choose a role once, keep context scoped to that task, and escalate when a
-concrete unresolved check warrants it. User-selected models and efforts take
+Choose an explicit model and effort for each bounded task, keep its context
+compact, and prefer the faster capable role below. Max and Ultra are exceptions,
+not programme-wide defaults; parallelism alone does not justify either.
+Escalate when a concrete unresolved check warrants it. User-selected models and efforts take
 precedence; do not require failure at lower efforts before honoring an explicit
 selection. Do not route or pause on subscription usage budgets, and never
 silently change models when a native subscription is unavailable.
@@ -470,12 +472,38 @@ jobs terminated at handoff are not passing tests.
 
 | Work | Default recommendation |
 | --- | --- |
-| Recovery leadership and consequential judgment | Astra High/Xhigh; Fable for a targeted independent review |
-| Difficult Rust, transaction, or SPARQL implementation | Sol High or Opus |
-| Routine bounded implementation and focused tests | Terra Medium or Sonnet |
-| A difficult single unresolved problem | Astra Max |
-| Complex work with useful independent subtasks | Astra Ultra, with one Git writer |
-| Narrow extraction and repetitive language work | Luna or Haiku; deterministic tools where sufficient |
+| Builds, test execution, formatting, exact comparisons and status collection | Deterministic tools; no extra model invocation |
+| Routine bounded implementation and focused test authoring | Terra Medium; Sonnet on an authorized native Claude route |
+| Narrow extraction, documentation edits and repetitive language work | Luna Low or Haiku |
+| Routine recovery coordination and focused review | Sol Low/Medium or Terra Medium |
+| Difficult Rust, transaction, or SPARQL implementation | Sol High or Opus for the named difficult part |
+| Consequential architectural judgment or an unresolved correctness review | Astra High; Xhigh only for a demonstrated need; Fable for a targeted authorized review |
+| A particularly hard unresolved problem, or an explicit owner selection | Astra Max/Ultra for that bounded problem, with its reason and completion check recorded |
+| Useful independent subtasks | Mixed faster workers chosen by subtask, not automatic Ultra; one Git writer |
+
+Do not inherit a Max/Ultra coordinator's settings into routine workers. Select
+their model/effort explicitly and pass only the relevant contract, files and
+acceptance checks. Return subsequent routine tasks to the faster defaults after
+an escalation resolves its question. This does not silently change a running
+owner-selected conversation or reinterpret a native availability error as
+permission to switch accounts, models or providers.
+
+[Official reasoning guidance](https://developers.openai.com/api/docs/guides/reasoning#reasoning-effort)
+describes lower effort as favoring speed and medium as a general balance. These
+are workload-selection policies, not a repo-specific latency benchmark or a
+reason to apply API billing rules to subscription execution. Native Ultra
+support remains available; an API effort list is not the native capability list.
+
+The 2026-09-10 usage review sampled parent `turn_context` metadata for
+2026-09-09 17:30–23:30 UTC: 18 records represented 13 distinct parent turns,
+all recording `gpt-6-astra` / `max`, not Ultra. The two latest delivered worker
+slices, workload reload (`db44d695`) and active transport cancellation
+(`5d3ad844`), used native `gpt-5.6-sol` / `high`. This exposes heavyweight
+coordination alongside faster implementation, not an all-Ultra execution mix.
+It is not a complete subagent census or a measurement of time, cost or quality.
+Ruflo's model statistics reported 247 routing decisions (191 Sonnet, 56 Opus),
+not actual Codex executions; they cannot establish the native model mix.
+The next bounded per-principal admission slice selects Terra Medium.
 
 These are starting policies, not a measured cross-model ranking. Record the
 actual model/effort, accepted result, rework, and elapsed time when observed.
