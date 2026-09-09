@@ -120,6 +120,9 @@
   G4.1's first native slice rejects anonymous non-loopback startup without
   explicit development consent before store open and reuses the exact validated
   socket set. Loopback serving is unchanged; request authorization remains open.
+  Its next native transport slice vendors the existing OxHTTP dependency and
+  adds socket-derived context plus per-request admission before Expect/body
+  decoding. Wire tests close this prerequisite, not full G4.1 authentication.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

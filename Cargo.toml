@@ -3,6 +3,7 @@ members = [
   "cli",
   "js",
   "lib/oxdatalog",
+  "lib/oxhttp",
   "lib/oxigraph",
   "lib/oxjsonld",
   "lib/oxowl",
@@ -62,7 +63,7 @@ libc = "0.2.155"
 logos = "0.16"
 md-5 = ">=0.10,<0.12"
 memchr = "2.6"
-oxhttp = "0.3"
+oxhttp = { version = "0.3", path = "lib/oxhttp" }
 oxilangtag = "0.1"
 oxiri = "0.3.1"
 oxstr = { version = "=0.1.0", path = "lib/oxstr" }

@@ -1386,8 +1386,11 @@ Acceptance:
 
 G4.1 is active after native G3.3 completion. Its first ADR-0026 slice enforces
 explicit anonymous non-loopback startup consent before store open, including
-the Docker default; loopback remains usable. Principal propagation and
-per-request authorization/proxy/audit gates are still outstanding.
+the Docker default; loopback remains usable. The source-vendored existing
+OxHTTP dependency now provides socket context and optional per-request
+admission before Expect/body decoding, with native denial and compatibility
+tests. Principal propagation and application authorization/proxy/audit gates
+are still outstanding; this transport prerequisite alone does not enable them.
 
 The programme now records the named decisions admitted by this user:
 

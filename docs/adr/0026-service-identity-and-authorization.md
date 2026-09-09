@@ -4,7 +4,7 @@
 - **Date**: 2026-08-25
 - Updated: 2026-09-09
 - Deciders: Oxigraph parity programme
-- Implementation status: anonymous listener startup boundary implemented;
+- Implementation status: anonymous listener startup and pre-body transport admission implemented;
   request identity, coarse authorization, proxy trust and audit/reload remain G4.1
 - Programme task: `task-1787670631989-m5vxqk`
 - **Depends on**:
@@ -112,6 +112,36 @@ and explicit consent/warning. Existing loopback wire tests retain ordinary
 HTTP behavior. This implements the compatibility/open-profile requirement,
 **not** authentication, request authorization, trusted proxy support, audit,
 policy reload or G4.1 completion. There is no authorization advertisement.
+
+### Native transport admission slice (2026-09-09)
+
+The existing OxHTTP 0.3.3 dependency is now source-vendored at `lib/oxhttp`,
+with its licenses, upstream tests and exact origin recorded in `UPSTREAM.md`.
+Its upstream handler ran after body decoding and lacked socket context, so it
+could not implement the required trusted-immediate-peer/pre-body boundary.
+The narrow fork provides immutable socket-derived `ConnectionInfo` in request
+extensions and optional `Server::with_request_admission`. Admission receives
+an immutable bounded request head and returns trusted extensions or a rejection.
+It runs on every keep-alive request before `100 Continue`, body decoding,
+draining or application dispatch. Denial closes with a transport-owned
+`Connection: close`; informational denials become an empty HTTP 500.
+Returned extensions cannot replace the actual socket provenance.
+
+The upstream 8 KiB header limit and 16 KiB transport buffer remain unchanged.
+Header reads can prefetch body bytes; the guarantee is before **body decoding
+and application buffering**, not zero socket read-ahead. The immutable head
+prevents admission from changing framing. The later application wrapper must
+strip identity/forwarding headers before business handling; this hook does not
+authenticate them. The no-hook encoder and parser/client behavior are retained.
+No additional HTTP framework or default-runtime dependency is introduced;
+workspace lock resolution includes the existing optional AWS-LC feature.
+
+Native wire tests prove no-body/eager-body/invalid-framing denials, Expect
+ordering, fresh keep-alive admission, socket/context propagation and spoof
+resistance, and rejection of malformed/oversized headers before admission.
+Unchanged upstream wire and codec tests remain the compatibility checks.
+This closes the transport prerequisite, not the remaining G4.1 identity,
+authorizer, audit/reload or promotion gates. No authorization is advertised.
 
 ### Remaining gates
 

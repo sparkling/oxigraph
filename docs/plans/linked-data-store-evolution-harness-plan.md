@@ -1254,8 +1254,11 @@ widens core RDF semantics implicitly.
 
 G4.1 is active: the native anonymous startup boundary now requires explicit
 non-loopback consent before store open and binds the exact validated address
-set. Request identity, authorization and trusted-proxy/audit gates remain open;
-this startup slice does not claim full G4.1 completion.
+set. Its transport prerequisite now provides immutable socket context and
+optional pre-body admission in the source-vendored existing OxHTTP dependency;
+native wire tests prove rejection before Expect/body decoding. Request identity,
+authorization and trusted-proxy/audit gates remain open; neither delivered
+slice claims full G4.1 completion.
 
 ## Evaluator DAG
 
