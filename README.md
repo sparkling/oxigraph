@@ -186,8 +186,11 @@ interned IDs, iteration order and empty graphs. Legacy nontransactional bulk
 loading remains explicitly unsupported with request deadlines. Observed queued
 socket failures now cancel admission and release the queue slot; valid TCP
 write-half-closed requests remain eligible. FIN-only/silent loss still relies on
-timeouts. Resource accounting, active-work disconnect propagation and full G4.2
-acceptance remain open.
+timeouts. Optional request-body limits now reject oversized fixed/chunked or
+decompression-expanded bodies before RDF work on both listeners. Encoded entity
+bytes and decoded bytes have separate explicit caps; this is not a hard memory
+bound. Result-byte limits, broader resource accounting, active-work disconnect
+propagation and full G4.2 acceptance remain open.
 See [ADR-0026](docs/adr/0026-service-identity-and-authorization.md#native-acceptance-closure-2026-09-09).
 RocksDB remains the persistent backend. The custom-backend tests prove the
 public extension contract, not deployment of a separate replacement backend.

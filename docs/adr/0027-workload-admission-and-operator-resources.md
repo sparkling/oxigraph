@@ -7,7 +7,7 @@
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
   and response-flush lifetime are implemented. Optional absolute request
-  deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and transactional paths. Resource budgets,
+  deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and transactional paths. Opt-in encoded/decoded request-body caps are implemented. Result and broader resource budgets,
   excluded deadline paths, active-work disconnect, reload and full acceptance remain open.
   Observed queued socket errors now release admission; FIN-only/silent loss uses timeouts
 - Programme task: `task-1787728711461-3isex6`
@@ -271,9 +271,55 @@ and verifies absent abandoned data and persistent successful data after restart,
 followed by the write/rollback/restart positive control. The reset fixture uses
 Linux's unread-response close behavior; it is not cross-platform reset evidence.
 
-Next native slice: declared request/result byte limits with typed rejection and
-failed-stream behavior. Broader resource/fairness/reload/exported-metrics and
-the remaining staged acceptance gates remain open; ADR status is unchanged.
+The next implemented request-body slice is below. Result bytes, broader
+resource/fairness/reload/exported-metrics and the remaining staged acceptance
+gates remain open; ADR status is unchanged.
+
+### Native request-body byte limits (2026-09-09)
+
+Optional `request_body_limits` in `oxigraph-admission-v1` supplies required
+`max_encoded_bytes` and `max_decoded_bytes` unsigned caps, immutable per lease.
+Zero allows no bytes at the respective stage. OxHTTP receives the trusted
+`RequestBodyLimits` extension after authorization/admission on both listeners.
+Without it, the existing decoder remains in use. An excessive declared length
+is rejected before `100 Continue`; complete transfer-framed input is otherwise
+collected within its cap, then content-decoded within its cap before dispatch.
+Chunk trailers are retained. No rejected body reaches a handler, parser, RDF
+transaction or the legacy nontransactional bulk path. This does not change the
+atomicity of an accepted bulk operation.
+
+Encoded means transfer-decoded entity bytes, excluding headers, chunk framing
+and buffered socket read-ahead. Decoded means all content-decoded bytes, not RDF
+term count. A typed `RequestBodyLimitExceeded { resource, phase, limit }` maps
+to 413; malformed/truncated input maps to 400, unsupported coding to 415.
+Rejection closes without draining. Bounded HEAD responses suppress the body
+while retaining known representation length instead of inventing zero.
+
+Gzip/x-gzip validates all members, trailers and checksums under one decoded cap.
+HTTP deflate accepts zlib wrapping and unambiguous legacy raw streams: a
+zlib-looking prefix selects zlib exclusively, with no retry after error.
+Some legal raw streams share that prefix and are explicitly unsupported by
+this opt-in profile. Both deflate forms require complete stream termination
+and no trailing bytes. Encoding lists/other codings return unsupported; without
+OxHTTP's existing `flate2` feature only identity is supported. No package or
+lockfile changes are required. Absolute deadline checkpoints cover transfer,
+decompressed output and compressed input including zero-output gzip members.
+
+Native tests cover exact/+1 boundaries, empty bodies, incomplete framing,
+gzip expansion/multiple members/CRC/truncation, zlib/raw termination and prefix
+collision, Expect ordering, lease release, deadline expiry, HEAD metadata and
+sequential keep-alive with preserved chunk trailers. CLI wire tests verify
+401-before-body-limits, 413-before-measured-RDF-work across fixed/chunked,
+compressed and Graph Store paths, the operator listener and read-only mode,
+then successful writes, queries, rollback and persistent restart.
+
+This closes the native request-body byte slice, not full G4.2. Buffer capacity,
+encoded/decoded coexistence and handler copies are not an RSS ceiling. Parser
+terms, multipart parts, evaluator work, result bytes and admission telemetry
+remain separate work. Existing pipelined read-ahead limitations are not fixed
+by sequential keep-alive coverage. Next: result-byte limits with failed-stream
+rather than well-formed truncated-success behavior. No qualification evidence,
+production defaults or promotion claims are changed.
 
 ### Remaining staged acceptance
 

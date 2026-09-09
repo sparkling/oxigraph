@@ -59,6 +59,202 @@ impl Clone for NeverClone {
 }
 
 #[test]
+fn body_limits_reject_before_continue_or_handler_and_release_lease() -> Result<()> {
+    for wire in [
+        "POST / HTTP/1.1\r\nhost: localhost\r\nexpect: 100-continue\r\ncontent-length: 5\r\n\r\n",
+        "HEAD / HTTP/1.1\r\nhost: localhost\r\nexpect: 100-continue\r\ncontent-length: 5\r\n\r\n",
+        "HEAD / HTTP/1.1\r\nhost: localhost\r\ntransfer-encoding: chunked\r\n\r\n5\r\n12345\r\n0\r\n\r\n",
+        "POST / HTTP/1.1\r\nhost: localhost\r\ntransfer-encoding: chunked\r\n\r\n5\r\n12345\r\n0\r\n\r\n",
+    ] {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let admission_drops = Arc::clone(&drops);
+        let (mut stream, worker) = connect(
+            Server::new(|_| panic!("oversize body reached handler")).with_request_admission(
+                move |_, _| {
+                    let mut context = Extensions::new();
+                    context.insert(crate::RequestBodyLimits {
+                        max_encoded_bytes: 4,
+                        max_decoded_bytes: 4,
+                    });
+                    context.insert(RequestLifetime::new(LeaseDrop(Arc::clone(
+                        &admission_drops,
+                    ))));
+                    Ok(context)
+                },
+            ),
+        )?;
+        stream.write_all(wire.as_bytes())?;
+        let response = read_closed_response(&mut stream)?;
+        assert!(response.starts_with("HTTP/1.1 413 "), "{response}");
+        assert!(response.contains("connection: close\r\n"));
+        assert!(!response.contains("100 Continue"));
+        if wire.starts_with("HEAD ") {
+            assert!(response.ends_with("\r\n\r\n"), "HEAD error carried a body");
+            assert!(!response.contains("content-length: 0\r\n"));
+        }
+        worker.join().unwrap()?;
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+    }
+    Ok(())
+}
+
+#[test]
+fn bounded_head_keeps_representation_length_without_body() -> Result<()> {
+    let (mut stream, worker) = connect(
+        Server::new(|_| Response::builder().body(Body::from("ok")).unwrap())
+            .with_request_admission(|_, _| {
+                let mut context = Extensions::new();
+                context.insert(crate::RequestBodyLimits {
+                    max_encoded_bytes: 0,
+                    max_decoded_bytes: 0,
+                });
+                Ok(context)
+            }),
+    )?;
+    stream.write_all(b"HEAD / HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n")?;
+    assert_eq!(
+        read_closed_response(&mut stream)?,
+        "HTTP/1.1 200 OK\r\nconnection: close\r\ncontent-length: 2\r\n\r\n"
+    );
+    worker.join().unwrap()?;
+    Ok(())
+}
+
+#[test]
+fn bounded_incomplete_body_returns_bad_request_before_handler() -> Result<()> {
+    let (mut stream, worker) = connect(
+        Server::new(|_| panic!("incomplete body reached handler")).with_request_admission(
+            |_, _| {
+                let mut context = Extensions::new();
+                context.insert(crate::RequestBodyLimits {
+                    max_encoded_bytes: 5,
+                    max_decoded_bytes: 5,
+                });
+                Ok(context)
+            },
+        ),
+    )?;
+    stream.write_all(b"POST / HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nbody")?;
+    stream.shutdown(std::net::Shutdown::Write)?;
+    let response = read_closed_response(&mut stream)?;
+    assert!(response.starts_with("HTTP/1.1 400 "), "{response}");
+    assert!(response.contains("connection: close\r\n"));
+    worker.join().unwrap()?;
+    Ok(())
+}
+
+#[test]
+fn bounded_chunked_body_preserves_trailers_and_next_sequential_request() -> Result<()> {
+    let (mut stream, worker) = connect(
+        Server::new(|request| {
+            if request.uri().path() == "/body" {
+                assert_eq!(request.body().len(), None);
+                assert_eq!(request.body().trailers().unwrap()["x-proof"], "kept");
+                let mut data = String::new();
+                request.body_mut().read_to_string(&mut data).unwrap();
+                assert_eq!(data, "body");
+            }
+            Response::builder().body(Body::from("ok")).unwrap()
+        })
+        .with_request_admission(|_, _| {
+            let mut context = Extensions::new();
+            context.insert(crate::RequestBodyLimits {
+                max_encoded_bytes: 4,
+                max_decoded_bytes: 4,
+            });
+            Ok(context)
+        }),
+    )?;
+    stream.write_all(b"POST /body HTTP/1.1\r\nhost: localhost\r\ntransfer-encoding: chunked\r\n\r\n4\r\nbody\r\n0\r\nX-Proof: kept\r\n\r\n")?;
+    expect_bytes(
+        &mut stream,
+        b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok",
+    )?;
+    stream.write_all(b"GET /next HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n")?;
+    assert!(read_closed_response(&mut stream)?.ends_with("\r\n\r\nok"));
+    worker.join().unwrap()?;
+    Ok(())
+}
+
+#[cfg(feature = "flate2")]
+#[test]
+fn bounded_compressed_body_survives_continue_and_sequential_reuse() -> Result<()> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(b"body")?;
+    let encoded = encoder.finish()?;
+    let encoded_limit = encoded.len() as u64;
+    let (mut stream, worker) = connect(
+        Server::new(|request| {
+            if request.uri().path() == "/body" {
+                assert_eq!(request.body().len(), None);
+                assert_eq!(request.body().trailers().unwrap()["x-proof"], "kept");
+                let mut data = String::new();
+                request.body_mut().read_to_string(&mut data).unwrap();
+                assert_eq!(data, "body");
+            }
+            Response::builder().body(Body::from("ok")).unwrap()
+        })
+        .with_request_admission(move |_, _| {
+            let mut context = Extensions::new();
+            context.insert(crate::RequestBodyLimits {
+                max_encoded_bytes: encoded_limit,
+                max_decoded_bytes: 4,
+            });
+            Ok(context)
+        }),
+    )?;
+    stream.write_all(b"POST /body HTTP/1.1\r\nhost: localhost\r\nexpect: 100-continue\r\ncontent-encoding: gzip\r\ntransfer-encoding: chunked\r\n\r\n")?;
+    expect_bytes(&mut stream, b"HTTP/1.1 100 Continue\r\n\r\n")?;
+    write!(stream, "{:x}\r\n", encoded.len())?;
+    stream.write_all(&encoded)?;
+    stream.write_all(b"\r\n0\r\nX-Proof: kept\r\n\r\n")?;
+    expect_bytes(
+        &mut stream,
+        b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok",
+    )?;
+    stream.write_all(b"GET /next HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n")?;
+    assert!(read_closed_response(&mut stream)?.ends_with("\r\n\r\nok"));
+    worker.join().unwrap()?;
+    Ok(())
+}
+
+#[test]
+fn bounded_preflight_deadline_releases_capacity_without_handler() -> Result<()> {
+    let drops = Arc::new(AtomicUsize::new(0));
+    let admission_drops = Arc::clone(&drops);
+    let (mut stream, worker) = connect(
+        Server::new(|_| panic!("incomplete body reached handler")).with_request_admission(
+            move |_, _| {
+                let mut context = Extensions::new();
+                context.insert(crate::RequestBodyLimits {
+                    max_encoded_bytes: 10,
+                    max_decoded_bytes: 10,
+                });
+                context.insert(RequestDeadline(
+                    std::time::Instant::now() + Duration::from_millis(250),
+                ));
+                context.insert(RequestLifetime::new(LeaseDrop(Arc::clone(
+                    &admission_drops,
+                ))));
+                Ok(context)
+            },
+        ),
+    )?;
+    stream.write_all(
+        b"POST / HTTP/1.1\r\nhost: localhost\r\nexpect: 100-continue\r\ncontent-length: 10\r\n\r\n",
+    )?;
+    expect_bytes(&mut stream, b"HTTP/1.1 100 Continue\r\n\r\n")?;
+    assert_eq!(drops.load(Ordering::SeqCst), 0);
+    assert!(read_closed_response(&mut stream)?.is_empty());
+    assert_eq!(
+        worker.join().unwrap().unwrap_err().kind(),
+        ErrorKind::TimedOut
+    );
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+#[test]
 fn complete_half_closed_requests_survive_waiting_admission() -> Result<()> {
     for wire in [
         "GET / HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n",

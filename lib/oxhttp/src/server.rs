@@ -140,6 +140,13 @@ impl Server {
     /// Removing the guard in a handler cannot release it while the response is
     /// still streaming. An application-held clone can extend its lifetime.
     ///
+    /// Insert [`crate::RequestBodyLimits`] to validate and buffer the complete
+    /// transfer-decoded and content-decoded body before handler dispatch. Known
+    /// oversized lengths are rejected before `100 Continue`; other overflows
+    /// return 413 and close without draining. Malformed bodies return 400 and
+    /// unsupported content encodings return 415. Existing request deadlines also
+    /// cover this buffering. Without the extension, body handling is unchanged.
+    ///
     /// ```no_run
     /// use oxhttp::{ConnectionInfo, Server};
     /// use oxhttp::model::{Body, Extensions, Response, StatusCode};
@@ -306,6 +313,8 @@ fn accept_request(
     let mut connection_state = ConnectionState::KeepAlive;
     while connection_state == ConnectionState::KeepAlive {
         let mut admission_denied = false;
+        let mut bounded_body = false;
+        let mut request_is_head = false;
         let mut admission_lifetime = None;
         // Declared after the lease: stop/join the timer before releasing capacity.
         let mut deadline_watch = None;
@@ -313,6 +322,7 @@ fn accept_request(
         let (mut response, new_connection_state) = match decode_request_headers(&mut reader, false)
         {
             Ok(mut request) => {
+                request_is_head = request.method_ref() == Some(&crate::model::Method::HEAD);
                 request.extensions_mut().unwrap().insert(connection);
                 let admission = if let Some(admission) = request_admission {
                     let abort = AdmissionAbortGuard::new(&stream)?;
@@ -326,6 +336,7 @@ fn accept_request(
                 };
                 match admission {
                     Ok(context) => {
+                        bounded_body = context.get::<crate::RequestBodyLimits>().is_some();
                         let extensions = request.extensions_mut().unwrap();
                         admission_lifetime = context.get::<RequestLifetime>().cloned();
                         if let Some(deadline) = context.get::<RequestDeadline>() {
@@ -333,8 +344,23 @@ fn accept_request(
                         }
                         extensions.extend(context);
                         extensions.insert(connection);
-                        // Handles Expect only after admission.
-                        if let Some(expect) = request.headers_ref().unwrap().get(EXPECT).cloned() {
+                        let body_precheck = request
+                            .extensions_ref()
+                            .unwrap()
+                            .get::<crate::RequestBodyLimits>()
+                            .map_or(Ok(()), |limits| {
+                                crate::io::limited_body::check_headers(
+                                    request.headers_ref().unwrap(),
+                                    *limits,
+                                )
+                            });
+                        // Known oversized bodies are refused before 100 Continue.
+                        if let Err(error) = body_precheck {
+                            admission_denied = true;
+                            (build_error(error), ConnectionState::Close)
+                        } else if let Some(expect) =
+                            request.headers_ref().unwrap().get(EXPECT).cloned()
+                        {
                             if request
                                 .version_ref()
                                 .map_or(true, |v| *v >= Version::HTTP_11)
@@ -396,7 +422,13 @@ fn accept_request(
             watch.check()?;
         }
         let writer = BufWriter::with_capacity(BUFFER_CAPACITY, stream);
-        stream = if admission_denied {
+        stream = if bounded_body && request_is_head {
+            crate::io::encode_head_response(
+                &mut response,
+                writer,
+                connection_state == ConnectionState::Close,
+            )
+        } else if admission_denied || (bounded_body && connection_state == ConnectionState::Close) {
             encode_response_with_connection(&mut response, writer, true)
         } else {
             encode_response(&mut response, writer)
@@ -454,10 +486,18 @@ fn read_body_and_build_response(
 
 fn build_error(error: Error) -> Response<Body> {
     build_text_response(
-        match error.kind() {
-            ErrorKind::TimedOut => StatusCode::REQUEST_TIMEOUT,
-            ErrorKind::InvalidData => StatusCode::BAD_REQUEST,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        if error
+            .get_ref()
+            .is_some_and(|e| e.is::<crate::RequestBodyLimitExceeded>())
+        {
+            StatusCode::PAYLOAD_TOO_LARGE
+        } else {
+            match error.kind() {
+                ErrorKind::TimedOut => StatusCode::REQUEST_TIMEOUT,
+                ErrorKind::InvalidData => StatusCode::BAD_REQUEST,
+                ErrorKind::Unsupported => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            }
         },
         error.to_string(),
     )

@@ -263,6 +263,45 @@ class causes requests using it to fail closed with 503, never fall back.
 The admission policy itself is immutable until restart; malformed/unknown
 fields and arithmetic overflow are rejected at startup.
 
+Optional `request_body_limits` adds two explicit unsigned byte caps to that
+same profile (illustrative values, not production defaults):
+
+```json
+"request_body_limits": { "max_encoded_bytes": 1048576, "max_decoded_bytes": 8388608 }
+```
+
+Encoded bytes mean the entity **after HTTP transfer decoding**, before content
+decompression; decoded bytes mean the full decompressed body, not just RDF
+terms. Headers, chunk framing and socket read-ahead do not count. Both fields
+are required; zero permits no bytes at that stage. Limits apply to every
+admitted request on both listeners, including read-only mode. Authentication
+and admission still run first. Omitting this option keeps existing body handling.
+
+An excessive declared `Content-Length` is refused before `100 Continue`.
+Otherwise the complete fixed/chunked body and trailers are collected within the
+encoded cap, then decompressed within the decoded cap, **before any handler or
+RDF work**. Overflow returns 413 and closes without draining the oversized
+input; malformed/truncated framing or compression returns 400, unsupported
+content encodings return 415. Clients must tolerate a closed/reset connection
+while still sending a rejected body. Accepted chunk trailers and known HEAD
+representation lengths are preserved. These checks also cover Graph Store
+`no_transaction` requests, but do not make accepted legacy bulk writes atomic.
+
+This bounded profile supports identity, gzip/x-gzip (all members share one cap)
+and zlib-wrapped HTTP deflate. Legacy raw deflate is accepted **only without a
+zlib-looking prefix**; a corrupt or ambiguous zlib-looking stream is not retried
+as raw. This is deliberately narrower raw compatibility than the old decoder.
+Encoding lists and other codings are unsupported. The vendored OxHTTP server
+without its `flate2` feature supports identity only in this profile; the CLI
+already enables that feature. No new dependency is introduced.
+
+The existing absolute request deadline also covers body collection and
+decompression, including zero-output gzip members. These are byte caps, not
+hard RSS, parser-work, multipart-part, CPU or result-byte limits. Encoded and
+decoded buffers coexist for compressed inputs, and a handler may copy the
+decoded buffer again; use sensible caps and external process memory controls.
+The existing 128 MiB buffered-handler cap also remains in force where used.
+
 Optional `request_timeout_ms` (positive milliseconds) starts one absolute
 monotonic deadline **before queueing**. It is not renewed on admission, body
 read, evaluation, writer acquisition or serialization. Omitting it retains

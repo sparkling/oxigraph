@@ -155,8 +155,11 @@
   errors now release admission before timeout on both listeners, with valid
   half-closed requests preserved and abandoned writes absent after restart.
   FIN-only/silent loss still uses timeouts; active-work disconnect propagation
-  remains open. Declared request/result byte limits are the next native slice,
-  followed by broader resource/fairness/reload/metrics acceptance.
+  remains open. Declared encoded/decoded request-body caps now reject oversized
+  or expanded content before RDF work on both listeners, preserving trailers,
+  HEAD metadata, deadlines and valid persistent journeys. This is not an RSS
+  limit. Result-byte limits are next, followed by broader resource/fairness/
+  reload/metrics acceptance; full G4.2 remains open.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

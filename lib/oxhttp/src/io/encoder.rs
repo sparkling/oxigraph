@@ -64,8 +64,26 @@ pub fn encode_response<W: Write>(response: &mut Response<Body>, mut writer: W) -
 // The server owns connection state; application headers cannot control it.
 pub fn encode_response_with_connection<W: Write>(
     response: &mut Response<Body>,
+    writer: W,
+    close: bool,
+) -> Result<W> {
+    encode_response_inner(response, writer, close, false)
+}
+
+#[cfg(feature = "server")]
+pub(crate) fn encode_head_response<W: Write>(
+    response: &mut Response<Body>,
+    writer: W,
+    close: bool,
+) -> Result<W> {
+    encode_response_inner(response, writer, close, true)
+}
+
+fn encode_response_inner<W: Write>(
+    response: &mut Response<Body>,
     mut writer: W,
     close: bool,
+    head_only: bool,
 ) -> Result<W> {
     let status = response.status();
     let version_str = serialize_version(response.version())?;
@@ -82,7 +100,18 @@ pub fn encode_response_with_connection<W: Write>(
     }
     encode_headers(response.headers(), &mut writer)?;
     let must_include_body = does_response_must_include_body(response.status());
-    encode_body(response.body_mut(), &mut writer, must_include_body)?;
+    if head_only {
+        // HEAD has no message body, but may describe the GET representation.
+        // In particular, never replace an unknown/nonempty length with zero.
+        if !status.is_informational() && status != StatusCode::NO_CONTENT {
+            if let Some(length) = response.body().len() {
+                write!(writer, "content-length: {length}\r\n")?;
+            }
+        }
+        writer.write_all(b"\r\n")?;
+    } else {
+        encode_body(response.body_mut(), &mut writer, must_include_body)?;
+    }
     Ok(writer)
 }
 

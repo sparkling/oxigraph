@@ -334,6 +334,33 @@ fn invalid_profiles_and_missing_context_fail_closed() -> Result<()> {
 }
 
 #[test]
+fn body_budgets_are_explicit_and_bound_to_each_lease() -> Result<()> {
+    let mut policy = controller(1, 0, 1, 0)?.0.policy.clone();
+    policy.request_body_limits = Some(RequestBodyBudget {
+        max_encoded_bytes: 0,
+        max_decoded_bytes: 17,
+    });
+    let controller = AdmissionController::new(policy)?;
+    let lease = acquire(&controller, "default")?;
+    ensure!(
+        lease.request_body_limits()
+            == Some(oxhttp::RequestBodyLimits {
+                max_encoded_bytes: 0,
+                max_decoded_bytes: 17
+            })
+    );
+    for invalid in [
+        r#"{"max_encoded_bytes":1}"#,
+        r#"{"max_decoded_bytes":1}"#,
+        r#"{"max_encoded_bytes":1,"max_decoded_bytes":2,"unknown":3}"#,
+        r#"{"max_encoded_bytes":-1,"max_decoded_bytes":2}"#,
+    ] {
+        ensure!(serde_json::from_str::<RequestBodyBudget>(invalid).is_err());
+    }
+    Ok(())
+}
+
+#[test]
 fn deadline_is_absolute_including_queue_wait_and_keeps_active_ownership() -> Result<()> {
     let mut policy = controller(1, 1, 1, 1)?.0.policy.clone();
     policy.request_timeout_ms = Some(40);

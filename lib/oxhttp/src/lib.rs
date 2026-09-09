@@ -22,6 +22,10 @@ mod utils;
 #[cfg(feature = "client")]
 pub use client::Client;
 #[cfg(feature = "server")]
+pub use io::limited_body::{
+    RequestBodyLimitExceeded, RequestBodyLimits, RequestBodyPhase, RequestBodyResource,
+};
+#[cfg(feature = "server")]
 pub use server::{
     AdmissionAbort, ConnectionInfo, ListeningServer, RequestDeadline, RequestLifetime, Server,
 };

@@ -42,7 +42,7 @@ pub fn decode_request_headers(
             _ => {
                 return Err(invalid_data_error(format!(
                     "Unsupported HTTP version {version}"
-                )))
+                )));
             }
         });
     }
@@ -91,6 +91,18 @@ pub fn decode_request_body(
     reader: impl BufRead + 'static,
 ) -> Result<Request<Body>> {
     let body = if let Some(headers) = request.headers_ref() {
+        #[cfg(feature = "server")]
+        if let Some(limits) = request
+            .extensions_ref()
+            .and_then(|e| e.get::<super::limited_body::RequestBodyLimits>())
+        {
+            let deadline = request
+                .extensions_ref()
+                .and_then(|e| e.get::<crate::RequestDeadline>())
+                .map(|d| d.0);
+            let body = super::limited_body::decode(headers, reader, *limits, deadline)?;
+            return request.body(body).map_err(invalid_data_error);
+        }
         decode_body(headers, reader)?
     } else {
         Body::empty()
@@ -165,13 +177,20 @@ fn read_header_bytes(reader: impl BufRead) -> Result<Vec<u8>> {
 }
 
 fn decode_body(headers: &HeaderMap, reader: impl BufRead + 'static) -> Result<Body> {
+    decode_content_encoding(decode_transfer_body(headers, reader)?, headers)
+}
+
+pub(super) fn decode_transfer_body(
+    headers: &HeaderMap,
+    reader: impl BufRead + 'static,
+) -> Result<Body> {
     let content_length = unique_header(headers, &CONTENT_LENGTH)?;
     let transfer_encoding = unique_header(headers, &TRANSFER_ENCODING)?;
     let body = match (content_length, transfer_encoding) {
         (Some(_), Some(_)) => {
             return Err(invalid_data_error(
                 "Transfer-Encoding and Content-Length should not be set at the same time",
-            ))
+            ));
         }
         (Some(content_length), None) => {
             let len = content_length
@@ -201,7 +220,7 @@ fn decode_body(headers: &HeaderMap, reader: impl BufRead + 'static) -> Result<Bo
         (None, None) => Body::empty(),
     };
 
-    decode_content_encoding(body, headers)
+    Ok(body)
 }
 
 fn decode_headers(from: &[Header<'_>], to: &mut HeaderMap) -> Result<()> {
@@ -231,7 +250,10 @@ fn decode_content_encoding(body: Body, headers: &HeaderMap) -> Result<Body> {
     }
 }
 
-fn unique_header<'a>(headers: &'a HeaderMap, name: &HeaderName) -> Result<Option<&'a HeaderValue>> {
+pub(super) fn unique_header<'a>(
+    headers: &'a HeaderMap,
+    name: &HeaderName,
+) -> Result<Option<&'a HeaderValue>> {
     let mut headers = headers.get_all(name).iter();
     let value = headers.next();
     if headers.next().is_some() {

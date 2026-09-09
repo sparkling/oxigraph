@@ -1281,7 +1281,10 @@ RDFS decoded-copy ordering defect. Legacy nontransactional deadline-bound bulk
 remains explicitly unsupported. Observed queued socket errors now free admission
 before timeout, with valid half-closed requests preserved and no abandoned writes
 after restart. FIN-only/silent loss still uses timeouts; active-work disconnect
-remains open. Declared request/result byte limits are next. Broader resource
+remains open. Explicit encoded/decoded body caps now reject fixed/chunked and
+decompression-expanded requests before RDF work on both listeners; native tests
+preserve trailers, HEAD metadata, deadlines and write/rollback/restart behavior.
+Result-byte limits are next. These body caps are not RSS limits; broader resource
 budgets, fairness, reload, exported counters and full ADR-0027 acceptance remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no
 fine-grained SPARQL policy or evaluator resource quotas are claimed.

@@ -1,4 +1,5 @@
-//! ADR-0027 stage 1: process-local, pre-body admission, not evaluator budgets.
+//! ADR-0027: process-local admission, deadlines and opt-in body byte limits.
+//! These do not implement evaluator budgets or hard process isolation.
 //!
 //! Profiles are explicit and immutable for this controller's lifetime. All
 //! requests have one priority; eligible requests are FIFO, skipping a saturated
@@ -26,9 +27,28 @@ pub struct ClassLimits {
     pub max_queued: usize,
 }
 
+/// Transfer-decoded entity bytes before and after content decompression.
+/// Both fields are explicit. Zero permits only an empty body. These are not
+/// HTTP framing, total process memory, or RDF parser/evaluator work limits.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RequestBodyBudget {
+    max_encoded_bytes: u64,
+    max_decoded_bytes: u64,
+}
+
+impl From<RequestBodyBudget> for oxhttp::RequestBodyLimits {
+    fn from(value: RequestBodyBudget) -> Self {
+        Self {
+            max_encoded_bytes: value.max_encoded_bytes,
+            max_decoded_bytes: value.max_decoded_bytes,
+        }
+    }
+}
+
 /// No capacity defaults: the operator supplies every limit. This version only
-/// promises admission limits and optional cooperative request deadlines, not
-/// per-principal fairness, resource accounting, hard host isolation or live reload.
+/// promises admission limits, optional cooperative request deadlines and body
+/// byte limits, not evaluator budgets, per-principal fairness or live reload.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkloadPolicy {
@@ -42,6 +62,8 @@ pub struct WorkloadPolicy {
     queue_timeout_ms: u64,
     #[serde(default)]
     request_timeout_ms: Option<u64>,
+    #[serde(default)]
+    request_body_limits: Option<RequestBodyBudget>,
     retry_after_seconds: u32,
     classes: BTreeMap<String, ClassLimits>,
 }
@@ -400,6 +422,9 @@ impl AdmissionController {
             });
         match result {
             Ok(lease) => {
+                if let Some(limits) = lease.request_body_limits() {
+                    context.insert(limits);
+                }
                 if let Some(deadline) = lease.deadline() {
                     context.insert(oxhttp::RequestDeadline(deadline));
                 }
@@ -551,6 +576,15 @@ struct LeaseInner {
     cancellation: CancellationToken,
 }
 impl WorkloadLease {
+    /// Immutable request-body bounds for the trusted HTTP admission hook.
+    pub fn request_body_limits(&self) -> Option<oxhttp::RequestBodyLimits> {
+        self.0
+            .controller
+            .0
+            .policy
+            .request_body_limits
+            .map(Into::into)
+    }
     pub fn deadline(&self) -> Option<Instant> {
         self.0.cancellation.deadline()
     }

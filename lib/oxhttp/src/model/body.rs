@@ -11,7 +11,11 @@ use std::io::{Cursor, Error, ErrorKind, Read, Result};
 pub struct Body(BodyAlt);
 
 enum BodyAlt {
-    SimpleOwned(Cursor<Vec<u8>>),
+    SimpleOwned {
+        content: Cursor<Vec<u8>>,
+        trailers: Option<Box<HeaderMap>>,
+        known_length: bool,
+    },
     SimpleBorrowed(&'static [u8]),
     Sized {
         content: Box<dyn Read>,
@@ -26,6 +30,18 @@ enum BodyAlt {
 }
 
 impl Body {
+    #[cfg(feature = "server")]
+    pub(crate) fn from_buffered(
+        data: Vec<u8>,
+        trailers: Option<HeaderMap>,
+        known_length: bool,
+    ) -> Self {
+        Self(BodyAlt::SimpleOwned {
+            content: Cursor::new(data),
+            trailers: trailers.map(Box::new),
+            known_length,
+        })
+    }
     /// Creates a new body from a [`Read`] implementation.
     ///
     /// If the body is sent as an HTTP request or response it will be streamed using [chunked transfer encoding](https://httpwg.org/http-core/draft-ietf-httpbis-messaging-latest.html#chunked.encoding).
@@ -72,7 +88,11 @@ impl Body {
     #[inline]
     pub fn len(&self) -> Option<u64> {
         match &self.0 {
-            BodyAlt::SimpleOwned(d) => Some(d.get_ref().len().try_into().unwrap()),
+            BodyAlt::SimpleOwned {
+                content,
+                known_length,
+                ..
+            } => known_length.then(|| content.get_ref().len().try_into().unwrap()),
             BodyAlt::SimpleBorrowed(d) => Some(d.len().try_into().unwrap()),
             BodyAlt::Sized { total_len, .. } => Some(*total_len),
             BodyAlt::Chunked(_) => None,
@@ -86,7 +106,8 @@ impl Body {
     #[inline]
     pub fn trailers(&self) -> Option<&HeaderMap> {
         match &self.0 {
-            BodyAlt::SimpleOwned(_) | BodyAlt::SimpleBorrowed(_) | BodyAlt::Sized { .. } => None,
+            BodyAlt::SimpleOwned { trailers, .. } => trailers.as_deref(),
+            BodyAlt::SimpleBorrowed(_) | BodyAlt::Sized { .. } => None,
             BodyAlt::Chunked(c) => c.trailers(),
             #[cfg(feature = "flate2")]
             BodyAlt::DecodingDeflate(c) => c.get_ref().trailers(),
@@ -138,7 +159,9 @@ impl Body {
         s: &'c mut fmt::DebugStruct<'b, 'a>,
     ) -> &'c mut fmt::DebugStruct<'b, 'a> {
         match &self.0 {
-            BodyAlt::SimpleOwned(d) => s.field("content-length", &d.get_ref().len()),
+            BodyAlt::SimpleOwned { content, .. } => {
+                s.field("content-length", &content.get_ref().len())
+            }
             BodyAlt::SimpleBorrowed(d) => s.field("content-length", &d.len()),
             BodyAlt::Sized { total_len, .. } => s.field("content-length", total_len),
             BodyAlt::Chunked(_) => s.field("transfer-encoding", &"chunked"),
@@ -158,7 +181,7 @@ impl Read for Body {
     #[inline]
     fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
         match &mut self.0 {
-            BodyAlt::SimpleOwned(c) => c.read(buf),
+            BodyAlt::SimpleOwned { content, .. } => content.read(buf),
             BodyAlt::SimpleBorrowed(c) => c.read(buf),
             BodyAlt::Sized {
                 content,
@@ -176,7 +199,12 @@ impl Read for Body {
                 *consumed_len += u64::try_from(read).unwrap();
                 if read == 0 {
                     // We are missing some bytes
-                    return Err(Error::new(ErrorKind::ConnectionAborted, format!("The body was expected to contain {total_len} bytes but we have been able to only read {consumed_len}")));
+                    return Err(Error::new(
+                        ErrorKind::ConnectionAborted,
+                        format!(
+                            "The body was expected to contain {total_len} bytes but we have been able to only read {consumed_len}"
+                        ),
+                    ));
                 }
                 Ok(read)
             }
@@ -199,7 +227,11 @@ impl Default for Body {
 impl From<Vec<u8>> for Body {
     #[inline]
     fn from(data: Vec<u8>) -> Self {
-        Self(BodyAlt::SimpleOwned(Cursor::new(data)))
+        Self(BodyAlt::SimpleOwned {
+            content: Cursor::new(data),
+            trailers: None,
+            known_length: true,
+        })
     }
 }
 

@@ -4,6 +4,7 @@
 )]
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
+use std::fmt::Write as _;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -349,10 +350,13 @@ fn request(
     )
 }
 fn wire(address: SocketAddr, request: &str) -> Result<Wire> {
+    wire_bytes(address, request.as_bytes())
+}
+fn wire_bytes(address: SocketAddr, request: &[u8]) -> Result<Wire> {
     let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(1))?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
     stream.set_write_timeout(Some(Duration::from_secs(3)))?;
-    stream.write_all(request.as_bytes())?;
+    stream.write_all(request)?;
     let mut result = String::new();
     match stream.read_to_string(&mut result) {
         Ok(_) => (),
@@ -1098,6 +1102,184 @@ fn workload(queued: usize, class_queued: usize, timeout_ms: u64) -> Value {
         "max_active":1,"max_queued":queued,"operator_max_active":1,"operator_max_queued":0,
         "queue_timeout_ms":timeout_ms,"retry_after_seconds":2,
         "classes":{"default":{"max_active":1,"max_queued":class_queued}}})
+}
+
+fn bounded_body_wire(
+    running: &Running,
+    path: &str,
+    input: &[u8],
+    encoding: Option<&str>,
+    chunked: bool,
+) -> Result<Wire> {
+    let mut head = format!(
+        "POST {path} HTTP/1.1\r\nHost: localhost\r\n{}Content-Type: application/sparql-update\r\nConnection: close\r\n",
+        identity(WRITER, 1)?
+    );
+    if let Some(encoding) = encoding {
+        write!(head, "Content-Encoding: {encoding}\r\n")?;
+    }
+    if chunked {
+        head.push_str("Transfer-Encoding: chunked\r\n\r\n");
+        let mut bytes = head.into_bytes();
+        bytes.extend_from_slice(format!("{:x}\r\n", input.len()).as_bytes());
+        bytes.extend_from_slice(input);
+        bytes.extend_from_slice(b"\r\n0\r\n\r\n");
+        wire_bytes(running.public, &bytes)
+    } else {
+        write!(head, "Content-Length: {}\r\n\r\n", input.len())?;
+        let mut bytes = head.into_bytes();
+        bytes.extend_from_slice(input);
+        wire_bytes(running.public, &bytes)
+    }
+}
+
+#[test]
+fn request_body_limits_refuse_framing_and_expansion_before_rdf_work() -> Result<()> {
+    let mut profile = workload(1, 1, 1000);
+    profile["request_body_limits"] = json!({"max_encoded_bytes":512,"max_decoded_bytes":256});
+    let running = start_with_workload(&config(), false, Some(&profile))?;
+    let before = work_counters(&running)?;
+    for length in [257, 513] {
+        let response = wire(
+            running.public,
+            &format!(
+                "POST /update HTTP/1.1\r\nHost: localhost\r\n{}Expect: 100-continue\r\nContent-Length: {length}\r\n\r\n",
+                identity(WRITER, 1)?
+            ),
+        )?;
+        ensure!(
+            response.status == 413
+                && response
+                    .head
+                    .to_ascii_lowercase()
+                    .contains("connection: close")
+        );
+    }
+    let response = wire(
+        running.public,
+        "POST /update HTTP/1.1\r\nHost: localhost\r\nExpect: 100-continue\r\nContent-Length: 99999\r\n\r\n",
+    )?;
+    ensure!(
+        response.status == 401,
+        "byte limits bypassed authentication"
+    );
+    let mut update = b"INSERT DATA { <urn:oversize> <urn:p> <urn:o> } #".to_vec();
+    update.resize(1000, b'x');
+    let gzip = {
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&update)?;
+        encoder.finish()?
+    };
+    let deflate = {
+        let mut encoder =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&update)?;
+        encoder.finish()?
+    };
+    for chunked in [false, true] {
+        for (body, encoding) in [
+            (&update, None),
+            (&gzip, Some("gzip")),
+            (&deflate, Some("deflate")),
+        ] {
+            ensure!(bounded_body_wire(&running, "/update", body, encoding, chunked)?.status == 413);
+        }
+        for path in [
+            "/store?graph=urn:allowed",
+            "/store?graph=urn:allowed&no_transaction",
+        ] {
+            ensure!(bounded_body_wire(&running, path, &update, None, chunked)?.status == 413);
+        }
+    }
+    ensure!(
+        bounded_body_wire(&running, "/update", b"invalid gzip", Some("gzip"), false)?.status == 400
+    );
+    ensure!(
+        bounded_body_wire(&running, "/update", b"unsupported", Some("br"), false)?.status == 415
+    );
+    let denied_operator = request(
+        running.admin,
+        "GET",
+        "/ready",
+        &identity(OPERATOR, 1)?,
+        &"x".repeat(257),
+    )?;
+    ensure!(denied_operator.status == 413);
+    ensure!(
+        work_counters(&running)? == before,
+        "rejected body entered RDF work"
+    );
+    // An exact decoded-boundary request is accepted, rather than always denying.
+    let mut exact = b"INSERT DATA { <urn:exact> <urn:p> <urn:o> } #".to_vec();
+    exact.resize(256, b'x');
+    ensure!(bounded_body_wire(&running, "/update", &exact, None, true)?.status == 204);
+    let response = sparql(
+        &running,
+        READER,
+        "/query",
+        "ASK { <urn:oversize> <urn:p> <urn:o> }",
+    )?;
+    ensure!(
+        response.status == 200
+            && serde_json::from_str::<Value>(&response.body)?["boolean"] == false
+    );
+    let response = sparql(
+        &running,
+        READER,
+        "/query",
+        "ASK { <urn:exact> <urn:p> <urn:o> }",
+    )?;
+    ensure!(
+        response.status == 200 && serde_json::from_str::<Value>(&response.body)?["boolean"] == true
+    );
+    write_rollback_and_restart(running)
+}
+
+#[test]
+fn request_body_limits_accept_compressed_updates_and_read_only_queries() -> Result<()> {
+    let mut profile = workload(1, 1, 1000);
+    profile["request_body_limits"] = json!({"max_encoded_bytes":512,"max_decoded_bytes":256});
+    let running = start_with_workload(&config(), false, Some(&profile))?;
+    for (subject, encoding) in [("gzip", "gzip"), ("deflate", "deflate")] {
+        let update = format!("INSERT DATA {{ <urn:{subject}> <urn:p> <urn:o> }}");
+        let encoded = if encoding == "gzip" {
+            let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            e.write_all(update.as_bytes())?;
+            e.finish()?
+        } else {
+            let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+            e.write_all(update.as_bytes())?;
+            e.finish()?
+        };
+        ensure!(
+            bounded_body_wire(&running, "/update", &encoded, Some(encoding), true)?.status == 204
+        );
+        let response = sparql(
+            &running,
+            READER,
+            "/query",
+            &format!("ASK {{ <urn:{subject}> <urn:p> <urn:o> }}"),
+        )?;
+        ensure!(
+            response.status == 200
+                && serde_json::from_str::<Value>(&response.body)?["boolean"] == true
+        );
+    }
+    let read_only = start_with_workload(&config(), true, Some(&profile))?;
+    ensure!(sparql(&read_only, READER, "/query", "ASK {}").is_ok_and(|r| r.status == 200));
+    let before = work_counters(&read_only)?;
+    ensure!(
+        sparql(
+            &read_only,
+            READER,
+            "/query",
+            &format!("ASK {{}} #{}", "x".repeat(256))
+        )?
+        .status
+            == 413
+    );
+    ensure!(work_counters(&read_only)? == before);
+    write_rollback_and_restart(running)
 }
 
 #[test]
