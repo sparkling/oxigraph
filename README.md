@@ -183,8 +183,11 @@ and the absolute request deadline across snapshot copying, FROM construction,
 inference and query reads. RDFS and OWL also check internal copies, sparse scans,
 consistency/output assembly and memory estimation. Controlled copies preserve
 interned IDs, iteration order and empty graphs. Legacy nontransactional bulk
-loading remains explicitly unsupported with request deadlines. Resource accounting,
-queued-disconnect propagation and full G4.2 acceptance remain open.
+loading remains explicitly unsupported with request deadlines. Observed queued
+socket failures now cancel admission and release the queue slot; valid TCP
+write-half-closed requests remain eligible. FIN-only/silent loss still relies on
+timeouts. Resource accounting, active-work disconnect propagation and full G4.2
+acceptance remain open.
 See [ADR-0026](docs/adr/0026-service-identity-and-authorization.md#native-acceptance-closure-2026-09-09).
 RocksDB remains the persistent backend. The custom-backend tests prove the
 public extension contract, not deployment of a separate replacement backend.

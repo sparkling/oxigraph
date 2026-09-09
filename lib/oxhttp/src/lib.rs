@@ -22,4 +22,6 @@ mod utils;
 #[cfg(feature = "client")]
 pub use client::Client;
 #[cfg(feature = "server")]
-pub use server::{ConnectionInfo, ListeningServer, RequestDeadline, RequestLifetime, Server};
+pub use server::{
+    AdmissionAbort, ConnectionInfo, ListeningServer, RequestDeadline, RequestLifetime, Server,
+};

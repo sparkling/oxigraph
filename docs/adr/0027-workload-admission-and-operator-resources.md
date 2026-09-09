@@ -8,7 +8,8 @@
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
   and response-flush lifetime are implemented. Optional absolute request
   deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and transactional paths. Resource budgets,
-  excluded deadline paths, queued disconnect, reload and full acceptance remain open
+  excluded deadline paths, active-work disconnect, reload and full acceptance remain open.
+  Observed queued socket errors now release admission; FIN-only/silent loss uses timeouts
 - Programme task: `task-1787728711461-3isex6`
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
@@ -134,7 +135,7 @@ work under saturation, live operator access, release after observed disconnect,
 successful subsequent write/query and rollback/restart with admission enabled.
 
 This closes a native product slice, **not** the full admission or G4.2 gate.
-Queued sockets do not yet propagate disconnect into their cancellation token.
+The subsequent queued-abort slice below propagates observed socket failures.
 Resource accounting, differentiated priorities,
 per-principal fairness, atomic workload reload, exported admission metrics and
 the remaining staged/operational evaluators remain outstanding. Configured
@@ -167,7 +168,7 @@ These tests are additive product regressions, not rewritten qualification eviden
 This is still a cooperative, opt-in slice. The subsequent materialization work
 below admits finite profiles; the legacy nontransactional Graph Store bulk path
 still returns unsupported (400) pending checkpoints. Individual parser, custom callback,
-DNS and native storage calls are not preemptible. Queued socket disconnect,
+DNS and native storage calls are not preemptible. Active-work disconnect,
 resource accounting, exported admission metrics and full acceptance remain open.
 
 ### Finite RDF and shared materialization controls (2026-09-09)
@@ -233,8 +234,46 @@ FROM merging, empty graphs, read-only materialization, then persistent
 write/rollback/restart. A single RDF term parse/format, collection operation or
 native call remains non-preemptible. Transient copies/order grouping are not a
 complete allocation/RSS budget. This closes the native OWL deadline slice, not
-full G4.2 or a refreshed protected semantic/promotion receipt. Next: queued
-socket disconnect, followed by resource/fairness/reload/exported-metrics gates.
+full G4.2 or a refreshed protected semantic/promotion receipt. The next queued
+transport-error slice is described below; resource/fairness/reload/metrics remain.
+
+### Observed queued transport failures (2026-09-09)
+
+OxHTTP inserts an additive `AdmissionAbort` handle in each immutable admission
+head. A mutex serializes non-blocking `TcpStream::take_error` calls and latches
+their result, since reading `SO_ERROR` clears it. Inspection failure also fails
+closed, without claiming that the peer necessarily disconnected. The final
+transport check atomically polls and disarms the probe before `100 Continue`,
+body decoding or application dispatch, including when the hook returns success
+despite a failure. Unwind also disarms all clones. An escaped handle cannot
+retain a descriptor or consume an error belonging to active/keep-alive work.
+
+Both data and operator listeners call the additive `admit_request` API after
+authentication. It checks the probe during existing 10 ms scheduled queue polls
+and before activation, cancelling the lease's native token. The old embedded
+`acquire`/`admit` APIs remain available. No new thread, socket-mode mutation,
+body parsing or dependency is required. Active leases are never released merely
+because cancellation was requested.
+
+This closes **observed queued transport errors**, not all connection loss.
+TCP FIN can be a legitimate write-half-close; the peer may still read the
+response ([RFC 9293 §3.6.1](https://www.rfc-editor.org/rfc/rfc9293.html#section-3.6.1)).
+FIN-only closure, silent loss and resets after the final check require existing
+timeouts or subsequent I/O checks. Active-work cancellation propagation remains
+open. No hard real-time or universal peer-liveness guarantee is made.
+
+Native tests cover latched errors/clones, final-check rejection, unwind and
+keep-alive isolation, plus complete GET, fixed-length and chunked half-closes.
+Linux real-reset fixtures verify exact data/operator queue counters return to
+zero before their 30-second expiry while active capacity stays owned. The CLI
+wire journey fills a queue, aborts its writer, admits a half-closed successor,
+and verifies absent abandoned data and persistent successful data after restart,
+followed by the write/rollback/restart positive control. The reset fixture uses
+Linux's unread-response close behavior; it is not cross-platform reset evidence.
+
+Next native slice: declared request/result byte limits with typed rejection and
+failed-stream behavior. Broader resource/fairness/reload/exported-metrics and
+the remaining staged acceptance gates remain open; ADR status is unchanged.
 
 ### Remaining staged acceptance
 

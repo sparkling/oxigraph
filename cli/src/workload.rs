@@ -257,6 +257,16 @@ impl AdmissionController {
         listener: ListenerKind,
         cancellation: CancellationToken,
     ) -> Result<WorkloadLease, WorkloadError> {
+        self.acquire_with_abort(class, listener, cancellation, None)
+    }
+
+    fn acquire_with_abort(
+        &self,
+        class: &str,
+        listener: ListenerKind,
+        cancellation: CancellationToken,
+        abort: Option<&oxhttp::AdmissionAbort>,
+    ) -> Result<WorkloadLease, WorkloadError> {
         let now = Instant::now();
         let cancellation = if let Some(timeout) = self.0.policy.request_timeout_ms {
             cancellation.with_deadline(
@@ -266,10 +276,16 @@ impl AdmissionController {
         } else {
             cancellation
         };
+        if abort.is_some_and(oxhttp::AdmissionAbort::is_aborted) {
+            cancellation.cancel();
+        }
         let mut state = self.lock()?;
         let entry = self.entry(&mut state, class, listener, cancellation, now)?;
         Self::purge(&mut state, Instant::now());
         if self.available(&state, &entry) && self.first_eligible(&state, entry.operator).is_none() {
+            if abort.is_some_and(oxhttp::AdmissionAbort::is_aborted) {
+                entry.cancellation.cancel();
+            }
             return self.activate(&mut state, &entry);
         }
         self.check_queue_capacity(&state, &entry)?;
@@ -285,6 +301,9 @@ impl AdmissionController {
             id,
         };
         loop {
+            if abort.is_some_and(oxhttp::AdmissionAbort::is_aborted) {
+                cancellation.cancel();
+            }
             let mut state = self.lock()?;
             let now = Instant::now();
             let failure = if let Some(reason) = cancellation.cancellation_reason() {
@@ -316,6 +335,9 @@ impl AdmissionController {
                     .queue
                     .remove(index)
                     .ok_or(WorkloadError::Unavailable)?;
+                if abort.is_some_and(oxhttp::AdmissionAbort::is_aborted) {
+                    cancellation.cancel();
+                }
                 let lease = self.activate(&mut state, &entry);
                 drop(state);
                 drop(ticket);
@@ -339,14 +361,41 @@ impl AdmissionController {
         context: &mut Extensions,
         listener: ListenerKind,
     ) -> Result<(), Box<Response<Body>>> {
+        self.admit_with_abort(context, listener, None)
+    }
+
+    /// Like [`Self::admit`], additionally observes transport errors while queued.
+    /// Pass the unmodified OxHTTP admission head, after authenticating it. The
+    /// probe is pre-body only; a graceful TCP half-close is not cancellation.
+    pub fn admit_request(
+        &self,
+        head: &oxhttp::model::request::Builder,
+        context: &mut Extensions,
+        listener: ListenerKind,
+    ) -> Result<(), Box<Response<Body>>> {
+        self.admit_with_abort(
+            context,
+            listener,
+            head.extensions_ref()
+                .and_then(|extensions| extensions.get::<oxhttp::AdmissionAbort>()),
+        )
+    }
+
+    fn admit_with_abort(
+        &self,
+        context: &mut Extensions,
+        listener: ListenerKind,
+        abort: Option<&oxhttp::AdmissionAbort>,
+    ) -> Result<(), Box<Response<Body>>> {
         let result = context
             .get::<RequestContext>()
             .ok_or(WorkloadError::MissingAccessContext)
             .and_then(|access| {
-                self.acquire(
+                self.acquire_with_abort(
                     &access.grant().workload_class,
                     listener,
                     CancellationToken::new(),
+                    abort,
                 )
             });
         match result {

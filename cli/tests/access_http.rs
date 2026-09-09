@@ -93,6 +93,67 @@ fn start_with_workload_entailment(
     workload: Option<&Value>,
     entailment: Option<&str>,
 ) -> Result<Running> {
+    retry_initial_bind(|| {
+        try_start_with_workload_entailment(policy, read_only, workload, entailment)
+    })
+}
+
+fn retry_initial_bind<T>(mut start: impl FnMut() -> Result<T>) -> Result<T> {
+    for attempt in 1..=3 {
+        let result = start();
+        if attempt < 3
+            && result.as_ref().err().is_some_and(|error| {
+                error
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|error| error.kind() == ErrorKind::AddrInUse)
+            })
+        {
+            // The released port-zero reservations can race another socket bind.
+            // Only initial fixture setup retries, with fresh ports and store.
+            // Running::drop has already reaped the failed child. Restart tests
+            // call wait_ready directly and never receive this retry.
+            continue;
+        }
+        return result;
+    }
+    unreachable!()
+}
+
+#[test]
+fn initial_bind_retry_is_bounded_and_does_not_retry_other_failures() -> Result<()> {
+    let mut calls = 0;
+    let error = retry_initial_bind::<()>(|| {
+        calls += 1;
+        Err(std::io::Error::new(ErrorKind::AddrInUse, "fixture bind").into())
+    })
+    .unwrap_err();
+    ensure!(calls == 3 && error.to_string() == "fixture bind");
+    calls = 0;
+    let error = retry_initial_bind::<()>(|| {
+        calls += 1;
+        Err(std::io::Error::other("real startup failure").into())
+    })
+    .unwrap_err();
+    ensure!(calls == 1 && error.to_string() == "real startup failure");
+    calls = 0;
+    retry_initial_bind(|| {
+        calls += 1;
+        if calls == 1 {
+            Err(std::io::Error::new(ErrorKind::AddrInUse, "fixture bind").into())
+        } else {
+            Ok(())
+        }
+    })?;
+    ensure!(calls == 2);
+    Ok(())
+}
+
+fn try_start_with_workload_entailment(
+    policy: &Value,
+    read_only: bool,
+    workload: Option<&Value>,
+    entailment: Option<&str>,
+) -> Result<Running> {
     let directory = assert_fs::TempDir::new()?;
     let location = directory.path().join("store");
     if read_only {
@@ -153,7 +214,16 @@ fn wait_ready(running: &mut Running) -> Result<()> {
         if let Some(status) = running.child.0.try_wait()? {
             let stderr = std::fs::read_to_string(running.directory.path().join("stderr.log"))
                 .context("reading CLI startup failure log")?;
-            anyhow::bail!("CLI exited before startup ({status}): {stderr}");
+            let diagnostic = format!("CLI exited before startup ({status}): {stderr}");
+            // Match only the actual native bind diagnostic, not an arbitrary
+            // failure containing a similar phrase. Preserve it on exhaustion.
+            #[cfg(target_os = "linux")]
+            if status.code() == Some(1)
+                && stderr.trim() == format!("Error: {}", std::io::Error::from_raw_os_error(98))
+            {
+                return Err(std::io::Error::new(ErrorKind::AddrInUse, diagnostic).into());
+            }
+            anyhow::bail!(diagnostic);
         }
         if request(running.admin, "GET", "/health", "", "")
             .is_ok_and(|response| response.status == 200)
@@ -1243,6 +1313,131 @@ fn workload_queue_times_out_before_continue_and_remains_usable() -> Result<()> {
     drop(occupied);
     ensure!(sparql(&running, READER, "/query", "ASK {}").is_ok_and(|r| r.status == 200));
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn workload_queued_reset_frees_slot_and_half_closed_write_survives_restart() -> Result<()> {
+    let mut running = start_with_workload(&config(), false, Some(&workload(1, 1, 30_000)))?;
+    let mut abandoned = TcpStream::connect(running.public)?;
+    abandoned.set_read_timeout(Some(Duration::from_secs(3)))?;
+    write!(
+        abandoned,
+        "GET /query HTTP/1.1\r\nHost: localhost\r\n{}\r\n",
+        identity(READER, 1)?
+    )?;
+    ensure!(abandoned.peek(&mut [0; 1])? > 0);
+    // Keep that response unread: dropping this socket later sends a Linux TCP
+    // reset, unlike an ordinary FIN that could be a valid write-half-close.
+    let occupied = occupy_admission(&running)?;
+    let before = work_counters(&running)?;
+    let update = "INSERT DATA { <urn:abandoned> <urn:p> <urn:o> }";
+    write!(
+        abandoned,
+        "POST /update HTTP/1.1\r\nHost: localhost\r\n{}Content-Type: application/sparql-update\r\nContent-Length: {}\r\n\r\n{update}",
+        identity(WRITER, 1)?,
+        update.len()
+    )?;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let audit = request(
+            running.admin,
+            "GET",
+            "/access/audit",
+            &identity(OPERATOR, 1)?,
+            "",
+        )?;
+        ensure!(audit.status == 200);
+        let audit: Value = serde_json::from_str(&audit.body)?;
+        if audit["events"]
+            .as_array()
+            .context("missing audit events")?
+            .iter()
+            .filter(|event| event["endpoint"] == "update" && event["allowed"] == true)
+            .count()
+            >= 2
+        {
+            break;
+        }
+        ensure!(
+            Instant::now() < deadline,
+            "queued request was not authenticated"
+        );
+        thread::yield_now();
+    }
+    // Unlike the audit event, overload verifies that the single queue slot is
+    // occupied. Unit tests additionally inspect exact controller counters.
+    ensure!(request(running.public, "GET", "/query", &identity(READER, 1)?, "")?.status == 503);
+    drop(abandoned);
+
+    let successor_update = "INSERT DATA { <urn:half-closed> <urn:p> <urn:o> }";
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut successor = loop {
+        let mut candidate = TcpStream::connect(running.public)?;
+        candidate.set_read_timeout(Some(Duration::from_millis(100)))?;
+        write!(
+            candidate,
+            "POST /update HTTP/1.1\r\nHost: localhost\r\n{}Content-Type: application/sparql-update\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{successor_update}",
+            identity(WRITER, 1)?,
+            successor_update.len()
+        )?;
+        candidate.shutdown(std::net::Shutdown::Write)?;
+        match candidate.peek(&mut [0; 1]) {
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                break candidate;
+            }
+            Ok(count) if count > 0 => {
+                let mut response = String::new();
+                // A pre-body rejection may close with unread request bytes and
+                // thus a reset. Still require the actual final overload reply.
+                match candidate.read_to_string(&mut response) {
+                    Ok(_) => (),
+                    Err(error) if error.kind() == ErrorKind::ConnectionReset => (),
+                    Err(error) => return Err(error).context("reading successor overload"),
+                }
+                ensure!(
+                    response.starts_with("HTTP/1.1 503 "),
+                    "unexpected queued response: {response}"
+                );
+            }
+            other => anyhow::bail!("queued successor closed unexpectedly: {other:?}"),
+        }
+        ensure!(
+            Instant::now() < deadline,
+            "reset failed to free the queue before its 30s timeout"
+        );
+    };
+    ensure!(
+        work_counters(&running)? == before,
+        "queued requests entered RDF work"
+    );
+    drop(occupied);
+    successor.set_read_timeout(Some(Duration::from_secs(3)))?;
+    let mut response = String::new();
+    successor
+        .read_to_string(&mut response)
+        .context("reading admitted half-closed successor")?;
+    ensure!(
+        response.starts_with("HTTP/1.1 204 "),
+        "half-closed write failed: {response}"
+    );
+    running.child.0.kill()?;
+    running.child.0.wait()?;
+    running.child = ChildGuard(running.command.spawn()?);
+    wait_ready(&mut running)?;
+    for (subject, expected) in [("urn:abandoned", false), ("urn:half-closed", true)] {
+        let response = sparql(
+            &running,
+            READER,
+            "/query",
+            &format!("ASK {{ <{subject}> <urn:p> <urn:o> }}"),
+        )?;
+        ensure!(
+            response.status == 200
+                && serde_json::from_str::<Value>(&response.body)?["boolean"] == expected
+        );
+    }
+    write_rollback_and_restart(running)
 }
 
 #[test]

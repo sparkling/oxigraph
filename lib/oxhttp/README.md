@@ -34,6 +34,7 @@ To enable it, you need to enable one of the following features:
 Example:
 
 ```rust
+# #[cfg(feature = "client")] {
 use oxhttp::Client;
 use oxhttp::model::{Body, Request, Method, StatusCode, HeaderName};
 use oxhttp::model::header::CONTENT_TYPE;
@@ -45,6 +46,7 @@ assert_eq!(response.status(), StatusCode::OK);
 assert_eq!(response.headers().get(CONTENT_TYPE).unwrap(), "text/html");
 
 let body = response.into_body().to_string().unwrap();
+# }
 ```
 
 ## Server
@@ -55,6 +57,7 @@ It is still a work in progress. Use at your own risks behind a reverse proxy!
 Example:
 
 ```rust no_run
+# #[cfg(feature = "server")] {
 use std::net::{Ipv4Addr, Ipv6Addr};
 use oxhttp::Server;
 use oxhttp::model::{Body, Response, StatusCode};
@@ -76,6 +79,7 @@ server = server.with_global_timeout(Duration::from_secs(10));
 server = server.with_max_concurrent_connections(128);
 // We spawn the server and block on it
 server.spawn().unwrap().join().unwrap();
+# }
 ```
 
 ## License

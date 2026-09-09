@@ -1278,9 +1278,11 @@ checked internal preparation, raw rule/list/key/equality/semantic/contradiction
 scans and output/accounting. Native Store and persistent HTTP journeys pass.
 Both profiles now copy encoded Dataset identity/order, correcting the preceding
 RDFS decoded-copy ordering defect. Legacy nontransactional deadline-bound bulk
-remains explicitly unsupported. Queued socket disconnect is the next G4.2 step.
-Resource budgets, queued socket disconnect, reload, exported
-counters and full ADR-0027 acceptance remain open.
+remains explicitly unsupported. Observed queued socket errors now free admission
+before timeout, with valid half-closed requests preserved and no abandoned writes
+after restart. FIN-only/silent loss still uses timeouts; active-work disconnect
+remains open. Declared request/result byte limits are next. Broader resource
+budgets, fairness, reload, exported counters and full ADR-0027 acceptance remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no
 fine-grained SPARQL policy or evaluator resource quotas are claimed.
 

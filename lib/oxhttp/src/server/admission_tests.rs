@@ -59,6 +59,101 @@ impl Clone for NeverClone {
 }
 
 #[test]
+fn complete_half_closed_requests_survive_waiting_admission() -> Result<()> {
+    for wire in [
+        "GET / HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n",
+        "POST / HTTP/1.1\r\nhost: localhost\r\ncontent-length: 4\r\nconnection: close\r\n\r\nbody",
+        "POST / HTTP/1.1\r\nhost: localhost\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n4\r\nbody\r\n0\r\n\r\n",
+    ] {
+        let (entered, waiting) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        let released = Mutex::new(released);
+        let (mut stream, worker) = connect(
+            Server::new(|request| {
+                assert!(request.extensions().get::<AdmissionAbort>().is_none());
+                let mut body = String::new();
+                request.body_mut().read_to_string(&mut body).unwrap();
+                assert!(body.is_empty() || body == "body");
+                Response::builder().body(Body::from("ok")).unwrap()
+            })
+            .with_request_admission(move |head, _| {
+                let abort = head
+                    .extensions_ref()
+                    .unwrap()
+                    .get::<AdmissionAbort>()
+                    .unwrap();
+                entered.send(()).unwrap();
+                released
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(3))
+                    .unwrap();
+                assert!(!abort.is_aborted());
+                Ok(Extensions::new())
+            }),
+        )?;
+        stream.write_all(wire.as_bytes())?;
+        stream.shutdown(std::net::Shutdown::Write)?;
+        waiting.recv_timeout(Duration::from_secs(3)).unwrap();
+        release.send(()).unwrap();
+        assert!(read_closed_response(&mut stream)?.ends_with("\r\n\r\nok"));
+        worker.join().unwrap()?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn observed_reset_prevents_body_and_expect_even_if_hook_returns_success() -> Result<()> {
+    let (entered, waiting) = std::sync::mpsc::channel();
+    let previous = Mutex::new(None::<AdmissionAbort>);
+    let (mut stream, worker) = connect(
+        Server::new(|request| {
+            assert_eq!(
+                request.uri().path(),
+                "/first",
+                "aborted request reached handler"
+            );
+            Response::builder().body(Body::from("unread")).unwrap()
+        })
+        .with_request_admission(move |head, _| {
+            if head.uri_ref().unwrap().path() == "/second" {
+                let abort = head
+                    .extensions_ref()
+                    .unwrap()
+                    .get::<AdmissionAbort>()
+                    .unwrap();
+                entered.send(()).unwrap();
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                while !abort.is_aborted() {
+                    assert!(!previous.lock().unwrap().as_ref().unwrap().is_aborted());
+                    assert!(std::time::Instant::now() < deadline, "reset not observed");
+                    thread::yield_now();
+                }
+                assert!(!previous.lock().unwrap().as_ref().unwrap().is_aborted());
+            } else {
+                *previous.lock().unwrap() = head
+                    .extensions_ref()
+                    .unwrap()
+                    .get::<AdmissionAbort>()
+                    .cloned();
+            }
+            Ok(Extensions::new()) // Intentionally ignore the abort.
+        }),
+    )?;
+    stream.write_all(b"GET /first HTTP/1.1\r\nhost: localhost\r\n\r\n")?;
+    assert!(stream.peek(&mut [0; 1])? > 0);
+    stream.write_all(b"POST /second HTTP/1.1\r\nhost: localhost\r\nexpect: 100-continue\r\ncontent-length: invalid\r\n\r\n")?;
+    waiting.recv_timeout(Duration::from_secs(3)).unwrap();
+    drop(stream); // The unread first response makes this a reset on Linux.
+    assert_eq!(
+        worker.join().unwrap().unwrap_err().kind(),
+        ErrorKind::ConnectionAborted
+    );
+    Ok(())
+}
+
+#[test]
 fn deadline_unblocks_stalled_expect_body_and_releases_capacity() -> Result<()> {
     let drops = Arc::new(AtomicUsize::new(0));
     let admission_drops = Arc::clone(&drops);

@@ -145,6 +145,13 @@ Unchanged upstream wire and codec tests remain the compatibility checks.
 This closes the transport prerequisite, not the remaining G4.1 identity,
 authorizer, audit/reload or promotion gates. No authorization is advertised.
 
+ADR-0027's subsequent queued-abort slice adds a socket-derived `AdmissionAbort`
+to the immutable admission head without changing the callback or `ConnectionInfo`.
+It observes and latches socket errors only during admission, then releases its
+socket handle before body handling or reuse. Auth still precedes workload
+acquisition. FIN alone is not an abort; this is not active-work disconnection
+monitoring. See the [native boundary](0027-workload-admission-and-operator-resources.md#observed-queued-transport-failures-2026-09-09).
+
 ### Native authenticated profile (2026-09-09)
 
 `--access-policy` selects the bounded `oxigraph-access-v1` file profile on both

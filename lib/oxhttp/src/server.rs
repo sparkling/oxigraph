@@ -16,6 +16,9 @@ use std::time::Duration;
 mod deadline;
 use deadline::DeadlineWatch;
 pub use deadline::RequestDeadline;
+mod admission_abort;
+pub use admission_abort::AdmissionAbort;
+use admission_abort::AdmissionAbortGuard;
 
 /// Socket-derived context for an accepted connection, never taken from HTTP headers.
 ///
@@ -128,6 +131,8 @@ impl Server {
     /// Returned extensions cannot replace the socket-derived [`ConnectionInfo`].
     /// The hook runs again for each keep-alive request. Without a hook, existing
     /// request handling is unchanged.
+    /// A socket-derived [`AdmissionAbort`] in the head extensions lets a waiting
+    /// hook poll for transport failure. It is disarmed before body handling.
     ///
     /// Insert a [`RequestLifetime`] extension to retain an admission lease until
     /// the response has been encoded and flushed (or handling fails). Only that
@@ -309,10 +314,17 @@ fn accept_request(
         {
             Ok(mut request) => {
                 request.extensions_mut().unwrap().insert(connection);
-                match request_admission.map_or_else(
-                    || Ok(Extensions::new()),
-                    |admission| admission(&request, connection),
-                ) {
+                let admission = if let Some(admission) = request_admission {
+                    let abort = AdmissionAbortGuard::new(&stream)?;
+                    request.extensions_mut().unwrap().insert(abort.0.clone());
+                    let result = admission(&request, connection);
+                    abort.finish()?;
+                    request.extensions_mut().unwrap().remove::<AdmissionAbort>();
+                    result
+                } else {
+                    Ok(Extensions::new())
+                };
+                match admission {
                     Ok(context) => {
                         let extensions = request.extensions_mut().unwrap();
                         admission_lifetime = context.get::<RequestLifetime>().cloned();

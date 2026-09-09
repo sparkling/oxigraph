@@ -33,6 +33,104 @@ fn wait_queued(controller: &AdmissionController, count: usize) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn socket_reset_releases_only_queued_capacity_before_timeout() -> Result<()> {
+    use std::io::{Read, Write};
+    use std::net::{Ipv4Addr, TcpListener, TcpStream};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    for listener_kind in [ListenerKind::Data, ListenerKind::Operator] {
+        let mut policy = controller(1, 1, 1, 1)?.0.policy.clone();
+        policy.operator_max_queued = 1;
+        policy.queue_timeout_ms = 30_000;
+        let controller = AdmissionController::new(policy)?;
+        let active = controller.acquire("default", listener_kind, CancellationToken::new())?;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let handler_calls = Arc::clone(&calls);
+        let admission = controller.clone();
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+        let address = listener.local_addr()?;
+        drop(listener);
+        // OxHTTP's public server is process-lifetime; request workers and leases
+        // are bounded and finish below. No store or external service is involved.
+        let _server = oxhttp::Server::new(move |request| {
+            if request.uri().path() != "/first" {
+                handler_calls.fetch_add(1, Ordering::SeqCst);
+            }
+            Response::builder().body(Body::from("ok")).unwrap()
+        })
+        .with_request_admission(move |head, _| {
+            let mut context = Extensions::new();
+            if head.uri_ref().unwrap().path() != "/first" {
+                let lease = admission
+                    .acquire_with_abort(
+                        "default",
+                        listener_kind,
+                        CancellationToken::new(),
+                        head.extensions_ref()
+                            .unwrap()
+                            .get::<oxhttp::AdmissionAbort>(),
+                    )
+                    .map_err(|error| Box::new(admission.denial(error)))?;
+                context.insert(oxhttp::RequestLifetime::new(lease));
+            }
+            Ok(context)
+        })
+        .bind(address)
+        .with_global_timeout(Duration::from_secs(3))
+        .with_max_concurrent_connections(2)
+        .spawn()?;
+        let wait_count = |count| -> Result<()> {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            loop {
+                let snapshot = controller.snapshot()?;
+                let queued = if listener_kind == ListenerKind::Data {
+                    snapshot.queued
+                } else {
+                    snapshot.operator_queued
+                };
+                if queued == count {
+                    return Ok(());
+                }
+                ensure!(
+                    Instant::now() < deadline,
+                    "queue did not reach {count}: {snapshot:?}"
+                );
+                thread::yield_now();
+            }
+        };
+        let mut client = TcpStream::connect(address)?;
+        client.set_read_timeout(Some(Duration::from_secs(3)))?;
+        client.write_all(b"GET /first HTTP/1.1\r\nhost: localhost\r\n\r\n")?;
+        ensure!(client.peek(&mut [0; 1])? > 0);
+        client.write_all(b"POST /cancelled HTTP/1.1\r\nhost: localhost\r\nexpect: 100-continue\r\ncontent-length: invalid\r\n\r\n")?;
+        wait_count(1)?; // Actual controller state, not a sleep or admission event.
+        drop(client); // Unread response produces TCP reset on Linux.
+        wait_count(0)?; // 3s check is strictly shorter than the 30s queue timeout.
+        let snapshot = controller.snapshot()?;
+        ensure!(snapshot.active + snapshot.operator_active == 1);
+        ensure!(calls.load(Ordering::SeqCst) == 0);
+
+        let mut next = TcpStream::connect(address)?;
+        next.set_read_timeout(Some(Duration::from_secs(3)))?;
+        next.write_all(b"GET /next HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n")?;
+        next.shutdown(std::net::Shutdown::Write)?;
+        wait_count(1)?;
+        ensure!(
+            calls.load(Ordering::SeqCst) == 0,
+            "half-close bypassed active lease"
+        );
+        drop(active);
+        let mut response = String::new();
+        next.read_to_string(&mut response)?;
+        ensure!(response.starts_with("HTTP/1.1 200 OK") && response.ends_with("\r\n\r\nok"));
+        wait_count(0)?;
+        ensure!(calls.load(Ordering::SeqCst) == 1);
+    }
+    Ok(())
+}
+
 #[test]
 fn lease_clones_cancel_drop_and_unwind_hold_exact_capacity() -> Result<()> {
     let controller = controller(1, 0, 1, 0)?;

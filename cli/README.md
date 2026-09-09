@@ -306,7 +306,21 @@ active/queued counts without principal or query data. Idle/header connections
 remain subject to a separate transport cap (active + queued + one rejection
 connection for each listener), so this is not unlimited overload responsiveness.
 
-Still pending: queued-socket disconnect detection, deadline support for the
+Both CLI listeners use `AdmissionController::admit_request` to poll a trusted
+OxHTTP `AdmissionAbort` during queue waits and before activation. An observed
+socket error (for example, TCP reset) cancels the same token and frees the queue
+slot without waiting for queue expiry. The transport latches consumed socket
+errors and stops admission before `100 Continue` or body handling. Probes are
+disarmed before active work and keep-alive reuse, even on unwind; no polling
+thread, body reads, socket-mode changes or new dependency is added.
+This does **not** treat TCP FIN as cancellation: a complete request may close its
+write half and still receive a response. FIN-only closure, silent network loss
+and errors after the final admission check remain bounded by existing timeouts,
+not this probe. Linux reset fixtures verify queue release with the active lease
+still held, operator isolation and no abandoned write after restart; GET,
+fixed-length and chunked half-closed request fixtures remain successful.
+
+Still pending: active-work disconnect propagation, deadline support for the
 explicitly excluded paths above, finer parser/evaluator work counters,
 per-principal/priority scheduling, atomic workload reload, exported metrics and
 operational qualification. Cooperative admission is not a hard RSS/CPU/fd/disk

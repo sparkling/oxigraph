@@ -1196,7 +1196,7 @@ fn serve(
         let listener = oxigraph_cli::access::ListenerKind::Data;
         let mut context = admission.admit(head, connection, listener)?;
         if let Some(workload) = &workload_admission {
-            workload.admit(&mut context, listener)?;
+            workload.admit_request(head, &mut context, listener)?;
         }
         Ok(context)
     })

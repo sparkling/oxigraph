@@ -1411,9 +1411,11 @@ checked internal preparation, raw rule/list/key/equality/semantic/contradiction
 scans and output/accounting. Native Store and persistent HTTP journeys pass.
 Both profiles now copy encoded Dataset identity/order, correcting the preceding
 RDFS decoded-copy ordering defect. Legacy nontransactional deadline-bound bulk
-still fails explicitly; queued socket disconnect is next. Resource
-budgets, queued socket disconnect, reload, exported counters and full ADR-0027
-acceptance remain open.
+still fails explicitly. Observed queued socket errors now free admission before
+timeout, with valid half-closed requests preserved and no abandoned writes after
+restart. FIN-only/silent loss still uses timeouts; active-work disconnect remains
+open. Declared request/result byte limits are next. Broader resource budgets,
+fairness, reload, exported counters and full ADR-0027 acceptance remain open.
 Separate ADR-0026 frozen promotion and
 future facade compatibility remain open; native delivery does not claim
 fine-grained SPARQL filtering or evaluator resource quotas.

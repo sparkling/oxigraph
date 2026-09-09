@@ -45,7 +45,7 @@ pub(super) fn spawn(
     .with_request_admission(move |head, connection| {
         let mut context = admission.admit(head, connection, ListenerKind::Operator)?;
         if let Some(workload) = &workload {
-            workload.admit(&mut context, ListenerKind::Operator)?;
+            workload.admit_request(head, &mut context, ListenerKind::Operator)?;
         }
         Ok(context)
     })
