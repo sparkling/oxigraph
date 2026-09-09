@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-27
-- Updated: 2026-09-08
+- Updated: 2026-09-09
 - Deciders: Oxigraph parity programme
 - Implementation status: implemented for the surfaces and boundaries named
   below
@@ -83,6 +83,15 @@ named-graph registry alongside its quad indexes.
 
 This registry is the authority for graph existence. No sentinel triple or
 synthetic quad represents an empty graph.
+
+The additive `Dataset::try_clone_with` API preserves that registry and all six
+encoded indexes while consulting a caller-owned fallible checkpoint. It copies
+the interner's hash identity and all retained mappings, including unused entries,
+instead of reinterning decoded quads. This preserves iteration order and
+first-match consumers as well as RDF equality and empty topology. The first
+callback error returns no partial clone; the source remains unchanged. Native
+tests cover every checkpoint, exact indexes/order, removed terms, numeric blank
+nodes and RDF 1.2 triple terms. RDFS and OWL use it for cooperative preparation.
 
 ### TriG and JSON-LD I/O
 

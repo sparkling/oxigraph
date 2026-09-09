@@ -10,8 +10,9 @@ use oxrdf::{Quad, Term};
 
 impl Runtime<'_> {
     pub(super) fn apply_equality(&mut self) -> Result<(), Owl2RlRdfError> {
-        let quads = self.all.iter().collect::<Vec<_>>();
+        let quads = self.checked_collect(self.all.iter())?;
         for quad in &quads {
+            self.check()?;
             self.touch()?;
             let subject = subject_term(quad);
             let predicate = Term::from(quad.predicate.clone());
@@ -46,13 +47,16 @@ impl Runtime<'_> {
                 )?;
             }
         }
-        let equalities = self.equalities.iter().cloned().collect::<Vec<_>>();
+        let equalities = self.checked_collect(self.equalities.iter().cloned())?;
         for (graph, left, right) in &equalities {
+            self.check()?;
             self.touch()?;
             self.add_equality(graph, right.clone(), left.clone(), "eq-sym", &[])?;
         }
         for (left_graph, left, middle) in &equalities {
+            self.check()?;
             for (right_graph, candidate, right) in &equalities {
+                self.check()?;
                 if left_graph == right_graph && middle == candidate {
                     self.touch()?;
                     self.add_equality(left_graph, left.clone(), right.clone(), "eq-trans", &[])?;
@@ -63,9 +67,11 @@ impl Runtime<'_> {
     }
 
     fn apply_replacement(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
-        let equalities = self.equalities.iter().cloned().collect::<Vec<_>>();
+        let equalities = self.checked_collect(self.equalities.iter().cloned())?;
         for quad in quads {
+            self.check()?;
             for (graph, left, right) in &equalities {
+                self.check()?;
                 if graph != &quad.graph_name {
                     continue;
                 }
@@ -114,6 +120,6 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 }

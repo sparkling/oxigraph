@@ -13,6 +13,7 @@ impl Runtime<'_> {
         head: &Term,
         graph: &GraphName,
     ) -> Result<Vec<Term>, Owl2RlRdfError> {
+        self.check()?;
         if head == &Term::from(rdf::NIL) {
             return Ok(Vec::new());
         }
@@ -35,6 +36,7 @@ impl Runtime<'_> {
             let mut first = Vec::new();
             let mut rest = Vec::new();
             for quad in &self.all {
+                self.check()?;
                 if &quad.graph_name != graph || subject_term(&quad) != current {
                     continue;
                 }
@@ -44,14 +46,15 @@ impl Runtime<'_> {
                     rest.push(quad.object);
                 }
             }
-            deduplicate_equal(self, graph, &mut first);
-            deduplicate_equal(self, graph, &mut rest);
+            deduplicate_equal(self, graph, &mut first)?;
+            deduplicate_equal(self, graph, &mut rest)?;
             if first.len() != 1 || rest.len() != 1 {
                 return Err(malformed(original, graph));
             }
             output.push(first.remove(0));
             let next = rest.remove(0);
             if next == rdf::NIL {
+                self.check()?;
                 return Ok(output);
             }
             if term_resource(&next).is_none() {
@@ -62,17 +65,22 @@ impl Runtime<'_> {
     }
 }
 
-fn deduplicate_equal(runtime: &Runtime<'_>, graph: &GraphName, values: &mut Vec<Term>) {
+fn deduplicate_equal(
+    runtime: &Runtime<'_>,
+    graph: &GraphName,
+    values: &mut Vec<Term>,
+) -> Result<(), Owl2RlRdfError> {
+    runtime.check()?;
     let mut unique = Vec::new();
     for value in values.drain(..) {
-        if !unique
-            .iter()
-            .any(|item| runtime.is_equal(graph, item, &value))
-        {
+        runtime.check()?;
+        if !runtime.checked_any(unique.iter(), |item| runtime.is_equal(graph, item, &value))? {
             unique.push(value);
         }
     }
+    runtime.check()?;
     *values = unique;
+    Ok(())
 }
 
 fn malformed(head: Term, graph_name: &GraphName) -> Owl2RlRdfError {

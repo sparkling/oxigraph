@@ -319,7 +319,7 @@ fn restriction_schema(rules: &mut Vec<Rule>) {
 impl Runtime<'_> {
     pub(super) fn apply_datalog_core(&mut self) -> Result<(), Owl2RlRdfError> {
         self.check()?;
-        let options = self.datalog_options();
+        let options = self.datalog_options()?;
         let result = Engine::default()
             .evaluate(
                 &self.datalog_program,
@@ -330,7 +330,7 @@ impl Runtime<'_> {
         self.datalog_executions = self.datalog_executions.saturating_add(1);
         self.datalog_iterations = self.datalog_iterations.saturating_add(result.iterations());
         let combined_memory = self
-            .runtime_memory_estimate()
+            .runtime_memory_estimate()?
             .saturating_add(result.peak_estimated_working_set_bytes());
         if combined_memory > self.options.evaluation.limits.max_memory_bytes {
             return Err(super::limit(
@@ -340,6 +340,7 @@ impl Runtime<'_> {
         }
         self.peak_memory = self.peak_memory.max(combined_memory);
         for fact in result.derived_facts() {
+            self.check()?;
             let Some(derivation) = result
                 .provenance()
                 .and_then(|provenance| provenance.derivation(fact))
@@ -347,11 +348,13 @@ impl Runtime<'_> {
                 continue;
             };
             let canonical = canonical_rule_id(derivation.rule_id().as_str());
-            let premises = derivation
-                .premises()
-                .iter()
-                .filter_map(|premise| quad_from_fact(premise).ok())
-                .collect::<Vec<_>>();
+            let mut premises = Vec::new();
+            for premise in derivation.premises() {
+                self.check()?;
+                if let Ok(quad) = quad_from_fact(premise) {
+                    premises.push(quad);
+                }
+            }
             if let Ok(quad) = quad_from_fact(fact) {
                 self.insert_with_path(quad, canonical, &premises, Owl2RlExecutionPath::Datalog)?;
             } else if let Some(generalized) = generalized_from_fact(fact) {
@@ -368,17 +371,18 @@ impl Runtime<'_> {
         self.observe_memory()
     }
 
-    fn datalog_options(&self) -> EvaluationOptions {
+    fn datalog_options(&self) -> Result<EvaluationOptions, Owl2RlRdfError> {
         let mut options = self.options.evaluation.clone();
         options.track_provenance = true;
         options.limits.max_memory_bytes = options
             .limits
             .max_memory_bytes
-            .saturating_sub(self.runtime_memory_estimate());
+            .saturating_sub(self.runtime_memory_estimate()?);
         if let Some(timeout) = options.limits.timeout {
             options.limits.timeout = Some(timeout.saturating_sub(self.started.elapsed()));
         }
-        options
+        self.check()?;
+        Ok(options)
     }
 }
 

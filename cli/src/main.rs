@@ -1814,16 +1814,6 @@ fn evaluate_sparql_query(
 
     check_request(request)?;
     let mut cancellation = request_cancellation(request);
-    if entailment == QueryEntailment::Owl2RlRdfBounded
-        && cancellation
-            .as_ref()
-            .and_then(CancellationToken::deadline)
-            .is_some()
-    {
-        return Err(bad_request(
-            "OWL materialization is unsupported with request deadlines",
-        ));
-    }
     if let Some(timeout) = timeout {
         let deadline = Instant::now()
             .checked_add(timeout)

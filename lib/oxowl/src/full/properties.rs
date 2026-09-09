@@ -15,7 +15,7 @@ use oxrdf::{
 
 impl Runtime<'_> {
     pub(super) fn apply_properties(&mut self) -> Result<(), Owl2RlRdfError> {
-        let quads = self.all.iter().collect::<Vec<_>>();
+        let quads = self.checked_collect(self.all.iter())?;
         self.property_axioms(&quads)?;
         self.property_characteristics(&quads)?;
         self.property_chains(&quads)?;
@@ -24,10 +24,12 @@ impl Runtime<'_> {
 
     fn property_axioms(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for schema in quads {
+            self.check()?;
             let Some(property) = property_subject(schema) else {
                 continue;
             };
             for fact in quads {
+                self.check()?;
                 if schema.graph_name != fact.graph_name {
                     continue;
                 }
@@ -148,25 +150,28 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn property_characteristics(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for declaration in quads {
+            self.check()?;
             if declaration.predicate != rdf::TYPE {
                 continue;
             }
             let Some(property) = property_subject(declaration) else {
                 continue;
             };
-            let facts = quads
-                .iter()
-                .filter(|quad| {
-                    quad.graph_name == declaration.graph_name && quad.predicate == property
-                })
-                .collect::<Vec<_>>();
+            let mut facts = Vec::new();
+            for quad in quads {
+                self.check()?;
+                if quad.graph_name == declaration.graph_name && quad.predicate == property {
+                    facts.push(quad);
+                }
+            }
             if declaration.object == SYMMETRIC_PROPERTY {
                 for fact in &facts {
+                    self.check()?;
                     if let Some(object) = term_resource(&fact.object) {
                         self.insert(
                             Quad::new(
@@ -182,7 +187,9 @@ impl Runtime<'_> {
                 }
             }
             for left in &facts {
+                self.check()?;
                 for right in &facts {
+                    self.check()?;
                     self.touch()?;
                     if declaration.object == FUNCTIONAL_PROPERTY && left.subject == right.subject {
                         self.add_equality(
@@ -221,11 +228,12 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn property_chains(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for declaration in quads {
+            self.check()?;
             if declaration.predicate != PROPERTY_CHAIN_AXIOM {
                 continue;
             }
@@ -233,37 +241,41 @@ impl Runtime<'_> {
                 continue;
             };
             let chain = self.list(&declaration.object, &declaration.graph_name)?;
-            let properties = chain
-                .iter()
-                .map(|term| match term {
-                    Term::NamedNode(node) => Some(node.clone()),
-                    _ => None,
-                })
-                .collect::<Option<Vec<_>>>()
-                .unwrap_or_default();
+            let mut properties = Vec::new();
+            for term in &chain {
+                self.check()?;
+                let Term::NamedNode(node) = term else {
+                    properties.clear();
+                    break;
+                };
+                properties.push(node.clone());
+            }
             if properties.len() != chain.len() || properties.is_empty() {
                 continue;
             }
-            let mut paths = quads
-                .iter()
-                .filter(|quad| {
-                    quad.graph_name == declaration.graph_name && quad.predicate == properties[0]
-                })
-                .filter_map(|quad| {
-                    term_resource(&quad.object)
-                        .map(|end| (quad.subject.clone(), Term::from(end), vec![quad.clone()]))
-                })
-                .collect::<Vec<_>>();
+            let mut paths = Vec::new();
+            for quad in quads {
+                self.check()?;
+                if quad.graph_name == declaration.graph_name
+                    && quad.predicate == properties[0]
+                    && let Some(end) = term_resource(&quad.object)
+                {
+                    paths.push((quad.subject.clone(), Term::from(end), vec![quad.clone()]));
+                }
+            }
             for property in properties.iter().skip(1) {
+                self.check()?;
                 let mut next = Vec::new();
                 for (start, end, evidence) in paths {
+                    self.check()?;
                     for fact in quads {
+                        self.check()?;
                         self.touch()?;
                         if fact.graph_name == declaration.graph_name
                             && fact.predicate == *property
                             && subject_term(fact) == end
                         {
-                            let mut evidence = evidence.clone();
+                            let mut evidence = self.checked_collect(evidence.iter().cloned())?;
                             evidence.push(fact.clone());
                             next.push((start.clone(), fact.object.clone(), evidence));
                         }
@@ -272,6 +284,7 @@ impl Runtime<'_> {
                 paths = next;
             }
             for (start, end, mut evidence) in paths {
+                self.check()?;
                 evidence.push(declaration.clone());
                 self.insert(
                     Quad::new(
@@ -285,41 +298,51 @@ impl Runtime<'_> {
                 )?;
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn keys(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for declaration in quads {
+            self.check()?;
             if declaration.predicate != HAS_KEY {
                 continue;
             }
             let class = subject_term(declaration);
             let keys = self.list(&declaration.object, &declaration.graph_name)?;
-            let properties = keys
-                .iter()
-                .filter_map(|term| match term {
-                    Term::NamedNode(node) => Some(node.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
+            let mut properties = Vec::new();
+            for term in &keys {
+                self.check()?;
+                if let Term::NamedNode(node) = term {
+                    properties.push(node.clone());
+                }
+            }
             if properties.len() != keys.len() {
                 continue;
             }
-            let instances = quads
-                .iter()
-                .filter(|quad| {
-                    quad.graph_name == declaration.graph_name
-                        && quad.predicate == rdf::TYPE
-                        && quad.object == class
-                })
-                .collect::<Vec<_>>();
+            let mut instances = Vec::new();
+            for quad in quads {
+                self.check()?;
+                if quad.graph_name == declaration.graph_name
+                    && quad.predicate == rdf::TYPE
+                    && quad.object == class
+                {
+                    instances.push(quad);
+                }
+            }
             for left in &instances {
+                self.check()?;
                 for right in &instances {
+                    self.check()?;
                     self.touch()?;
-                    if properties
-                        .iter()
-                        .all(|property| shared_value(quads, left, right, property, self))
-                    {
+                    let mut shared_all = true;
+                    for property in &properties {
+                        self.check()?;
+                        if !shared_value(quads, left, right, property, self)? {
+                            shared_all = false;
+                            break;
+                        }
+                    }
+                    if shared_all {
                         self.add_equality(
                             &declaration.graph_name,
                             subject_term(left),
@@ -331,7 +354,7 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 }
 
@@ -348,16 +371,23 @@ fn shared_value(
     right: &Quad,
     property: &NamedNode,
     runtime: &Runtime<'_>,
-) -> bool {
-    quads.iter().any(|left_value| {
-        left_value.graph_name == left.graph_name
+) -> Result<bool, Owl2RlRdfError> {
+    runtime.check()?;
+    for left_value in quads {
+        runtime.check()?;
+        if left_value.graph_name == left.graph_name
             && left_value.subject == left.subject
             && left_value.predicate == *property
-            && quads.iter().any(|right_value| {
+            && runtime.checked_any(quads.iter(), |right_value| {
                 right_value.graph_name == right.graph_name
                     && right_value.subject == right.subject
                     && right_value.predicate == *property
                     && runtime.is_equal(&left.graph_name, &left_value.object, &right_value.object)
-            })
-    })
+            })?
+        {
+            return Ok(true);
+        }
+    }
+    runtime.check()?;
+    Ok(false)
 }

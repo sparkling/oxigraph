@@ -89,24 +89,11 @@ fn checked_load_preserves_empty_graphs_and_document_blank_node_scope() -> Result
 }
 
 #[test]
-fn deadline_profile_rejects_only_uninstrumented_paths_before_work() -> Result<()> {
+fn deadline_profile_rejects_nontransactional_bulk_writes_before_work() -> Result<()> {
     let store = Store::new()?;
     let token =
         CancellationToken::new().with_deadline(Instant::now() + std::time::Duration::from_secs(2));
     let mut request = request(token)?;
-    let result = crate::evaluate_sparql_query(
-        &store,
-        &oxigraph::sparql::SparqlEvaluator::new(),
-        "ASK {}",
-        None,
-        false,
-        Vec::new(),
-        Vec::new(),
-        &request,
-        oxigraph::sparql::QueryEntailment::Owl2RlRdfBounded,
-        None,
-    );
-    ensure!(result.is_err_and(|error| error.0 == StatusCode::BAD_REQUEST));
     *request.uri_mut() = "http://localhost/store?default&no_transaction".parse()?;
     *request.method_mut() = Method::PUT;
     request
@@ -210,4 +197,43 @@ fn entailment_deadline_maps_to_timeout_not_semantic_refusal() {
         crate::query_request_refused(QueryEntailmentError::RdfInconsistent { reasons: 1 }).0,
         StatusCode::INTERNAL_SERVER_ERROR
     );
+}
+
+#[cfg(feature = "owl2-rl")]
+#[test]
+fn deadline_profile_allows_bounded_owl_inference() -> Result<()> {
+    let store = Store::new()?;
+    store.insert(Quad::new(
+        NamedNode::new("urn:s")?,
+        NamedNode::new("urn:p")?,
+        NamedNode::new("urn:o")?,
+        GraphName::DefaultGraph,
+    ))?;
+    store.insert(Quad::new(
+        NamedNode::new("urn:p")?,
+        NamedNode::new("http://www.w3.org/2002/07/owl#inverseOf")?,
+        NamedNode::new("urn:inverse")?,
+        GraphName::DefaultGraph,
+    ))?;
+    let request = request(
+        CancellationToken::new().with_deadline(Instant::now() + std::time::Duration::from_secs(10)),
+    )?;
+    let result = crate::evaluate_sparql_query(
+        &store,
+        &oxigraph::sparql::SparqlEvaluator::new(),
+        "ASK { <urn:o> <urn:inverse> <urn:s> }",
+        None,
+        false,
+        Vec::new(),
+        Vec::new(),
+        &request,
+        oxigraph::sparql::QueryEntailment::Owl2RlRdfBounded,
+        None,
+    )
+    .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+    ensure!(result.status() == StatusCode::OK);
+    let body = result.into_body().to_string()?;
+    ensure!(body.contains("true"), "{body}");
+    ensure!(store.len()? == 2);
+    Ok(())
 }

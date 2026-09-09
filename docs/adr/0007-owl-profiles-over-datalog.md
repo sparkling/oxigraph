@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-26
+- Updated: 2026-09-09 (native cooperative request controls)
 - Deciders: Oxigraph parity programme
 - Implementation status: bounded `owl2-rl-rdf` rule profile implemented
 - **Related**:
@@ -56,7 +57,25 @@ The runtime:
   estimated-memory limits; and
 - leaves base data immutable.
 
-## Implemented evidence
+### Cooperative request controls (2026-09-09)
+
+The bounded runtime now checks cancellation/relative timeout before preparation,
+during identity-preserving Dataset copies, raw candidate scans (including no
+matches), list/key/equality/datatype and semantic operators, contradiction
+deduplication, stable output ordering and memory estimation. Successful rule
+counts, row charges, ordering keys and the existing estimated-memory formula
+are retained. A failure returns no partial closure and never changes base data.
+Individual RDF term operations and collection operations are not preemptible;
+the estimate is not an allocator-exact or process RSS ceiling.
+
+Eleven additive native runtime tests and three OxRDF copy regressions check the
+new controls, typed errors, retained IDs/indexes/topology, and unchanged successful
+results/accounting. Store and HTTP tests cover bounded OWL inverse-property
+inference under request deadlines and persistent write/rollback/restart.
+See [ADR-0027](0027-workload-admission-and-operator-resources.md#bounded-owl-and-order-preserving-copies-2026-09-09).
+These are product regressions, not replacements for historical pinned evidence.
+
+## Implemented evidence (original profile qualification)
 
 - [OWL 2 RL/RDF public API](../../lib/oxowl/src/lib.rs)
 - [Exact 78-rule inventory and 46/32 split](../../lib/oxowl/src/full_rules.rs)

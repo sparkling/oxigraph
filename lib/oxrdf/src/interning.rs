@@ -16,6 +16,37 @@ pub struct Interner {
 }
 
 impl Interner {
+    pub(crate) fn try_clone_with<E>(
+        &self,
+        check: &mut impl FnMut() -> Result<(), E>,
+    ) -> Result<Self, E> {
+        check()?;
+        let mut result = Self {
+            hasher: self.hasher.clone(),
+            string_for_hash: HashMap::with_hasher(self.string_for_hash.hasher().clone()),
+            string_for_blank_node_id: HashMap::with_hasher(
+                self.string_for_blank_node_id.hasher().clone(),
+            ),
+            #[cfg(feature = "rdf-12")]
+            triples: HashMap::with_hasher(self.triples.hasher().clone()),
+        };
+        for (key, value) in &self.string_for_hash {
+            check()?;
+            result.string_for_hash.insert(*key, value.clone());
+        }
+        for (key, value) in &self.string_for_blank_node_id {
+            check()?;
+            result.string_for_blank_node_id.insert(*key, value.clone());
+        }
+        #[cfg(feature = "rdf-12")]
+        for (key, value) in &self.triples {
+            check()?;
+            result.triples.insert(key.clone(), value.clone());
+        }
+        check()?;
+        Ok(result)
+    }
+
     #[expect(clippy::never_loop)]
     fn get_or_intern(&mut self, value: OxString) -> Key {
         let mut hash = self.hash(&value);
@@ -566,5 +597,45 @@ impl Hasher for IdentityHasher {
 
     fn write_u64(&mut self, i: u64) {
         self.value = i
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn controlled_clone_keeps_all_retained_mappings_and_hash_identity() {
+        let mut source = Interner::default();
+        let first = source.get_or_intern("retained-first".into());
+        let second = source.get_or_intern("retained-second".into());
+        let blank = InternedBlankNode::encoded_into(BlankNode::default(), &mut source);
+        #[cfg(feature = "rdf-12")]
+        let triple = InternedTriple::encoded_into(
+            Triple::new(
+                NamedNode::new("urn:s").unwrap(),
+                NamedNode::new("urn:p").unwrap(),
+                Literal::new_simple_literal("value"),
+            ),
+            &mut source,
+        );
+        let copy = source.try_clone_with(&mut || Ok::<_, ()>(())).unwrap();
+        assert_eq!(copy.string_for_hash, source.string_for_hash);
+        assert_eq!(
+            copy.string_for_blank_node_id,
+            source.string_for_blank_node_id
+        );
+        assert_eq!(
+            copy.hasher.hash_one("new-value"),
+            source.hasher.hash_one("new-value")
+        );
+        assert_eq!(copy.get("retained-first"), Some(first));
+        assert_eq!(copy.get("retained-second"), Some(second));
+        assert_eq!(blank.decode_from(&copy), blank.decode_from(&source));
+        #[cfg(feature = "rdf-12")]
+        {
+            assert_eq!(copy.triples, source.triples);
+            assert_eq!(copy.triples.get(&triple), source.triples.get(&triple));
+        }
     }
 }

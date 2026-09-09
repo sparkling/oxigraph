@@ -7,7 +7,7 @@
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
   and response-flush lifetime are implemented. Optional absolute request
-  deadlines now cover native Simple/finite-RDF/finite-RDFS queries and transactional paths. Resource budgets,
+  deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and transactional paths. Resource budgets,
   excluded deadline paths, queued disconnect, reload and full acceptance remain open
 - Programme task: `task-1787728711461-3isex6`
 - **Depends on**:
@@ -164,9 +164,9 @@ empty topology, custom/lazy SERVICE SILENT and LOAD SILENT timeout distinctions,
 Graph Store parser topology/blank-node scope and persistent wire journeys.
 These tests are additive product regressions, not rewritten qualification evidence.
 
-This is still a cooperative, opt-in slice: deadline-bound OWL materialization
-and the legacy nontransactional Graph Store bulk path return unsupported (400)
-until they gain the necessary checkpoints. Individual parser, custom callback,
+This is still a cooperative, opt-in slice. The subsequent materialization work
+below admits finite profiles; the legacy nontransactional Graph Store bulk path
+still returns unsupported (400) pending checkpoints. Individual parser, custom callback,
 DNS and native storage calls are not preemptible. Queued socket disconnect,
 resource accounting, exported admission metrics and full acceptance remain open.
 
@@ -202,15 +202,39 @@ are unchanged. Request-deadline profiles now admit finite RDFS.
 Individual RDF term parsing/formatting and bounded collection operations remain
 cooperative boundaries, not hard real-time preemption. The existing memory
 estimate is unchanged and is not a complete allocation/RSS budget.
-OWL internal copies, sparse scans, output and accounting remain the next G4.2
-step, followed by queued disconnect and resource accounting. No profile, expected
-semantic result or protected receipt is changed.
+No profile, expected semantic result or protected receipt is changed.
 Native regressions cover expiry before binding, mid-snapshot cancellation,
 EOF cancellation, retained explicit tokens, materialization-budget lifetime,
-typed metrics/HTTP status and unchanged FROM/empty-graph semantics. A loopback
+typed metrics/HTTP status and unchanged FROM/empty-graph semantics. Loopback
 CLI journeys exercise finite RDF and RDFS inference under actual workload deadlines
 followed by write/rollback/restart persistence. These are native product checks,
 not refreshed Datalog mutation-competence or RDFS/OWL qualification receipts.
+
+### Bounded OWL and order-preserving copies (2026-09-09)
+
+Deadline-enabled HTTP queries now admit `owl2-rl-rdf-bounded`. The runtime starts
+its relative clock before preparation and checks both input copies, datatype
+preflight, raw rule candidates before filtering, equality/list/key operations,
+semantic witnesses, contradiction deduplication, output ordering and memory
+estimation. Datalog retains its existing callback bridge. Checked stable-key
+grouping preserves the former ordering and ties; no intermediate-row charges,
+rule IDs, semantic expectations or memory-estimate formula are changed.
+
+`Dataset::try_clone_with` copies retained interned mappings, their hash identity,
+all six encoded indexes and the named-graph registry with fallible checkpoints.
+Both OWL and RDFS use it. This corrects `d7b3a08e`'s RDFS decoded-quad rebuild:
+RDF equality and topology survived, but randomized IDs could change iteration
+order and first-match behavior. New native regressions check exact indexes,
+retained/removed terms, numeric blank nodes, triple terms and cancellation at
+every copy checkpoint, plus OWL phase/no-match and resource-result equivalence.
+
+Native Store and loopback HTTP tests exercise OWL inverse-property inference,
+FROM merging, empty graphs, read-only materialization, then persistent
+write/rollback/restart. A single RDF term parse/format, collection operation or
+native call remains non-preemptible. Transient copies/order grouping are not a
+complete allocation/RSS budget. This closes the native OWL deadline slice, not
+full G4.2 or a refreshed protected semantic/promotion receipt. Next: queued
+socket disconnect, followed by resource/fairness/reload/exported-metrics gates.
 
 ### Remaining staged acceptance
 

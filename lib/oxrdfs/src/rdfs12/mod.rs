@@ -297,18 +297,7 @@ impl<'a> Runtime<'a> {
         Ok(result)
     }
     fn copy_dataset(&self, source: &Dataset) -> Result<Dataset, Rdfs12Error> {
-        self.check()?;
-        let mut result = Dataset::new();
-        for quad in source {
-            self.check()?;
-            result.insert(quad);
-        }
-        for graph in source.named_graphs() {
-            self.check()?;
-            result.insert_named_graph(graph);
-        }
-        self.check()?;
-        Ok(result)
+        source.try_clone_with(|| self.check())
     }
     fn run(mut self) -> Result<Rdfs12Closure, Rdfs12Error> {
         self.seed()?;

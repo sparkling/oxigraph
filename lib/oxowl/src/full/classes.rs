@@ -15,7 +15,7 @@ use oxrdf::{
 
 impl Runtime<'_> {
     pub(super) fn apply_classes(&mut self) -> Result<(), Owl2RlRdfError> {
-        let quads = self.all.iter().collect::<Vec<_>>();
+        let quads = self.checked_collect(self.all.iter())?;
         self.class_lists(&quads)?;
         self.restrictions(&quads)?;
         self.cardinalities(&quads)?;
@@ -24,6 +24,7 @@ impl Runtime<'_> {
 
     fn class_lists(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for declaration in quads {
+            self.check()?;
             if declaration.predicate != INTERSECTION_OF
                 && declaration.predicate != UNION_OF
                 && declaration.predicate != ONE_OF
@@ -34,6 +35,7 @@ impl Runtime<'_> {
             let members = self.list(&declaration.object, &declaration.graph_name)?;
             if declaration.predicate == ONE_OF {
                 for member in members {
+                    self.check()?;
                     if let Some(subject) = term_resource(&member) {
                         self.insert(
                             Quad::new(
@@ -56,16 +58,20 @@ impl Runtime<'_> {
                 }
                 continue;
             }
-            let instances = quads
-                .iter()
-                .filter(|quad| {
-                    quad.graph_name == declaration.graph_name && quad.predicate == rdf::TYPE
-                })
-                .collect::<Vec<_>>();
+            let mut instances = Vec::new();
+            for quad in quads {
+                self.check()?;
+                if quad.graph_name == declaration.graph_name && quad.predicate == rdf::TYPE {
+                    instances.push(quad);
+                }
+            }
+            self.check()?;
             if declaration.predicate == INTERSECTION_OF {
                 for typed in &instances {
+                    self.check()?;
                     if typed.object == class {
                         for member in &members {
+                            self.check()?;
                             self.insert(
                                 Quad::new(
                                     typed.subject.clone(),
@@ -80,10 +86,23 @@ impl Runtime<'_> {
                     }
                 }
                 for candidate in &instances {
+                    self.check()?;
                     self.touch()?;
-                    if members.iter().all(|member| {
-                        has_type(quads, &candidate.graph_name, &candidate.subject, member)
-                    }) {
+                    let mut has_all_types = true;
+                    for member in &members {
+                        self.check()?;
+                        if !has_type(
+                            self,
+                            quads,
+                            &candidate.graph_name,
+                            &candidate.subject,
+                            member,
+                        )? {
+                            has_all_types = false;
+                            break;
+                        }
+                    }
+                    if has_all_types {
                         self.insert(
                             Quad::new(
                                 candidate.subject.clone(),
@@ -98,7 +117,8 @@ impl Runtime<'_> {
                 }
             } else {
                 for typed in &instances {
-                    if members.contains(&typed.object) {
+                    self.check()?;
+                    if self.checked_any(members.iter(), |member| **member == typed.object)? {
                         self.insert(
                             Quad::new(
                                 typed.subject.clone(),
@@ -113,11 +133,12 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn restrictions(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for restriction in quads {
+            self.check()?;
             if restriction.predicate != ON_PROPERTY {
                 continue;
             }
@@ -126,6 +147,7 @@ impl Runtime<'_> {
             };
             let expression = subject_term(restriction);
             for facet in quads {
+                self.check()?;
                 if facet.graph_name != restriction.graph_name || subject_term(facet) != expression {
                     continue;
                 }
@@ -138,7 +160,7 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn some_values(
@@ -150,16 +172,17 @@ impl Runtime<'_> {
     ) -> Result<(), Owl2RlRdfError> {
         let restriction = subject_term(on_property);
         for fact in quads {
+            self.check()?;
             if fact.graph_name != facet.graph_name || fact.predicate != *property {
                 continue;
             }
             let matches = facet.object == THING
-                || quads.iter().any(|typed| {
+                || self.checked_any(quads.iter(), |typed| {
                     typed.graph_name == fact.graph_name
                         && typed.predicate == rdf::TYPE
                         && subject_term(typed) == fact.object
                         && typed.object == facet.object
-                });
+                })?;
             if matches {
                 self.insert(
                     Quad::new(
@@ -177,7 +200,7 @@ impl Runtime<'_> {
                 )?;
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn all_values(
@@ -189,6 +212,7 @@ impl Runtime<'_> {
     ) -> Result<(), Owl2RlRdfError> {
         let restriction = subject_term(on_property);
         for typed in quads {
+            self.check()?;
             if typed.graph_name != facet.graph_name
                 || typed.predicate != rdf::TYPE
                 || typed.object != restriction
@@ -196,6 +220,7 @@ impl Runtime<'_> {
                 continue;
             }
             for fact in quads {
+                self.check()?;
                 if fact.graph_name == typed.graph_name
                     && fact.subject == typed.subject
                     && fact.predicate == *property
@@ -227,7 +252,7 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn has_value(
@@ -239,6 +264,7 @@ impl Runtime<'_> {
     ) -> Result<(), Owl2RlRdfError> {
         let restriction = subject_term(on_property);
         for quad in quads {
+            self.check()?;
             if quad.graph_name != facet.graph_name {
                 continue;
             }
@@ -267,11 +293,12 @@ impl Runtime<'_> {
                 )?;
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn cardinalities(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for cardinality in quads {
+            self.check()?;
             if cardinality.predicate != MAX_CARDINALITY
                 && cardinality.predicate != MAX_QUALIFIED_CARDINALITY
             {
@@ -284,22 +311,23 @@ impl Runtime<'_> {
                 continue;
             }
             let restriction = subject_term(cardinality);
-            let Some(on_property) = quads.iter().find(|quad| {
+            let Some(on_property) = self.checked_find(quads.iter(), |quad| {
                 quad.graph_name == cardinality.graph_name
                     && subject_term(quad) == restriction
                     && quad.predicate == ON_PROPERTY
-            }) else {
+            })?
+            else {
                 continue;
             };
             let Term::NamedNode(property) = &on_property.object else {
                 continue;
             };
-            let qualifier = quads.iter().find(|quad| {
+            let qualifier = self.checked_find(quads.iter(), |quad| {
                 cardinality.predicate == MAX_QUALIFIED_CARDINALITY
                     && quad.graph_name == cardinality.graph_name
                     && subject_term(quad) == restriction
                     && quad.predicate == ON_CLASS
-            });
+            })?;
             if maximum == 1 {
                 self.cardinality_one(
                     quads,
@@ -309,7 +337,7 @@ impl Runtime<'_> {
                 )?;
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn cardinality_one(
@@ -320,31 +348,42 @@ impl Runtime<'_> {
         qualifier: Option<&Term>,
     ) -> Result<(), Owl2RlRdfError> {
         let restriction = subject_term(cardinality);
-        let instances = quads.iter().filter(|quad| {
-            quad.graph_name == cardinality.graph_name
-                && quad.predicate == rdf::TYPE
-                && quad.object == restriction
-        });
-        for instance in instances {
-            let values = quads
-                .iter()
-                .filter(|quad| {
-                    quad.graph_name == instance.graph_name
-                        && quad.subject == instance.subject
-                        && quad.predicate == *property
-                        && qualifier.is_none_or(|class| {
-                            class == &Term::from(THING)
-                                || quads.iter().any(|typed| {
-                                    typed.graph_name == quad.graph_name
-                                        && typed.predicate == rdf::TYPE
-                                        && subject_term(typed) == quad.object
-                                        && &typed.object == class
-                                })
-                        })
-                })
-                .collect::<Vec<_>>();
+        for instance in quads {
+            self.check()?;
+            if instance.graph_name != cardinality.graph_name
+                || instance.predicate != rdf::TYPE
+                || instance.object != restriction
+            {
+                continue;
+            }
+            let mut values = Vec::new();
+            for quad in quads {
+                self.check()?;
+                if quad.graph_name != instance.graph_name
+                    || quad.subject != instance.subject
+                    || quad.predicate != *property
+                {
+                    continue;
+                }
+                let qualified = match qualifier {
+                    None => true,
+                    Some(class) if class == &Term::from(THING) => true,
+                    Some(class) => self.checked_any(quads.iter(), |typed| {
+                        typed.graph_name == quad.graph_name
+                            && typed.predicate == rdf::TYPE
+                            && subject_term(typed) == quad.object
+                            && &typed.object == class
+                    })?,
+                };
+                if qualified {
+                    values.push(quad);
+                }
+            }
+            self.check()?;
             for left in &values {
+                self.check()?;
                 for right in &values {
+                    self.check()?;
                     self.add_equality(
                         &instance.graph_name,
                         left.object.clone(),
@@ -363,16 +402,18 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn class_axioms(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for schema in quads {
+            self.check()?;
             if schema.predicate != rdfs::SUB_CLASS_OF && schema.predicate != EQUIVALENT_CLASS {
                 continue;
             }
             let source = subject_term(schema);
             for typed in quads {
+                self.check()?;
                 if typed.graph_name != schema.graph_name || typed.predicate != rdf::TYPE {
                     continue;
                 }
@@ -397,17 +438,18 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 }
 
 fn has_type(
+    runtime: &Runtime<'_>,
     quads: &[Quad],
     graph: &oxrdf::GraphName,
     subject: &oxrdf::NamedOrBlankNode,
     class: &Term,
-) -> bool {
-    quads.iter().any(|quad| {
+) -> Result<bool, Owl2RlRdfError> {
+    runtime.checked_any(quads.iter(), |quad| {
         &quad.graph_name == graph
             && &quad.subject == subject
             && quad.predicate == rdf::TYPE

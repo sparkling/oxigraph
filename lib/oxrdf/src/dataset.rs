@@ -115,6 +115,44 @@ impl Dataset {
         Self::default()
     }
 
+    /// Clones this dataset while consulting a caller-owned cancellation check.
+    ///
+    /// Unlike rebuilding from decoded quads, this preserves the interner,
+    /// interned identifiers, every index and explicitly empty named graphs,
+    /// including the source's iteration order. The source is never modified.
+    /// The callback runs before work, between stored entries and after copying;
+    /// its first error is returned without exposing a partial copy.
+    /// Individual term clones and collection operations are not preemptible.
+    pub fn try_clone_with<E>(&self, mut check: impl FnMut() -> Result<(), E>) -> Result<Self, E> {
+        fn copy_index<T: Clone + Ord, E>(
+            source: &BTreeSet<T>,
+            check: &mut impl FnMut() -> Result<(), E>,
+        ) -> Result<BTreeSet<T>, E> {
+            check()?;
+            let mut result = BTreeSet::new();
+            for item in source {
+                check()?;
+                result.insert(item.clone());
+            }
+            check()?;
+            Ok(result)
+        }
+
+        check()?;
+        let result = Self {
+            interner: self.interner.try_clone_with(&mut check)?,
+            named_graphs: copy_index(&self.named_graphs, &mut check)?,
+            gspo: copy_index(&self.gspo, &mut check)?,
+            gpos: copy_index(&self.gpos, &mut check)?,
+            gosp: copy_index(&self.gosp, &mut check)?,
+            spog: copy_index(&self.spog, &mut check)?,
+            posg: copy_index(&self.posg, &mut check)?,
+            ospg: copy_index(&self.ospg, &mut check)?,
+        };
+        check()?;
+        Ok(result)
+    }
+
     /// Provides a read-only view on an [RDF graph](https://www.w3.org/TR/rdf11-concepts/#dfn-rdf-graph) contained in this dataset.
     ///
     /// ```
@@ -2490,6 +2528,102 @@ impl<T: Copy> Iterator for Permutations<T> {
 mod tests {
     use super::*;
     use std::error::Error;
+
+    fn controlled_clone_fixture() -> Dataset {
+        let mut source = Dataset::new();
+        for index in 0..16 {
+            source.insert(Quad::new(
+                NamedNode::new(format!("urn:s:{index}")).unwrap(),
+                NamedNode::new("urn:p").unwrap(),
+                Literal::new_simple_literal(index.to_string()),
+                NamedNode::new(format!("urn:g:{}", index % 3)).unwrap(),
+            ));
+        }
+        source.insert_named_graph(BlankNode::default());
+        source.insert_named_graph(NamedNode::new("urn:empty").unwrap());
+        let removed = Quad::new(
+            BlankNode::default(),
+            NamedNode::new("urn:removed-p").unwrap(),
+            Literal::new_simple_literal("removed-value"),
+            GraphName::DefaultGraph,
+        );
+        source.insert(removed.clone());
+        source.remove(&removed);
+        #[cfg(feature = "rdf-12")]
+        source.insert(Quad::new(
+            NamedNode::new("urn:triple-s").unwrap(),
+            vocab::rdf::REIFIES,
+            Triple::new(
+                BlankNode::default(),
+                NamedNode::new("urn:inner-p").unwrap(),
+                Literal::new_simple_literal("inner"),
+            ),
+            GraphName::DefaultGraph,
+        ));
+        source
+    }
+
+    #[test]
+    fn controlled_clone_preserves_every_index_topology_and_iteration_order() {
+        let source = controlled_clone_fixture();
+        let mut copy = source.try_clone_with(|| Ok::<_, ()>(())).unwrap();
+        assert_eq!(copy.named_graphs, source.named_graphs);
+        assert_eq!(copy.gspo, source.gspo);
+        assert_eq!(copy.gpos, source.gpos);
+        assert_eq!(copy.gosp, source.gosp);
+        assert_eq!(copy.spog, source.spog);
+        assert_eq!(copy.posg, source.posg);
+        assert_eq!(copy.ospg, source.ospg);
+        assert_eq!(
+            copy.iter().collect::<Vec<_>>(),
+            source.iter().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            copy.named_graphs().collect::<Vec<_>>(),
+            source.named_graphs().collect::<Vec<_>>()
+        );
+        let added = Quad::new(
+            NamedNode::new("urn:new").unwrap(),
+            NamedNode::new("urn:removed-p").unwrap(),
+            Literal::new_simple_literal("removed-value"),
+            GraphName::DefaultGraph,
+        );
+        let mut ordinary = source.clone();
+        ordinary.insert(added.clone());
+        copy.insert(added);
+        assert_eq!(
+            copy.iter().collect::<Vec<_>>(),
+            ordinary.iter().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn controlled_clone_checks_every_stage_and_propagates_exact_error() {
+        let source = controlled_clone_fixture();
+        let original = source.clone();
+        let mut checks = 0;
+        source
+            .try_clone_with(|| {
+                checks += 1;
+                Ok::<_, usize>(())
+            })
+            .unwrap();
+        assert!(checks > 6 * source.len());
+        for stop_at in 1..=checks {
+            let mut seen = 0;
+            let result = source.try_clone_with(|| {
+                seen += 1;
+                if seen == stop_at {
+                    Err(stop_at)
+                } else {
+                    Ok(())
+                }
+            });
+            assert!(result.is_err_and(|error| error == stop_at));
+            assert_eq!(seen, stop_at);
+            assert_eq!(source, original);
+        }
+    }
 
     #[test]
     fn test_canon() -> Result<(), Box<dyn Error>> {

@@ -106,6 +106,10 @@ fn snapshot_copy_and_seed_preserve_empty_graphs_and_cancel() {
     assert_phase_cancellable(|runtime| {
         let copy = runtime.copy_dataset(&runtime.base)?;
         assert_eq!(copy, runtime.base);
+        assert_eq!(
+            copy.iter().collect::<Vec<_>>(),
+            runtime.base.iter().collect::<Vec<_>>()
+        );
         assert!(copy.contains_named_graph(&BlankNode::new("empty-graph").unwrap()));
         Ok(())
     });

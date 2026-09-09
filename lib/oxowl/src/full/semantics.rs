@@ -15,7 +15,7 @@ impl Runtime<'_> {
     /// Sound RDF-based semantic consequences not expressible as range-restricted
     /// OWL 2 RL rules because their conclusions contain existential witnesses.
     pub(super) fn apply_rdf_based_semantics(&mut self) -> Result<(), Owl2RlRdfError> {
-        let quads = self.all.iter().collect::<Vec<_>>();
+        let quads = self.checked_collect(self.all.iter())?;
         self.different_symmetry(&quads)?;
         self.semantic_property_features(&quads)?;
         self.semantic_disjoint_properties(&quads)?;
@@ -25,7 +25,11 @@ impl Runtime<'_> {
     }
 
     fn different_symmetry(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
-        for fact in quads.iter().filter(|quad| quad.predicate == DIFFERENT_FROM) {
+        for fact in quads {
+            self.check()?;
+            if fact.predicate != DIFFERENT_FROM {
+                continue;
+            }
             if let Some(object) = term_resource(&fact.object) {
                 self.insert(
                     Quad::new(
@@ -39,11 +43,12 @@ impl Runtime<'_> {
                 )?;
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn semantic_property_features(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for declaration in quads {
+            self.check()?;
             let Some(property) = named_subject(declaration) else {
                 continue;
             };
@@ -66,11 +71,14 @@ impl Runtime<'_> {
                 continue;
             }
             if declaration.object == REFLEXIVE_PROPERTY {
-                for individual in quads.iter().filter(|quad| {
-                    quad.graph_name == declaration.graph_name
-                        && quad.predicate == rdf::TYPE
-                        && quad.object == NAMED_INDIVIDUAL
-                }) {
+                for individual in quads {
+                    self.check()?;
+                    if individual.graph_name != declaration.graph_name
+                        || individual.predicate != rdf::TYPE
+                        || individual.object != NAMED_INDIVIDUAL
+                    {
+                        continue;
+                    }
                     self.insert(
                         Quad::new(
                             individual.subject.clone(),
@@ -86,21 +94,24 @@ impl Runtime<'_> {
             if declaration.object == FUNCTIONAL_PROPERTY
                 || declaration.object == INVERSE_FUNCTIONAL_PROPERTY
             {
-                let facts = quads
-                    .iter()
-                    .filter(|quad| {
-                        quad.graph_name == declaration.graph_name && quad.predicate == property
-                    })
-                    .collect::<Vec<_>>();
+                let mut facts = Vec::new();
+                for quad in quads {
+                    self.check()?;
+                    if quad.graph_name == declaration.graph_name && quad.predicate == property {
+                        facts.push(quad);
+                    }
+                }
                 for left in &facts {
+                    self.check()?;
                     for right in &facts {
+                        self.check()?;
                         if declaration.object == FUNCTIONAL_PROPERTY {
-                            if Self::different(
+                            if self.different(
                                 &declaration.graph_name,
                                 &left.object,
                                 &right.object,
                                 quads,
-                            ) {
+                            )? {
                                 self.insert_different(
                                     &declaration.graph_name,
                                     &subject_term(left),
@@ -112,12 +123,12 @@ impl Runtime<'_> {
                         } else {
                             let left_subject = subject_term(left);
                             let right_subject = subject_term(right);
-                            if Self::different(
+                            if self.different(
                                 &declaration.graph_name,
                                 &left_subject,
                                 &right_subject,
                                 quads,
-                            ) {
+                            )? {
                                 self.insert_different(
                                     &declaration.graph_name,
                                     &left.object,
@@ -131,11 +142,12 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn semantic_disjoint_properties(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for declaration in quads {
+            self.check()?;
             if declaration.predicate == PROPERTY_DISJOINT_WITH {
                 let Some(left) = named_subject(declaration) else {
                     continue;
@@ -152,23 +164,26 @@ impl Runtime<'_> {
                 )?;
             }
             if declaration.predicate == rdf::TYPE && declaration.object == ALL_DISJOINT_PROPERTIES {
-                let Some(members) = quads.iter().find(|quad| {
+                let Some(members) = self.checked_find(quads, |quad| {
                     quad.graph_name == declaration.graph_name
                         && quad.subject == declaration.subject
                         && (quad.predicate == MEMBERS || quad.predicate == DISTINCT_MEMBERS)
-                }) else {
+                })?
+                else {
                     continue;
                 };
-                let properties = self.list(&members.object, &members.graph_name)?;
-                let properties = properties
-                    .into_iter()
-                    .filter_map(|term| match term {
-                        Term::NamedNode(node) => Some(node),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>();
+                let list = self.list(&members.object, &members.graph_name)?;
+                let mut properties = Vec::new();
+                for term in list {
+                    self.check()?;
+                    if let Term::NamedNode(node) = term {
+                        properties.push(node);
+                    }
+                }
                 for (index, left) in properties.iter().enumerate() {
+                    self.check()?;
                     for right in properties.iter().skip(index + 1) {
+                        self.check()?;
                         self.disjoint_property_pair(
                             quads,
                             &declaration.graph_name,
@@ -181,7 +196,7 @@ impl Runtime<'_> {
                 self.all_different_property_values(quads, declaration, members, &properties)?;
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn disjoint_property_pair(
@@ -192,14 +207,16 @@ impl Runtime<'_> {
         right_property: &NamedNode,
         evidence: &[Quad],
     ) -> Result<(), Owl2RlRdfError> {
-        for left in quads
-            .iter()
-            .filter(|quad| &quad.graph_name == graph && quad.predicate == *left_property)
-        {
-            for right in quads
-                .iter()
-                .filter(|quad| &quad.graph_name == graph && quad.predicate == *right_property)
-            {
+        for left in quads {
+            self.check()?;
+            if &left.graph_name != graph || left.predicate != *left_property {
+                continue;
+            }
+            for right in quads {
+                self.check()?;
+                if &right.graph_name != graph || right.predicate != *right_property {
+                    continue;
+                }
                 if self.is_equal(graph, &subject_term(left), &subject_term(right)) {
                     self.insert_different(
                         graph,
@@ -220,7 +237,7 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn all_different_property_values(
@@ -231,19 +248,18 @@ impl Runtime<'_> {
         properties: &[NamedNode],
     ) -> Result<(), Owl2RlRdfError> {
         for anchor in quads {
-            let by_subject = properties
-                .iter()
-                .filter_map(|property| {
-                    quads
-                        .iter()
-                        .find(|quad| {
-                            quad.graph_name == declaration.graph_name
-                                && quad.subject == anchor.subject
-                                && quad.predicate == *property
-                        })
-                        .map(|quad| quad.object.clone())
-                })
-                .collect::<Vec<_>>();
+            self.check()?;
+            let mut by_subject = Vec::new();
+            for property in properties {
+                self.check()?;
+                if let Some(quad) = self.checked_find(quads, |quad| {
+                    quad.graph_name == declaration.graph_name
+                        && quad.subject == anchor.subject
+                        && quad.predicate == *property
+                })? {
+                    by_subject.push(quad.object.clone());
+                }
+            }
             if by_subject.len() == properties.len() {
                 self.materialize_all_different(
                     &declaration.graph_name,
@@ -251,19 +267,17 @@ impl Runtime<'_> {
                     &[declaration.clone(), members.clone()],
                 )?;
             }
-            let by_object = properties
-                .iter()
-                .filter_map(|property| {
-                    quads
-                        .iter()
-                        .find(|quad| {
-                            quad.graph_name == declaration.graph_name
-                                && quad.predicate == *property
-                                && self.is_equal(&quad.graph_name, &quad.object, &anchor.object)
-                        })
-                        .map(subject_term)
-                })
-                .collect::<Vec<_>>();
+            let mut by_object = Vec::new();
+            for property in properties {
+                self.check()?;
+                if let Some(quad) = self.checked_find(quads, |quad| {
+                    quad.graph_name == declaration.graph_name
+                        && quad.predicate == *property
+                        && self.is_equal(&quad.graph_name, &quad.object, &anchor.object)
+                })? {
+                    by_object.push(subject_term(quad));
+                }
+            }
             if by_object.len() == properties.len() {
                 self.materialize_all_different(
                     &declaration.graph_name,
@@ -272,7 +286,7 @@ impl Runtime<'_> {
                 )?;
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn insert_different(
@@ -283,6 +297,7 @@ impl Runtime<'_> {
         rule: &'static str,
         evidence: &[Quad],
     ) -> Result<(), Owl2RlRdfError> {
+        self.check()?;
         if left == &right {
             return Ok(());
         }
@@ -296,11 +311,17 @@ impl Runtime<'_> {
                 evidence,
             )?;
         }
-        Ok(())
+        self.check()
     }
 
-    pub(super) fn different(graph: &GraphName, left: &Term, right: &Term, quads: &[Quad]) -> bool {
-        quads.iter().any(|quad| {
+    pub(super) fn different(
+        &self,
+        graph: &GraphName,
+        left: &Term,
+        right: &Term,
+        quads: &[Quad],
+    ) -> Result<bool, Owl2RlRdfError> {
+        self.checked_any(quads, |quad| {
             &quad.graph_name == graph
                 && quad.predicate == DIFFERENT_FROM
                 && ((subject_term(quad) == *left && quad.object == *right)
@@ -314,11 +335,7 @@ impl Runtime<'_> {
         values: &[Term],
         evidence: &[Quad],
     ) -> Result<(), Owl2RlRdfError> {
-        let key = values
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("|");
+        let key = self.witness_key(values)?;
         let declaration = witness("all-different", graph, &key);
         let list = self.materialize_list(graph, "all-different-list", values)?;
         self.insert(
@@ -331,7 +348,7 @@ impl Runtime<'_> {
             "rdf-sem-all-different-witness",
             evidence,
         )?;
-        Ok(())
+        self.check()
     }
 
     pub(super) fn materialize_list(
@@ -340,12 +357,9 @@ impl Runtime<'_> {
         purpose: &str,
         values: &[Term],
     ) -> Result<BlankNode, Owl2RlRdfError> {
-        let key = values
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("|");
+        let key = self.witness_key(values)?;
         for (index, value) in values.iter().enumerate() {
+            self.check()?;
             let current = witness(purpose, graph, &format!("{key}|{index}"));
             let next = if index + 1 == values.len() {
                 Term::from(rdf::NIL)
@@ -368,12 +382,27 @@ impl Runtime<'_> {
                 &[],
             )?;
         }
+        self.check()?;
         // Index zero uses the same stable node as the returned head.
         if !values.is_empty() {
             let first = witness(purpose, graph, &format!("{key}|0"));
             return Ok(first);
         }
         Ok(witness(purpose, graph, &key))
+    }
+
+    fn witness_key(&self, values: &[Term]) -> Result<String, Owl2RlRdfError> {
+        self.check()?;
+        let mut key = String::new();
+        for (index, value) in values.iter().enumerate() {
+            self.check()?;
+            if index != 0 {
+                key.push('|');
+            }
+            key.push_str(&value.to_string());
+        }
+        self.check()?;
+        Ok(key)
     }
 }
 

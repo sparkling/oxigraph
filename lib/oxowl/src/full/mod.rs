@@ -22,6 +22,8 @@ mod properties;
 mod schema;
 mod semantic_witnesses;
 mod semantics;
+#[cfg(test)]
+mod tests;
 
 pub use self::datatypes::{OWL2_RL_DATATYPES, Owl2RlDatatypeMode};
 
@@ -353,8 +355,8 @@ pub(super) struct Runtime<'a> {
 impl<'a> Runtime<'a> {
     fn new(base: &Dataset, options: &'a Owl2RlRdfOptions) -> Result<Self, Owl2RlRdfError> {
         let mut runtime = Self {
-            base: base.clone(),
-            all: base.clone(),
+            base: Dataset::new(),
+            all: Dataset::new(),
             equalities: HashSet::new(),
             generalized: HashSet::new(),
             derivations: HashMap::new(),
@@ -368,6 +370,9 @@ impl<'a> Runtime<'a> {
             datalog_executions: 0,
             datalog_iterations: 0,
         };
+        runtime.check()?;
+        runtime.base = runtime.copy_dataset(base)?;
+        runtime.all = runtime.copy_dataset(base)?;
         runtime.validate_datatypes()?;
         runtime.observe_memory()?;
         Ok(runtime)
@@ -397,26 +402,24 @@ impl<'a> Runtime<'a> {
             }
         }
         self.detect_contradictions()?;
-        let mut inference = Dataset::new();
-        for quad in &self.all {
-            if !self.base.contains(&quad) {
-                inference.insert(quad);
-            }
-        }
-        let mut equality_facts = self.equalities.into_iter().collect::<Vec<_>>();
-        equality_facts.sort_by_key(|(graph, left, right)| format!("{graph}|{left}|{right}"));
+        let inference = self.inference()?;
+        let equalities = std::mem::take(&mut self.equalities);
+        let equality_facts = self.checked_sort_by_key(equalities, |(graph, left, right)| {
+            format!("{graph}|{left}|{right}")
+        })?;
+        let generalized = std::mem::take(&mut self.generalized);
+        let generalized_facts = self.checked_sort_by_key(generalized, |fact| {
+            format!(
+                "{}|{}|{}|{}",
+                fact.graph_name, fact.subject, fact.predicate, fact.object
+            )
+        })?;
+        self.check()?;
         let consistency = if self.contradictions.is_empty() {
             Owl2RlConsistency::Consistent
         } else {
             Owl2RlConsistency::Inconsistent(self.contradictions.into_boxed_slice())
         };
-        let mut generalized_facts = self.generalized.into_iter().collect::<Vec<_>>();
-        generalized_facts.sort_by_key(|fact| {
-            format!(
-                "{}|{}|{}|{}",
-                fact.graph_name, fact.subject, fact.predicate, fact.object
-            )
-        });
         Ok(Owl2RlRdfClosure {
             base: self.base,
             inference,
@@ -432,15 +435,33 @@ impl<'a> Runtime<'a> {
         })
     }
 
+    fn inference(&self) -> Result<Dataset, Owl2RlRdfError> {
+        self.check()?;
+        let mut inference = Dataset::new();
+        for quad in &self.all {
+            self.check()?;
+            if !self.base.contains(&quad) {
+                inference.insert(quad);
+            }
+        }
+        self.check()?;
+        Ok(inference)
+    }
+
     fn seed(&mut self) -> Result<(), Owl2RlRdfError> {
-        let mut graphs = self
-            .all
-            .iter()
-            .map(|quad| quad.graph_name.clone())
-            .collect::<HashSet<_>>();
-        graphs.extend(self.all.named_graphs().map(GraphName::from));
+        self.check()?;
+        let mut graphs = HashSet::new();
+        for quad in &self.all {
+            self.check()?;
+            graphs.insert(quad.graph_name);
+        }
+        for graph in self.all.named_graphs() {
+            self.check()?;
+            graphs.insert(GraphName::from(graph));
+        }
         graphs.insert(GraphName::DefaultGraph);
         for graph in graphs {
+            self.check()?;
             for (subject, object, rule) in [
                 (THING.clone(), CLASS.clone(), "cls-thing"),
                 (NOTHING.clone(), CLASS.clone(), "cls-nothing1"),

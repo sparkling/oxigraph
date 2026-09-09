@@ -178,11 +178,12 @@ matrices and measured absence of work under denial. G4.2 now provides opt-in
 admission, queue expiry, a reserved operator pool and response-lifetime leases.
 Optional absolute request deadlines now span the queue, body I/O, Simple query
 evaluation, transactional writes and response streaming, with typed timeout and
-pre-commit rollback checks. Finite RDF and RDFS materialization now share cancellation
+pre-commit rollback checks. Finite RDF, RDFS and bounded OWL materialization share cancellation
 and the absolute request deadline across snapshot copying, FROM construction,
-inference and query reads. RDFS also checks internal copies, sparse scans,
-consistency/output assembly and memory estimation. Deadline-bound OWL and legacy
-nontransactional bulk loading remain explicitly unsupported pending internal checkpoints. Resource accounting,
+inference and query reads. RDFS and OWL also check internal copies, sparse scans,
+consistency/output assembly and memory estimation. Controlled copies preserve
+interned IDs, iteration order and empty graphs. Legacy nontransactional bulk
+loading remains explicitly unsupported with request deadlines. Resource accounting,
 queued-disconnect propagation and full G4.2 acceptance remain open.
 See [ADR-0026](docs/adr/0026-service-identity-and-authorization.md#native-acceptance-closure-2026-09-09).
 RocksDB remains the persistent backend. The custom-backend tests prove the

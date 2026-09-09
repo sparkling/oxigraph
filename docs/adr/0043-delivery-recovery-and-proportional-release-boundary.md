@@ -146,8 +146,13 @@
   enclosing request deadlines do not. Finite RDFS now also admits request
   deadlines after checked preflight/copies, sparse scans, consistency/output
   assembly and memory estimation. Native tests preserve graph topology, results
-  and successful resource counters. OWL inner-loop instrumentation remains
-  the next product slice, not a new harness or semantic-profile project.
+  and successful resource counters. Bounded OWL now also admits deadlines after
+  checked preparation, raw rule/list/key/equality/semantic/contradiction work
+  and output/accounting. Its native inverse-inference and persistent HTTP journey
+  pass. A shared controlled Dataset clone preserves interned IDs and iteration
+  order, correcting the preceding RDFS decoded-copy ordering defect. This is
+  native product progress, not refreshed semantic qualification. Queued socket
+  disconnect and resource/fairness/reload/metrics remain the next G4.2 work.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

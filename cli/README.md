@@ -282,14 +282,17 @@ deadline. The old query-only `--timeout` uses a deadline token, not a detached
 sleeping thread. The transport watcher is stopped and joined on completion
 before connection reuse; timeout never releases capacity still owned by work.
 
-Deadline-enabled queries support Simple, finite RDF and finite RDFS materialization. One
-request deadline spans snapshot copying, FROM/RDF merge construction, finite
-RDF/RDFS inference and materialized reads, including scans with no matching rows.
+Deadline-enabled queries support Simple, finite RDF, finite RDFS and bounded OWL
+materialization. One request deadline spans snapshot copying, FROM/RDF merge
+construction, inference and materialized reads, including scans with no matching rows.
 Cancellation/expiry during materialization returns 408 before response streaming.
 RDFS checkpoints also cover engine preflight, both input copies (including empty
 named graphs), axiom generation, sparse rule scans, consistency ordering,
-closure construction and memory estimation. OWL materialization still returns
-400 under request-deadline profiles: its internal scans need further checkpoints.
+closure construction and memory estimation. OWL checks these phases too, including
+equality, lists, keys, datatype checks, semantic witnesses and contradiction
+deduplication. Both profiles preserve interned IDs and dataset iteration order
+during controlled copies. Rule inventories and successful resource counters are
+unchanged; this is not new semantic qualification or full allocation accounting.
 Deadline-enabled Graph Store PUT and non-multipart POST reject the
 legacy `no_transaction` bulk path with 400. Their missing cooperative checkpoints
 are follow-up work; other methods retain their normal handling of that flag.

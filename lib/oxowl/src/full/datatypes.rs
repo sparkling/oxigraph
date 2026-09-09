@@ -80,11 +80,14 @@ pub const OWL2_RL_DATATYPES: &[NamedNode] = &[
 
 impl Runtime<'_> {
     pub(super) fn validate_datatypes(&self) -> Result<(), Owl2RlRdfError> {
+        self.check()?;
         if self.options.datatype_mode == Owl2RlDatatypeMode::Permissive {
             return Ok(());
         }
         for quad in &self.all {
+            self.check()?;
             for literal in literals_in_term(&quad.object) {
+                self.check()?;
                 if !supported(literal.datatype()) {
                     return Err(Owl2RlRdfInputError::UnsupportedDatatype {
                         datatype: literal.datatype().clone(),
@@ -98,6 +101,7 @@ impl Runtime<'_> {
 
     pub(super) fn seed_datatypes(&mut self, graph: &GraphName) -> Result<(), Owl2RlRdfError> {
         for datatype in OWL2_RL_DATATYPES {
+            self.check()?;
             self.insert(
                 oxrdf::Quad::new(datatype.clone(), rdf::TYPE, rdfs::DATATYPE, graph.clone()),
                 "dt-type1",
@@ -108,21 +112,25 @@ impl Runtime<'_> {
     }
 
     pub(super) fn apply_datatypes(&mut self) -> Result<(), Owl2RlRdfError> {
-        let quads = self.all.iter().collect::<Vec<_>>();
+        let quads = self.checked_collect(self.all.iter())?;
         let mut literals = Vec::<(GraphName, Literal)>::new();
         for quad in &quads {
+            self.check()?;
             for literal in literals_in_term(&quad.object) {
+                self.check()?;
                 if supported(literal.datatype())
-                    && !literals
-                        .iter()
-                        .any(|(graph, item)| graph == &quad.graph_name && item == literal)
+                    && !self.checked_any(literals.iter(), |(graph, item)| {
+                        graph == &quad.graph_name && item == literal
+                    })?
                 {
                     literals.push((quad.graph_name.clone(), literal.clone()));
                 }
             }
         }
         for (graph, literal) in &literals {
+            self.check()?;
             for datatype in OWL2_RL_DATATYPES {
+                self.check()?;
                 self.touch()?;
                 if value_in_datatype(literal, datatype) {
                     self.add_generalized(
@@ -135,7 +143,9 @@ impl Runtime<'_> {
             }
         }
         for (left_graph, left) in &literals {
+            self.check()?;
             for (right_graph, right) in &literals {
+                self.check()?;
                 self.touch()?;
                 if left_graph != right_graph {
                     continue;
@@ -163,26 +173,29 @@ impl Runtime<'_> {
             }
         }
         for quad in &quads {
+            self.check()?;
             for literal in literals_in_term(&quad.object) {
+                self.check()?;
                 if supported(literal.datatype()) && datatype_value(literal).is_none() {
-                    self.contradiction("dt-not-type", &[quad.clone()]);
+                    self.contradiction("dt-not-type", &[quad.clone()])?;
                 }
             }
         }
-        let generalized = self.generalized.iter().cloned().collect::<Vec<_>>();
+        let generalized = self.checked_collect(self.generalized.iter().cloned())?;
         for fact in generalized {
+            self.check()?;
             if fact.predicate == rdf::TYPE
                 && let (Term::Literal(literal), Term::NamedNode(datatype)) =
                     (&fact.subject, &fact.object)
                 && supported(datatype)
                 && !value_in_datatype(literal, datatype)
             {
-                self.contradiction("dt-not-type", &[]);
+                self.contradiction("dt-not-type", &[])?;
             }
             if fact.predicate == DIFFERENT_FROM
                 && self.is_equal(&fact.graph_name, &fact.subject, &fact.object)
             {
-                self.contradiction("eq-diff1", &[]);
+                self.contradiction("eq-diff1", &[])?;
             }
         }
         Ok(())

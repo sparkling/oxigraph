@@ -1406,8 +1406,12 @@ deadline/cancellation through snapshot copying, FROM construction, inference
 and owned reads, preserving the materialization-only relative budget contract.
 Finite RDFS now admits request deadlines with checked preflight/copies, sparse
 rule/consistency scans, output ordering and memory estimation; inference and
-resource-counter semantics are retained. OWL internal instrumentation is the
-next G4.2 step; its deadline path and legacy nontransactional bulk still fail explicitly. Resource
+resource-counter semantics are retained. Bounded OWL now admits deadlines after
+checked internal preparation, raw rule/list/key/equality/semantic/contradiction
+scans and output/accounting. Native Store and persistent HTTP journeys pass.
+Both profiles now copy encoded Dataset identity/order, correcting the preceding
+RDFS decoded-copy ordering defect. Legacy nontransactional deadline-bound bulk
+still fails explicitly; queued socket disconnect is next. Resource
 budgets, queued socket disconnect, reload, exported counters and full ADR-0027
 acceptance remain open.
 Separate ADR-0026 frozen promotion and

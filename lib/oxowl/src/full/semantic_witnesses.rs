@@ -31,16 +31,20 @@ const INTEGER_DATATYPES: &[NamedNode] = &[
 
 impl Runtime<'_> {
     pub(super) fn semantic_complements(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
-        for disjoint in quads
-            .iter()
-            .filter(|quad| quad.predicate == crate::vocabulary::DISJOINT_WITH)
-        {
+        for disjoint in quads {
+            self.check()?;
+            if disjoint.predicate != crate::vocabulary::DISJOINT_WITH {
+                continue;
+            }
             let left = subject_term(disjoint);
-            for typed in quads.iter().filter(|quad| {
-                quad.graph_name == disjoint.graph_name
-                    && quad.predicate == rdf::TYPE
-                    && quad.object == left
-            }) {
+            for typed in quads {
+                self.check()?;
+                if typed.graph_name != disjoint.graph_name
+                    || typed.predicate != rdf::TYPE
+                    || typed.object != left
+                {
+                    continue;
+                }
                 self.materialize_complement(
                     &typed.graph_name,
                     typed.subject.clone(),
@@ -49,24 +53,33 @@ impl Runtime<'_> {
                 )?;
             }
         }
-        for declaration in quads
-            .iter()
-            .filter(|quad| quad.predicate == rdf::TYPE && quad.object == ALL_DISJOINT_CLASSES)
-        {
-            let Some(members) = quads.iter().find(|quad| {
+        for declaration in quads {
+            self.check()?;
+            if declaration.predicate != rdf::TYPE || declaration.object != ALL_DISJOINT_CLASSES {
+                continue;
+            }
+            let Some(members) = self.checked_find(quads, |quad| {
                 quad.graph_name == declaration.graph_name
                     && quad.subject == declaration.subject
                     && quad.predicate == MEMBERS
-            }) else {
+            })?
+            else {
                 continue;
             };
             let classes = self.list(&members.object, &members.graph_name)?;
-            for typed in quads.iter().filter(|quad| {
-                quad.graph_name == declaration.graph_name
-                    && quad.predicate == rdf::TYPE
-                    && classes.contains(&quad.object)
-            }) {
-                for class in classes.iter().filter(|class| **class != typed.object) {
+            for typed in quads {
+                self.check()?;
+                if typed.graph_name != declaration.graph_name
+                    || typed.predicate != rdf::TYPE
+                    || !self.checked_any(&classes, |class| *class == &typed.object)?
+                {
+                    continue;
+                }
+                for class in &classes {
+                    self.check()?;
+                    if *class == typed.object {
+                        continue;
+                    }
                     self.materialize_complement(
                         &typed.graph_name,
                         typed.subject.clone(),
@@ -80,52 +93,64 @@ impl Runtime<'_> {
     }
 
     fn qualified_cardinality_complements(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
-        for maximum in quads.iter().filter(|quad| {
-            quad.predicate == MAX_QUALIFIED_CARDINALITY
-                && matches!(&quad.object, Term::Literal(value) if value.value() == "1")
-        }) {
+        for maximum in quads {
+            self.check()?;
+            if maximum.predicate != MAX_QUALIFIED_CARDINALITY
+                || !matches!(&maximum.object, Term::Literal(value) if value.value() == "1")
+            {
+                continue;
+            }
             let expression = subject_term(maximum);
-            let property = quads.iter().find_map(|quad| {
-                (quad.graph_name == maximum.graph_name
-                    && subject_term(quad) == expression
-                    && quad.predicate == ON_PROPERTY)
-                    .then_some(&quad.object)
-            });
-            let class = quads.iter().find_map(|quad| {
-                (quad.graph_name == maximum.graph_name
-                    && subject_term(quad) == expression
-                    && quad.predicate == ON_CLASS)
-                    .then_some(&quad.object)
-            });
+            let property = self
+                .checked_find(quads, |quad| {
+                    quad.graph_name == maximum.graph_name
+                        && subject_term(quad) == expression
+                        && quad.predicate == ON_PROPERTY
+                })?
+                .map(|quad| &quad.object);
+            let class = self
+                .checked_find(quads, |quad| {
+                    quad.graph_name == maximum.graph_name
+                        && subject_term(quad) == expression
+                        && quad.predicate == ON_CLASS
+                })?
+                .map(|quad| &quad.object);
             let (Some(Term::NamedNode(property)), Some(class)) = (property, class) else {
                 continue;
             };
-            for owner in quads.iter().filter(|quad| {
-                quad.graph_name == maximum.graph_name
-                    && quad.predicate == rdf::TYPE
-                    && quad.object == expression
-            }) {
-                let values = quads
-                    .iter()
-                    .filter(|quad| {
-                        quad.graph_name == owner.graph_name
-                            && quad.subject == owner.subject
-                            && quad.predicate == *property
-                    })
-                    .collect::<Vec<_>>();
+            for owner in quads {
+                self.check()?;
+                if owner.graph_name != maximum.graph_name
+                    || owner.predicate != rdf::TYPE
+                    || owner.object != expression
+                {
+                    continue;
+                }
+                let mut values = Vec::new();
+                for quad in quads {
+                    self.check()?;
+                    if quad.graph_name == owner.graph_name
+                        && quad.subject == owner.subject
+                        && quad.predicate == *property
+                    {
+                        values.push(quad);
+                    }
+                }
                 for candidate in &values {
+                    self.check()?;
                     for typed in &values {
-                        if quads.iter().any(|quad| {
+                        self.check()?;
+                        if self.checked_any(quads, |quad| {
                             quad.graph_name == owner.graph_name
                                 && quad.predicate == rdf::TYPE
                                 && subject_term(quad) == typed.object
                                 && &quad.object == class
-                        }) && Self::different(
+                        })? && self.different(
                             &owner.graph_name,
                             &candidate.object,
                             &typed.object,
                             quads,
-                        ) {
+                        )? {
                             let Some(subject) = term_resource(&candidate.object) else {
                                 continue;
                             };
@@ -140,42 +165,41 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     pub(super) fn semantic_datatype_ranges(
         &mut self,
         quads: &[Quad],
     ) -> Result<(), Owl2RlRdfError> {
-        for range in quads.iter().filter(|quad| quad.predicate == rdfs::RANGE) {
-            let ranges = quads
-                .iter()
-                .filter(|quad| {
-                    quad.graph_name == range.graph_name
-                        && quad.subject == range.subject
-                        && quad.predicate == rdfs::RANGE
-                })
-                .filter_map(|quad| match &quad.object {
-                    Term::NamedNode(datatype) => integer_bounds(datatype),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
+        for range in quads {
+            self.check()?;
+            if range.predicate != rdfs::RANGE {
+                continue;
+            }
+            let mut ranges = Vec::new();
+            for quad in quads {
+                self.check()?;
+                if quad.graph_name == range.graph_name
+                    && quad.subject == range.subject
+                    && quad.predicate == rdfs::RANGE
+                    && let Term::NamedNode(datatype) = &quad.object
+                    && let Some(bounds) = integer_bounds(datatype)
+                {
+                    ranges.push(bounds);
+                }
+            }
             if ranges.is_empty() {
                 continue;
             }
-            let intersection = (
-                ranges
-                    .iter()
-                    .map(|bounds| bounds.0)
-                    .max()
-                    .unwrap_or(i128::MIN),
-                ranges
-                    .iter()
-                    .map(|bounds| bounds.1)
-                    .min()
-                    .unwrap_or(i128::MAX),
-            );
+            let mut intersection = (i128::MIN, i128::MAX);
+            for bounds in &ranges {
+                self.check()?;
+                intersection.0 = intersection.0.max(bounds.0);
+                intersection.1 = intersection.1.min(bounds.1);
+            }
             for datatype in INTEGER_DATATYPES {
+                self.check()?;
                 let Some(bounds) = integer_bounds(datatype) else {
                     continue;
                 };
@@ -193,12 +217,13 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     pub(super) fn semantic_expression_witnesses(&mut self) -> Result<(), Owl2RlRdfError> {
-        let base = self.base.iter().collect::<Vec<_>>();
+        let base = self.checked_collect(self.base.iter())?;
         for declaration in &base {
+            self.check()?;
             if declaration.predicate == rdf::TYPE && declaration.object == CLASS {
                 let class = subject_term(declaration);
                 let expression = witness("union", &declaration.graph_name, &class.to_string());
@@ -259,7 +284,7 @@ impl Runtime<'_> {
                 )?;
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn materialize_complement(
@@ -277,7 +302,7 @@ impl Runtime<'_> {
         ] {
             self.insert(quad, "rdf-sem-complement-witness", evidence)?;
         }
-        Ok(())
+        self.check()
     }
 }
 

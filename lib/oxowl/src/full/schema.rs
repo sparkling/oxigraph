@@ -16,7 +16,7 @@ use oxrdf::{
 
 impl Runtime<'_> {
     pub(super) fn apply_schema(&mut self) -> Result<(), Owl2RlRdfError> {
-        let quads = self.all.iter().collect::<Vec<_>>();
+        let quads = self.checked_collect(self.all.iter())?;
         self.schema_classes(&quads)?;
         self.schema_properties(&quads)?;
         self.schema_domains(&quads)?;
@@ -26,6 +26,7 @@ impl Runtime<'_> {
 
     fn schema_classes(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for declaration in quads {
+            self.check()?;
             if declaration.predicate == rdf::TYPE && declaration.object == CLASS {
                 let class = subject_term(declaration);
                 for (subject, predicate, object) in [
@@ -66,7 +67,9 @@ impl Runtime<'_> {
             }
         }
         for left in quads {
+            self.check()?;
             for right in quads {
+                self.check()?;
                 if left.graph_name != right.graph_name {
                     continue;
                 }
@@ -98,16 +101,18 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn schema_properties(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for declaration in quads {
+            self.check()?;
             if declaration.predicate == rdf::TYPE
                 && (declaration.object == OBJECT_PROPERTY
                     || declaration.object == DATATYPE_PROPERTY)
             {
                 for predicate in [rdfs::SUB_PROPERTY_OF, EQUIVALENT_PROPERTY] {
+                    self.check()?;
                     self.insert(
                         Quad::new(
                             declaration.subject.clone(),
@@ -145,7 +150,9 @@ impl Runtime<'_> {
             }
         }
         for left in quads {
+            self.check()?;
             for right in quads {
+                self.check()?;
                 if left.graph_name != right.graph_name
                     || left.predicate != rdfs::SUB_PROPERTY_OF
                     || right.predicate != rdfs::SUB_PROPERTY_OF
@@ -178,15 +185,17 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn schema_domains(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for schema in quads {
+            self.check()?;
             if schema.predicate != rdfs::DOMAIN && schema.predicate != rdfs::RANGE {
                 continue;
             }
             for relation in quads {
+                self.check()?;
                 if relation.graph_name != schema.graph_name {
                     continue;
                 }
@@ -228,33 +237,43 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn schema_restrictions(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
-        let restrictions = quads
-            .iter()
-            .filter(|quad| {
-                quad.predicate == HAS_VALUE
-                    || quad.predicate == SOME_VALUES_FROM
-                    || quad.predicate == ALL_VALUES_FROM
-            })
-            .collect::<Vec<_>>();
+        let mut restrictions = Vec::new();
+        for quad in quads {
+            self.check()?;
+            if quad.predicate == HAS_VALUE
+                || quad.predicate == SOME_VALUES_FROM
+                || quad.predicate == ALL_VALUES_FROM
+            {
+                restrictions.push(quad);
+            }
+        }
+        self.check()?;
         for left in &restrictions {
-            let Some(left_property) = on_property(quads, left) else {
+            self.check()?;
+            let Some(left_property) = on_property(self, quads, left)? else {
                 continue;
             };
             for right in &restrictions {
+                self.check()?;
                 if left.graph_name != right.graph_name || left.predicate != right.predicate {
                     continue;
                 }
-                let Some(right_property) = on_property(quads, right) else {
+                let Some(right_property) = on_property(self, quads, right)? else {
                     continue;
                 };
-                let property_subsumes =
-                    subproperty(quads, &left.graph_name, &left_property, &right_property);
+                let property_subsumes = subproperty(
+                    self,
+                    quads,
+                    &left.graph_name,
+                    &left_property,
+                    &right_property,
+                )?;
                 let filler_subsumes =
-                    subclass(quads, &left.graph_name, &left.object, &right.object);
+                    subclass(self, quads, &left.graph_name, &left.object, &right.object)?;
                 let applies = if left.predicate == HAS_VALUE {
                     left.object == right.object && property_subsumes
                 } else if left.predicate == SOME_VALUES_FROM {
@@ -264,11 +283,12 @@ impl Runtime<'_> {
                     (left_property == right_property && filler_subsumes)
                         || (left.object == right.object
                             && subproperty(
+                                self,
                                 quads,
                                 &left.graph_name,
                                 &right_property,
                                 &left_property,
-                            ))
+                            )?)
                 };
                 if applies {
                     let rule = if left.predicate == HAS_VALUE {
@@ -297,16 +317,18 @@ impl Runtime<'_> {
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn schema_lists(&mut self, quads: &[Quad]) -> Result<(), Owl2RlRdfError> {
         for declaration in quads {
+            self.check()?;
             if declaration.predicate != INTERSECTION_OF && declaration.predicate != UNION_OF {
                 continue;
             }
             let class = subject_term(declaration);
             for member in self.list(&declaration.object, &declaration.graph_name)? {
+                self.check()?;
                 let (subject, object, rule) = if declaration.predicate == INTERSECTION_OF {
                     (declaration.subject.clone(), member, "scm-int")
                 } else if let Some(subject) = super::term_resource(&member) {
@@ -326,44 +348,61 @@ impl Runtime<'_> {
                 )?;
             }
         }
-        Ok(())
+        self.check()
     }
 }
 
-fn on_property(quads: &[Quad], restriction: &Quad) -> Option<NamedNode> {
-    quads.iter().find_map(|quad| {
-        (quad.graph_name == restriction.graph_name
+fn on_property(
+    runtime: &Runtime<'_>,
+    quads: &[Quad],
+    restriction: &Quad,
+) -> Result<Option<NamedNode>, Owl2RlRdfError> {
+    let found = runtime.checked_find(quads.iter(), |quad| {
+        quad.graph_name == restriction.graph_name
             && quad.predicate == ON_PROPERTY
-            && quad.subject == restriction.subject)
-            .then(|| match &quad.object {
-                Term::NamedNode(node) => Some(node.clone()),
-                _ => None,
-            })
-            .flatten()
-    })
+            && quad.subject == restriction.subject
+            && matches!(&quad.object, Term::NamedNode(_))
+    })?;
+    Ok(found.and_then(|quad| match &quad.object {
+        Term::NamedNode(node) => Some(node.clone()),
+        _ => None,
+    }))
 }
 
 fn subproperty(
+    runtime: &Runtime<'_>,
     quads: &[Quad],
     graph: &oxrdf::GraphName,
     left: &NamedNode,
     right: &NamedNode,
-) -> bool {
-    left == right
-        || quads.iter().any(|quad| {
-            &quad.graph_name == graph
-                && quad.predicate == rdfs::SUB_PROPERTY_OF
-                && quad.subject == *left
-                && quad.object == *right
-        })
+) -> Result<bool, Owl2RlRdfError> {
+    if left == right {
+        runtime.check()?;
+        return Ok(true);
+    }
+    runtime.checked_any(quads.iter(), |quad| {
+        &quad.graph_name == graph
+            && quad.predicate == rdfs::SUB_PROPERTY_OF
+            && quad.subject == *left
+            && quad.object == *right
+    })
 }
 
-fn subclass(quads: &[Quad], graph: &oxrdf::GraphName, left: &Term, right: &Term) -> bool {
-    left == right
-        || quads.iter().any(|quad| {
-            &quad.graph_name == graph
-                && quad.predicate == rdfs::SUB_CLASS_OF
-                && subject_term(quad) == *left
-                && quad.object == *right
-        })
+fn subclass(
+    runtime: &Runtime<'_>,
+    quads: &[Quad],
+    graph: &oxrdf::GraphName,
+    left: &Term,
+    right: &Term,
+) -> Result<bool, Owl2RlRdfError> {
+    if left == right {
+        runtime.check()?;
+        return Ok(true);
+    }
+    runtime.checked_any(quads.iter(), |quad| {
+        &quad.graph_name == graph
+            && quad.predicate == rdfs::SUB_CLASS_OF
+            && subject_term(quad) == *left
+            && quad.object == *right
+    })
 }
