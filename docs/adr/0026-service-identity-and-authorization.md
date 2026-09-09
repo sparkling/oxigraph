@@ -4,8 +4,9 @@
 - **Date**: 2026-08-25
 - Updated: 2026-09-09
 - Deciders: Oxigraph parity programme
-- Implementation status: anonymous listener startup and pre-body transport admission implemented;
-  request identity, coarse authorization, proxy trust and audit/reload remain G4.1
+- Implementation status: native anonymous/proxy profiles, pre-body identity and
+  coarse authorization, public embedding seam, bounded audit and atomic reload
+  implemented; separate frozen evaluator/promotion acceptance remains open
 - Programme task: `task-1787670631989-m5vxqk`
 - **Depends on**:
   [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md)
@@ -19,7 +20,7 @@
 
 ## Context
 
-The CLI server currently exposes `/query`, `/update`, `/sparql`, and `/store`
+Before this decision, the CLI server exposed `/query`, `/update`, `/sparql`, and `/store`
 without an authenticated request identity or an authorization decision. Its
 default bind is loopback, but binding it elsewhere, enabling CORS, or placing it
 behind a proxy does not create an identity boundary. Forwarded routing headers
@@ -143,7 +144,65 @@ Unchanged upstream wire and codec tests remain the compatibility checks.
 This closes the transport prerequisite, not the remaining G4.1 identity,
 authorizer, audit/reload or promotion gates. No authorization is advertised.
 
-### Remaining gates
+### Native authenticated profile (2026-09-09)
+
+`--access-policy` selects the bounded `oxigraph-access-v1` file profile on both
+serve modes, validated before storage opens. The
+[CLI documentation](../../cli/README.md#trusted-proxy-access-policy-fork) and
+[validated example](../../cli/examples/access-policy.json) define the exact
+configuration and single JSON `Oxigraph-Identity` assertion. Only configured
+immediate socket peers may assert identity; exact issuer/audience/proxy version,
+bounded lifetime/skew and exclusive expiry are enforced. Peer trust requires
+an isolated backend and a proxy that authenticates users and replaces incoming
+assertion headers. Trusting loopback trusts all local processes. This is not
+cryptographic authentication of arbitrary clients or a TLS/identity service.
+
+One immutable policy snapshot authenticates and authorizes every public/admin
+request before Expect or body decoding. One rule must cover the whole
+operation, actual/preflight method and direct Graph Store selector; separate
+partial grants cannot combine. Form POST `/sparql` and its POST preflight
+require query **and** update permission, while `/query` remains query-only.
+Read-only serving rejects all authenticated writes. Unauthenticated failures
+return empty no-store 401; authenticated denial returns empty no-store 403.
+Unknown endpoints are denied, independent of resource existence.
+
+The native profile deliberately strips all authorization/cookie/identity and
+forwarding headers before CORS/business handling, including from trusted peers.
+It does not implement optional trusted forwarded-URL reconstruction; direct
+request authority is used. The authorizer and Graph Store share the same
+strict selector parser. SPARQL is admitted as a whole, never rewritten or
+filtered. CORS tests also exposed and fixed the existing OxHTTP response
+encoder dropping `Access-Control-Allow-Methods`; client header filtering is
+unchanged. No service-description authorization claim is added.
+
+The library target exposes custom provider/authorizer traits and immutable
+request context without adding identity to Store/evaluator APIs. Native
+metadata-only admission has a 100 ms deadline; custom policies choose a
+positive deadline up to one second. Late results fail closed, but arbitrary
+blocking custom extensions cannot be forcibly preempted and must cooperate.
+Only configured workload labels can propagate; resource scheduling is G4.2.
+
+Explicit operator rules protect readiness, metrics, GET/HEAD `/access/audit`
+and empty POST `/access/policy/reload`. Optional anonymous liveness grants only
+GET/HEAD `/health`. Reload validates the candidate before atomic replacement,
+requires the same policy ID and increasing policy/proxy versions, and preserves
+the last good state on error. In-flight requests retain the admitted snapshot;
+subsequent keep-alive requests reauthenticate. The last 256 admission events
+and overwritten count form a process-local ring. Principal references are
+salted, truncated SHA-256 pseudonyms scoped to the process and policy version,
+not credentials, receipt integration or a durable security log. No raw subject,
+credential, query, graph selector or forwarded URL is included.
+
+Native tests in [access_http.rs](../../cli/tests/access_http.rs) and
+[access_extension.rs](../../cli/tests/access_extension.rs) cover the public
+extension seam, provider/late errors, all-route unauthenticated pre-body
+denials, spoofing/expiry, query/write/rollback/restart, direct graph scopes,
+CORS, audit redaction/bounds, read-only precedence, invalid startup and atomic
+reload including in-flight/keep-alive behavior. Default and no-default lanes
+pass; the existing default CLI and anonymous operator/listener suites retain
+compatibility. These are native implementation results, not frozen promotion.
+
+### Separate acceptance and promotion gates
 
 1. **Identity seam:** freeze compile fixtures for a custom provider and
    authorizer, plus wire tests for anonymous, authenticated, malformed,
@@ -191,7 +250,8 @@ merely because an identity provider type compiled.
 
 ## Evidence and task ownership
 
-The current unauthenticated route dispatch and proxy-header handling are in
+The current admission/context and policy implementation is in
+[`access.rs`](../../cli/src/access.rs), integrated ahead of route handling in
 [`main.rs`](../../cli/src/main.rs); Graph Store dispatch is in
 [`graph_store.rs`](../../cli/src/graph_store.rs). The first-party comparison
 points are [Jena Fuseki's data-access-control

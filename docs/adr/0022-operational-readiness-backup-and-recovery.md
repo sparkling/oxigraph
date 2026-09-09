@@ -146,6 +146,15 @@ SPARQL, maintenance, authentication, CORS, or arbitrary diagnostic data. Default
 CLI operation is unchanged when the listener is omitted. Public application
 routes remain separate. No new dependency is introduced.
 
+The subsequent native ADR-0026 profile adds optional authentication ahead of
+this listener's handlers. With `--access-policy`, readiness/metrics require
+explicit operator rules; only configured anonymous liveness may bypass identity.
+Operator-authorized access-policy reload and bounded audit routes are then
+available on this listener only. Without the option, the original observation
+surface remains unchanged. See [ADR-0026](0026-service-identity-and-authorization.md)
+for exact policy, snapshot, privacy and promotion boundaries; these additions
+do not expand storage readiness or recovery claims.
+
 Liveness is static HTTP 200. Ready/degraded observations map to 200; not-ready
 maps to 503. Fixed reason tokens and coverage are JSON, and bounded gauges use
 Prometheus text format. Metrics still report not-ready gauges with HTTP 200;

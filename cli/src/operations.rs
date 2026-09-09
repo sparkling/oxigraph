@@ -6,6 +6,7 @@ use oxigraph::store::{
     CircuitState, ContributorRegistry, GovernanceTime, ProbeCoverage, ReadinessDisposition,
     ReadinessPolicy, ReadinessReason, Store, TransactionStartControl,
 };
+use oxigraph_cli::access::{AccessController, ListenerKind};
 use std::fmt::Write as _;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -16,6 +17,7 @@ pub(super) fn spawn(
     store: Store,
     address: SocketAddr,
     started: Arc<AtomicBool>,
+    access: Arc<AccessController>,
 ) -> std::io::Result<ListeningServer> {
     // Also defend this private seam, independent of Clap validation.
     if !address.ip().is_loopback() || address.port() == 0 {
@@ -24,11 +26,59 @@ pub(super) fn spawn(
             "admin listener must use a numeric loopback IP and nonzero port",
         ));
     }
-    Server::new(move |request| handle(request, &store, started.load(Ordering::Acquire)))
-        .bind(address)
-        .with_max_concurrent_connections(2)
-        .with_global_timeout(Duration::from_secs(2))
-        .spawn()
+    let admission = Arc::clone(&access);
+    Server::new(move |request| {
+        if let Err(error) = AccessController::prepare_request(request) {
+            return oxigraph_cli::access::denial(error);
+        }
+        if access.is_proxy_profile() {
+            if let Some(response) = access_operation(request, &access) {
+                return response;
+            }
+        }
+        handle(request, &store, started.load(Ordering::Acquire))
+    })
+    .with_request_admission(move |head, connection| {
+        admission.admit(head, connection, ListenerKind::Operator)
+    })
+    .bind(address)
+    .with_max_concurrent_connections(2)
+    .with_global_timeout(Duration::from_secs(2))
+    .spawn()
+}
+
+fn access_operation(request: &Request<Body>, access: &AccessController) -> Option<Response<Body>> {
+    let (status, body) = match (request.uri().path(), request.method().as_str()) {
+        ("/access/policy/reload", "POST") => {
+            if request.body().len() == Some(0) {
+                match access.reload() {
+                    Ok(_) => (StatusCode::NO_CONTENT, String::new()),
+                    Err(_) => (
+                        StatusCode::BAD_REQUEST,
+                        "{\"error\":\"policy_reload_rejected\"}\n".into(),
+                    ),
+                }
+            } else {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "{\"error\":\"body_not_supported\"}\n".into(),
+                )
+            }
+        }
+        ("/access/audit", "GET" | "HEAD") => match access
+            .audit_snapshot()
+            .ok()
+            .and_then(|audit| serde_json::to_string(&audit).ok())
+        {
+            Some(json) => (StatusCode::OK, json),
+            None => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "{\"error\":\"audit_unavailable\"}\n".into(),
+            ),
+        },
+        _ => return None,
+    };
+    Some(response(request, status, "application/json", body))
 }
 
 /// Fail closed before invoking any application handler during partial startup.

@@ -73,6 +73,13 @@ pub fn encode_response_with_connection<W: Write>(
     if close {
         writer.write_all(b"connection: close\r\n")?;
     }
+    // This is a response field, not a forbidden client request field. The
+    // shared header filter must not silently disable successful CORS preflight.
+    for value in response.headers().get_all(ACCESS_CONTROL_ALLOW_METHODS) {
+        writer.write_all(b"access-control-allow-methods: ")?;
+        writer.write_all(value.as_bytes())?;
+        writer.write_all(b"\r\n")?;
+    }
     encode_headers(response.headers(), &mut writer)?;
     let must_include_body = does_response_must_include_body(response.status());
     encode_body(response.body_mut(), &mut writer, must_include_body)?;
@@ -260,6 +267,20 @@ mod tests {
         assert_eq!(
             str::from_utf8(&buffer).unwrap(),
             "POST /foo/bar?query HTTP/1.1\r\nhost: example.com\r\ntransfer-encoding: chunked\r\n\r\nC\r\ntestbodybody\r\n0\r\ncontent-language: foo\r\n\r\n"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn encode_response_preserves_cors_method_allowance() -> Result<()> {
+        let mut response = Response::builder()
+            .status(StatusCode::NO_CONTENT)
+            .header(ACCESS_CONTROL_ALLOW_METHODS, "POST")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            encode_response(&mut response, Vec::new())?,
+            b"HTTP/1.1 204 No Content\r\naccess-control-allow-methods: POST\r\n\r\n"
         );
         Ok(())
     }

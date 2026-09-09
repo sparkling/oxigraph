@@ -52,7 +52,10 @@ pub enum Command {
         /// Allow an unauthenticated listener on non-loopback addresses (unsafe development use)
         #[arg(long)]
         unsafe_allow_remote_anonymous: bool,
-        /// Optional separate loopback health/readiness/metrics listener (no maintenance routes)
+        /// Trusted-proxy identity and deny-by-default authorization policy JSON
+        #[arg(long, value_hint = ValueHint::FilePath, conflicts_with = "unsafe_allow_remote_anonymous")]
+        access_policy: Option<PathBuf>,
+        /// Separate loopback observations and policy-controlled access-management listener
         #[arg(long, value_parser = loopback_admin_address)]
         admin_bind: Option<SocketAddr>,
         /// Allows cross-origin requests
@@ -91,7 +94,10 @@ pub enum Command {
         /// Allow an unauthenticated listener on non-loopback addresses (unsafe development use)
         #[arg(long)]
         unsafe_allow_remote_anonymous: bool,
-        /// Optional separate loopback health/readiness/metrics listener (no maintenance routes)
+        /// Trusted-proxy identity and deny-by-default authorization policy JSON
+        #[arg(long, value_hint = ValueHint::FilePath, conflicts_with = "unsafe_allow_remote_anonymous")]
+        access_policy: Option<PathBuf>,
+        /// Separate loopback observations and policy-controlled access-management listener
         #[arg(long, value_parser = loopback_admin_address)]
         admin_bind: Option<SocketAddr>,
         /// Allow cross-origin requests

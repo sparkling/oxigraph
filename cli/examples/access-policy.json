@@ -1,0 +1,23 @@
+{
+  "format": "oxigraph-access-v1",
+  "policy_id": "local-example",
+  "version": 1,
+  "proxy": {
+    "peers": ["127.0.0.1"],
+    "issuer": "local-edge",
+    "audience": "oxigraph-local",
+    "version": 1,
+    "max_lifetime_seconds": 60,
+    "clock_skew_seconds": 0
+  },
+  "anonymous_liveness": true,
+  "workload_classes": ["default"],
+  "rules": [
+    {"subject": "reader", "endpoint": "query", "methods": ["GET", "POST", "QUERY", "OPTIONS"], "operations": ["discovery", "query"], "workload_class": "default"},
+    {"subject": "writer", "endpoint": "update", "methods": ["POST"], "operations": ["update"], "workload_class": "default"},
+    {"subject": "operator", "endpoint": "ready", "methods": ["GET", "HEAD"], "operations": ["operator"], "workload_class": "default"},
+    {"subject": "operator", "endpoint": "metrics", "methods": ["GET", "HEAD"], "operations": ["operator"], "workload_class": "default"},
+    {"subject": "operator", "endpoint": "audit", "methods": ["GET", "HEAD"], "operations": ["operator"], "workload_class": "default"},
+    {"subject": "operator", "endpoint": "access-policy", "methods": ["POST"], "operations": ["operator"], "workload_class": "default"}
+  ]
+}

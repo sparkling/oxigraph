@@ -2,57 +2,7 @@ use crate::{HttpError, bad_request};
 use oxhttp::model::{Body, Request};
 
 pub(super) fn parameters(request: &Request<Body>) -> Result<Vec<(String, String)>, HttpError> {
-    request
-        .uri()
-        .query()
-        .unwrap_or_default()
-        .split('&')
-        .filter(|field| !field.is_empty())
-        .map(|field| {
-            let (key, value) = field.split_once('=').unwrap_or((field, ""));
-            Ok((decode(key)?, decode(value)?))
-        })
-        .collect()
-}
-
-fn decode(value: &str) -> Result<String, HttpError> {
-    let input = value.as_bytes();
-    let mut output = Vec::with_capacity(input.len());
-    let mut index = 0;
-    while index < input.len() {
-        if input[index] == b'%' {
-            let high = input
-                .get(index + 1)
-                .copied()
-                .and_then(hex)
-                .ok_or_else(invalid_percent_encoding)?;
-            let low = input
-                .get(index + 2)
-                .copied()
-                .and_then(hex)
-                .ok_or_else(invalid_percent_encoding)?;
-            output.push((high << 4) | low);
-            index += 3;
-        } else {
-            output.push(input[index]);
-            index += 1;
-        }
-    }
-    String::from_utf8(output)
-        .map_err(|_| bad_request("Graph Store query parameters must be UTF-8 encoded"))
-}
-
-fn invalid_percent_encoding() -> HttpError {
-    bad_request("Invalid percent encoding in Graph Store query parameter")
-}
-
-const fn hex(value: u8) -> Option<u8> {
-    match value {
-        b'0'..=b'9' => Some(value - b'0'),
-        b'a'..=b'f' => Some(value - b'a' + 10),
-        b'A'..=b'F' => Some(value - b'A' + 10),
-        _ => None,
-    }
+    oxigraph_cli::access::target::parameters(request.uri()).map_err(bad_request)
 }
 
 #[cfg(test)]

@@ -13,6 +13,7 @@ use rand::random;
 
 mod legacy;
 mod representation;
+#[cfg(test)]
 mod selector;
 mod state;
 mod validators;
@@ -20,12 +21,7 @@ use validators::{
     conditions, etag_opaque, quoted_etag, require_mutation_preconditions, state_digest,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum Target {
-    Dataset,
-    DefaultGraph,
-    NamedGraph(NamedNode),
-}
+use oxigraph_cli::access::GraphTarget as Target;
 
 struct State {
     exists: bool,
@@ -77,58 +73,7 @@ pub fn handle(
 }
 
 fn target(request: &Request<Body>) -> Result<Target, HttpError> {
-    let direct = request.uri().path() != "/store";
-    let mut graph = None;
-    let mut has_default = false;
-    for (key, value) in selector::parameters(request)? {
-        match key.as_str() {
-            "graph" => {
-                if graph.is_some() || has_default {
-                    return Err(bad_request(
-                        "A Graph Store request must contain exactly one graph selector",
-                    ));
-                }
-                if value.is_empty() {
-                    return Err(bad_request("The graph selector must contain a graph IRI"));
-                }
-                graph = Some(value);
-            }
-            "default" => {
-                if has_default || graph.is_some() {
-                    return Err(bad_request(
-                        "A Graph Store request must contain exactly one graph selector",
-                    ));
-                }
-                if !value.is_empty() {
-                    return Err(bad_request("The default selector must not have a value"));
-                }
-                has_default = true;
-            }
-            "lenient" | "no_transaction" if value.is_empty() => {}
-            _ => {
-                return Err(bad_request(format!(
-                    "Unknown Graph Store parameter '{key}'"
-                )));
-            }
-        }
-    }
-    if direct {
-        if graph.is_some() || has_default {
-            return Err(bad_request(
-                "An indirect graph selector cannot be combined with a direct graph IRI",
-            ));
-        }
-        Ok(Target::NamedGraph(resolve_with_base(request, "")?))
-    } else if let Some(graph) = graph {
-        Ok(Target::NamedGraph(NamedNode::new(graph).map_err(|_| {
-            bad_request("The graph selector must be an absolute IRI")
-        })?))
-    } else if has_default {
-        Ok(Target::DefaultGraph)
-    } else {
-        // Oxigraph extension for GET/HEAD/PUT/DELETE; selector-less POST is GSP.
-        Ok(Target::Dataset)
-    }
+    Target::from_uri(request.uri()).map_err(bad_request)
 }
 
 fn get(

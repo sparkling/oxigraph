@@ -93,14 +93,22 @@ pub fn main() -> anyhow::Result<()> {
             location,
             bind,
             unsafe_allow_remote_anonymous,
+            access_policy,
             admin_bind,
             cors,
             union_default_graph,
             entailment,
             timeout_s,
         } => {
-            let listener =
-                server_access::AnonymousListener::resolve(bind, unsafe_allow_remote_anonymous)?;
+            let access = Arc::new(match access_policy {
+                Some(path) => oxigraph_cli::access::AccessController::from_file(&path, false)?,
+                None => oxigraph_cli::access::AccessController::anonymous(false),
+            });
+            let listener = server_access::ServerListener::resolve(
+                bind,
+                unsafe_allow_remote_anonymous,
+                access.is_proxy_profile(),
+            )?;
             serve(
                 if let Some(location) = location {
                     Store::open(location)
@@ -108,6 +116,7 @@ pub fn main() -> anyhow::Result<()> {
                     Store::new()
                 }?,
                 &listener,
+                access,
                 admin_bind,
                 false,
                 cors,
@@ -120,17 +129,26 @@ pub fn main() -> anyhow::Result<()> {
             location,
             bind,
             unsafe_allow_remote_anonymous,
+            access_policy,
             admin_bind,
             cors,
             union_default_graph,
             entailment,
             timeout_s,
         } => {
-            let listener =
-                server_access::AnonymousListener::resolve(bind, unsafe_allow_remote_anonymous)?;
+            let access = Arc::new(match access_policy {
+                Some(path) => oxigraph_cli::access::AccessController::from_file(&path, true)?,
+                None => oxigraph_cli::access::AccessController::anonymous(true),
+            });
+            let listener = server_access::ServerListener::resolve(
+                bind,
+                unsafe_allow_remote_anonymous,
+                access.is_proxy_profile(),
+            )?;
             serve(
                 Store::open_read_only(location)?,
                 &listener,
+                access,
                 admin_bind,
                 true,
                 cors,
@@ -1102,7 +1120,8 @@ fn rdf_format_from_name(name: &str) -> anyhow::Result<RdfFormat> {
 
 fn serve(
     store: Store,
-    listener: &server_access::AnonymousListener,
+    listener: &server_access::ServerListener,
+    access: Arc<oxigraph_cli::access::AccessController>,
     admin_bind: Option<std::net::SocketAddr>,
     read_only: bool,
     cors: bool,
@@ -1131,11 +1150,21 @@ fn serve(
             .unwrap_or_else(|(status, message)| error(status, message)),
         )
     });
-    let mut server = if cors {
-        Server::new(cors_middleware(on_request))
+    let on_request: Box<dyn Fn(&mut Request<Body>) -> Response<Body> + Send + Sync> = if cors {
+        Box::new(cors_middleware(on_request))
     } else {
-        Server::new(on_request)
-    }
+        Box::new(on_request)
+    };
+    let admission = Arc::clone(&access);
+    let mut server = Server::new(move |request| {
+        match oxigraph_cli::access::AccessController::prepare_request(request) {
+            Ok(()) => on_request(request),
+            Err(error) => oxigraph_cli::access::denial(error),
+        }
+    })
+    .with_request_admission(move |head, connection| {
+        admission.admit(head, connection, oxigraph_cli::access::ListenerKind::Data)
+    })
     .with_global_timeout(timeout.unwrap_or(HTTP_TIMEOUT))
     .with_server_name(concat!("Oxigraph/", env!("CARGO_PKG_VERSION")))?
     .with_max_concurrent_connections(available_parallelism()?.get() * 128);
@@ -1147,7 +1176,7 @@ fn serve(
     // Any startup/join error returns to main and terminates the process. Keep
     // notification after both successful binds; do not advertise partial startup.
     let admin_server = admin_store
-        .map(|(address, store)| operations::spawn(store, address, Arc::clone(&started)))
+        .map(|(address, store)| operations::spawn(store, address, Arc::clone(&started), access))
         .transpose()?;
     #[cfg(target_os = "linux")]
     systemd_notify_ready()?;

@@ -113,7 +113,7 @@ Use `oxigraph --help` to see the possible options when starting the server.
 
 ### Anonymous listener boundary (fork)
 
-`serve` and `serve-read-only` use anonymous access for trusted local use.
+Without `--access-policy`, `serve` and `serve-read-only` use anonymous access for trusted local use.
 Every resolved bind address must be loopback unless the operator explicitly
 passes `--unsafe-allow-remote-anonymous`. Wildcard addresses (`0.0.0.0`, `::`)
 and mixed loopback/non-loopback DNS answers require that option too. The server
@@ -124,8 +124,103 @@ addresses are conservatively treated as non-loopback; use `127.0.0.1` or `::1`.
 The unsafe option emits a warning and does **not** add authentication,
 authorization, or trusted-proxy identity. Read-only mode and CORS are not access
 control. Do not expose anonymous data or the separate operator listener to
-untrusted clients. Request identity, coarse authorization and policy reload
-remain G4.1 work under [ADR-0026](../docs/adr/0026-service-identity-and-authorization.md).
+untrusted clients. The authenticated profile below is separate from this unsafe option.
+
+### Trusted-proxy access policy (fork)
+
+Both serving modes accept `--access-policy <PATH>`. Start with the
+[validated local example](examples/access-policy.json):
+
+```sh
+./target/release/oxigraph serve --location ./data --bind 127.0.0.1:7878 \
+  --admin-bind 127.0.0.1:9797 --access-policy cli/examples/access-policy.json
+```
+
+The file is validated **before opening storage**. A valid proxy profile permits
+non-loopback listening and conflicts with `--unsafe-allow-remote-anonymous`.
+The backend has no TLS termination. Isolate it so only the configured proxy
+peers can connect; a trusted loopback peer trusts **all local processes**.
+The proxy must authenticate clients, remove every client-supplied
+`Oxigraph-Identity` header, and insert exactly one fresh assertion. Simply
+passing through a client's header is not authentication. Do not deploy the
+local example unchanged on an untrusted machine or network.
+
+The header is a single JSON object (not a bearer token or JWT):
+
+```text
+Oxigraph-Identity: {"scheme":"oxigraph-proxy-v1","subject":"reader","issuer":"local-edge","audience":"oxigraph-local","proxy_version":1,"issued_at":1000,"expires_at":1060}
+```
+
+These sample timestamps are deliberately expired; the trusted proxy supplies
+current Unix seconds. The immediate **socket** peer, issuer, audience, and
+proxy version must match the file. Expiry must be strictly later than now,
+issuance no later than now plus configured skew, and lifetime within the
+configured maximum. Duplicate headers/fields and unknown fields fail closed.
+The assertion is at most 2 KiB; subjects/issuer/audience are at most 128 ASCII
+letters, digits, or `._-:@/`. Files are at most 64 KiB, with up to 32 exact
+numeric peers, 256 rules, 16 workload classes, lifetime 1–300 seconds, and
+clock skew 0–30 seconds. IPv4-mapped IPv6 configured peers are rejected.
+
+Every public route, including UI/static files, service descriptions, CORS, and
+unknown routes, passes admission before `100 Continue` or body decoding.
+Missing/invalid identity and provider failure return empty noncacheable 401;
+authenticated denial returns empty noncacheable 403 without resource details.
+Read-only serving still rejects writes even if a rule would allow them.
+Unknown routes cannot be granted by the file profile. Header reads may prefetch
+bytes within OxHTTP's bounded transport buffer; this is not zero socket read-ahead.
+
+Rules match an exact subject, endpoint, HTTP method, and **all** possible
+operations; no implicit role inheritance or merging of partial rules occurs.
+The example grants readers `/query`, writers `/update`, and operators the
+listed admin endpoints; it intentionally grants neither UI nor `/sparql` nor
+Graph Store. Available endpoints are `ui`, `query`, `update`, `sparql`,
+`graph-store`, `health`, `ready`, `metrics`, `audit`, and `access-policy`.
+Operations are `discovery`, `query`, `update`, `graph-read`, `graph-write`,
+`health`, and `operator`. Workload classes are operator-defined labels, not
+implemented resource quotas (ADR-0027).
+
+Graph Store rules additionally need `graphs`, containing `{"kind":"all"}`,
+`{"kind":"dataset"}`, `{"kind":"default-graph"}`, or
+`{"kind":"named-graph","iri":"urn:allowed"}`. Up to 128 selectors per rule
+are accepted, with named IRIs at most 2 KiB. The authorizer and handler share
+the same selector parser. These selectors do **not** constrain SPARQL results:
+query/update permission admits the whole operation over its chosen dataset.
+Form-encoded POST `/sparql` requires both query and update permission before
+its body can be inspected; query-only callers should use `/query` or the
+unambiguous SPARQL query media type. A CORS preflight must pass identity at the
+proxy and authorize both `OPTIONS` and the requested method; `/sparql` POST
+preflight requires query and update. Actual requests are independently checked.
+
+All identity, authorization, cookie, `Forwarded`, and `X-Forwarded-*` headers
+are stripped before CORS/business handlers. Service URLs use the direct request
+authority; forwarded URL rewriting is not enabled by this profile. Configure
+the proxy's `Host` accordingly. Native password storage, OAuth/OIDC issuance,
+JWT key discovery, API-key lifecycle, and RDF row filtering are not provided.
+
+On the optional loopback admin listener, explicitly authorized operators can:
+
+- `POST /access/policy/reload` with an empty body: atomically load the same file.
+  Keep `policy_id` unchanged and increase **both** policy `version` and proxy
+  `version`. Replace the file atomically first. Valid reload returns 204;
+  invalid/stale replacement returns generic 400 and keeps the previous policy.
+- `GET`/`HEAD /access/audit`: retrieve the last 256 admission events and the
+  count overwritten. Events contain fixed operation/reason labels, request ID,
+  policy ID/version and process-/policy-version-scoped salted pseudonyms, never
+  raw identity headers, subjects, queries, or graph selectors. This in-memory
+  ring resets on restart; it is not a durable security log or credential.
+
+Reload affects new admissions, including the next keep-alive request. An
+already-admitted request keeps its immutable policy snapshot; reload does not
+cancel it retroactively. Optional `anonymous_liveness` permits only GET/HEAD
+`/health` on the admin listener, not readiness/metrics or data access.
+
+Embedders can use `oxigraph_cli::access::{RequestIdentityProvider,
+RequestAuthorizer, AccessPolicy, AccessController}` with OxHTTP's admission
+hook and the pre-handler `prepare_request` wrapper. Metadata-only custom
+extensions must honor the supplied deadline; the controller rejects late
+results but cannot preempt arbitrary blocking custom code. Native providers
+perform no I/O. See the [external compile/wire fixture](tests/access_extension.rs)
+and [ADR-0026](../docs/adr/0026-service-identity-and-authorization.md).
 
 ### Local operational observations (fork)
 
@@ -138,8 +233,11 @@ curl http://127.0.0.1:9797/metrics
 ```
 
 Only numeric loopback addresses with a nonzero port are accepted; the listener
-is absent unless requested. It has no authentication, CORS, RDF, SPARQL, or
-maintenance routes. Do not expose or reverse-proxy it to an untrusted network.
+is absent unless requested. Without an access policy it has only anonymous
+observations, no maintenance routes. With a policy, readiness and metrics
+require explicit operator permission and the two access-management routes
+above are available. It never exposes CORS, RDF, or SPARQL. Do not expose or
+reverse-proxy it to an untrusted network.
 The public listener does not gain the operational routes. Both listeners have
 CLI-process lifetime; this is not an in-process graceful-shutdown API.
 Application requests are gated until both binds and startup notification
@@ -337,86 +435,17 @@ curl -X POST -H 'Accept: application/sparql-results+json' -H 'Content-Type: appl
 curl -X POST -H 'Content-Type: application/sparql-update' --data 'DELETE WHERE { <http://example.com/s> ?p ?o }' http://localhost:7878/update
 ```
 
-### Run the Web server with basic authentication
+### Reverse-proxy authentication
 
-It can be useful to make Oxigraph SPARQL endpoint available publicly, with a layer of authentication on `/update` to be able to add data.
+Use the [trusted-proxy access profile](#trusted-proxy-access-policy-fork)
+for server-bound identity and authorization. Configure client authentication
+and TLS at your chosen proxy, replace rather than append identity headers,
+and prevent direct access to the backend and operator port.
 
-You can do so by using a nginx basic authentication in an additional docker container with `docker-compose`. First create a `nginx.conf` file:
-
-```nginx
-daemon off;
-events {
-    worker_connections  1024;
-}
-http {
-    server {
-        server_name localhost;
-        listen 7878;
-        rewrite ^/(.*) /$1 break;
-        proxy_ignore_client_abort on;
-        proxy_set_header  X-Real-IP  $remote_addr;
-        proxy_set_header  X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header  Host $http_host;
-        proxy_set_header Access-Control-Allow-Origin "*";
-        location ~ ^(/|/query)$ {
-            proxy_pass http://oxigraph:7878;
-            proxy_pass_request_headers on;
-        }
-        location ~ ^(/update|/store)$ {
-            auth_basic "Oxigraph Administrator's Area";
-            auth_basic_user_file /etc/nginx/.htpasswd; 
-            proxy_pass http://oxigraph:7878;
-            proxy_pass_request_headers on;
-        }
-    }
-}
-```
-
-Then a `docker-compose.yml` in the same folder, you can change the default user and password in the `environment` section:
-
-```yaml
-version: "3"
-services:
-  oxigraph:
-    image: ghcr.io/oxigraph/oxigraph:latest
-    ## To build from local source code:
-    # build:
-    #   context: .
-    #   dockerfile: cli/Dockerfile
-    volumes:
-      - ./data:/data
-
-  nginx-auth:
-    image: nginx:1.21.4
-    environment:
-      - OXIGRAPH_USER=oxigraph
-      - OXIGRAPH_PASSWORD=oxigraphy
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      ## For multiple users: uncomment this line to mount a pre-generated .htpasswd 
-      # - ./.htpasswd:/etc/nginx/.htpasswd
-    ports:
-      - "7878:7878"
-    entrypoint: "bash -c 'echo -n $OXIGRAPH_USER: >> /etc/nginx/.htpasswd && echo $OXIGRAPH_PASSWORD | openssl passwd -stdin -apr1 >> /etc/nginx/.htpasswd && /docker-entrypoint.sh nginx'"
-```
-
-Once the `docker-compose.yaml` and `nginx.conf` are ready, start the Oxigraph server and nginx proxy for authentication on http://localhost:7878:
-
-```sh
-docker-compose up
-```
-
-Then it is possible to update the graph using basic authentication mechanisms. For example with `curl`: change `$OXIGRAPH_USER` and `$OXIGRAPH_PASSWORD`, or set them as environment variables, then run this command to insert a simple triple:
-
-```sh
-curl -X POST -u $OXIGRAPH_USER:$OXIGRAPH_PASSWORD -H 'Content-Type: application/sparql-update' --data 'INSERT DATA { <http://example.com/s> <http://example.com/p> <http://example.com/o> }' http://localhost:7878/update
-```
-
-In case you want to have multiple users, you can comment the `entrypoint:` line in the `docker-compose.yml` file, uncomment the `.htpasswd` volume, then generate each user in the `.htpasswd` file with this command:
-
-```sh
-htpasswd -Bbn $OXIGRAPH_USER $OXIGRAPH_PASSWORD >> .htpasswd
-```
+The previous upstream Basic-auth Compose example did not produce the required
+versioned identity assertion and used the upstream image, not this fork.
+It is not an authenticated deployment recipe for this profile. A proxy's
+authentication mechanism alone does not establish Oxigraph's request principal.
 
 ### Build the image
 

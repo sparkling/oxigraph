@@ -161,14 +161,17 @@ cargo build --locked --release -p oxigraph-cli --bin oxigraph
 ```
 
 See [CLI installation requirements and usage](cli/README.md#installation).
-Anonymous serving defaults to loopback. Non-loopback binds now require explicit
-`--unsafe-allow-remote-anonymous` consent before opening a store; this is a
-startup safeguard, not implemented request authentication. See the
+Anonymous serving defaults to loopback. Anonymous non-loopback binds require
+`--unsafe-allow-remote-anonymous` consent before opening a store. See the
 [server access boundary](cli/README.md#anonymous-listener-boundary-fork).
 The existing OxHTTP dependency is now [source-vendored](lib/oxhttp/UPSTREAM.md)
-with socket context and pre-body admission for the ongoing
-[authentication work](docs/adr/0026-service-identity-and-authorization.md).
-The CLI does not yet expose an authenticated profile.
+with socket context and pre-body admission. Both serve modes now provide
+[`--access-policy`](cli/README.md#trusted-proxy-access-policy-fork): bounded
+trusted-proxy identity, deny-by-default endpoint/whole-operation and direct
+Graph Store authorization, separate operator access, atomic policy reload,
+and bounded pseudonymous audit under
+[ADR-0026](docs/adr/0026-service-identity-and-authorization.md).
+This is not TLS, a token issuer, SPARQL row filtering, or production promotion.
 RocksDB remains the persistent backend. The custom-backend tests prove the
 public extension contract, not deployment of a separate replacement backend.
 G1.7 and ADR-0034 through ADR-0041 remain future, non-gating harness work.

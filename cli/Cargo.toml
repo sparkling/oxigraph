@@ -39,6 +39,8 @@ oxiri.workspace = true
 oxstr.workspace = true
 rand.workspace = true
 rayon-core.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 sha2.workspace = true
 spargeo = { workspace = true, optional = true }
 url.workspace = true

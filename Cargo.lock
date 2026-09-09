@@ -2017,6 +2017,8 @@ dependencies = [
  "predicates",
  "rand",
  "rayon-core",
+ "serde",
+ "serde_json",
  "sha2",
  "spargeo",
  "url",

@@ -1256,9 +1256,13 @@ G4.1 is active: the native anonymous startup boundary now requires explicit
 non-loopback consent before store open and binds the exact validated address
 set. Its transport prerequisite now provides immutable socket context and
 optional pre-body admission in the source-vendored existing OxHTTP dependency;
-native wire tests prove rejection before Expect/body decoding. Request identity,
-authorization and trusted-proxy/audit gates remain open; neither delivered
-slice claims full G4.1 completion.
+native wire tests prove rejection before Expect/body decoding. The native
+authenticated profile now adds bounded trusted-proxy identity, public embedding
+traits, whole-operation/direct Graph Store authorization, protected operators,
+bounded pseudonymous audit and atomic policy reload. Native default/no-default
+tests include write/query/rollback/restart, provider/late failures, redaction,
+and in-flight/keep-alive policy isolation. G4.1 retains its separate frozen
+acceptance/promotion gates; no fine-grained SPARQL policy or G4.2 quotas are claimed.
 
 ## Evaluator DAG
 

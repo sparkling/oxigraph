@@ -123,6 +123,12 @@
   Its next native transport slice vendors the existing OxHTTP dependency and
   adds socket-derived context plus per-request admission before Expect/body
   decoding. Wire tests close this prerequisite, not full G4.1 authentication.
+  The native authenticated profile now adds trusted-peer assertions, complete
+  operation/direct Graph Store decisions, public embedding traits, protected
+  operator routes, bounded pseudonymous audit and atomic per-request reload.
+  Native denial/rollback/restart and compatibility tests verify this product
+  slice; ADR-0026's separate evaluator/promotion gates remain open. No G1.7,
+  provider-backed qualification or authorization advertisement is implied.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
