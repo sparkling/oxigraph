@@ -176,8 +176,9 @@ listed admin endpoints; it intentionally grants neither UI nor `/sparql` nor
 Graph Store. Available endpoints are `ui`, `query`, `update`, `sparql`,
 `graph-store`, `health`, `ready`, `metrics`, `audit`, and `access-policy`.
 Operations are `discovery`, `query`, `update`, `graph-read`, `graph-write`,
-`health`, and `operator`. Workload classes are operator-defined labels, not
-implemented resource quotas (ADR-0027).
+`health`, and `operator`. Workload classes are operator-defined labels.
+The optional admission profile below assigns their active/queued capacities;
+they are not evaluator or memory quotas.
 
 Graph Store rules additionally need `graphs`, containing `{"kind":"all"}`,
 `{"kind":"dataset"}`, `{"kind":"default-graph"}`, or
@@ -221,6 +222,59 @@ extensions must honor the supplied deadline; the controller rejects late
 results but cannot preempt arbitrary blocking custom code. Native providers
 perform no I/O. See the [external compile/wire fixture](tests/access_extension.rs)
 and [ADR-0026](../docs/adr/0026-service-identity-and-authorization.md).
+
+### Workload admission (fork)
+
+Both `serve` and `serve-read-only` accept `--workload-policy FILE` for explicit
+process-local admission under [ADR-0027](../docs/adr/0027-workload-admission-and-operator-resources.md).
+Without it the existing serving behavior is unchanged. For a local example:
+
+```sh
+oxigraph serve --location ./data --bind 127.0.0.1:7878 \
+  --admin-bind 127.0.0.1:7879 --workload-policy cli/examples/workload-policy.json
+```
+
+The [example file](examples/workload-policy.json) illustrates the schema, not
+production recommendations. Supply measured capacities for your deployment.
+`max_active`/`max_queued` cap data requests; each class has additional
+`max_active`/`max_queued` limits. `operator_max_active`/`operator_max_queued`
+reserve a **separate**, additive pool for the admin listener; the class limits
+apply only to data requests. Requests cannot claim this reserve via headers.
+Enable `--admin-bind` to make that reserve reachable. Authentication and
+authorization run first when `--access-policy` is configured.
+
+Admission precedes `100 Continue`, body decoding and RDF work. All requests
+have one priority. Among eligible requests the queue is FIFO, skipping classes
+already at their active limit. A full global queue (checked first) or operator
+queue returns empty noncacheable 503; a full class queue returns 429 with the
+configured `Retry-After`. Queue expiry returns 503. No rejected request opens a
+dataset transaction or starts evaluation/egress. Capacity remains held through
+body processing, response serialization **and socket flush**, releasing on
+success, observed I/O failure or Rust unwind. A slow client still holds its
+slot; admission limits do not shorten the existing transport timeout.
+
+Files are bounded to 64 KiB and 16 classes, with ASCII alphanumeric/`_-` names
+of 1–32 bytes, a positive version, positive active limits/queue timeout and
+`retry_after_seconds` from 1 to 300. Queue capacities may be zero. The `default`
+class is required for anonymous requests. Every configured access-policy class
+must exist before store open. An access-policy reload introducing an unmapped
+class causes requests using it to fail closed with 503, never fall back.
+The admission policy itself is immutable until restart; malformed/unknown
+fields and arithmetic overflow are rejected at startup.
+
+The public Rust `AdmissionController::acquire` accepts a cancellation token;
+queued cancellation is checked every 10 ms of scheduled execution. Cancelling
+an active lease does not prematurely free its capacity. `snapshot()` exposes
+active/queued counts without principal or query data. Idle/header connections
+remain subject to a separate transport cap (active + queued + one rejection
+connection for each listener), so this is not unlimited overload responsiveness.
+
+Still pending: queued-socket disconnect detection, total-request deadlines and
+token propagation through every parser/evaluator/write path, resource counters,
+per-principal/priority scheduling, atomic workload reload, exported metrics and
+operational qualification. Cooperative admission is not a hard RSS/CPU/fd/disk
+guarantee; use external process/container controls. This stage does not complete
+G4.2 or promote the Proposed ADR.
 
 ### Local operational observations (fork)
 

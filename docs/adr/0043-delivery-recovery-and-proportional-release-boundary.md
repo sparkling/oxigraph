@@ -133,6 +133,9 @@
   provider/time boundaries, allowed direct graph access and observable absence
   of work under denial pass. The next native task is G4.2 workload admission;
   separate promotion and future facade requirements remain on the roadmap.
+  G4.2 now adds opt-in bounded pre-body admission, queue cancellation/expiry,
+  a separate operator pool and response-flush lease ownership. Native admission
+  and HTTP tests support this slice, not full request-resource governance.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

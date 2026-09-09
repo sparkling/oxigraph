@@ -55,6 +55,9 @@ pub enum Command {
         /// Trusted-proxy identity and deny-by-default authorization policy JSON
         #[arg(long, value_hint = ValueHint::FilePath, conflicts_with = "unsafe_allow_remote_anonymous")]
         access_policy: Option<PathBuf>,
+        /// Explicit pre-body admission capacities and queue timeout JSON (not evaluator resource limits)
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        workload_policy: Option<PathBuf>,
         /// Separate loopback observations and policy-controlled access-management listener
         #[arg(long, value_parser = loopback_admin_address)]
         admin_bind: Option<SocketAddr>,
@@ -97,6 +100,9 @@ pub enum Command {
         /// Trusted-proxy identity and deny-by-default authorization policy JSON
         #[arg(long, value_hint = ValueHint::FilePath, conflicts_with = "unsafe_allow_remote_anonymous")]
         access_policy: Option<PathBuf>,
+        /// Explicit pre-body admission capacities and queue timeout JSON (not evaluator resource limits)
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        workload_policy: Option<PathBuf>,
         /// Separate loopback observations and policy-controlled access-management listener
         #[arg(long, value_parser = loopback_admin_address)]
         admin_bind: Option<SocketAddr>,

@@ -78,6 +78,13 @@ fn write_policy(path: &Path, policy: &Value) -> Result<()> {
     Ok(())
 }
 fn start(policy: &Value, read_only: bool) -> Result<Running> {
+    start_with_workload(policy, read_only, None)
+}
+fn start_with_workload(
+    policy: &Value,
+    read_only: bool,
+    workload: Option<&Value>,
+) -> Result<Running> {
     let directory = assert_fs::TempDir::new()?;
     let location = directory.path().join("store");
     if read_only {
@@ -111,6 +118,11 @@ fn start(policy: &Value, read_only: bool) -> Result<Running> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(std::fs::File::create(directory.path().join("stderr.log"))?);
+    if let Some(workload) = workload {
+        let path = directory.path().join("workload.json");
+        std::fs::write(&path, serde_json::to_vec(workload)?)?;
+        command.arg("--workload-policy").arg(path);
+    }
     drop(public);
     drop(admin);
     let mut running = Running {
@@ -143,7 +155,19 @@ fn wait_ready(running: &mut Running) -> Result<()> {
 
 #[test]
 fn authenticated_write_rollback_and_restart_journey() -> Result<()> {
-    let mut running = start(&config(), false)?;
+    write_rollback_and_restart(start(&config(), false)?)
+}
+
+#[test]
+fn workload_write_rollback_and_restart_journey() -> Result<()> {
+    write_rollback_and_restart(start_with_workload(
+        &config(),
+        false,
+        Some(&workload(2, 2, 500)),
+    )?)
+}
+
+fn write_rollback_and_restart(mut running: Running) -> Result<()> {
     ensure!(
         sparql(
             &running,
@@ -956,5 +980,148 @@ fn denied_work_never_starts_transactions_evaluation_or_egress() -> Result<()> {
         work_counters(&running)? != before,
         "successful work was not measured"
     );
+    Ok(())
+}
+
+fn workload(queued: usize, class_queued: usize, timeout_ms: u64) -> Value {
+    json!({"format":"oxigraph-admission-v1","policy_id":"wire-test","version":1,
+        "max_active":1,"max_queued":queued,"operator_max_active":1,"operator_max_queued":0,
+        "queue_timeout_ms":timeout_ms,"retry_after_seconds":2,
+        "classes":{"default":{"max_active":1,"max_queued":class_queued}}})
+}
+
+fn occupy_admission(running: &Running) -> Result<TcpStream> {
+    let mut stream = TcpStream::connect(running.public)?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(3)))?;
+    write!(
+        stream,
+        "POST /update HTTP/1.1\r\nHost: localhost\r\n{}Content-Type: application/sparql-update\r\nExpect: 100-continue\r\nContent-Length: 100000\r\nConnection: close\r\n\r\n",
+        identity(WRITER, 1)?
+    )?;
+    let mut interim = vec![0; b"HTTP/1.1 100 Continue\r\n\r\n".len()];
+    stream.read_exact(&mut interim)?;
+    ensure!(
+        interim == b"HTTP/1.1 100 Continue\r\n\r\n",
+        "first request not admitted"
+    );
+    Ok(stream)
+}
+
+#[test]
+fn workload_overload_precedes_expect_body_and_work_but_not_auth() -> Result<()> {
+    for (queued, class_queued, expected) in [(0, 0, 503), (1, 0, 429)] {
+        let running =
+            start_with_workload(&config(), false, Some(&workload(queued, class_queued, 500)))?;
+        let before = work_counters(&running)?;
+        let occupied = occupy_admission(&running)?;
+        let denied = wire(
+            running.public,
+            &format!(
+                "POST /update HTTP/1.1\r\nHost: localhost\r\n{}Expect: 100-continue\r\nContent-Length: invalid\r\n\r\n",
+                identity(WRITER, 1)?
+            ),
+        )?;
+        ensure!(
+            denied.status == expected && denied.body.is_empty(),
+            "wrong overload: {}",
+            denied.status
+        );
+        if expected == 429 {
+            ensure!(denied.head.to_ascii_lowercase().contains("retry-after: 2"));
+        }
+        let unauthorized = wire(
+            running.public,
+            "POST /update HTTP/1.1\r\nHost: localhost\r\nExpect: 100-continue\r\nContent-Length: invalid\r\n\r\n",
+        )?;
+        ensure!(unauthorized.status == 401, "overload bypassed auth");
+        ensure!(
+            request(running.admin, "GET", "/health", "", "")?.status == 200,
+            "data saturation consumed operator reserve"
+        );
+        ensure!(
+            work_counters(&running)? == before,
+            "overload started RDF work"
+        );
+        drop(occupied);
+        // Disconnect/read failure must release the running slot. A successful
+        // positive control rules out a controller that always denies requests.
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let response = sparql(
+                &running,
+                WRITER,
+                "/update",
+                "INSERT DATA { <urn:admitted> <urn:p> <urn:o> }",
+            )?;
+            if response.status == 204 {
+                break;
+            }
+            ensure!(
+                [429, 503].contains(&response.status) && Instant::now() < deadline,
+                "slot did not release: {}",
+                response.status
+            );
+            thread::yield_now();
+        }
+        let response = sparql(
+            &running,
+            READER,
+            "/query",
+            "ASK { <urn:admitted> <urn:p> <urn:o> }",
+        )?;
+        ensure!(response.status == 200 && response.body.contains("true"));
+        ensure!(
+            work_counters(&running)? != before,
+            "positive work not observed"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn workload_queue_times_out_before_continue_and_remains_usable() -> Result<()> {
+    let running = start_with_workload(&config(), false, Some(&workload(1, 1, 40)))?;
+    let occupied = occupy_admission(&running)?;
+    let response = wire(
+        running.public,
+        &format!(
+            "POST /update HTTP/1.1\r\nHost: localhost\r\n{}Expect: 100-continue\r\nContent-Length: 100\r\n\r\n",
+            identity(WRITER, 1)?
+        ),
+    )?;
+    ensure!(response.status == 503 && response.body.is_empty());
+    ensure!(request(running.admin, "GET", "/health", "", "")?.status == 200);
+    drop(occupied);
+    ensure!(sparql(&running, READER, "/query", "ASK {}").is_ok_and(|r| r.status == 200));
+    Ok(())
+}
+
+#[test]
+fn workload_invalid_or_unmapped_policy_rejects_startup_before_store_open() -> Result<()> {
+    for bad in [json!({"format":"unknown"}), workload(0, 0, 100)] {
+        let directory = assert_fs::TempDir::new()?;
+        let mut access = config();
+        access["workload_classes"] = json!(["default", "unmapped"]);
+        let access_path = directory.path().join("access.json");
+        let workload_path = directory.path().join("workload.json");
+        std::fs::write(&access_path, serde_json::to_vec(&access)?)?;
+        std::fs::write(&workload_path, serde_json::to_vec(&bad)?)?;
+        let location = directory.path().join("must-not-exist");
+        let result = Command::new(binary())
+            .arg("serve")
+            .arg("--location")
+            .arg(&location)
+            .arg("--access-policy")
+            .arg(access_path)
+            .arg("--workload-policy")
+            .arg(workload_path)
+            .env_remove("NOTIFY_SOCKET")
+            .output()?;
+        ensure!(
+            !result.status.success() && !location.exists(),
+            "bad profile opened store"
+        );
+    }
     Ok(())
 }

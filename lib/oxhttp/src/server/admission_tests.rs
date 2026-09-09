@@ -44,6 +44,164 @@ fn read_closed_response(stream: &mut TcpStream) -> Result<String> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Admitted(usize);
 
+struct LeaseDrop(Arc<AtomicUsize>);
+impl Drop for LeaseDrop {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+struct NeverClone;
+impl Clone for NeverClone {
+    fn clone(&self) -> Self {
+        panic!("unrelated admission extensions must be moved, never cloned");
+    }
+}
+
+#[test]
+fn lifetime_guard_survives_request_clear_and_streaming_then_drops_once() -> Result<()> {
+    struct Payload {
+        drops: Arc<AtomicUsize>,
+        read: bool,
+    }
+    impl Read for Payload {
+        fn read(&mut self, buffer: &mut [u8]) -> Result<usize> {
+            assert_eq!(self.drops.load(Ordering::SeqCst), 0);
+            if self.read || buffer.is_empty() {
+                return Ok(0);
+            }
+            self.read = true;
+            buffer[0] = b'x';
+            Ok(1)
+        }
+    }
+    let drops = Arc::new(AtomicUsize::new(0));
+    let admission_drops = Arc::clone(&drops);
+    let handler_drops = Arc::clone(&drops);
+    let (mut stream, worker) = connect(
+        Server::new(move |request| {
+            request.extensions_mut().clear();
+            Response::builder()
+                .body(Body::from_read(Payload {
+                    drops: Arc::clone(&handler_drops),
+                    read: false,
+                }))
+                .unwrap()
+        })
+        .with_request_admission(move |_, _| {
+            let mut context = Extensions::new();
+            context.insert(NeverClone);
+            context.insert(RequestLifetime::new(LeaseDrop(Arc::clone(
+                &admission_drops,
+            ))));
+            Ok(context)
+        }),
+    )?;
+    stream.write_all(b"GET / HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n")?;
+    let response = read_closed_response(&mut stream)?;
+    assert!(response.ends_with("1\r\nx\r\n0\r\n\r\n"), "{response}");
+    drop(stream);
+    worker.join().unwrap()?;
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+#[test]
+fn lifetime_guard_drops_after_response_flush_not_only_body_encoding() -> Result<()> {
+    struct FlushProbe(Mutex<TcpStream>);
+    impl Drop for FlushProbe {
+        fn drop(&mut self) {
+            // Small response remains in BufWriter until into_inner flushes.
+            // If guard release moves before that flush, this read times out.
+            let mut stream = self.0.lock().unwrap();
+            expect_bytes(
+                &mut stream,
+                b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok",
+            )
+            .unwrap();
+        }
+    }
+    let (sender, receiver) = std::sync::mpsc::channel::<TcpStream>();
+    let receiver = Mutex::new(receiver);
+    let (mut stream, worker) = connect(
+        Server::new(|request| {
+            request.extensions_mut().clear();
+            Response::builder().body(Body::from("ok")).unwrap()
+        })
+        .with_request_admission(move |_, _| {
+            let mut context = Extensions::new();
+            context.insert(RequestLifetime::new(FlushProbe(Mutex::new(
+                receiver
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(2))
+                    .unwrap(),
+            ))));
+            Ok(context)
+        }),
+    )?;
+    sender.send(stream.try_clone()?).unwrap();
+    stream.write_all(b"GET / HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n")?;
+    worker.join().unwrap()?;
+    Ok(())
+}
+
+#[test]
+fn lifetime_guard_releases_on_decode_drain_encode_error_and_handler_unwind() -> Result<()> {
+    struct BadPayload;
+    impl Read for BadPayload {
+        fn read(&mut self, _: &mut [u8]) -> Result<usize> {
+            Err(Error::other("injected serialization error"))
+        }
+    }
+    for case in ["decode", "drain", "expect", "encode", "panic"] {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let admission_drops = Arc::clone(&drops);
+        let (mut stream, worker) = connect(
+            Server::new(move |request| {
+                request.extensions_mut().clear();
+                assert_ne!(case, "panic", "injected handler unwind");
+                Response::builder()
+                    .body(if case == "encode" {
+                        Body::from_read(BadPayload)
+                    } else {
+                        Body::empty()
+                    })
+                    .unwrap()
+            })
+            .with_request_admission(move |_, _| {
+                let mut context = Extensions::new();
+                context.insert(RequestLifetime::new(LeaseDrop(Arc::clone(
+                    &admission_drops,
+                ))));
+                Ok(context)
+            }),
+        )?;
+        let framing = match case {
+            "decode" => "content-length: invalid\r\n\r\n",
+            "drain" => "transfer-encoding: chunked\r\n\r\nnot a chunk\r\n",
+            "expect" => "expect: unsupported\r\n\r\n",
+            _ => "\r\n",
+        };
+        write!(
+            stream,
+            "POST / HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n{framing}"
+        )?;
+        let response = read_closed_response(&mut stream)?;
+        let result = worker.join();
+        if case == "panic" {
+            assert!(result.is_err());
+        } else if case == "encode" {
+            assert!(result.unwrap().is_err());
+        } else {
+            result.unwrap()?;
+            assert!(response.starts_with("HTTP/1.1 4"), "{response}");
+        }
+        assert_eq!(drops.load(Ordering::SeqCst), 1, "{case}");
+    }
+    Ok(())
+}
+
 #[test]
 fn allow_expect_preserves_socket_and_trusted_context() -> Result<()> {
     let calls = Arc::new(AtomicUsize::new(0));

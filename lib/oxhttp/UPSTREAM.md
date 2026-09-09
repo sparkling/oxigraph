@@ -20,6 +20,11 @@ is normalized for repository diff checks. ADR-0026 owns
 the application identity/authorization contract; this library hook alone does
 not implement it or grant publication/promotion authority.
 
+ADR-0027's admission slice adds an optional `RequestLifetime` extension: the
+transport retains that shared guard through response encoding and flushing,
+including error/unwind cleanup. Other admitted extensions are moved, not
+cloned. This is a lifetime seam, not a scheduler or resource-budget policy.
+
 The authenticated CLI wire test subsequently exposed an upstream CORS response
 bug: the shared request-header filter dropped `Access-Control-Allow-Methods`.
 Response encoding now preserves that field; client request filtering is unchanged.

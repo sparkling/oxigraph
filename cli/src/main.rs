@@ -94,6 +94,7 @@ pub fn main() -> anyhow::Result<()> {
             bind,
             unsafe_allow_remote_anonymous,
             access_policy,
+            workload_policy,
             admin_bind,
             cors,
             union_default_graph,
@@ -104,6 +105,13 @@ pub fn main() -> anyhow::Result<()> {
                 Some(path) => oxigraph_cli::access::AccessController::from_file(&path, false)?,
                 None => oxigraph_cli::access::AccessController::anonymous(false),
             });
+            let workload = workload_policy
+                .as_deref()
+                .map(oxigraph_cli::workload::AdmissionController::from_file)
+                .transpose()?;
+            if let Some(workload) = &workload {
+                workload.validate_access(&access)?;
+            }
             let listener = server_access::ServerListener::resolve(
                 bind,
                 unsafe_allow_remote_anonymous,
@@ -117,6 +125,7 @@ pub fn main() -> anyhow::Result<()> {
                 }?,
                 &listener,
                 access,
+                workload,
                 admin_bind,
                 false,
                 cors,
@@ -130,6 +139,7 @@ pub fn main() -> anyhow::Result<()> {
             bind,
             unsafe_allow_remote_anonymous,
             access_policy,
+            workload_policy,
             admin_bind,
             cors,
             union_default_graph,
@@ -140,6 +150,13 @@ pub fn main() -> anyhow::Result<()> {
                 Some(path) => oxigraph_cli::access::AccessController::from_file(&path, true)?,
                 None => oxigraph_cli::access::AccessController::anonymous(true),
             });
+            let workload = workload_policy
+                .as_deref()
+                .map(oxigraph_cli::workload::AdmissionController::from_file)
+                .transpose()?;
+            if let Some(workload) = &workload {
+                workload.validate_access(&access)?;
+            }
             let listener = server_access::ServerListener::resolve(
                 bind,
                 unsafe_allow_remote_anonymous,
@@ -149,6 +166,7 @@ pub fn main() -> anyhow::Result<()> {
                 Store::open_read_only(location)?,
                 &listener,
                 access,
+                workload,
                 admin_bind,
                 true,
                 cors,
@@ -1122,6 +1140,7 @@ fn serve(
     store: Store,
     listener: &server_access::ServerListener,
     access: Arc<oxigraph_cli::access::AccessController>,
+    workload: Option<oxigraph_cli::workload::AdmissionController>,
     admin_bind: Option<std::net::SocketAddr>,
     read_only: bool,
     cors: bool,
@@ -1156,6 +1175,12 @@ fn serve(
         Box::new(on_request)
     };
     let admission = Arc::clone(&access);
+    let workload_admission = workload.clone();
+    let connection_limit = workload
+        .as_ref()
+        .map_or(available_parallelism()?.get() * 128, |controller| {
+            controller.connection_limit(oxigraph_cli::access::ListenerKind::Data)
+        });
     let mut server = Server::new(move |request| {
         match oxigraph_cli::access::AccessController::prepare_request(request) {
             Ok(()) => on_request(request),
@@ -1163,11 +1188,16 @@ fn serve(
         }
     })
     .with_request_admission(move |head, connection| {
-        admission.admit(head, connection, oxigraph_cli::access::ListenerKind::Data)
+        let listener = oxigraph_cli::access::ListenerKind::Data;
+        let mut context = admission.admit(head, connection, listener)?;
+        if let Some(workload) = &workload_admission {
+            workload.admit(&mut context, listener)?;
+        }
+        Ok(context)
     })
     .with_global_timeout(timeout.unwrap_or(HTTP_TIMEOUT))
     .with_server_name(concat!("Oxigraph/", env!("CARGO_PKG_VERSION")))?
-    .with_max_concurrent_connections(available_parallelism()?.get() * 128);
+    .with_max_concurrent_connections(connection_limit);
     for socket in listener.addresses() {
         server = server.bind(*socket);
     }
@@ -1176,7 +1206,9 @@ fn serve(
     // Any startup/join error returns to main and terminates the process. Keep
     // notification after both successful binds; do not advertise partial startup.
     let admin_server = admin_store
-        .map(|(address, store)| operations::spawn(store, address, Arc::clone(&started), access))
+        .map(|(address, store)| {
+            operations::spawn(store, address, Arc::clone(&started), access, workload)
+        })
         .transpose()?;
     #[cfg(target_os = "linux")]
     systemd_notify_ready()?;

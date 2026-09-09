@@ -1,0 +1,14 @@
+{
+  "format": "oxigraph-admission-v1",
+  "policy_id": "local-admission-example",
+  "version": 1,
+  "max_active": 4,
+  "max_queued": 8,
+  "operator_max_active": 1,
+  "operator_max_queued": 1,
+  "queue_timeout_ms": 1000,
+  "retry_after_seconds": 1,
+  "classes": {
+    "default": { "max_active": 4, "max_queued": 8 }
+  }
+}

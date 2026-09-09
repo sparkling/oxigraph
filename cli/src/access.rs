@@ -205,6 +205,14 @@ pub struct AccessController {
 }
 
 impl AccessController {
+    /// Configured labels only; no principal or rule information is exposed.
+    pub fn workload_classes(&self) -> Result<Vec<String>, AccessError> {
+        self.policy
+            .read()
+            .map(|policy| policy.workload_classes.clone())
+            .map_err(|_| AccessError::Provider)
+    }
+
     pub fn new(policy: AccessPolicy, read_only: bool) -> Self {
         Self {
             policy: RwLock::new(Arc::new(policy)),

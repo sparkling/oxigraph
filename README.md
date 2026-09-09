@@ -173,8 +173,11 @@ and bounded pseudonymous audit under
 [ADR-0026](docs/adr/0026-service-identity-and-authorization.md).
 This is not TLS, a token issuer, SPARQL row filtering, or production promotion.
 Native G4.1 acceptance is complete, including authenticated route/provider/time
-matrices and measured absence of work under denial; G4.2 workload admission is
-the next delivery slice. See [ADR-0026](docs/adr/0026-service-identity-and-authorization.md#native-acceptance-closure-2026-09-09).
+matrices and measured absence of work under denial. G4.2 now provides opt-in
+[`--workload-policy`](cli/README.md#workload-admission-fork): bounded global/class
+admission, queue expiry, a reserved operator pool and response-lifetime leases.
+Whole-request deadlines, resource accounting and full G4.2 acceptance remain open.
+See [ADR-0026](docs/adr/0026-service-identity-and-authorization.md#native-acceptance-closure-2026-09-09).
 RocksDB remains the persistent backend. The custom-backend tests prove the
 public extension contract, not deployment of a separate replacement backend.
 G1.7 and ADR-0034 through ADR-0041 remain future, non-gating harness work.

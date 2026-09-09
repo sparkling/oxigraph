@@ -5,6 +5,7 @@ use crate::io::{
 use crate::model::header::{InvalidHeaderValue, CONNECTION, CONTENT_TYPE, EXPECT, SERVER};
 use crate::model::request::Builder as RequestBuilder;
 use crate::model::{Body, Extensions, HeaderValue, Request, Response, StatusCode, Version};
+use std::any::Any;
 use std::fmt;
 use std::io::{copy, sink, BufReader, BufWriter, Error, ErrorKind, Result, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -37,6 +38,22 @@ type RequestAdmission = dyn Fn(&RequestBuilder, ConnectionInfo) -> std::result::
     + Send
     + Sync
     + 'static;
+
+/// An optional admission guard held until response encoding and flushing finish,
+/// including error/unwind paths. Insert it in the admission hook's extensions.
+/// Clones share one guard; application-held clones can extend its lifetime.
+#[derive(Clone)]
+pub struct RequestLifetime {
+    _guard: Arc<dyn Any + Send + Sync>,
+}
+
+impl RequestLifetime {
+    pub fn new(guard: impl Any + Send + Sync) -> Self {
+        Self {
+            _guard: Arc::new(guard),
+        }
+    }
+}
 
 /// An HTTP server.
 ///
@@ -107,6 +124,12 @@ impl Server {
     /// Returned extensions cannot replace the socket-derived [`ConnectionInfo`].
     /// The hook runs again for each keep-alive request. Without a hook, existing
     /// request handling is unchanged.
+    ///
+    /// Insert a [`RequestLifetime`] extension to retain an admission lease until
+    /// the response has been encoded and flushed (or handling fails). Only that
+    /// shared guard is cloned; other extension values are moved into the request.
+    /// Removing the guard in a handler cannot release it while the response is
+    /// still streaming. An application-held clone can extend its lifetime.
     ///
     /// ```no_run
     /// use oxhttp::{ConnectionInfo, Server};
@@ -274,6 +297,7 @@ fn accept_request(
     let mut connection_state = ConnectionState::KeepAlive;
     while connection_state == ConnectionState::KeepAlive {
         let mut admission_denied = false;
+        let mut admission_lifetime = None;
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, stream.try_clone()?);
         let (mut response, new_connection_state) = match decode_request_headers(&mut reader, false)
         {
@@ -285,6 +309,7 @@ fn accept_request(
                 ) {
                     Ok(context) => {
                         let extensions = request.extensions_mut().unwrap();
+                        admission_lifetime = context.get::<RequestLifetime>().cloned();
                         extensions.extend(context);
                         extensions.insert(connection);
                         // Handles Expect only after admission.
@@ -354,6 +379,7 @@ fn accept_request(
         }?
         .into_inner()
         .map_err(|e| e.into_error())?;
+        drop(admission_lifetime);
     }
     Ok(())
 }

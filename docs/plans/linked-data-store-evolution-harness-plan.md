@@ -1264,8 +1264,12 @@ tests include write/query/rollback/restart, provider/late failures, redaction,
 and in-flight/keep-alive policy isolation. Evaluator-only `2d54ddfa` closes the
 authenticated route/provider/time matrix, direct-IRI allow case and measured
 no-work-under-denial gates against product `21e1d2c8`. G4.2 is the next active
-native delivery task. Separate frozen promotion and future G4.4 compatibility
-remain open; no fine-grained SPARQL policy or workload quotas are claimed.
+native delivery task. Its first slice now provides opt-in global/class admission,
+eligible FIFO, queue expiry/token cancellation, separate operator capacity and
+leases retained through response flush. Total-request budgets, queued socket
+disconnect, reload, exported counters and full ADR-0027 acceptance remain open.
+Separate frozen promotion and future G4.4 compatibility remain open; no
+fine-grained SPARQL policy or evaluator resource quotas are claimed.
 
 ## Evaluator DAG
 

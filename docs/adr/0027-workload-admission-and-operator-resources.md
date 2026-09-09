@@ -4,8 +4,10 @@
 - **Date**: 2026-08-25
 - Updated: 2026-09-09
 - Deciders: Oxigraph parity programme
-- Implementation status: G4.2 active after native G4.1 acceptance; workload
-  scheduling/resource budgets are not implemented yet
+- Implementation status: G4.2 active; native opt-in global/class admission,
+  eligible FIFO, queue timeout/token cancellation, separate operator reserve
+  and response-flush lifetime are implemented. Whole-request budgets, queued
+  socket-disconnect propagation, reload and full acceptance remain open
 - Programme task: `task-1787728711461-3isex6`
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
@@ -100,6 +102,44 @@ distributed quotas, billing, cross-process fairness, workload prediction,
 automatic query rewriting, or a claim of hard memory isolation.
 
 ## Staged implementation and evaluator gates
+
+### Native admission slice (2026-09-09)
+
+`cli/src/workload.rs` implements an explicit `oxigraph-admission-v1` startup
+profile and shared `AdmissionController`/`WorkloadLease`; it does not yet expose
+a `ResourceBudget`. Both CLI serve modes validate the bounded profile and all
+access-policy classes before store open. Identity/authorization precedes
+queue admission. Separate data/operator pools and per-data-class caps use one
+mutex, checked ticket identities and eligible FIFO at a single priority.
+Queue timeout is absolute from the acquisition attempt; the public token is
+observed by a 10 ms cooperative wait. Global/operator overload and expiry map
+to 503; class overload maps to 429 with bounded Retry-After. No body or store
+handle enters the controller. An unknown class never falls back.
+
+OxHTTP now retains only an explicit shared `RequestLifetime` guard through
+response encoding and `BufWriter` flushing. Other extension values are moved
+unchanged. A handler cannot release the lease by clearing request extensions;
+application-held clones may extend its lifetime. Cancelled running work keeps
+its capacity until ownership ends. Separate transport limits also bound idle
+or pre-header connections; the operator listener must be enabled to expose
+its reserve.
+
+Native controller tests cover FIFO, class/global/operator bounds, virtual-clock
+expiry, real token cancellation/timeout, shared ownership and unwind. Transport
+tests cover streaming after request clear, actual flush ordering, non-cloning
+of arbitrary extensions, decoder/drain/encoder failures and unwind. CLI wire
+tests prove auth-before-overload, rejection-before-Expect/body, no measured RDF
+work under saturation, live operator access, release after observed disconnect,
+successful subsequent write/query and rollback/restart with admission enabled.
+
+This closes a native product slice, **not** the full admission or G4.2 gate.
+Queued sockets do not yet propagate disconnect into their cancellation token.
+Request-wide deadlines, resource accounting, differentiated priorities,
+per-principal fairness, atomic workload reload, exported admission metrics and
+the remaining staged/operational evaluators remain outstanding. Configured
+example capacities are illustrative, not baselined production defaults.
+
+### Remaining staged acceptance
 
 1. **Admission:** deterministic-clock tests prove FIFO/fairness, queue bounds,
    cancellation, timeout, slot release on panic/drop, global versus class

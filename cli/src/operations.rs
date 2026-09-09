@@ -18,6 +18,7 @@ pub(super) fn spawn(
     address: SocketAddr,
     started: Arc<AtomicBool>,
     access: Arc<AccessController>,
+    workload: Option<oxigraph_cli::workload::AdmissionController>,
 ) -> std::io::Result<ListeningServer> {
     // Also defend this private seam, independent of Clap validation.
     if !address.ip().is_loopback() || address.port() == 0 {
@@ -27,6 +28,9 @@ pub(super) fn spawn(
         ));
     }
     let admission = Arc::clone(&access);
+    let connection_limit = workload.as_ref().map_or(2, |controller| {
+        controller.connection_limit(ListenerKind::Operator)
+    });
     Server::new(move |request| {
         if let Err(error) = AccessController::prepare_request(request) {
             return oxigraph_cli::access::denial(error);
@@ -39,10 +43,14 @@ pub(super) fn spawn(
         handle(request, &store, started.load(Ordering::Acquire))
     })
     .with_request_admission(move |head, connection| {
-        admission.admit(head, connection, ListenerKind::Operator)
+        let mut context = admission.admit(head, connection, ListenerKind::Operator)?;
+        if let Some(workload) = &workload {
+            workload.admit(&mut context, ListenerKind::Operator)?;
+        }
+        Ok(context)
     })
     .bind(address)
-    .with_max_concurrent_connections(2)
+    .with_max_concurrent_connections(connection_limit)
     .with_global_timeout(Duration::from_secs(2))
     .spawn()
 }
