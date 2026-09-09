@@ -1271,8 +1271,10 @@ queue/body I/O, Simple evaluation, owned writes/final pre-commit and response
 streams; typed timeouts cannot be hidden by SILENT. Finite RDF now shares
 deadline/cancellation across snapshot/FROM construction, inference and owned
 reads; relative materialization timeouts still end on successful preparation.
-RDFS/OWL internal copies/sparse scans/output accounting are the next G4.2 step.
-Their deadline paths and legacy nontransactional bulk remain explicitly unsupported.
+Finite RDFS now admits request deadlines with checked preflight/copies, sparse
+rule/consistency scans, output ordering and memory estimation; inference and
+resource-counter semantics are retained. OWL internal instrumentation is the
+next G4.2 step. Its deadline path and legacy nontransactional bulk remain explicitly unsupported.
 Resource budgets, queued socket disconnect, reload, exported
 counters and full ADR-0027 acceptance remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no

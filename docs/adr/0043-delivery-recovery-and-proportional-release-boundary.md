@@ -143,7 +143,10 @@
   Finite RDF now shares request control across snapshot/FROM construction,
   materialization and owned reads, with typed expiry and preserved topology.
   The relative materialization budget still ends at successful preparation;
-  enclosing request deadlines do not. RDFS/OWL inner-loop instrumentation is
+  enclosing request deadlines do not. Finite RDFS now also admits request
+  deadlines after checked preflight/copies, sparse scans, consistency/output
+  assembly and memory estimation. Native tests preserve graph topology, results
+  and successful resource counters. OWL inner-loop instrumentation remains
   the next product slice, not a new harness or semantic-profile project.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`

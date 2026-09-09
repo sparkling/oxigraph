@@ -78,15 +78,19 @@ pub(crate) fn insert_static_axioms(dataset: &mut Dataset, graph: &GraphName) {
     dataset.insert(Quad::new(rdf::NIL, rdf::TYPE, rdf::LIST, graph.clone()));
 }
 
-pub(crate) fn insert_container_axioms(
+pub(crate) fn insert_container_axioms<E>(
     dataset: &mut Dataset,
     graph: &GraphName,
     inclusive_limit: usize,
-) {
+    check: impl Fn() -> Result<(), E>,
+) -> Result<(), E> {
+    check()?;
     for index in 1..=inclusive_limit {
+        check()?;
         let property = named(format!("{RDF_NS}_{index}"));
         insert_container_property_axioms(dataset, graph, &property);
     }
+    check()
 }
 
 pub(crate) fn insert_container_property_axioms(

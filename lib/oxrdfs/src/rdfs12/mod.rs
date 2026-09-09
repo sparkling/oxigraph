@@ -8,6 +8,8 @@ use crate::{
 mod datatypes;
 mod patterns;
 mod terms;
+#[cfg(test)]
+mod tests;
 
 pub use self::datatypes::{Rdfs12Consistency, Rdfs12Inconsistency};
 use self::datatypes::{mandatory_datatypes, normalized_recognized_datatypes};
@@ -262,13 +264,11 @@ struct Runtime<'a> {
 
 impl<'a> Runtime<'a> {
     fn new(base: &Dataset, options: &'a Rdfs12Options) -> Result<Self, Rdfs12Error> {
-        reject_reserved_witness_labels(base)?;
-        let recognized_datatypes = normalized_recognized_datatypes(&options.recognized_datatypes)?;
         let mut runtime = Self {
-            base: base.clone(),
-            all: base.clone(),
+            base: Dataset::new(),
+            all: Dataset::new(),
             options,
-            recognized_datatypes,
+            recognized_datatypes: Vec::new(),
             started: Instant::now(),
             derivations: HashMap::new(),
             iterations: 0,
@@ -277,8 +277,38 @@ impl<'a> Runtime<'a> {
             generalized_omitted: HashSet::new(),
         };
         runtime.check()?;
+        reject_reserved_witness_labels(base, || runtime.check())?;
+        runtime.recognized_datatypes =
+            normalized_recognized_datatypes(&options.recognized_datatypes, || runtime.check())?;
+        runtime.base = runtime.copy_dataset(base)?;
+        runtime.all = runtime.copy_dataset(base)?;
         runtime.observe_memory()?;
         Ok(runtime)
+    }
+    /// Checks raw candidates before callers filter them, including empty input.
+    fn collect<T>(&self, items: impl IntoIterator<Item = T>) -> Result<Vec<T>, Rdfs12Error> {
+        self.check()?;
+        let mut result = Vec::new();
+        for item in items {
+            self.check()?;
+            result.push(item);
+        }
+        self.check()?;
+        Ok(result)
+    }
+    fn copy_dataset(&self, source: &Dataset) -> Result<Dataset, Rdfs12Error> {
+        self.check()?;
+        let mut result = Dataset::new();
+        for quad in source {
+            self.check()?;
+            result.insert(quad);
+        }
+        for graph in source.named_graphs() {
+            self.check()?;
+            result.insert_named_graph(graph);
+        }
+        self.check()?;
+        Ok(result)
     }
     fn run(mut self) -> Result<Rdfs12Closure, Rdfs12Error> {
         self.seed()?;
@@ -297,13 +327,9 @@ impl<'a> Runtime<'a> {
                 break;
             }
         }
-        let mut inference = Dataset::new();
-        for quad in &self.all {
-            if !self.base.contains(&quad) {
-                inference.insert(quad);
-            }
-        }
+        let inference = self.inference()?;
         let consistency = self.detect_datatype_inconsistency()?;
+        self.check()?;
         Ok(Rdfs12Closure {
             base: self.base,
             inference,
@@ -315,17 +341,35 @@ impl<'a> Runtime<'a> {
             consistency,
         })
     }
+    fn inference(&self) -> Result<Dataset, Rdfs12Error> {
+        self.check()?;
+        let mut inference = Dataset::new();
+        for quad in &self.all {
+            self.check()?;
+            if !self.base.contains(&quad) {
+                inference.insert(quad);
+            }
+        }
+        self.check()?;
+        Ok(inference)
+    }
     fn seed(&mut self) -> Result<(), Rdfs12Error> {
-        let mut graphs = self
-            .all
-            .iter()
-            .map(|quad| quad.graph_name.clone())
-            .collect::<HashSet<_>>();
-        graphs.extend(self.all.named_graphs().map(GraphName::from));
+        self.check()?;
+        let mut graphs = HashSet::new();
+        for quad in &self.all {
+            self.check()?;
+            graphs.insert(quad.graph_name);
+        }
+        for graph in self.all.named_graphs() {
+            self.check()?;
+            graphs.insert(GraphName::from(graph));
+        }
         graphs.insert(GraphName::DefaultGraph);
         let mut active_containers = HashMap::<GraphName, HashSet<NamedNode>>::new();
         for quad in &self.base {
+            self.check()?;
             for term in terms_in_quad(&quad) {
+                self.check()?;
                 if let Term::NamedNode(node) = term
                     && is_container_membership_property(&node)
                 {
@@ -337,18 +381,27 @@ impl<'a> Runtime<'a> {
             }
         }
         for graph in graphs {
+            self.check()?;
             let mut axioms = Dataset::new();
             insert_static_axioms(&mut axioms, &graph);
-            insert_container_axioms(&mut axioms, &graph, self.options.container_membership_limit);
+            insert_container_axioms(
+                &mut axioms,
+                &graph,
+                self.options.container_membership_limit,
+                || self.check(),
+            )?;
             if let Some(properties) = active_containers.get(&graph) {
                 for property in properties {
+                    self.check()?;
                     insert_container_property_axioms(&mut axioms, &graph, property);
                 }
             }
             for quad in &axioms {
                 self.insert(quad, "rdfs-axiom", &[])?;
             }
-            for datatype in self.recognized_datatypes.clone() {
+            for index in 0..self.recognized_datatypes.len() {
+                self.check()?;
+                let datatype = self.recognized_datatypes[index].clone();
                 self.insert(
                     Quad::new(datatype.clone(), rdf::TYPE, rdfs::DATATYPE, graph.clone()),
                     "rdfs1",
@@ -368,7 +421,7 @@ impl<'a> Runtime<'a> {
                 &[],
             )?;
         }
-        Ok(())
+        self.check()
     }
     fn insert(
         &mut self,
@@ -410,18 +463,21 @@ impl<'a> Runtime<'a> {
         }
     }
     fn observe_memory(&mut self) -> Result<(), Rdfs12Error> {
-        let estimate = self
-            .all
-            .iter()
-            .map(|quad| 160_usize.saturating_add(quad.to_string().len()))
-            .sum::<usize>()
+        self.check()?;
+        let mut facts = 0;
+        for quad in &self.all {
+            self.check()?;
+            facts += 160_usize.saturating_add(quad.to_string().len());
+        }
+        let mut generalized = 0;
+        for quad in &self.generalized_omitted {
+            self.check()?;
+            generalized += 160_usize.saturating_add(quad.estimated_len());
+        }
+        let estimate = facts
             .saturating_add(self.derivations.len().saturating_mul(192))
-            .saturating_add(
-                self.generalized_omitted
-                    .iter()
-                    .map(|quad| 160_usize.saturating_add(quad.estimated_len()))
-                    .sum::<usize>(),
-            );
+            .saturating_add(generalized);
+        self.check()?;
         self.peak_memory = self.peak_memory.max(estimate);
         if estimate > self.options.evaluation.limits.max_memory_bytes {
             Err(limit(
@@ -453,6 +509,7 @@ impl<'a> Runtime<'a> {
         object: Term,
         graph_name: GraphName,
     ) -> Result<(), Rdfs12Error> {
+        self.check()?;
         if self.generalized_omitted.insert(GeneralizedQuad {
             subject,
             predicate,

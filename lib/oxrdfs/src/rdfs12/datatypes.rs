@@ -12,6 +12,7 @@ use oxrdf::{
     vocab::{rdf, rdfs, xsd},
 };
 use oxsdatatypes::{Boolean, Double, Float};
+use std::collections::BTreeMap;
 
 const DIR_LANG_STRING: NamedNode =
     NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString");
@@ -30,9 +31,12 @@ pub(super) fn mandatory_datatypes() -> &'static [NamedNode] {
 /// lexical-to-value policy for them.
 pub(super) fn normalized_recognized_datatypes(
     requested: &[NamedNode],
+    check: impl Fn() -> Result<(), Rdfs12Error>,
 ) -> Result<Vec<NamedNode>, Rdfs12Error> {
+    check()?;
     let mut recognized = mandatory_datatypes().to_vec();
     for datatype in requested {
+        check()?;
         if !supported_datatype(datatype) {
             return Err(Rdfs12Error::UnsupportedRecognizedDatatype {
                 datatype: datatype.clone(),
@@ -42,6 +46,7 @@ pub(super) fn normalized_recognized_datatypes(
             recognized.push(datatype.clone());
         }
     }
+    check()?;
     Ok(recognized)
 }
 
@@ -111,6 +116,7 @@ impl Runtime<'_> {
     pub(super) fn detect_datatype_inconsistency(
         &mut self,
     ) -> Result<Rdfs12Consistency, Rdfs12Error> {
+        self.check()?;
         let mut reasons = Vec::new();
         for quad in &self.base {
             self.check()?;
@@ -120,8 +126,9 @@ impl Runtime<'_> {
                 reasons.push(reason("ill-typed-literal", &[quad.clone()]));
             }
         }
-        let quads = self.all.iter().collect::<Vec<_>>();
+        let quads = self.collect(self.all.iter())?;
         for range in &quads {
+            self.check()?;
             if range.predicate != rdfs::RANGE {
                 continue;
             }
@@ -147,6 +154,7 @@ impl Runtime<'_> {
             }
         }
         for left in &quads {
+            self.check()?;
             if left.predicate != rdf::TYPE {
                 continue;
             }
@@ -172,17 +180,42 @@ impl Runtime<'_> {
                 }
             }
         }
-        reasons.sort_by_key(|item| {
-            item.evidence
-                .first()
-                .map_or_else(String::new, ToString::to_string)
-        });
-        reasons.dedup();
+        let reasons = self.order_reasons(reasons)?;
+        self.check()?;
         Ok(if reasons.is_empty() {
             Rdfs12Consistency::Consistent
         } else {
             Rdfs12Consistency::Inconsistent(reasons.into_boxed_slice())
         })
+    }
+
+    // Same stable first-evidence key ordering and adjacent deduplication as
+    // sort_by_key + dedup, with fallible checkpoints between bounded tree steps.
+    fn order_reasons(
+        &self,
+        reasons: Vec<Rdfs12Inconsistency>,
+    ) -> Result<Vec<Rdfs12Inconsistency>, Rdfs12Error> {
+        self.check()?;
+        let mut groups = BTreeMap::<String, Vec<Rdfs12Inconsistency>>::new();
+        for reason in reasons {
+            self.check()?;
+            let key = reason
+                .evidence
+                .first()
+                .map_or_else(String::new, ToString::to_string);
+            groups.entry(key).or_default().push(reason);
+        }
+        let mut result = Vec::new();
+        for group in groups.into_values() {
+            for reason in group {
+                self.check()?;
+                if result.last() != Some(&reason) {
+                    result.push(reason);
+                }
+            }
+        }
+        self.check()?;
+        Ok(result)
     }
 
     fn recognizes(&self, datatype: &NamedNode) -> bool {
@@ -196,6 +229,9 @@ fn reason(kind: &'static str, evidence: &[Quad]) -> Rdfs12Inconsistency {
         evidence: evidence.to_vec().into_boxed_slice(),
     }
 }
+
+#[cfg(test)]
+mod tests;
 
 fn well_typed(literal: &Literal) -> bool {
     literal_value_in(literal, literal.datatype())

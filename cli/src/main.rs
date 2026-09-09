@@ -1814,16 +1814,14 @@ fn evaluate_sparql_query(
 
     check_request(request)?;
     let mut cancellation = request_cancellation(request);
-    if matches!(
-        entailment,
-        QueryEntailment::Rdfs12Finite | QueryEntailment::Owl2RlRdfBounded
-    ) && cancellation
-        .as_ref()
-        .and_then(CancellationToken::deadline)
-        .is_some()
+    if entailment == QueryEntailment::Owl2RlRdfBounded
+        && cancellation
+            .as_ref()
+            .and_then(CancellationToken::deadline)
+            .is_some()
     {
         return Err(bad_request(
-            "RDFS and OWL materialization are unsupported with request deadlines",
+            "OWL materialization is unsupported with request deadlines",
         ));
     }
     if let Some(timeout) = timeout {

@@ -1055,6 +1055,57 @@ fn finite_rdf_workload_deadline_supports_inference_and_persistent_journey() -> R
     write_rollback_and_restart(running)
 }
 
+#[cfg(feature = "rdfs")]
+#[test]
+fn finite_rdfs_workload_deadline_supports_inference_and_persistent_journey() -> Result<()> {
+    let mut profile = workload(1, 1, 3000);
+    profile["request_timeout_ms"] = json!(5000);
+    let running =
+        start_with_workload_entailment(&config(), false, Some(&profile), Some("rdfs-1.2-finite"))?;
+    ensure!(sparql(&running, WRITER, "/update",
+        "INSERT DATA { <urn:seed> <urn:predicate> <urn:object> . <urn:predicate> <http://www.w3.org/2000/01/rdf-schema#domain> <urn:Class> }")?.status == 204);
+    let response = sparql(
+        &running,
+        READER,
+        "/query",
+        "ASK { <urn:seed> a <urn:Class> }",
+    )?;
+    ensure!(
+        response.status == 200,
+        "{} {}",
+        response.status,
+        response.body
+    );
+    ensure!(serde_json::from_str::<Value>(&response.body)?["boolean"] == true);
+    write_rollback_and_restart(running)
+}
+
+#[cfg(all(feature = "rdf-12", feature = "owl2-rl"))]
+#[test]
+fn owl_workload_deadline_remains_explicitly_unsupported() -> Result<()> {
+    let mut profile = workload(1, 1, 3000);
+    profile["request_timeout_ms"] = json!(5000);
+    let running = start_with_workload_entailment(
+        &config(),
+        false,
+        Some(&profile),
+        Some("owl2-rl-rdf-bounded"),
+    )?;
+    let response = sparql(&running, READER, "/query", "ASK {}")?;
+    ensure!(
+        response.status == 400,
+        "{} {}",
+        response.status,
+        response.body
+    );
+    ensure!(
+        response
+            .body
+            .contains("OWL materialization is unsupported with request deadlines")
+    );
+    Ok(())
+}
+
 fn occupy_admission(running: &Running) -> Result<TcpStream> {
     let mut stream = TcpStream::connect(running.public)?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;

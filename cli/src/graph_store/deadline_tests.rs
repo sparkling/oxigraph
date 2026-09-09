@@ -103,7 +103,7 @@ fn deadline_profile_rejects_only_uninstrumented_paths_before_work() -> Result<()
         Vec::new(),
         Vec::new(),
         &request,
-        oxigraph::sparql::QueryEntailment::Rdfs12Finite,
+        oxigraph::sparql::QueryEntailment::Owl2RlRdfBounded,
         None,
     );
     ensure!(result.is_err_and(|error| error.0 == StatusCode::BAD_REQUEST));
@@ -152,6 +152,45 @@ fn deadline_profile_allows_finite_rdf_inference() -> Result<()> {
     let body = result.into_body().to_string()?;
     ensure!(body.contains("true"), "{body}");
     ensure!(store.len()? == 1);
+    Ok(())
+}
+
+#[cfg(feature = "rdfs")]
+#[test]
+fn deadline_profile_allows_finite_rdfs_inference() -> Result<()> {
+    let store = Store::new()?;
+    store.insert(Quad::new(
+        NamedNode::new("urn:s")?,
+        NamedNode::new("urn:p")?,
+        NamedNode::new("urn:o")?,
+        GraphName::DefaultGraph,
+    ))?;
+    store.insert(Quad::new(
+        NamedNode::new("urn:p")?,
+        oxigraph::model::vocab::rdfs::DOMAIN,
+        NamedNode::new("urn:Class")?,
+        GraphName::DefaultGraph,
+    ))?;
+    let request = request(
+        CancellationToken::new().with_deadline(Instant::now() + std::time::Duration::from_secs(10)),
+    )?;
+    let result = crate::evaluate_sparql_query(
+        &store,
+        &oxigraph::sparql::SparqlEvaluator::new(),
+        "ASK { <urn:s> a <urn:Class> }",
+        None,
+        false,
+        Vec::new(),
+        Vec::new(),
+        &request,
+        oxigraph::sparql::QueryEntailment::Rdfs12Finite,
+        None,
+    )
+    .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+    ensure!(result.status() == StatusCode::OK);
+    let body = result.into_body().to_string()?;
+    ensure!(body.contains("true"), "{body}");
+    ensure!(store.len()? == 2);
     Ok(())
 }
 

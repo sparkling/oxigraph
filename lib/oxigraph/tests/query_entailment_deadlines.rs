@@ -144,3 +144,52 @@ fn finite_rdf_deadline_keeps_from_merge_and_empty_named_graph_semantics() {
     assert!(matches!(result, QueryResults::Boolean(true)));
     assert_eq!(store.len().unwrap(), 1);
 }
+
+#[cfg(all(feature = "rdf-12", feature = "rdfs"))]
+#[test]
+fn finite_rdfs_deadline_keeps_from_merge_empty_graph_and_read_only_inference() {
+    use oxigraph::model::vocab::rdfs;
+    use oxigraph::sparql::QueryResults;
+    let store = Store::new().unwrap();
+    store
+        .insert(Quad::new(
+            NamedNode::new("urn:s").unwrap(),
+            NamedNode::new("urn:p").unwrap(),
+            NamedNode::new("urn:o").unwrap(),
+            NamedNode::new("urn:data").unwrap(),
+        ))
+        .unwrap();
+    store
+        .insert(Quad::new(
+            NamedNode::new("urn:p").unwrap(),
+            rdfs::DOMAIN,
+            NamedNode::new("urn:Class").unwrap(),
+            NamedNode::new("urn:schema").unwrap(),
+        ))
+        .unwrap();
+    store
+        .insert_named_graph(NamedNode::new("urn:empty").unwrap())
+        .unwrap();
+    let token = CancellationToken::new().with_deadline(Instant::now() + Duration::from_secs(10));
+    let result = SparqlEvaluator::new().with_cancellation_token(token)
+        .parse_query("ASK FROM <urn:data> FROM <urn:schema> FROM NAMED <urn:empty> { <urn:s> a <urn:Class> . GRAPH <urn:empty> {} }").unwrap()
+        .on_store_with_entailment(&store, &QueryEntailmentOptions::new(QueryEntailment::Rdfs12Finite)).unwrap()
+        .execute().unwrap();
+    assert!(matches!(result, QueryResults::Boolean(true)));
+    assert_eq!(store.len().unwrap(), 2);
+    assert!(
+        !store
+            .contains(&Quad::new(
+                NamedNode::new("urn:s").unwrap(),
+                oxigraph::model::vocab::rdf::TYPE,
+                NamedNode::new("urn:Class").unwrap(),
+                GraphName::DefaultGraph
+            ))
+            .unwrap()
+    );
+    assert!(
+        store
+            .contains_named_graph(&NamedNode::new("urn:empty").unwrap().into())
+            .unwrap()
+    );
+}

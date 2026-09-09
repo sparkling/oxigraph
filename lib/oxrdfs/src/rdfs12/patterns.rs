@@ -15,7 +15,7 @@ use oxrdf::{
 
 impl Runtime<'_> {
     pub(super) fn apply_patterns(&mut self) -> Result<(), Rdfs12Error> {
-        let quads = self.all.iter().collect::<Vec<_>>();
+        let quads = self.collect(self.all.iter())?;
         for quad in &quads {
             self.check()?;
             self.touch()?;
@@ -47,7 +47,13 @@ impl Runtime<'_> {
             }
             self.apply_unary(quad)?;
         }
-        for left in &quads {
+        self.apply_binary_patterns(&quads)
+    }
+
+    pub(super) fn apply_binary_patterns(&mut self, quads: &[Quad]) -> Result<(), Rdfs12Error> {
+        self.check()?;
+        for left in quads {
+            self.check()?;
             if left.predicate != rdfs::DOMAIN
                 && left.predicate != rdfs::RANGE
                 && left.predicate != rdfs::SUB_PROPERTY_OF
@@ -55,14 +61,15 @@ impl Runtime<'_> {
             {
                 continue;
             }
-            for right in &quads {
+            for right in quads {
+                self.check()?;
                 if left.graph_name == right.graph_name {
                     self.touch()?;
                     self.apply_binary(left, right)?;
                 }
             }
         }
-        Ok(())
+        self.check()
     }
 
     fn apply_unary(&mut self, quad: &Quad) -> Result<(), Rdfs12Error> {

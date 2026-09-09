@@ -7,7 +7,7 @@
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
   and response-flush lifetime are implemented. Optional absolute request
-  deadlines now cover native Simple/finite-RDF queries and transactional paths. Resource budgets,
+  deadlines now cover native Simple/finite-RDF/finite-RDFS queries and transactional paths. Resource budgets,
   excluded deadline paths, queued disconnect, reload and full acceptance remain open
 - Programme task: `task-1787728711461-3isex6`
 - **Depends on**:
@@ -164,7 +164,7 @@ empty topology, custom/lazy SERVICE SILENT and LOAD SILENT timeout distinctions,
 Graph Store parser topology/blank-node scope and persistent wire journeys.
 These tests are additive product regressions, not rewritten qualification evidence.
 
-This is still a cooperative, opt-in slice: deadline-bound RDFS/OWL materialization
+This is still a cooperative, opt-in slice: deadline-bound OWL materialization
 and the legacy nontransactional Graph Store bulk path return unsupported (400)
 until they gain the necessary checkpoints. Individual parser, custom callback,
 DNS and native storage calls are not preemptible. Queued socket disconnect,
@@ -192,15 +192,23 @@ No new package or native runtime is introduced.
 HTTP and Store observations preserve `TimedOut` versus `Cancelled` instead
 of classifying either as semantic inconsistency.
 
-The Datalog callback bridge also reaches existing RDFS/OWL engine checkpoints,
-but this alone does not close their deadline support: initial copies, sparse
-specialized scans, output and memory-accounting work still need instrumentation.
-Those are the next G4.2 product step, followed by queued disconnect and resource
-accounting. No profile, expected semantic result or protected receipt is changed.
+The Datalog callback bridge also reaches RDFS/OWL engine checkpoints. RDFS now
+checks preflight, both input copies, graph/container discovery, all raw binary
+candidates (including cross-graph no-matches), consistency scans and ordering,
+inference assembly and memory estimation. Its relative clock starts before
+preflight. Checked stable key grouping retains the former inconsistency ordering
+and adjacent deduplication; successful resource accounting and graph topology
+are unchanged. Request-deadline profiles now admit finite RDFS.
+Individual RDF term parsing/formatting and bounded collection operations remain
+cooperative boundaries, not hard real-time preemption. The existing memory
+estimate is unchanged and is not a complete allocation/RSS budget.
+OWL internal copies, sparse scans, output and accounting remain the next G4.2
+step, followed by queued disconnect and resource accounting. No profile, expected
+semantic result or protected receipt is changed.
 Native regressions cover expiry before binding, mid-snapshot cancellation,
 EOF cancellation, retained explicit tokens, materialization-budget lifetime,
 typed metrics/HTTP status and unchanged FROM/empty-graph semantics. A loopback
-CLI journey exercises finite RDF inference under an actual workload deadline
+CLI journeys exercise finite RDF and RDFS inference under actual workload deadlines
 followed by write/rollback/restart persistence. These are native product checks,
 not refreshed Datalog mutation-competence or RDFS/OWL qualification receipts.
 

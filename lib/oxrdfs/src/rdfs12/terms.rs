@@ -10,9 +10,15 @@ use oxrdf::{BlankNode, Dataset, GraphName, Literal, NamedNode, NamedOrBlankNode,
 
 pub(super) const WITNESS_PREFIX: &str = "oxrdfs";
 
-pub(super) fn reject_reserved_witness_labels(dataset: &Dataset) -> Result<(), Rdfs12Error> {
+pub(super) fn reject_reserved_witness_labels(
+    dataset: &Dataset,
+    check: impl Fn() -> Result<(), Rdfs12Error>,
+) -> Result<(), Rdfs12Error> {
+    check()?;
     for quad in dataset {
+        check()?;
         for term in terms_in_quad(&quad) {
+            check()?;
             if let Term::BlankNode(node) = &term {
                 reject_node(node)?;
             }
@@ -21,7 +27,7 @@ pub(super) fn reject_reserved_witness_labels(dataset: &Dataset) -> Result<(), Rd
             reject_node(node)?;
         }
     }
-    Ok(())
+    check()
 }
 
 fn reject_node(node: &BlankNode) -> Result<(), Rdfs12Error> {
