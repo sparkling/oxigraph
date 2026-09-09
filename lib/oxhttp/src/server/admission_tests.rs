@@ -140,12 +140,10 @@ fn result_limit_stream_overflow_never_finishes_and_releases_lease() -> Result<()
             assert!(response.ends_with("4\r\nxxxx\r\n0\r\n\r\n"), "{response}");
         } else {
             let error = result.unwrap_err();
-            assert!(
-                error
-                    .get_ref()
-                    .unwrap()
-                    .is::<crate::ResponseBodyLimitExceeded>()
-            );
+            assert!(error
+                .get_ref()
+                .unwrap()
+                .is::<crate::ResponseBodyLimitExceeded>());
             assert!(
                 !response.ends_with("0\r\n\r\n"),
                 "overflow closed as successful chunked EOF"
@@ -409,6 +407,8 @@ fn complete_half_closed_requests_survive_waiting_admission() -> Result<()> {
         let (entered, waiting) = std::sync::mpsc::channel();
         let (release, released) = std::sync::mpsc::channel();
         let released = Mutex::new(released);
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let admission_cancelled = Arc::clone(&cancelled);
         let (mut stream, worker) = connect(
             Server::new(|request| {
                 assert!(request.extensions().get::<AdmissionAbort>().is_none());
@@ -430,7 +430,12 @@ fn complete_half_closed_requests_survive_waiting_admission() -> Result<()> {
                     .recv_timeout(Duration::from_secs(3))
                     .unwrap();
                 assert!(!abort.is_aborted());
-                Ok(Extensions::new())
+                let mut context = Extensions::new();
+                let cancelled = Arc::clone(&admission_cancelled);
+                context.insert(RequestTransportCancellation::new(move || {
+                    cancelled.store(true, Ordering::SeqCst);
+                }));
+                Ok(context)
             }),
         )?;
         stream.write_all(wire.as_bytes())?;
@@ -439,7 +444,220 @@ fn complete_half_closed_requests_survive_waiting_admission() -> Result<()> {
         release.send(()).unwrap();
         assert!(read_closed_response(&mut stream)?.ends_with("\r\n\r\nok"));
         worker.join().unwrap()?;
+        assert!(!cancelled.load(Ordering::SeqCst));
     }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn active_reset_cancels_handler_without_releasing_its_lifetime() -> Result<()> {
+    let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let drops = Arc::new(AtomicUsize::new(0));
+    let work = Arc::new(AtomicUsize::new(0));
+    let (entered, waiting) = std::sync::mpsc::channel();
+    let handler_cancelled = Arc::clone(&cancelled);
+    let handler_drops = Arc::clone(&drops);
+    let handler_work = Arc::clone(&work);
+    let admission_cancelled = Arc::clone(&cancelled);
+    let admission_drops = Arc::clone(&drops);
+    let callback_drops = Arc::clone(&drops);
+    let (mut stream, worker) = connect(
+        Server::new(move |_| {
+            entered.send(()).unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            while !handler_cancelled.load(Ordering::SeqCst) {
+                handler_work.fetch_add(1, Ordering::SeqCst);
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "active reset did not reach callback"
+                );
+                thread::yield_now();
+            }
+            assert_eq!(handler_drops.load(Ordering::SeqCst), 0);
+            // The latched pre-encode check must fail even though there is no
+            // response entity whose write could rediscover SO_ERROR.
+            Response::builder().body(Body::empty()).unwrap()
+        })
+        .with_request_admission(move |_, _| {
+            let mut context = Extensions::new();
+            let cancelled = Arc::clone(&admission_cancelled);
+            let drops = Arc::clone(&callback_drops);
+            context.insert(RequestTransportCancellation::new(move || {
+                assert_eq!(drops.load(Ordering::SeqCst), 0);
+                cancelled.store(true, Ordering::SeqCst);
+            }));
+            context.insert(RequestLifetime::new(LeaseDrop(Arc::clone(
+                &admission_drops,
+            ))));
+            Ok(context)
+        }),
+    )?;
+    // The unread 100 response makes dropping this Linux socket an active reset.
+    stream.write_all(
+        b"POST / HTTP/1.1\r\nhost: localhost\r\nexpect: 100-continue\r\ncontent-length: 1\r\n\r\nx",
+    )?;
+    waiting.recv_timeout(Duration::from_secs(3)).unwrap();
+    assert!(stream.peek(&mut [0; 1])? > 0);
+    drop(stream);
+    assert_eq!(
+        worker.join().unwrap().unwrap_err().kind(),
+        ErrorKind::ConnectionAborted
+    );
+    assert!(cancelled.load(Ordering::SeqCst));
+    assert!(work.load(Ordering::SeqCst) > 0);
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn active_reset_cancels_lazy_response_before_distant_deadline() -> Result<()> {
+    struct Payload {
+        initial_chunks: usize,
+        cancelled: Arc<std::sync::atomic::AtomicBool>,
+        entered: Option<std::sync::mpsc::Sender<()>>,
+        work: Arc<AtomicUsize>,
+    }
+    impl Read for Payload {
+        fn read(&mut self, buffer: &mut [u8]) -> Result<usize> {
+            if self.initial_chunks != 0 {
+                self.initial_chunks -= 1;
+                let length = buffer.len();
+                buffer[..length].fill(b'x');
+                return Ok(length);
+            }
+            if let Some(entered) = self.entered.take() {
+                entered.send(()).unwrap();
+            }
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            while !self.cancelled.load(Ordering::SeqCst) {
+                self.work.fetch_add(1, Ordering::SeqCst);
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "lazy response did not observe transport cancellation"
+                );
+                thread::yield_now();
+            }
+            Err(Error::new(
+                ErrorKind::ConnectionAborted,
+                "cooperative response cancellation",
+            ))
+        }
+    }
+
+    let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let work = Arc::new(AtomicUsize::new(0));
+    let (entered, waiting) = std::sync::mpsc::channel();
+    let body_cancelled = Arc::clone(&cancelled);
+    let body_work = Arc::clone(&work);
+    let admission_cancelled = Arc::clone(&cancelled);
+    let started = std::time::Instant::now();
+    let (mut stream, worker) = connect(
+        Server::new(move |_| {
+            Response::builder()
+                .body(Body::from_read(Payload {
+                    // Two full chunks force BufWriter to emit bytes before the
+                    // third cooperative read blocks on cancellation.
+                    initial_chunks: 2,
+                    cancelled: Arc::clone(&body_cancelled),
+                    entered: Some(entered.clone()),
+                    work: Arc::clone(&body_work),
+                }))
+                .unwrap()
+        })
+        .with_request_admission(move |_, _| {
+            let mut context = Extensions::new();
+            let cancelled = Arc::clone(&admission_cancelled);
+            context.insert(RequestTransportCancellation::new(move || {
+                cancelled.store(true, Ordering::SeqCst);
+            }));
+            context.insert(RequestDeadline(
+                std::time::Instant::now() + Duration::from_secs(10),
+            ));
+            Ok(context)
+        }),
+    )?;
+    // Keep the interim response unread as the deterministic Linux reset source;
+    // the lazy final response is already blocked at its cooperative checkpoint.
+    stream.write_all(b"POST / HTTP/1.1\r\nhost: localhost\r\nexpect: 100-continue\r\ncontent-length: 1\r\nconnection: close\r\n\r\nx")?;
+    waiting.recv_timeout(Duration::from_secs(3)).unwrap();
+    assert!(stream.peek(&mut [0; 1])? > 0);
+    drop(stream);
+    assert!(worker.join().unwrap().is_err());
+    assert!(cancelled.load(Ordering::SeqCst));
+    assert!(work.load(Ordering::SeqCst) > 0);
+    assert!(started.elapsed() < Duration::from_secs(5));
+    Ok(())
+}
+
+#[test]
+fn finished_transport_watch_is_inert_after_handler_unwind() -> Result<()> {
+    let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let admission_cancelled = Arc::clone(&cancelled);
+    let (mut stream, worker) = connect(
+        Server::new(|_| panic!("injected active handler unwind")).with_request_admission(
+            move |_, _| {
+                let mut context = Extensions::new();
+                let cancelled = Arc::clone(&admission_cancelled);
+                context.insert(RequestTransportCancellation::new(move || {
+                    cancelled.store(true, Ordering::SeqCst);
+                }));
+                Ok(context)
+            },
+        ),
+    )?;
+    stream.write_all(b"GET / HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n")?;
+    assert!(worker.join().is_err());
+    drop(stream);
+    assert!(!cancelled.load(Ordering::SeqCst));
+    assert_eq!(Arc::strong_count(&cancelled), 1);
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn completed_transport_watch_cannot_cancel_next_keepalive_request() -> Result<()> {
+    let old_cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let admission_cancelled = Arc::clone(&old_cancelled);
+    let (entered, waiting) = std::sync::mpsc::channel();
+    let (release, released) = std::sync::mpsc::channel();
+    let released = Mutex::new(released);
+    let (mut stream, worker) = connect(
+        Server::new(move |request| {
+            if request.uri().path() == "/second" {
+                entered.send(()).unwrap();
+                released
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(3))
+                    .unwrap();
+            }
+            Response::builder().body(Body::from("ok")).unwrap()
+        })
+        .with_request_admission(move |request, _| {
+            let mut context = Extensions::new();
+            if request.uri_ref().unwrap().path() == "/first" {
+                let cancelled = Arc::clone(&admission_cancelled);
+                context.insert(RequestTransportCancellation::new(move || {
+                    cancelled.store(true, Ordering::SeqCst);
+                }));
+            }
+            Ok(context)
+        }),
+    )?;
+    stream.write_all(b"GET /first HTTP/1.1\r\nhost: localhost\r\n\r\n")?;
+    expect_bytes(
+        &mut stream,
+        b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok",
+    )?;
+    stream.write_all(b"POST /second HTTP/1.1\r\nhost: localhost\r\nexpect: 100-continue\r\ncontent-length: 1\r\nconnection: close\r\n\r\nx")?;
+    waiting.recv_timeout(Duration::from_secs(3)).unwrap();
+    assert!(stream.peek(&mut [0; 1])? > 0);
+    drop(stream);
+    release.send(()).unwrap();
+    assert!(worker.join().unwrap().is_err());
+    assert!(!old_cancelled.load(Ordering::SeqCst));
     Ok(())
 }
 
@@ -497,7 +715,9 @@ fn observed_reset_prevents_body_and_expect_even_if_hook_returns_success() -> Res
 #[test]
 fn deadline_unblocks_stalled_expect_body_and_releases_capacity() -> Result<()> {
     let drops = Arc::new(AtomicUsize::new(0));
+    let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let admission_drops = Arc::clone(&drops);
+    let admission_cancelled = Arc::clone(&cancelled);
     let (mut stream, worker) = connect(
         Server::new(|request| {
             let mut body = Vec::new();
@@ -514,6 +734,10 @@ fn deadline_unblocks_stalled_expect_body_and_releases_capacity() -> Result<()> {
             context.insert(RequestLifetime::new(LeaseDrop(Arc::clone(
                 &admission_drops,
             ))));
+            let cancelled = Arc::clone(&admission_cancelled);
+            context.insert(RequestTransportCancellation::new(move || {
+                cancelled.store(true, Ordering::SeqCst);
+            }));
             Ok(context)
         }),
     )?;
@@ -528,6 +752,10 @@ fn deadline_unblocks_stalled_expect_body_and_releases_capacity() -> Result<()> {
         ErrorKind::TimedOut
     );
     assert_eq!(drops.load(Ordering::SeqCst), 1);
+    assert!(
+        !cancelled.load(Ordering::SeqCst),
+        "deadline shutdown was mislabeled as transport cancellation"
+    );
     Ok(())
 }
 

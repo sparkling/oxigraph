@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-09
+- Updated: 2026-09-10
 - Deciders: Oxigraph parity programme
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
@@ -13,10 +13,10 @@
   retained-row and accumulator-group caps are implemented. Fixed-pool admission counts, occupancy and queue-wait metrics
   are exported through the existing operator listener. File-backed policy
   reload is atomic and operator-usable with immutable per-attempt snapshots and
-  startup transport ceilings. Other operator budgets, excluded deadline paths,
-  active-work disconnect and full acceptance
-  remain open.
-  Observed queued socket errors now release admission; FIN-only/silent loss uses timeouts
+  startup transport ceilings. Observed active socket errors now cancel the
+  existing workload token without releasing running work's capacity. Other
+  operator budgets, excluded deadline paths and full acceptance remain open.
+  Observed queued socket errors release admission; FIN-only/silent loss uses timeouts
 - Programme task: `task-1787728711461-3isex6`
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
@@ -175,8 +175,9 @@ These tests are additive product regressions, not rewritten qualification eviden
 This is still a cooperative, opt-in slice. The subsequent materialization work
 below admits finite profiles; the legacy nontransactional Graph Store bulk path
 still returns unsupported (400) pending checkpoints. Individual parser, custom callback,
-DNS and native storage calls are not preemptible. Active-work disconnect,
-resource accounting, exported admission metrics and full acceptance remain open.
+DNS and native storage calls are not preemptible. Later slices below add
+admission metrics and observed active transport-error cancellation; broader
+resource accounting and full acceptance remain open.
 
 ### Finite RDF and shared materialization controls (2026-09-09)
 
@@ -266,9 +267,10 @@ because cancellation was requested.
 This closes **observed queued transport errors**, not all connection loss.
 TCP FIN can be a legitimate write-half-close; the peer may still read the
 response ([RFC 9293 §3.6.1](https://www.rfc-editor.org/rfc/rfc9293.html#section-3.6.1)).
-FIN-only closure, silent loss and resets after the final check require existing
-timeouts or subsequent I/O checks. Active-work cancellation propagation remains
-open. No hard real-time or universal peer-liveness guarantee is made.
+FIN-only closure and silent loss require existing timeouts or subsequent I/O
+checks. The later active-request slice below observes errors after this probe
+is disarmed without extending its lifetime. No hard real-time or universal
+peer-liveness guarantee is made.
 
 Native tests cover latched errors/clones, final-check rejection, unwind and
 keep-alive isolation, plus complete GET, fixed-length and chunked half-closes.
@@ -399,9 +401,9 @@ consumed row; cap 64 succeeds), keyed/Cartesian joins, duplicates/nesting,
 masking, exactly-at-cap and zero, multi-operation atomicity through every owned
 binding, and CLI buffered/streamed failures with slot release and restart.
 These supplement rather than refresh pinned qualification evidence. Other
-operator counters, active disconnect, resource telemetry and complete G4.2
-acceptance remain outstanding; later sections close admission telemetry and
-workload reload.
+operator counters, resource telemetry and complete G4.2 acceptance remain
+outstanding; later sections close admission telemetry, workload reload and
+observed active transport-error cancellation.
 
 Validation also found a separate **unbudgeted** query-fuzzer OOM:
 `oom-1007e2363b10d32274268b884b4bc2ef68bd4a7a` (raw SHA256
@@ -648,6 +650,41 @@ body/query/data-port rejection, serve and serve-read-only request/result-limit
 replacement with an already admitted v1 request, writable rollback/restart, and
 the independent access-reload unknown-class window. These are source-level
 native product checks, not G4.2 production qualification or promotion.
+
+### Observed active transport failures (2026-09-10)
+
+Both CLI listeners now install OxHTTP's trusted
+`RequestTransportCancellation` extension after admission. Its callback owns
+only a clone of the existing cooperative cancellation token, not a lease or
+controller. The pre-body `AdmissionAbort` contract remains unchanged and its
+escaped handles remain disarmed during active work.
+
+A single request monitor combines the optional absolute deadline with 10 ms
+scheduled socket-error polls. Transport observation is opt-in independently of
+deadlines; deadline-only requests retain their timed wait. An observed socket
+or inspection error is latched before transport shutdown and the callback runs
+outside monitor locks, at most once per request. Pre/post-encoding checks preserve
+failure even after reading `SO_ERROR` consumed it, including empty responses. The
+monitor's own deadline shutdown remains `TimedOut`, not explicit cancellation.
+Callback unwind is contained and cleanup stops/joins the monitor before lease
+release or keep-alive reuse. Capacity remains owned while a handler or lazy
+response is still running.
+
+No request-byte reads, socket-mode changes, new cancellation domain, evaluator
+change or dependency is introduced. This is **observed active transport-error
+cancellation**, not universal disconnect detection: valid write-half-closes
+remain usable, ordinary I/O may consume an error first, and FIN-only/silent
+loss still relies on timeouts. Existing parser/custom/native-storage cooperative
+boundaries remain. A checkpoint before commit can abort an owned transaction;
+a reset after commit cannot undo it. Legacy nontransactional bulk work gains no
+rollback guarantee.
+
+Native Linux reset fixtures cover executing handlers, lazy response reads,
+empty-response failure and keep-alive isolation. Half-close, deadline,
+unwind/ownership and response-flush regressions preserve transport contracts.
+The CLI journey checks a cancelled update outcome, absent abandoned data after
+restart and successful subsequent write/query/rollback/restart. These are
+source-level product checks, not portable reset or full G4.2 qualification.
 
 ### Remaining staged acceptance
 

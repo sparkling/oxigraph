@@ -17,12 +17,13 @@
   estimated/observed-row feedback are implemented. G3.2 opt-in native bounded
   planning is implemented; frozen-corpus acceptance and promotion remain open.
   G4.2 now includes atomic file-backed workload-policy reload with immutable
-  per-attempt snapshots and an explicit loopback operator grant; full workload
-  governance acceptance remains open.
+  per-attempt snapshots and an explicit loopback operator grant, plus observed
+  active socket-error cancellation through the existing request token; full
+  workload governance acceptance remains open.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
-- Updated: 2026-09-09
+- Updated: 2026-09-10
 - Repository: `oxigraph/oxigraph` clone maintained by this fork
 - Previous programme baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
@@ -1283,8 +1284,11 @@ Both profiles now copy encoded Dataset identity/order, correcting the preceding
 RDFS decoded-copy ordering defect. Legacy nontransactional deadline-bound bulk
 remains explicitly unsupported. Observed queued socket errors now free admission
 before timeout, with valid half-closed requests preserved and no abandoned writes
-after restart. FIN-only/silent loss still uses timeouts; active-work disconnect
-remains open. Explicit encoded/decoded body caps now reject fixed/chunked and
+after restart. Active work now observes socket errors through one combined
+deadline/transport monitor and cancels its existing token without releasing
+capacity early. Half-closes remain valid; consumed errors and FIN-only/silent
+loss limit detection, and committed writes cannot be undone by disconnect.
+Explicit encoded/decoded body caps now reject fixed/chunked and
 decompression-expanded requests before RDF work on both listeners; native tests
 preserve trailers, HEAD metadata, deadlines and write/rollback/restart behavior.
 Result-byte caps now cover generation and transmission independently, with

@@ -221,8 +221,13 @@ to all outstanding occupancy. Reload preserves queues, capacity and metrics,
 cannot grow the startup data/operator transport envelopes, and rejects stale,
 wrong-ID, invalid or access-class-incomplete candidates without replacing the
 last good policy. Existing operator/access-policy/metrics/audit grants gain no
-new authority. Broader resource accounting, active-work disconnect propagation,
-fairness and full G4.2 acceptance remain open.
+new authority. Observed active-request socket errors now cancel the existing
+workload token, including requests without a configured deadline. One combined
+deadline/transport monitor stops before capacity is released; running work keeps
+its lease and valid TCP write-half-closes are preserved. This is best-effort
+error observation, not detection of FIN-only or silent loss, nor rollback of an
+already committed write. Broader resource accounting, fairness and full G4.2
+acceptance remain open.
 The planner also avoids materializing large accumulated path fan-outs when
 a smaller hash-build input is available. Native result/budget regressions and
 the original OOM-input replay verify this

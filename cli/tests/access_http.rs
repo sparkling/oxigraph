@@ -1361,6 +1361,25 @@ fn work_counters(running: &Running) -> Result<Vec<String>> {
     Ok(lines)
 }
 
+fn metric_counter(running: &Running, sample: &str) -> Result<u64> {
+    let metrics = request(
+        running.admin,
+        "GET",
+        "/metrics",
+        &identity(OPERATOR, 1)?,
+        "",
+    )?;
+    ensure!(metrics.status == 200);
+    let prefix = format!("{sample} ");
+    metrics
+        .body
+        .lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .with_context(|| format!("missing metric sample {sample}"))?
+        .parse()
+        .map_err(Into::into)
+}
+
 #[test]
 fn denied_work_never_starts_transactions_evaluation_or_egress() -> Result<()> {
     let running = start(&config(), false)?;
@@ -3392,6 +3411,110 @@ fn workload_queued_reset_frees_slot_and_half_closed_write_survives_restart() -> 
         ensure!(
             response.status == 200
                 && serde_json::from_str::<Value>(&response.body)?["boolean"] == expected
+        );
+    }
+    write_rollback_and_restart(running)
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn workload_active_reset_cancels_update_before_commit_and_survives_restart() -> Result<()> {
+    let mut running = start_with_workload(&config(), false, Some(&workload(0, 0, 30_000)))?;
+
+    // A small retained input drives a much larger duplicate-heavy join without
+    // leaving millions of distinct quads if cancellation arrives late.
+    let mut seed = String::from("INSERT DATA {");
+    for index in 0..1500 {
+        write!(seed, "<urn:left:{index}> <urn:left> <urn:value> .")?;
+        write!(seed, "<urn:right:{index}> <urn:right> <urn:value> .")?;
+    }
+    seed.push('}');
+    ensure!(sparql(&running, WRITER, "/update", &seed)?.status == 204);
+
+    let cancelled_before =
+        metric_counter(&running, "oxigraph_updates_total{outcome=\"cancelled\"}")?;
+    let succeeded_before =
+        metric_counter(&running, "oxigraph_updates_total{outcome=\"succeeded\"}")?;
+    let update = "INSERT DATA { <urn:disconnect-marker> <urn:p> <urn:o> };\n\
+        INSERT { <urn:join-result> <urn:p> ?left } WHERE {\n\
+          ?left <urn:left> <urn:value> . ?right <urn:right> <urn:value>\n\
+        }";
+
+    let mut abandoned = TcpStream::connect(running.public)?;
+    abandoned.set_read_timeout(Some(Duration::from_secs(3)))?;
+    abandoned.set_write_timeout(Some(Duration::from_secs(3)))?;
+    write!(
+        abandoned,
+        "GET /query?query=ASK%20%7B%7D HTTP/1.1\r\nHost: localhost\r\n{}\r\n",
+        identity(READER, 1)?
+    )?;
+    ensure!(abandoned.peek(&mut [0; 1])? > 0);
+    write!(
+        abandoned,
+        "POST /update HTTP/1.1\r\nHost: localhost\r\n{}Content-Type: application/sparql-update\r\nContent-Length: {}\r\n\r\n{update}",
+        identity(WRITER, 1)?,
+        update.len()
+    )?;
+
+    // These are transport-visible scheduler observations, not a synthetic
+    // sleep: the target owns the only data slot across multiple live scrapes,
+    // and a separately authenticated request is refused by that ownership.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut observations = 0;
+    while observations < 4 {
+        if metric_counter(&running, "oxigraph_admission_active{pool=\"data\"}")? == 1 {
+            observations += 1;
+        } else {
+            observations = 0;
+        }
+        ensure!(
+            Instant::now() < deadline,
+            "active update did not retain admission capacity"
+        );
+    }
+    ensure!(
+        request(running.public, "GET", "/query", &identity(READER, 1)?, "")?.status == 503,
+        "active update did not occupy the only data slot"
+    );
+
+    // The unread first response makes this an active Linux reset rather than
+    // a FIN. The terminal Store counter below proves evaluator cancellation,
+    // rather than treating socket closure alone as the result.
+    drop(abandoned);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if metric_counter(&running, "oxigraph_updates_total{outcome=\"cancelled\"}")?
+            == cancelled_before + 1
+        {
+            break;
+        }
+        ensure!(
+            Instant::now() < deadline,
+            "active reset did not reach an update cancellation checkpoint"
+        );
+        thread::yield_now();
+    }
+    ensure!(
+        metric_counter(&running, "oxigraph_updates_total{outcome=\"succeeded\"}")?
+            == succeeded_before,
+        "abandoned update reported success"
+    );
+
+    running.child.0.kill()?;
+    running.child.0.wait()?;
+    running.child = ChildGuard(running.command.spawn()?);
+    wait_ready(&mut running)?;
+    for subject in ["urn:disconnect-marker", "urn:join-result"] {
+        let response = sparql(
+            &running,
+            READER,
+            "/query",
+            &format!("ASK {{ <{subject}> <urn:p> ?o }}"),
+        )?;
+        ensure!(
+            response.status == 200
+                && serde_json::from_str::<Value>(&response.body)?["boolean"] == false,
+            "cancelled update left data after restart: {subject}"
         );
     }
     write_rollback_and_restart(running)

@@ -683,6 +683,10 @@ impl AdmissionController {
                 if let Some(deadline) = lease.deadline() {
                     context.insert(oxhttp::RequestDeadline(deadline));
                 }
+                let cancellation = lease.cancellation_token().clone();
+                context.insert(oxhttp::RequestTransportCancellation::new(move || {
+                    cancellation.cancel();
+                }));
                 context.insert(oxhttp::RequestLifetime::new(lease.clone()));
                 context.insert(lease);
                 Ok(())

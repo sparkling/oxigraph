@@ -1,21 +1,21 @@
 use crate::io::{
-    BUFFER_CAPACITY, decode_request_body, decode_request_headers, encode_response,
-    encode_response_with_connection,
+    decode_request_body, decode_request_headers, encode_response, encode_response_with_connection,
+    BUFFER_CAPACITY,
 };
-use crate::model::header::{CONNECTION, CONTENT_TYPE, EXPECT, InvalidHeaderValue, SERVER};
+use crate::model::header::{InvalidHeaderValue, CONNECTION, CONTENT_TYPE, EXPECT, SERVER};
 use crate::model::request::Builder as RequestBuilder;
 use crate::model::{Body, Extensions, HeaderValue, Request, Response, StatusCode, Version};
 use std::any::Any;
 use std::fmt;
-use std::io::{BufReader, BufWriter, Error, ErrorKind, Result, Write, copy, sink};
+use std::io::{copy, sink, BufReader, BufWriter, Error, ErrorKind, Result, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{Builder as ThreadBuilder, JoinHandle};
 use std::time::Duration;
 
 mod deadline;
-use deadline::DeadlineWatch;
-pub use deadline::RequestDeadline;
+use deadline::RequestWatch;
+pub use deadline::{RequestDeadline, RequestTransportCancellation};
 mod admission_abort;
 pub use admission_abort::AdmissionAbort;
 use admission_abort::AdmissionAbortGuard;
@@ -140,6 +140,11 @@ impl Server {
     /// Removing the guard in a handler cannot release it while the response is
     /// still streaming. An application-held clone can extend its lifetime.
     ///
+    /// Insert [`RequestTransportCancellation`] to invoke a trusted application
+    /// callback when the active request monitor observes a TCP socket error.
+    /// The monitor latches and shuts down the socket before invoking it. This is
+    /// a best-effort error observation, not FIN detection or a liveness promise.
+    ///
     /// Insert [`crate::RequestBodyLimits`] to validate and buffer the complete
     /// transfer-decoded and content-decoded body before handler dispatch. Known
     /// oversized lengths are rejected before `100 Continue`; other overflows
@@ -168,12 +173,12 @@ impl Server {
     pub fn with_request_admission(
         mut self,
         admission: impl Fn(
-            &RequestBuilder,
-            ConnectionInfo,
-        ) -> std::result::Result<Extensions, Box<Response<Body>>>
-        + Send
-        + Sync
-        + 'static,
+                &RequestBuilder,
+                ConnectionInfo,
+            ) -> std::result::Result<Extensions, Box<Response<Body>>>
+            + Send
+            + Sync
+            + 'static,
     ) -> Self {
         self.request_admission = Some(Arc::new(admission));
         self
@@ -317,8 +322,8 @@ fn accept_request(
         let mut response_limit = None;
         let mut request_is_head = false;
         let mut admission_lifetime = None;
-        // Declared after the lease: stop/join the timer before releasing capacity.
-        let mut deadline_watch = None;
+        // Declared after the lease: stop/join the monitor before releasing capacity.
+        let mut request_watch = None;
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, stream.try_clone()?);
         let (mut response, new_connection_state) = match decode_request_headers(&mut reader, false)
         {
@@ -341,9 +346,11 @@ fn accept_request(
                         response_limit = context.get::<crate::ResponseBodyLimit>().copied();
                         let extensions = request.extensions_mut().unwrap();
                         admission_lifetime = context.get::<RequestLifetime>().cloned();
-                        if let Some(deadline) = context.get::<RequestDeadline>() {
-                            deadline_watch = Some(DeadlineWatch::start(&stream, deadline.0)?);
-                        }
+                        request_watch = RequestWatch::start(
+                            &stream,
+                            context.get::<RequestDeadline>().map(|deadline| deadline.0),
+                            context.get::<RequestTransportCancellation>().cloned(),
+                        )?;
                         extensions.extend(context);
                         extensions.insert(connection);
                         let body_precheck = request
@@ -447,7 +454,7 @@ fn accept_request(
                 .or_insert_with(|| server.clone());
         }
 
-        if let Some(watch) = &deadline_watch {
+        if let Some(watch) = &request_watch {
             watch.check()?;
         }
         let writer = BufWriter::with_capacity(BUFFER_CAPACITY, stream);
@@ -467,10 +474,10 @@ fn accept_request(
         }?
         .into_inner()
         .map_err(|e| e.into_error())?;
-        if let Some(watch) = &deadline_watch {
+        if let Some(watch) = &request_watch {
             watch.check()?;
         }
-        drop(deadline_watch);
+        drop(request_watch);
         drop(admission_lifetime);
     }
     Ok(())

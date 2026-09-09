@@ -520,8 +520,8 @@ OxHTTP `AdmissionAbort` during queue waits and before activation. An observed
 socket error (for example, TCP reset) cancels the same token and frees the queue
 slot without waiting for queue expiry. The transport latches consumed socket
 errors and stops admission before `100 Continue` or body handling. Probes are
-disarmed before active work and keep-alive reuse, even on unwind; no polling
-thread, body reads, socket-mode changes or new dependency is added.
+disarmed before active work and keep-alive reuse, even on unwind; the admission
+probe adds no polling thread, body reads, socket-mode changes or dependency.
 This does **not** treat TCP FIN as cancellation: a complete request may close its
 write half and still receive a response. FIN-only closure, silent network loss
 and errors after the final admission check remain bounded by existing timeouts,
@@ -529,8 +529,23 @@ not this probe. Linux reset fixtures verify queue release with the active lease
 still held, operator isolation and no abandoned write after restart; GET,
 fixed-length and chunked half-closed request fixtures remain successful.
 
-Still pending: active-work disconnect propagation, deadline support for the
-explicitly excluded paths above, finer parser/evaluator work counters,
+After admission, both listeners install a separate trusted
+`RequestTransportCancellation` callback carrying only the existing lease token.
+One combined monitor handles the optional absolute deadline and polls active
+socket errors every 10 ms of scheduled execution. It latches consumed errors,
+shuts down transport I/O and requests cooperative cancellation, including when
+no deadline is configured. Deadline-only requests keep a single timed wait;
+the monitor's own deadline shutdown is not relabelled as explicit cancellation.
+The monitor stops and joins before lease release and keep-alive reuse, including
+on unwind. Cancellation does not release capacity while work is still running.
+This does not read request bytes or change socket modes. Ordinary I/O can consume
+a socket error before the monitor sees it; FIN-only and silent loss still need
+timeouts. Cancellation at existing checkpoints can roll back an owned update
+before commit, but a lost response never implies rollback of a committed write.
+The legacy nontransactional bulk path remains outside this rollback guarantee.
+
+Still pending: deadline support for the explicitly excluded paths above,
+finer parser/evaluator work counters,
 per-principal/priority scheduling, resource-use metrics and
 operational qualification. Cooperative admission is not a hard RSS/CPU/fd/disk
 guarantee; use external process/container controls. This stage does not complete
