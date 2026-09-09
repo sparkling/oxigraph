@@ -80,22 +80,22 @@ pub struct EndpointKind {
     pub update: bool,
 }
 
-pub fn generate_service_description(
+pub fn write_service_description<W: std::io::Write>(
     selected: RdfResponseFormat,
     kind: EndpointKind,
     union_default_graph: bool,
     entailment: QueryEntailment,
     endpoint_base_url: OxString,
     evaluator: &SparqlEvaluator,
-) -> Vec<u8> {
+    writer: W,
+) -> std::io::Result<W> {
     let mut serializer = selected
-        .serializer()
-        .unwrap()
+        .serializer()?
         .with_prefix("sd", "http://www.w3.org/ns/sparql-service-description#")
-        .unwrap()
+        .map_err(std::io::Error::other)?
         .with_prefix("oxsd", "https://oxigraph.org/ns/service#")
-        .unwrap()
-        .for_writer(Vec::new());
+        .map_err(std::io::Error::other)?
+        .for_writer(writer);
     for t in generate_service_description_graph(
         selected.format(),
         kind,
@@ -104,10 +104,10 @@ pub fn generate_service_description(
         endpoint_base_url,
         evaluator,
     ) {
-        selected.ensure_triple(&t).unwrap();
-        serializer.serialize_triple(&t).unwrap();
+        selected.ensure_triple(&t)?;
+        serializer.serialize_triple(&t)?;
     }
-    serializer.finish().unwrap()
+    serializer.finish()
 }
 
 fn generate_service_description_graph(

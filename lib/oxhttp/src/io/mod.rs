@@ -2,6 +2,8 @@ mod decoder;
 mod encoder;
 #[cfg(feature = "server")]
 pub(crate) mod limited_body;
+#[cfg(feature = "server")]
+pub(crate) mod response_body;
 
 pub use decoder::{decode_request_body, decode_request_headers, decode_response};
 #[cfg(feature = "server")]

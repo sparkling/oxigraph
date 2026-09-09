@@ -30,6 +30,7 @@ struct Running {
     admin: SocketAddr,
     policy: PathBuf,
     directory: assert_fs::TempDir,
+    readiness_method: &'static str,
 }
 fn binary() -> std::ffi::OsString {
     // Reuse the same native tests against an explicitly identified release artifact.
@@ -205,6 +206,13 @@ fn try_start_with_workload_entailment(
         admin: admin_address,
         policy: policy_path,
         directory,
+        // A zero result cap deliberately disallows the GET health body; HEAD
+        // still verifies successful startup without weakening status checking.
+        readiness_method: if workload.is_some_and(|profile| profile["max_result_bytes"] == 0) {
+            "HEAD"
+        } else {
+            "GET"
+        },
     };
     wait_ready(&mut running)?;
     Ok(running)
@@ -226,7 +234,7 @@ fn wait_ready(running: &mut Running) -> Result<()> {
             }
             anyhow::bail!(diagnostic);
         }
-        if request(running.admin, "GET", "/health", "", "")
+        if request(running.admin, running.readiness_method, "/health", "", "")
             .is_ok_and(|response| response.status == 200)
         {
             return Ok(());
@@ -252,6 +260,7 @@ fn startup_failure_reports_exit_status_and_cli_diagnostic() -> Result<()> {
         admin: (Ipv4Addr::LOCALHOST, 0).into(),
         policy: directory.path().join("unused.json"),
         directory,
+        readiness_method: "GET",
     };
     let error = wait_ready(&mut running).unwrap_err().to_string();
     let status = running.child.0.wait()?;
@@ -353,6 +362,10 @@ fn wire(address: SocketAddr, request: &str) -> Result<Wire> {
     wire_bytes(address, request.as_bytes())
 }
 fn wire_bytes(address: SocketAddr, request: &[u8]) -> Result<Wire> {
+    let result = raw_wire_bytes(address, request)?;
+    decode_wire(&result)
+}
+fn raw_wire_bytes(address: SocketAddr, request: &[u8]) -> Result<String> {
     let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(1))?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
     stream.set_write_timeout(Some(Duration::from_secs(3)))?;
@@ -363,6 +376,9 @@ fn wire_bytes(address: SocketAddr, request: &[u8]) -> Result<Wire> {
         Err(error) if error.kind() == ErrorKind::ConnectionReset => (),
         Err(error) => return Err(error.into()),
     }
+    Ok(result)
+}
+fn decode_wire(result: &str) -> Result<Wire> {
     let (head, body) = result
         .split_once("\r\n\r\n")
         .context("missing final response")?;
@@ -1104,6 +1120,242 @@ fn workload(queued: usize, class_queued: usize, timeout_ms: u64) -> Value {
         "classes":{"default":{"max_active":1,"max_queued":class_queued}}})
 }
 
+#[test]
+fn result_limits_exact_boolean_and_generated_operator_failures() -> Result<()> {
+    let baseline = start(&config(), false)?;
+    let full = sparql(&baseline, READER, "/query", "ASK {}")?;
+    ensure!(full.status == 200);
+    let length = full.body.len();
+    drop(baseline);
+    for limit in [length, length - 1] {
+        let mut profile = workload(1, 1, 1000);
+        profile["max_result_bytes"] = json!(limit);
+        let running = start_with_workload(&config(), true, Some(&profile))?;
+        let response = sparql(&running, READER, "/query", "ASK {}")?;
+        if limit == length {
+            ensure!(response.status == 200 && response.body == full.body);
+        } else {
+            ensure!(
+                response.status == 503 && response.body.is_empty(),
+                "{} {}",
+                response.status,
+                response.body
+            );
+            ensure!(response.head.contains("cache-control: no-store"));
+        }
+        for route in ["/metrics", "/ready", "/access/audit"] {
+            let response = request(running.admin, "GET", route, &identity(OPERATOR, 1)?, "")?;
+            ensure!(
+                response.status == 503 && response.body.is_empty(),
+                "{route}: {} {}",
+                response.status,
+                response.body
+            );
+        }
+        let response = request(running.public, "GET", "/query", &identity(READER, 1)?, "")?;
+        ensure!(
+            response.status == 503 && response.body.is_empty(),
+            "service description: {}",
+            response.status
+        );
+        let response = request(running.public, "GET", "/", &identity(READER, 1)?, "")?;
+        ensure!(
+            response.status == 503 && response.body.is_empty(),
+            "static UI: {}",
+            response.status
+        );
+        ensure!(request(running.public, "GET", "/query", "", "")?.status == 401);
+    }
+    Ok(())
+}
+
+#[test]
+fn result_limits_buffered_streaming_conditional_and_persistent_journey() -> Result<()> {
+    let mut profile = workload(1, 1, 1000);
+    profile["max_result_bytes"] = json!(512);
+    let running = start_with_workload(&config(), false, Some(&profile))?;
+    let mut update = String::from("INSERT DATA { GRAPH <urn:results> {");
+    for index in 0..100 {
+        write!(update, "<urn:s{index}> <urn:p> \"{}\" .", "x".repeat(80))?;
+    }
+    update.push_str("} }");
+    ensure!(sparql(&running, WRITER, "/update", &update)?.status == 204);
+    let query = "SELECT ?s ?o WHERE { GRAPH <urn:results> { ?s <urn:p> ?o } }";
+    let headers = format!(
+        "{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json; version=1.1\r\n",
+        identity(READER, 1)?
+    );
+    let response = request(running.public, "POST", "/query", &headers, query)?;
+    ensure!(
+        response.status == 503 && response.body.is_empty(),
+        "buffered SELECT: {} {}",
+        response.status,
+        response.body
+    );
+    let raw = format!(
+        "POST /query HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json\r\nContent-Length: {}\r\n\r\n{query}",
+        identity(READER, 1)?,
+        query.len()
+    );
+    let response = raw_wire_bytes(running.public, raw.as_bytes())?;
+    ensure!(response.starts_with("HTTP/1.1 200 "), "{response}");
+    ensure!(
+        response.contains("transfer-encoding: chunked"),
+        "{response}"
+    );
+    ensure!(
+        decode_wire(&response).is_err(),
+        "exhausted stream decoded as complete"
+    );
+    ensure!(
+        !response.contains("limit") && !response.ends_with("0\r\n\r\n"),
+        "error text or successful EOF: {response}"
+    );
+    // A subsequent query fits the single active slot: failed output released it.
+    ensure!(
+        sparql(
+            &running,
+            READER,
+            "/query",
+            "ASK { GRAPH <urn:results> { ?s ?p ?o } }"
+        )?
+        .status
+            == 200
+    );
+    for (route, body, accept) in [
+        (
+            "/query",
+            "CONSTRUCT { ?s <urn:p> ?o } WHERE { GRAPH <urn:results> { ?s <urn:p> ?o } }",
+            "application/n-triples; version=1.1",
+        ),
+        ("/store?graph=urn:results", "", "application/n-triples"),
+        ("/store?graph=urn:results", "", "text/turtle"),
+        ("/store?graph=urn:results", "", "application/rdf+xml"),
+        (
+            "/query",
+            query,
+            "application/sparql-results+xml; version=1.1",
+        ),
+    ] {
+        let response = request(
+            running.public,
+            if body.is_empty() { "GET" } else { "POST" },
+            route,
+            &format!(
+                "{}Content-Type: application/sparql-query\r\nAccept: {accept}\r\n",
+                identity(WRITER, 1)?
+            ),
+            body,
+        )?;
+        ensure!(
+            response.status == 503 && response.body.is_empty(),
+            "{route}: {} {}",
+            response.status,
+            response.body
+        );
+    }
+    ensure!(
+        sparql(
+            &running,
+            WRITER,
+            "/update",
+            "INSERT DATA { GRAPH <urn:small> { <urn:s> <urn:p> <urn:o> } }"
+        )?
+        .status
+            == 204
+    );
+    let route = "/store?graph=urn:small";
+    let response = request(running.public, "GET", route, &identity(WRITER, 1)?, "")?;
+    ensure!(response.status == 200 && !response.body.is_empty());
+    let etag = response
+        .head
+        .lines()
+        .find_map(|line| line.strip_prefix("etag: "))
+        .context("missing graph ETag")?;
+    let conditional = request(
+        running.public,
+        "GET",
+        route,
+        &format!("{}If-None-Match: {etag}\r\n", identity(WRITER, 1)?),
+        "",
+    )?;
+    ensure!(conditional.status == 304 && conditional.body.is_empty());
+    ensure!(
+        !conditional.head.contains("content-length:"),
+        "304 invented representation length"
+    );
+    let head = request(running.public, "HEAD", route, &identity(WRITER, 1)?, "")?;
+    ensure!(head.status == 200 && head.body.is_empty());
+    ensure!(
+        head.head
+            .contains(&format!("content-length: {}", response.body.len()))
+    );
+    write_rollback_and_restart(running)
+}
+
+#[test]
+fn result_limits_zero_allow_empty_commits_and_preserve_request_failures() -> Result<()> {
+    let mut profile = workload(1, 1, 1000);
+    profile["max_result_bytes"] = json!(0);
+    profile["request_body_limits"] = json!({"max_encoded_bytes":128,"max_decoded_bytes":128});
+    let running = start_with_workload(&config(), false, Some(&profile))?;
+    ensure!(
+        sparql(
+            &running,
+            WRITER,
+            "/update",
+            "INSERT DATA { <urn:zero> <urn:p> <urn:o> }"
+        )?
+        .status
+            == 204
+    );
+    let response = sparql(&running, READER, "/query", "ASK {}")?;
+    ensure!(response.status == 503 && response.body.is_empty());
+    for (extra, expected) in [
+        ("Content-Length: 129\r\n", 413),
+        (
+            "Content-Length: 0\r\nContent-Encoding: unsupported\r\n",
+            415,
+        ),
+    ] {
+        let raw = format!(
+            "POST /update HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{}Content-Type: application/sparql-update\r\nExpect: 100-continue\r\n{extra}\r\n",
+            identity(WRITER, 1)?
+        );
+        let response = wire(running.public, &raw)?;
+        ensure!(
+            response.status == expected && response.body.is_empty(),
+            "{} {}",
+            response.status,
+            response.body
+        );
+    }
+    let mut next_policy = config();
+    next_policy["version"] = json!(2);
+    next_policy["proxy"]["version"] = json!(2);
+    write_policy(&running.policy, &next_policy)?;
+    ensure!(
+        request(
+            running.admin,
+            "POST",
+            "/access/policy/reload",
+            &identity(OPERATOR, 1)?,
+            ""
+        )?
+        .status
+            == 204
+    );
+    drop(running.child);
+    let store = oxigraph::store::Store::open(running.directory.path().join("store"))?;
+    ensure!(store.contains(&oxigraph::model::Quad::new(
+        oxigraph::model::NamedNode::new("urn:zero")?,
+        oxigraph::model::NamedNode::new("urn:p")?,
+        oxigraph::model::NamedNode::new("urn:o")?,
+        oxigraph::model::GraphName::DefaultGraph,
+    ))?);
+    Ok(())
+}
+
 fn bounded_body_wire(
     running: &Running,
     path: &str,
@@ -1563,9 +1815,19 @@ fn workload_queued_reset_frees_slot_and_half_closed_write_survives_restart() -> 
             identity(WRITER, 1)?,
             successor_update.len()
         )?;
-        candidate.shutdown(std::net::Shutdown::Write)?;
+        let half_closed = match candidate.shutdown(std::net::Shutdown::Write) {
+            Ok(()) => true,
+            // An immediate overload response can close/reset before this call.
+            // Accept only the actual 503 branch below, never an admitted socket.
+            Err(error) if error.kind() == ErrorKind::NotConnected => false,
+            Err(error) => return Err(error).context("half-closing successor"),
+        };
         match candidate.peek(&mut [0; 1]) {
             Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                ensure!(
+                    half_closed,
+                    "unconnected successor cannot prove a valid half-close"
+                );
                 break candidate;
             }
             Ok(count) if count > 0 => {

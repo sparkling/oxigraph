@@ -7,7 +7,7 @@
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
   and response-flush lifetime are implemented. Optional absolute request
-  deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and transactional paths. Opt-in encoded/decoded request-body caps are implemented. Result and broader resource budgets,
+  deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and transactional paths. Opt-in encoded/decoded request-body and generated/emitted result-byte caps are implemented. Broader resource budgets,
   excluded deadline paths, active-work disconnect, reload and full acceptance remain open.
   Observed queued socket errors now release admission; FIN-only/silent loss uses timeouts
 - Programme task: `task-1787728711461-3isex6`
@@ -315,11 +315,49 @@ then successful writes, queries, rollback and persistent restart.
 
 This closes the native request-body byte slice, not full G4.2. Buffer capacity,
 encoded/decoded coexistence and handler copies are not an RSS ceiling. Parser
-terms, multipart parts, evaluator work, result bytes and admission telemetry
+terms, multipart parts, evaluator work and admission telemetry
 remain separate work. Existing pipelined read-ahead limitations are not fixed
-by sequential keep-alive coverage. Next: result-byte limits with failed-stream
-rather than well-formed truncated-success behavior. No qualification evidence,
+by sequential keep-alive coverage. The result-byte slice below now implements
+failed-stream rather than well-formed truncated-success behavior. No qualification evidence,
 production defaults or promotion claims are changed.
+
+### Native result-byte limits (2026-09-09)
+
+Optional unsigned `max_result_bytes` in the startup profile is immutable per
+lease. Zero permits empty bodies; omission adds no byte cap. CLI serializers
+use one cumulative `ResultBodyWriter`, including construction and finalization
+across streaming buffer resets. This covers buffered/streamed SPARQL results,
+Graph Store, service descriptions and generated operator output. OxHTTP
+independently caps emitted entity bytes via trusted `ResponseBodyLimit`, captured
+before handler dispatch so clearing extensions cannot remove it. These are two
+checks against the same cap, not double charging. Headers, framing and trailers
+are excluded; static and diagnostic bodies receive the transport check.
+
+Typed `ResponseBodyLimitExceeded { limit, phase }` distinguishes serialization
+from transmission. Pre-header overflow of a success returns empty noncacheable
+503, without retry advice. Established errors retain their status with an
+oversized diagnostic body suppressed, preserving request 400/413/415 mappings.
+After headers, exhaustion propagates as a latched I/O error. `ReadForWrite`
+also stops converting other serializer/evaluator errors into text plus clean
+EOF, with or without the optional cap. Failed streams have no terminating chunk
+or trailers. Empty reads do not advance evaluation, and exact-cap reads must
+still verify EOF rather than silently truncate a longer representation.
+
+HEAD and status-defined bodyless responses emit no entity; known HEAD length
+is retained, while 304 omits a length inferred from its empty body. An endpoint
+that generates a HEAD representation still charges generation. Native tests
+cover exact/+1/zero, buffered and streamed results, persistent mutation/rollback,
+restart, conditional GET, operator/read-only routes, trailer and sequential
+keep-alive preservation, typed failures and lease release. Successful semantic
+fixtures are unchanged; two ordinary native tests now assert failed I/O instead
+of the explicitly obsolete diagnostic-plus-EOF behavior.
+
+This is not a cap on query state, rows, serializer-private term buffers, Graph
+Store snapshot/ETag preparation, heap capacity or RSS. Accepted empty mutation
+and access-policy-reload acknowledgments can succeed at zero. A response failure
+after commit cannot prove rollback. No source dependency, protected evidence,
+qualification or production default changes. Next: bounded evaluator work and
+explicit unsupported resource profiles; full G4.2 remains open.
 
 ### Remaining staged acceptance
 

@@ -11,6 +11,8 @@ use std::io::{Cursor, Error, ErrorKind, Read, Result};
 pub struct Body(BodyAlt);
 
 enum BodyAlt {
+    #[cfg(feature = "server")]
+    ResponseLimited(Box<crate::io::response_body::LimitedResponseBody>),
     SimpleOwned {
         content: Cursor<Vec<u8>>,
         trailers: Option<Box<HeaderMap>>,
@@ -30,6 +32,12 @@ enum BodyAlt {
 }
 
 impl Body {
+    #[cfg(feature = "server")]
+    pub(crate) fn with_response_limit(self, limit: crate::ResponseBodyLimit) -> Result<Self> {
+        Ok(Self(BodyAlt::ResponseLimited(Box::new(
+            crate::io::response_body::LimitedResponseBody::new(self, limit)?,
+        ))))
+    }
     #[cfg(feature = "server")]
     pub(crate) fn from_buffered(
         data: Vec<u8>,
@@ -88,6 +96,8 @@ impl Body {
     #[inline]
     pub fn len(&self) -> Option<u64> {
         match &self.0 {
+            #[cfg(feature = "server")]
+            BodyAlt::ResponseLimited(body) => body.inner.len(),
             BodyAlt::SimpleOwned {
                 content,
                 known_length,
@@ -106,6 +116,8 @@ impl Body {
     #[inline]
     pub fn trailers(&self) -> Option<&HeaderMap> {
         match &self.0 {
+            #[cfg(feature = "server")]
+            BodyAlt::ResponseLimited(body) => body.inner.trailers(),
             BodyAlt::SimpleOwned { trailers, .. } => trailers.as_deref(),
             BodyAlt::SimpleBorrowed(_) | BodyAlt::Sized { .. } => None,
             BodyAlt::Chunked(c) => c.trailers(),
@@ -159,6 +171,8 @@ impl Body {
         s: &'c mut fmt::DebugStruct<'b, 'a>,
     ) -> &'c mut fmt::DebugStruct<'b, 'a> {
         match &self.0 {
+            #[cfg(feature = "server")]
+            BodyAlt::ResponseLimited(body) => body.inner.debug_fields(s),
             BodyAlt::SimpleOwned { content, .. } => {
                 s.field("content-length", &content.get_ref().len())
             }
@@ -181,6 +195,8 @@ impl Read for Body {
     #[inline]
     fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
         match &mut self.0 {
+            #[cfg(feature = "server")]
+            BodyAlt::ResponseLimited(body) => body.read(buf),
             BodyAlt::SimpleOwned { content, .. } => content.read(buf),
             BodyAlt::SimpleBorrowed(c) => c.read(buf),
             BodyAlt::Sized {

@@ -302,6 +302,35 @@ decoded buffers coexist for compressed inputs, and a handler may copy the
 decoded buffer again; use sensible caps and external process memory controls.
 The existing 128 MiB buffered-handler cap also remains in force where used.
 
+Optional `max_result_bytes` is an unsigned cap in the same startup profile, for
+example `"max_result_bytes": 8388608` (illustrative, not a production default).
+Omission imposes no new result-byte cap; zero permits only empty generated and
+emitted bodies. It applies to admitted requests on both listeners and in
+read-only mode. Two independent counters each enforce the cap: bytes written
+to the representation destination, and entity bytes emitted by HTTP. Bytes are
+not charged twice to one budget. Headers, chunk framing and trailers do not
+count. Generation includes serializer prologs, each row and final bytes across
+streaming buffer resets; it covers SPARQL, Graph Store, service descriptions,
+metrics, readiness and audit output. The transport cap also covers static UI
+and diagnostic bodies.
+
+Before headers, oversized successful output returns empty, noncacheable 503
+without `Retry-After`. Existing errors retain their status (including request
+400/413/415), with an oversized diagnostic body suppressed. After headers,
+overflow or another serialization/evaluation error terminates the stream:
+clients must reject incomplete results. No replacement error text, terminal
+chunk or trailers make it a successful truncated response. This also corrects
+the old error-text-plus-EOF behavior when no result cap is configured.
+
+HEAD/304/204/informational responses emit no entity. HEAD retains known
+representation length; 304 does not invent a length from its empty body.
+Generation is still charged if an endpoint builds a representation for HEAD
+(for example Graph Store), so that work can fail before headers. Empty write
+and policy-reload acknowledgments remain possible at zero; output failure
+after a commit never establishes rollback. The cap is not an evaluator-work,
+row-count or RSS bound: query state, serializer-private rows/terms, Graph Store
+snapshot/ETag preparation and allocator capacity remain outside it.
+
 Optional `request_timeout_ms` (positive milliseconds) starts one absolute
 monotonic deadline **before queueing**. It is not renewed on admission, body
 read, evaluation, writer acquisition or serialization. Omitting it retains

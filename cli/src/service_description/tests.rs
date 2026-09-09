@@ -909,24 +909,28 @@ fn serialized_description_uses_only_the_negotiated_rdf_version() {
         update: false,
     };
     let evaluator = SparqlEvaluator::new();
-    let rdf11 = generate_service_description(
+    let rdf11 = write_service_description(
         RdfResponseFormat::rdf11(RdfFormat::Turtle),
         kind,
         false,
         QueryEntailment::Simple,
         "http://example.test/query".into(),
         &evaluator,
-    );
+        Vec::new(),
+    )
+    .unwrap();
     assert!(!rdf11.starts_with(b"VERSION"));
 
-    let rdf12 = generate_service_description(
+    let rdf12 = write_service_description(
         RdfResponseFormat::new(RdfFormat::Turtle, RdfVersion::V1_2),
         kind,
         false,
         QueryEntailment::Simple,
         "http://example.test/query".into(),
         &evaluator,
-    );
+        Vec::new(),
+    )
+    .unwrap();
     assert!(rdf12.starts_with(b"VERSION \"1.2\"\n"));
 }
 

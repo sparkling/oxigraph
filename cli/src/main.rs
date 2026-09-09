@@ -2,7 +2,8 @@
 
 use crate::cli::{Args, Command, EntailmentProfile};
 use crate::rdf_response::RdfResponseFormat;
-use crate::service_description::{EndpointKind, generate_service_description};
+use crate::result_body::ResultBodyWriter;
+use crate::service_description::{EndpointKind, write_service_description};
 use anyhow::{Context, bail, ensure};
 use clap::Parser;
 use flate2::read::MultiGzDecoder;
@@ -60,6 +61,7 @@ mod operations;
 #[cfg(test)]
 mod protocol_wire_tests;
 mod rdf_response;
+mod result_body;
 mod server_access;
 mod service_description;
 #[cfg(test)]
@@ -1871,17 +1873,18 @@ fn evaluate_sparql_query(
             let selected = query_results_content_negotiation(request, true)?;
             let serializer = selected.serializer()?;
             if selected.requires_term_preflight() {
-                let mut body = Vec::new();
+                let mut body = ResultBodyWriter::new(Vec::new(), request);
                 let mut serializer = serializer
                     .serialize_solutions_to_writer(&mut body, solutions.variables().to_vec())
-                    .map_err(internal_server_error)?;
+                    .map_err(result_body::internal_error)?;
                 for solution in solutions {
                     let solution = solution.map_err(internal_server_error)?;
-                    serializer
-                        .serialize(&solution)
-                        .map_err(query_results_not_acceptable)?;
+                    serializer.serialize(&solution).map_err(|error| {
+                        result_body::http_error(error, query_results_not_acceptable)
+                    })?;
                 }
-                serializer.finish().map_err(internal_server_error)?;
+                serializer.finish().map_err(result_body::internal_error)?;
+                let body = body.finish().map_err(result_body::internal_error)?;
                 return Response::builder()
                     .header(CONTENT_TYPE, selected.media_type())
                     .body(body.into())
@@ -1905,15 +1908,17 @@ fn evaluate_sparql_query(
                     })
                 },
                 selected.media_type(),
+                request,
             )
         }
         QueryResults::Boolean(result) => {
             let selected = query_results_content_negotiation(request, false)?;
-            let mut body = Vec::new();
+            let mut body = ResultBodyWriter::new(Vec::new(), request);
             selected
                 .serializer()?
                 .serialize_boolean_to_writer(&mut body, result)
-                .map_err(internal_server_error)?;
+                .map_err(result_body::internal_error)?;
+            let body = body.finish().map_err(result_body::internal_error)?;
             Response::builder()
                 .header(CONTENT_TYPE, selected.media_type())
                 .body(body.into())
@@ -1925,7 +1930,7 @@ fn evaluate_sparql_query(
                 let mut serializer = selected
                     .serializer()
                     .map_err(internal_server_error)?
-                    .for_writer(Vec::new());
+                    .for_writer(ResultBodyWriter::new(Vec::new(), request));
                 for triple in triples {
                     let triple = triple.map_err(internal_server_error)?;
                     selected
@@ -1933,9 +1938,13 @@ fn evaluate_sparql_query(
                         .map_err(rdf_response_not_acceptable)?;
                     serializer
                         .serialize_triple(&triple)
-                        .map_err(internal_server_error)?;
+                        .map_err(result_body::internal_error)?;
                 }
-                let body = serializer.finish().map_err(internal_server_error)?;
+                let body = serializer
+                    .finish()
+                    .map_err(result_body::internal_error)?
+                    .finish()
+                    .map_err(result_body::internal_error)?;
                 return Response::builder()
                     .header(CONTENT_TYPE, selected.media_type())
                     .body(body.into())
@@ -1955,6 +1964,7 @@ fn evaluate_sparql_query(
                     })
                 },
                 selected.media_type(),
+                request,
             )
         }
     }
@@ -2979,14 +2989,18 @@ fn service_description_response(
     sparql_evaluator: &SparqlEvaluator,
 ) -> Result<Response<Body>, HttpError> {
     let selected = rdf_content_negotiation(request)?;
-    let description = generate_service_description(
+    let description = write_service_description(
         selected,
         kind,
         union_default_graph,
         entailment,
         request_original_target_url(request)?.to_string().into(),
         sparql_evaluator,
-    );
+        ResultBodyWriter::new(Vec::new(), request),
+    )
+    .map_err(result_body::internal_error)?
+    .finish()
+    .map_err(result_body::internal_error)?;
     Response::builder()
         .header(CONTENT_TYPE, rdf_response_media_type(selected))
         .body(description.into())
@@ -3072,11 +3086,19 @@ fn web_bulk_loader<'a>(store: &'a Store, request: &Request<Body>) -> BulkLoader<
 }
 
 fn error(status: StatusCode, message: impl fmt::Display) -> Response<Body> {
-    Response::builder()
+    let message = message.to_string();
+    let mut response = Response::builder()
         .status(status)
-        .header(CONTENT_TYPE, "text/plain; charset=utf-8")
-        .body(message.to_string().into())
-        .unwrap()
+        .header(CONTENT_TYPE, "text/plain; charset=utf-8");
+    if message.is_empty()
+        && matches!(
+            status,
+            StatusCode::SERVICE_UNAVAILABLE | StatusCode::REQUEST_TIMEOUT
+        )
+    {
+        response = response.header(oxhttp::model::header::CACHE_CONTROL, "no-store");
+    }
+    response.body(message.into()).unwrap()
 }
 
 fn finalize_response(method: &Method, mut response: Response<Body>) -> Response<Body> {
@@ -3160,19 +3182,24 @@ struct ReadForWrite<O, U: (Fn(O) -> io::Result<Option<O>>)> {
     position: usize,
     add_more_data: U,
     state: Option<O>,
+    failed: bool,
 }
 
 impl<O: 'static, U: (Fn(O) -> io::Result<Option<O>>) + 'static> ReadForWrite<O, U> {
     fn build_response(
-        initial_state_builder: impl FnOnce(ReadForWriteWriter) -> io::Result<O>,
+        initial_state_builder: impl FnOnce(ResultBodyWriter<ReadForWriteWriter>) -> io::Result<O>,
         add_more_data: U,
         content_type: &'static str,
+        request: &Request<Body>,
     ) -> Result<Response<Body>, HttpError> {
         let buffer = Rc::new(RefCell::new(Vec::new()));
-        let state = initial_state_builder(ReadForWriteWriter {
-            buffer: Rc::clone(&buffer),
-        })
-        .map_err(internal_server_error)?;
+        let state = initial_state_builder(ResultBodyWriter::new(
+            ReadForWriteWriter {
+                buffer: Rc::clone(&buffer),
+            },
+            request,
+        ))
+        .map_err(result_body::internal_error)?;
         Response::builder()
             .header(CONTENT_TYPE, content_type)
             .body(Body::from_read(Self {
@@ -3180,6 +3207,7 @@ impl<O: 'static, U: (Fn(O) -> io::Result<Option<O>>) + 'static> ReadForWrite<O, 
                 position: 0,
                 add_more_data,
                 state: Some(state),
+                failed: false,
             }))
             .map_err(internal_server_error)
     }
@@ -3187,6 +3215,12 @@ impl<O: 'static, U: (Fn(O) -> io::Result<Option<O>>) + 'static> ReadForWrite<O, 
 
 impl<O, U: (Fn(O) -> io::Result<Option<O>>)> Read for ReadForWrite<O, U> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        if self.failed {
+            return Err(io::Error::other("result serialization previously failed"));
+        }
         while self.position == self.buffer.borrow().len() {
             // We read more data
             if let Some(state) = self.state.take() {
@@ -3195,11 +3229,9 @@ impl<O, U: (Fn(O) -> io::Result<Option<O>>)> Read for ReadForWrite<O, U> {
                 self.state = match (self.add_more_data)(state) {
                     Ok(state) => state,
                     Err(e) => {
-                        eprintln!("Internal server error while streaming results: {e}");
-                        self.buffer
-                            .borrow_mut()
-                            .write_all(e.to_string().as_bytes())?;
-                        None
+                        self.failed = true;
+                        self.buffer.borrow_mut().clear();
+                        return Err(e);
                     }
                 }
             } else {
@@ -3316,6 +3348,15 @@ mod tests {
             .arg("--no-default-features");
         #[cfg(feature = "rocksdb-pkg-config")]
         command.arg("--features").arg("rocksdb-pkg-config");
+        // Match the test executable's transport features. Otherwise these
+        // subprocesses replace target/debug/oxigraph with a no-HTTP-client
+        // build before the same Cargo invocation runs integration tests.
+        #[cfg(feature = "native-tls")]
+        command.arg("--features").arg("native-tls");
+        #[cfg(feature = "rustls-native")]
+        command.arg("--features").arg("rustls-native");
+        #[cfg(feature = "rustls-webpki")]
+        command.arg("--features").arg("rustls-webpki");
         #[cfg(feature = "geosparql")]
         command.arg("--features").arg("geosparql");
         #[cfg(feature = "rdf-12")]
@@ -5185,7 +5226,7 @@ mod tests {
     }
 
     #[test]
-    fn post_federated_query_is_denied_by_server_policy() -> Result<()> {
+    fn post_federated_query_is_denied_by_server_policy_or_missing_client() -> Result<()> {
         let request = Request::builder()
             .method(Method::POST)
             .uri("http://localhost/query")
@@ -5195,13 +5236,21 @@ mod tests {
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(
             read_to_string(response.body_mut())?,
-            "SERVICE egress request: policy denied"
+            if cfg!(any(
+                feature = "native-tls",
+                feature = "rustls-native",
+                feature = "rustls-webpki"
+            )) {
+                "SERVICE egress request: policy denied"
+            } else {
+                "The service <http://127.0.0.1:9/sparql> is not supported"
+            }
         );
         Ok(())
     }
 
     #[test]
-    fn post_remote_load_is_denied_by_server_policy() -> Result<()> {
+    fn post_remote_load_is_denied_by_server_policy_or_missing_client() -> Result<()> {
         let request = Request::builder()
             .method(Method::POST)
             .uri("http://localhost/update")
@@ -5211,7 +5260,15 @@ mod tests {
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(
             read_to_string(response.body_mut())?,
-            "LOAD egress request: policy denied"
+            if cfg!(any(
+                feature = "native-tls",
+                feature = "rustls-native",
+                feature = "rustls-webpki"
+            )) {
+                "LOAD egress request: policy denied"
+            } else {
+                "HTTP client is not available. Enable the feature 'http-client'"
+            }
         );
         Ok(())
     }

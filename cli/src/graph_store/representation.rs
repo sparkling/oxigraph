@@ -58,7 +58,10 @@ fn serialize(
     let mut serializer = selected
         .serializer()
         .map_err(internal_server_error)?
-        .for_writer(Vec::new());
+        .for_writer(crate::result_body::ResultBodyWriter::new(
+            Vec::new(),
+            request,
+        ));
     let mut non_empty_named_graphs = HashSet::new();
     for quad in &state.quads {
         crate::check_request(request)?;
@@ -75,7 +78,7 @@ fn serialize(
             }
             serializer
                 .serialize_quad(quad)
-                .map_err(internal_server_error)?;
+                .map_err(crate::result_body::internal_error)?;
         } else {
             let triple = Triple::new(
                 quad.subject.clone(),
@@ -85,7 +88,7 @@ fn serialize(
             selected.ensure_triple(&triple).map_err(not_acceptable)?;
             serializer
                 .serialize_triple(&triple)
-                .map_err(internal_server_error)?;
+                .map_err(crate::result_body::internal_error)?;
         }
     }
     if matches!(target, Target::Dataset) {
@@ -94,12 +97,16 @@ fn serialize(
             if !non_empty_named_graphs.contains(graph_name) {
                 serializer
                     .serialize_empty_graph(graph_name)
-                    .map_err(not_acceptable)?;
+                    .map_err(|error| crate::result_body::http_error(error, not_acceptable))?;
             }
         }
     }
     crate::check_request(request)?;
-    serializer.finish().map_err(internal_server_error)
+    serializer
+        .finish()
+        .map_err(crate::result_body::internal_error)?
+        .finish()
+        .map_err(crate::result_body::internal_error)
 }
 
 fn not_acceptable(error: impl std::fmt::Display) -> HttpError {

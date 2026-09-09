@@ -189,7 +189,9 @@ write-half-closed requests remain eligible. FIN-only/silent loss still relies on
 timeouts. Optional request-body limits now reject oversized fixed/chunked or
 decompression-expanded bodies before RDF work on both listeners. Encoded entity
 bytes and decoded bytes have separate explicit caps; this is not a hard memory
-bound. Result-byte limits, broader resource accounting, active-work disconnect
+bound. Optional result-byte limits now bound generated and transmitted entities:
+oversized buffered success becomes empty 503, while late serialization failures
+close as failed streams, never error text plus successful EOF. Broader resource accounting, active-work disconnect
 propagation and full G4.2 acceptance remain open.
 See [ADR-0026](docs/adr/0026-service-identity-and-authorization.md#native-acceptance-closure-2026-09-09).
 RocksDB remains the persistent backend. The custom-backend tests prove the

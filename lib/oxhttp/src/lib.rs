@@ -26,6 +26,8 @@ pub use io::limited_body::{
     RequestBodyLimitExceeded, RequestBodyLimits, RequestBodyPhase, RequestBodyResource,
 };
 #[cfg(feature = "server")]
+pub use io::response_body::{ResponseBodyLimit, ResponseBodyLimitExceeded, ResponseBodyPhase};
+#[cfg(feature = "server")]
 pub use server::{
     AdmissionAbort, ConnectionInfo, ListeningServer, RequestDeadline, RequestLifetime, Server,
 };

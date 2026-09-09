@@ -103,7 +103,11 @@ fn encode_response_inner<W: Write>(
     if head_only {
         // HEAD has no message body, but may describe the GET representation.
         // In particular, never replace an unknown/nonempty length with zero.
-        if !status.is_informational() && status != StatusCode::NO_CONTENT {
+        // A 304's empty body is not the selected representation's length.
+        if !status.is_informational()
+            && status != StatusCode::NO_CONTENT
+            && status != StatusCode::NOT_MODIFIED
+        {
             if let Some(length) = response.body().len() {
                 write!(writer, "content-length: {length}\r\n")?;
             }

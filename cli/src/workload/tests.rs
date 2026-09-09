@@ -361,6 +361,35 @@ fn body_budgets_are_explicit_and_bound_to_each_lease() -> Result<()> {
 }
 
 #[test]
+fn result_budget_is_optional_unsigned_and_bound_to_each_lease() -> Result<()> {
+    let controller = controller(1, 0, 1, 0)?;
+    ensure!(
+        acquire(&controller, "default")?
+            .result_byte_limit()
+            .is_none()
+    );
+    for limit in [0, 17, u64::MAX] {
+        let mut policy = controller.0.policy.clone();
+        policy.max_result_bytes = Some(limit);
+        let controller = AdmissionController::new(policy)?;
+        ensure!(
+            acquire(&controller, "default")?.result_byte_limit()
+                == Some(oxhttp::ResponseBodyLimit(limit))
+        );
+    }
+    for value in [json!(-1), json!(1.5), json!("1"), json!(true)] {
+        let bytes = serde_json::to_vec(
+            &json!({"format":"oxigraph-admission-v1","policy_id":"test","version":1,
+            "max_active":1,"max_queued":0,"operator_max_active":1,"operator_max_queued":0,
+            "queue_timeout_ms":1000,"retry_after_seconds":1,"classes":{"default":{"max_active":1,"max_queued":0}},
+            "max_result_bytes":value}),
+        )?;
+        ensure!(WorkloadPolicy::from_json(&bytes).is_err());
+    }
+    Ok(())
+}
+
+#[test]
 fn deadline_is_absolute_including_queue_wait_and_keeps_active_ownership() -> Result<()> {
     let mut policy = controller(1, 1, 1, 1)?.0.policy.clone();
     policy.request_timeout_ms = Some(40);

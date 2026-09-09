@@ -1,4 +1,4 @@
-//! ADR-0027: process-local admission, deadlines and opt-in body byte limits.
+//! ADR-0027: process-local admission, deadlines and opt-in request/result bytes.
 //! These do not implement evaluator budgets or hard process isolation.
 //!
 //! Profiles are explicit and immutable for this controller's lifetime. All
@@ -47,7 +47,7 @@ impl From<RequestBodyBudget> for oxhttp::RequestBodyLimits {
 }
 
 /// No capacity defaults: the operator supplies every limit. This version only
-/// promises admission limits, optional cooperative request deadlines and body
+/// promises admission limits, optional cooperative request deadlines and entity
 /// byte limits, not evaluator budgets, per-principal fairness or live reload.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -64,6 +64,8 @@ pub struct WorkloadPolicy {
     request_timeout_ms: Option<u64>,
     #[serde(default)]
     request_body_limits: Option<RequestBodyBudget>,
+    #[serde(default)]
+    max_result_bytes: Option<u64>,
     retry_after_seconds: u32,
     classes: BTreeMap<String, ClassLimits>,
 }
@@ -422,6 +424,9 @@ impl AdmissionController {
             });
         match result {
             Ok(lease) => {
+                if let Some(limit) = lease.result_byte_limit() {
+                    context.insert(limit);
+                }
                 if let Some(limits) = lease.request_body_limits() {
                     context.insert(limits);
                 }
@@ -576,6 +581,15 @@ struct LeaseInner {
     cancellation: CancellationToken,
 }
 impl WorkloadLease {
+    /// Serialized/emitted result bytes; excludes HTTP framing and host memory.
+    pub fn result_byte_limit(&self) -> Option<oxhttp::ResponseBodyLimit> {
+        self.0
+            .controller
+            .0
+            .policy
+            .max_result_bytes
+            .map(oxhttp::ResponseBodyLimit)
+    }
     /// Immutable request-body bounds for the trusted HTTP admission hook.
     pub fn request_body_limits(&self) -> Option<oxhttp::RequestBodyLimits> {
         self.0

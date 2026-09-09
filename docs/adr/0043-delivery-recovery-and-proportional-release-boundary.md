@@ -158,8 +158,13 @@
   remains open. Declared encoded/decoded request-body caps now reject oversized
   or expanded content before RDF work on both listeners, preserving trailers,
   HEAD metadata, deadlines and valid persistent journeys. This is not an RSS
-  limit. Result-byte limits are next, followed by broader resource/fairness/
+  limit. Optional result caps now bound generated and transmitted entities;
+  buffered overflow returns empty 503 and late errors fail the stream without
+  successful EOF. HEAD/304 metadata and established request failures are preserved.
+  Next is bounded evaluator work, followed by broader resource/fairness/
   reload/metrics acceptance; full G4.2 remains open.
+  Native CLI subprocess tests now preserve their selected transport features,
+  avoiding a shared-binary overwrite that broke the combined integration run.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

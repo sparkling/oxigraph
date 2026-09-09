@@ -1417,7 +1417,10 @@ restart. FIN-only/silent loss still uses timeouts; active-work disconnect remain
 open. Explicit encoded/decoded body caps now reject fixed/chunked and
 decompression-expanded requests before RDF work on both listeners; native tests
 preserve trailers, HEAD metadata, deadlines and write/rollback/restart behavior.
-Result-byte limits are next. These body caps are not RSS limits; broader resource
+Result-byte caps now cover generation and transmission independently, with
+empty 503 before successful headers and failed streams after headers. Established
+errors and HEAD/304 metadata are preserved. Next: bounded evaluator work and
+explicit unsupported resource profiles. These byte caps are not RSS limits; broader resource
 budgets, fairness, reload, exported counters and full ADR-0027 acceptance remain open.
 Separate ADR-0026 frozen promotion and
 future facade compatibility remain open; native delivery does not claim

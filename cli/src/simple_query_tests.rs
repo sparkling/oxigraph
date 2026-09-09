@@ -225,9 +225,13 @@ fn native_simple_http_honors_cancellation() -> Result<()> {
     )
     .unwrap();
     token.cancel();
-    // The existing streaming wrapper appends a diagnostic after headers have
-    // been sent. It does not turn the body read into an io::Error.
-    assert!(io::read_to_string(result.body_mut())?.contains("operation has been cancelled"));
+    // ADR-0027: after headers, a failure remains an I/O failure, not error text
+    // followed by a successful EOF (including without an optional byte cap).
+    let mut prefix = String::new();
+    let error = result.body_mut().read_to_string(&mut prefix).unwrap_err();
+    assert!(error.to_string().contains("operation has been cancelled"));
+    assert!(!prefix.contains("cancelled"));
+    assert!(result.body_mut().read(&mut [0; 1]).is_err());
     assert_eq!(
         store
             .evaluation_metrics()
@@ -249,11 +253,19 @@ fn native_simple_http_rejects_triple_terms_in_version_11() -> Result<()> {
     for (version, succeeds) in [("1.1", false), ("1.2", true)] {
         let query = format!("VERSION \"{version}\" SELECT ?o WHERE {{ ?s <urn:p> ?o }}");
         let result = response(&store, &evaluator, &query, true, &[], &[]);
-        let text = body(result.unwrap())?;
         if succeeds {
+            let text = body(result.unwrap())?;
             assert!(text.contains("urn:o"), "version {version}: {text}");
         } else {
-            assert!(text.contains("not supported by SPARQL 1.1"), "{text}");
+            let mut result = result.unwrap();
+            let mut prefix = String::new();
+            let error = result.body_mut().read_to_string(&mut prefix).unwrap_err();
+            assert!(
+                error.to_string().contains("not supported by SPARQL 1.1"),
+                "{error}"
+            );
+            assert!(!prefix.contains("not supported"));
+            assert!(result.body_mut().read(&mut [0; 1]).is_err());
         }
     }
     assert_eq!(

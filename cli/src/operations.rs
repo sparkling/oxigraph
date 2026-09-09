@@ -73,13 +73,16 @@ fn access_operation(request: &Request<Body>, access: &AccessController) -> Optio
                 )
             }
         }
-        ("/access/audit", "GET" | "HEAD") => match access
-            .audit_snapshot()
-            .ok()
-            .and_then(|audit| serde_json::to_string(&audit).ok())
-        {
-            Some(json) => (StatusCode::OK, json),
-            None => (
+        ("/access/audit", "GET" | "HEAD") => match access.audit_snapshot() {
+            Ok(audit) => {
+                return Some(generated_response(
+                    request,
+                    StatusCode::OK,
+                    "application/json",
+                    |writer| serde_json::to_writer(writer, &audit).map_err(|_| std::fmt::Error),
+                ));
+            }
+            Err(_) => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "{\"error\":\"audit_unavailable\"}\n".into(),
             ),
@@ -122,6 +125,34 @@ fn response(
         builder = builder.header(ALLOW, "GET, HEAD");
     }
     crate::finalize_response(request.method(), builder.body(body.into()).unwrap())
+}
+
+fn generated_response(
+    request: &Request<Body>,
+    status: StatusCode,
+    content_type: &'static str,
+    build: impl FnOnce(&mut crate::result_body::ResultBodyWriter<Vec<u8>>) -> std::fmt::Result,
+) -> Response<Body> {
+    let mut writer = crate::result_body::ResultBodyWriter::new(Vec::new(), request);
+    let generated = build(&mut writer);
+    // fmt/serde may erase an io::Error's type. The writer retains an overflow
+    // latch; inspect it first, so limits remain 503 rather than becoming 500.
+    match writer
+        .finish()
+        .and_then(|bytes| String::from_utf8(bytes).map_err(std::io::Error::other))
+    {
+        Err(error) => {
+            let (status, message) = crate::result_body::internal_error(error);
+            response(request, status, "text/plain", message)
+        }
+        Ok(body) if generated.is_ok() => response(request, status, content_type, body),
+        Ok(_) => response(
+            request,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "text/plain",
+            String::new(),
+        ),
+    }
 }
 
 fn handle(request: &mut Request<Body>, store: &Store, started: bool) -> Response<Body> {
@@ -187,31 +218,24 @@ fn handle(request: &mut Request<Body>, store: &Store, started: bool) -> Response
         },
     );
     if path == "/metrics" {
-        let mut body = String::new();
-        for metric in snapshot.metrics() {
-            writeln!(
-                body,
-                "# TYPE {} gauge\n{} {}",
-                metric.name(),
-                metric.name(),
-                metric.value()
-            )
-            .unwrap();
-        }
-        store
-            .transaction_metrics()
-            .write_prometheus(&mut body)
-            .unwrap();
-        store
-            .evaluation_metrics()
-            .write_prometheus(&mut body)
-            .unwrap();
-        store.policy_metrics().write_prometheus(&mut body).unwrap();
-        return response(
+        return generated_response(
             request,
             StatusCode::OK,
             "text/plain; version=0.0.4; charset=utf-8",
-            body,
+            |body| {
+                for metric in snapshot.metrics() {
+                    writeln!(
+                        body,
+                        "# TYPE {} gauge\n{} {}",
+                        metric.name(),
+                        metric.name(),
+                        metric.value()
+                    )?;
+                }
+                store.transaction_metrics().write_prometheus(body)?;
+                store.evaluation_metrics().write_prometheus(body)?;
+                store.policy_metrics().write_prometheus(body)
+            },
         );
     }
     let (status, disposition) = match snapshot.disposition() {
@@ -219,21 +243,21 @@ fn handle(request: &mut Request<Body>, store: &Store, started: bool) -> Response
         ReadinessDisposition::Degraded => (StatusCode::OK, "degraded"),
         ReadinessDisposition::NotReady => (StatusCode::SERVICE_UNAVAILABLE, "not_ready"),
     };
-    let reasons = snapshot
-        .reasons()
-        .map(|reason| format!("\"{}\"", reason_name(reason)))
-        .collect::<Vec<_>>()
-        .join(",");
-    response(
-        request,
-        status,
-        JSON,
-        format!(
-            "{{\"status\":\"{disposition}\",\"primary_coverage\":\"{}\",\"outbox_coverage\":\"{}\",\"reasons\":[{reasons}]}}\n",
+    generated_response(request, status, JSON, |body| {
+        write!(
+            body,
+            "{{\"status\":\"{disposition}\",\"primary_coverage\":\"{}\",\"outbox_coverage\":\"{}\",\"reasons\":[",
             coverage_name(snapshot.primary_coverage()),
             coverage_name(snapshot.outbox_coverage())
-        ),
-    )
+        )?;
+        for (index, reason) in snapshot.reasons().enumerate() {
+            if index != 0 {
+                body.write_char(',')?;
+            }
+            write!(body, "\"{}\"", reason_name(reason))?;
+        }
+        body.write_str("]}\n")
+    })
 }
 
 fn coverage_name(coverage: ProbeCoverage) -> &'static str {

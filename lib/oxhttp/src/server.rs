@@ -314,6 +314,7 @@ fn accept_request(
     while connection_state == ConnectionState::KeepAlive {
         let mut admission_denied = false;
         let mut bounded_body = false;
+        let mut response_limit = None;
         let mut request_is_head = false;
         let mut admission_lifetime = None;
         // Declared after the lease: stop/join the timer before releasing capacity.
@@ -337,6 +338,7 @@ fn accept_request(
                 match admission {
                     Ok(context) => {
                         bounded_body = context.get::<crate::RequestBodyLimits>().is_some();
+                        response_limit = context.get::<crate::ResponseBodyLimit>().copied();
                         let extensions = request.extensions_mut().unwrap();
                         admission_lifetime = context.get::<RequestLifetime>().cloned();
                         if let Some(deadline) = context.get::<RequestDeadline>() {
@@ -409,6 +411,33 @@ fn accept_request(
             }
         };
         connection_state = new_connection_state;
+        let bodyless = request_is_head
+            || response.status().is_informational()
+            || response.status() == StatusCode::NO_CONTENT
+            || response.status() == StatusCode::NOT_MODIFIED;
+        if let Some(limit) = response_limit.filter(|_| !bodyless) {
+            match std::mem::take(response.body_mut()).with_response_limit(limit) {
+                Ok(body) => *response.body_mut() = body,
+                Err(_) => {
+                    // A generated/declared representation is too large. Empty
+                    // failure works even at cap zero, without recursive overflow.
+                    if !response.status().is_client_error() && !response.status().is_server_error()
+                    {
+                        response = Response::builder()
+                            .status(StatusCode::SERVICE_UNAVAILABLE)
+                            .body(Body::empty())
+                            .unwrap();
+                    }
+                    // Preserve established failures (e.g. request 400/413/415)
+                    // while suppressing their oversized diagnostic body.
+                    response.headers_mut().insert(
+                        crate::model::header::CACHE_CONTROL,
+                        HeaderValue::from_static("no-store"),
+                    );
+                    connection_state = ConnectionState::Close;
+                }
+            }
+        }
 
         // Additional headers
         if let Some(server) = server {
@@ -422,13 +451,16 @@ fn accept_request(
             watch.check()?;
         }
         let writer = BufWriter::with_capacity(BUFFER_CAPACITY, stream);
-        stream = if bounded_body && request_is_head {
+        stream = if (bounded_body && request_is_head) || (response_limit.is_some() && bodyless) {
             crate::io::encode_head_response(
                 &mut response,
                 writer,
                 connection_state == ConnectionState::Close,
             )
-        } else if admission_denied || (bounded_body && connection_state == ConnectionState::Close) {
+        } else if admission_denied
+            || ((bounded_body || response_limit.is_some())
+                && connection_state == ConnectionState::Close)
+        {
             encode_response_with_connection(&mut response, writer, true)
         } else {
             encode_response(&mut response, writer)

@@ -59,6 +59,151 @@ impl Clone for NeverClone {
 }
 
 #[test]
+fn result_limit_checks_known_length_and_preserves_bodyless_responses() -> Result<()> {
+    for (method, status, content, limit, expected) in [
+        ("GET", StatusCode::OK, "body", 4, 200),
+        ("GET", StatusCode::OK, "body", 3, 503),
+        ("GET", StatusCode::OK, "", 0, 200),
+        ("HEAD", StatusCode::OK, "body", 0, 200),
+        ("GET", StatusCode::NOT_MODIFIED, "body", 0, 304),
+        ("GET", StatusCode::NO_CONTENT, "body", 0, 204),
+        ("GET", StatusCode::PAYLOAD_TOO_LARGE, "body", 0, 413),
+    ] {
+        let (mut stream, worker) = connect(
+            Server::new(move |request| {
+                request.extensions_mut().clear(); // Cannot remove captured transport cap.
+                Response::builder()
+                    .status(status)
+                    .body(Body::from(content))
+                    .unwrap()
+            })
+            .with_request_admission(move |_, _| {
+                let mut context = Extensions::new();
+                context.insert(crate::ResponseBodyLimit(limit));
+                Ok(context)
+            }),
+        )?;
+        write!(
+            stream,
+            "{method} / HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n"
+        )?;
+        let response = read_closed_response(&mut stream)?;
+        assert!(
+            response.starts_with(&format!("HTTP/1.1 {expected} ")),
+            "{response}"
+        );
+        let (head, body) = response.split_once("\r\n\r\n").unwrap();
+        if method == "HEAD" || status != StatusCode::OK || expected == 503 {
+            assert!(body.is_empty());
+        } else {
+            assert_eq!(body, content);
+        }
+        if method == "HEAD" {
+            assert!(head.contains("content-length: 4"));
+        }
+        if status == StatusCode::NOT_MODIFIED {
+            assert!(!head.contains("content-length:"));
+        }
+        if expected == 503 {
+            assert!(head.contains("cache-control: no-store"));
+        }
+        worker.join().unwrap()?;
+    }
+    Ok(())
+}
+
+#[test]
+fn result_limit_stream_overflow_never_finishes_and_releases_lease() -> Result<()> {
+    for length in [4, 5] {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let admission_drops = Arc::clone(&drops);
+        let (mut stream, worker) = connect(
+            Server::new(move |_| {
+                Response::builder()
+                    .body(Body::from_read(std::io::Cursor::new(vec![b'x'; length])))
+                    .unwrap()
+            })
+            .with_request_admission(move |_, _| {
+                let mut context = Extensions::new();
+                context.insert(crate::ResponseBodyLimit(4));
+                context.insert(RequestLifetime::new(LeaseDrop(Arc::clone(
+                    &admission_drops,
+                ))));
+                Ok(context)
+            }),
+        )?;
+        stream.write_all(b"GET / HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n")?;
+        let response = read_closed_response(&mut stream)?;
+        let result = worker.join().unwrap();
+        if length == 4 {
+            result?;
+            assert!(response.ends_with("4\r\nxxxx\r\n0\r\n\r\n"), "{response}");
+        } else {
+            let error = result.unwrap_err();
+            assert!(
+                error
+                    .get_ref()
+                    .unwrap()
+                    .is::<crate::ResponseBodyLimitExceeded>()
+            );
+            assert!(
+                !response.ends_with("0\r\n\r\n"),
+                "overflow closed as successful chunked EOF"
+            );
+            assert!(!response.contains("limit"), "overflow injected error text");
+        }
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+    }
+    Ok(())
+}
+
+#[test]
+fn result_limit_excludes_headers_and_trailers_across_sequential_requests() -> Result<()> {
+    struct Payload {
+        bytes: std::io::Cursor<&'static [u8]>,
+        trailers: crate::model::HeaderMap,
+    }
+    impl Read for Payload {
+        fn read(&mut self, buffer: &mut [u8]) -> Result<usize> {
+            self.bytes.read(buffer)
+        }
+    }
+    impl crate::model::ChunkedTransferPayload for Payload {
+        fn trailers(&self) -> Option<&crate::model::HeaderMap> {
+            Some(&self.trailers)
+        }
+    }
+    let (mut stream, worker) = connect(
+        Server::new(|_| {
+            let mut trailers = crate::model::HeaderMap::new();
+            trailers.insert("x-proof", HeaderValue::from_static("longer-than-cap"));
+            Response::builder()
+                .header("x-meta", "longer-than-cap")
+                .body(Body::from_chunked_transfer_payload(Payload {
+                    bytes: std::io::Cursor::new(b"body"),
+                    trailers,
+                }))
+                .unwrap()
+        })
+        .with_request_admission(|_, _| {
+            let mut context = Extensions::new();
+            context.insert(crate::ResponseBodyLimit(4));
+            Ok(context)
+        }),
+    )?;
+    for close in [false, true] {
+        write!(
+            stream,
+            "GET / HTTP/1.1\r\nhost: localhost\r\n{}\r\n",
+            if close { "connection: close\r\n" } else { "" }
+        )?;
+        expect_bytes(&mut stream, format!("HTTP/1.1 200 OK\r\n{}x-meta: longer-than-cap\r\ntransfer-encoding: chunked\r\n\r\n4\r\nbody\r\n0\r\nx-proof: longer-than-cap\r\n\r\n", if close { "connection: close\r\n" } else { "" }).as_bytes())?;
+    }
+    assert_eq!(stream.read(&mut [0; 1])?, 0);
+    worker.join().unwrap()
+}
+
+#[test]
 fn body_limits_reject_before_continue_or_handler_and_release_lease() -> Result<()> {
     for wire in [
         "POST / HTTP/1.1\r\nhost: localhost\r\nexpect: 100-continue\r\ncontent-length: 5\r\n\r\n",
