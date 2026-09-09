@@ -2004,7 +2004,36 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         let (child, child_stats) = self.query_expression_evaluator(inner, encoded_variables);
         stat_children.push(child_stats);
         let child = child?;
-        Ok(Rc::new(move |from| Box::new(hash_deduplicate(child(from)))))
+        let Some(budget) = self.budgets.distinct_buffer().cloned() else {
+            return Ok(Rc::new(move |from| Box::new(hash_deduplicate(child(from)))));
+        };
+        Ok(Rc::new(move |from| {
+            // Charge each newly retained tuple before it is cloned into the
+            // set; a duplicate of a retained tuple is never charged again, and
+            // a denied tuple is neither cloned nor retained. The bounded set
+            // never reserves from the child's untrusted size hint.
+            let budget = budget.clone();
+            let mut already_seen = FxHashSet::default();
+            let mut denied = false;
+            Box::new(child(from).filter_map(move |tuple| {
+                if denied {
+                    return None;
+                }
+                let tuple = match tuple {
+                    Ok(tuple) => tuple,
+                    Err(error) => return Some(Err(error)),
+                };
+                if already_seen.contains(&tuple) {
+                    return None;
+                }
+                if let Err(error) = budget.charge() {
+                    denied = true;
+                    return Some(Err(error));
+                }
+                already_seen.insert(tuple.clone());
+                Some(Ok(tuple))
+            }))
+        }))
     }
 
     fn reduced_evaluator(

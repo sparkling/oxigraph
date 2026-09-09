@@ -6,11 +6,17 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// A cooperatively counted evaluator resource, not a process memory limit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "the published row-counter names share their unit deliberately"
+)]
 pub enum QueryResource {
     /// Rows inserted into native Cartesian and hash inner-join build tables.
     InnerJoinBuildRows,
     /// Rows admitted into native `ORDER BY` sort buffers.
     SortBufferRows,
+    /// Unique tuples retained by native `DISTINCT` hash sets.
+    DistinctBufferRows,
 }
 
 impl fmt::Display for QueryResource {
@@ -18,6 +24,7 @@ impl fmt::Display for QueryResource {
         match self {
             Self::InnerJoinBuildRows => f.write_str("inner_join_build_rows"),
             Self::SortBufferRows => f.write_str("sort_buffer_rows"),
+            Self::DistinctBufferRows => f.write_str("distinct_buffer_rows"),
         }
     }
 }
@@ -28,6 +35,7 @@ impl fmt::Display for QueryResource {
 pub enum QueryResourcePhase {
     JoinBuild,
     SortBuffer,
+    DistinctBuffer,
 }
 
 impl fmt::Display for QueryResourcePhase {
@@ -35,6 +43,7 @@ impl fmt::Display for QueryResourcePhase {
         match self {
             Self::JoinBuild => f.write_str("join_build"),
             Self::SortBuffer => f.write_str("sort_buffer"),
+            Self::DistinctBuffer => f.write_str("distinct_buffer"),
         }
     }
 }
@@ -189,22 +198,79 @@ impl SortBufferBudget {
     }
 }
 
+/// An explicit, shared, cumulative native `DISTINCT` retained-row budget.
+///
+/// Clones share the same counter and sticky failure. Create a fresh budget for
+/// an independent request; reusing an evaluator does not reset its budget.
+/// Every tuple newly retained by a native hash `DISTINCT` operator (including
+/// repeated/nested operators and prepared re-executions) is charged before it
+/// is cloned into that operator's set. A successful duplicate of an already
+/// retained tuple is not charged again. An attempted unique tuple beyond the
+/// limit fails the budget permanently; reaching the limit exactly is not
+/// failure, and work without a native `DISTINCT` operator charges nothing.
+/// The bounded path never reserves capacity from the child's size hint.
+///
+/// This counts the physical operator the planner emits, whether the surface
+/// syntax was `DISTINCT` or `REDUCED`; an operator the planner removes as
+/// redundant retains nothing and charges nothing. It does not bound child row
+/// creation, row width, hashing/comparison work, allocator capacity, aggregate
+/// `DISTINCT` accumulators, group buffers, property-path or dataset
+/// deduplication, planning, inference, foreign SERVICE work, or process
+/// memory/CPU.
+#[derive(Debug, Clone)]
+pub struct DistinctBufferBudget(Arc<RowBudgetState>);
+
+impl DistinctBufferBudget {
+    #[must_use]
+    pub fn new(limit: u64) -> Self {
+        Self(RowBudgetState::new(
+            QueryResource::DistinctBufferRows,
+            QueryResourcePhase::DistinctBuffer,
+            limit,
+        ))
+    }
+
+    #[must_use]
+    pub fn limit(&self) -> u64 {
+        self.0.limit
+    }
+
+    /// Successfully retained unique tuples, never greater than the limit.
+    #[must_use]
+    pub fn charged_rows(&self) -> u64 {
+        self.0.charged_rows()
+    }
+
+    /// Checks the sticky failure, without consuming a row or resetting it.
+    pub fn check(&self) -> Result<(), QueryEvaluationError> {
+        self.0.check()
+    }
+
+    pub(crate) fn charge(&self) -> Result<(), QueryEvaluationError> {
+        self.0.charge()
+    }
+}
+
 /// Every optional cooperative budget one evaluator carries. Checks keep the
-/// existing precedence: an inner-join failure is reported before a sort one.
+/// existing precedence: an inner-join failure is reported before a sort one,
+/// and a sort failure before a distinct one.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ResourceBudgets {
     inner_join_build: Option<InnerJoinBuildBudget>,
     sort_buffer: Option<SortBufferBudget>,
+    distinct_buffer: Option<DistinctBufferBudget>,
 }
 
 impl ResourceBudgets {
     pub(crate) fn new(
         inner_join_build: Option<InnerJoinBuildBudget>,
         sort_buffer: Option<SortBufferBudget>,
+        distinct_buffer: Option<DistinctBufferBudget>,
     ) -> Self {
         Self {
             inner_join_build,
             sort_buffer,
+            distinct_buffer,
         }
     }
 
@@ -216,8 +282,14 @@ impl ResourceBudgets {
         self.sort_buffer.as_ref()
     }
 
+    pub(crate) fn distinct_buffer(&self) -> Option<&DistinctBufferBudget> {
+        self.distinct_buffer.as_ref()
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
-        self.inner_join_build.is_none() && self.sort_buffer.is_none()
+        self.inner_join_build.is_none()
+            && self.sort_buffer.is_none()
+            && self.distinct_buffer.is_none()
     }
 
     pub(crate) fn check(&self) -> Result<(), QueryEvaluationError> {
@@ -225,6 +297,9 @@ impl ResourceBudgets {
             budget.check()?;
         }
         if let Some(budget) = &self.sort_buffer {
+            budget.check()?;
+        }
+        if let Some(budget) = &self.distinct_buffer {
             budget.check()?;
         }
         Ok(())
@@ -308,7 +383,7 @@ mod tests {
         assert!(zero.charge().is_err());
         let join = InnerJoinBuildBudget::new(0);
         join.check().unwrap();
-        let budgets = ResourceBudgets::new(Some(join.clone()), Some(sort));
+        let budgets = ResourceBudgets::new(Some(join.clone()), Some(sort), None);
         assert!(!budgets.is_empty());
         assert!(matches!(
             budgets.check(),
@@ -327,5 +402,68 @@ mod tests {
         ));
         assert!(ResourceBudgets::default().is_empty());
         ResourceBudgets::default().check().unwrap();
+    }
+
+    #[test]
+    fn distinct_budget_is_typed_shared_and_checked_after_join_and_sort() {
+        let distinct = DistinctBufferBudget::new(1);
+        let clone = distinct.clone();
+        assert_eq!(distinct.limit(), 1);
+        distinct.charge().unwrap();
+        clone.check().unwrap();
+        assert_eq!(clone.charged_rows(), 1);
+        assert!(matches!(
+            clone.charge(),
+            Err(QueryEvaluationError::ResourceLimitExceeded {
+                resource: QueryResource::DistinctBufferRows,
+                phase: QueryResourcePhase::DistinctBuffer,
+                limit: 1,
+            })
+        ));
+        assert!(distinct.check().is_err());
+        assert_eq!(distinct.charged_rows(), 1);
+        assert_eq!(
+            QueryResource::DistinctBufferRows.to_string(),
+            "distinct_buffer_rows"
+        );
+        assert_eq!(
+            QueryResourcePhase::DistinctBuffer.to_string(),
+            "distinct_buffer"
+        );
+        let zero = DistinctBufferBudget::new(0);
+        zero.check().unwrap();
+        assert!(zero.charge().is_err());
+        // A distinct-only set is not empty, and a distinct failure is reported
+        // only when the join and sort handles are intact.
+        let join = InnerJoinBuildBudget::new(0);
+        let sort = SortBufferBudget::new(0);
+        let budgets = ResourceBudgets::new(Some(join.clone()), Some(sort.clone()), Some(distinct));
+        assert!(!budgets.is_empty());
+        assert!(matches!(
+            budgets.check(),
+            Err(QueryEvaluationError::ResourceLimitExceeded {
+                resource: QueryResource::DistinctBufferRows,
+                ..
+            })
+        ));
+        assert!(sort.charge().is_err());
+        assert!(matches!(
+            budgets.check(),
+            Err(QueryEvaluationError::ResourceLimitExceeded {
+                resource: QueryResource::SortBufferRows,
+                ..
+            })
+        ));
+        assert!(join.charge().is_err());
+        assert!(matches!(
+            budgets.check(),
+            Err(QueryEvaluationError::ResourceLimitExceeded {
+                resource: QueryResource::InnerJoinBuildRows,
+                ..
+            })
+        ));
+        let only = ResourceBudgets::new(None, None, Some(DistinctBufferBudget::new(0)));
+        assert!(!only.is_empty());
+        only.check().unwrap();
     }
 }

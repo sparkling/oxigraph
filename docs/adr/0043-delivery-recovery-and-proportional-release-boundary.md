@@ -180,6 +180,12 @@
   changing readiness or counting lease release as execution success. Default
   and no-default unit/wire tests cover denial, overload and persistent journeys;
   full G4.2 resource/fairness/reload acceptance remains open.
+  An independent cumulative native DISTINCT retained-row cap now charges only
+  new tuples before cloning into each hash set, including planner-lowered
+  REDUCED. Nested sets and update operations share typed failure and owned
+  rollback; duplicates within one set do not recharge. Native feature tests,
+  bound/unbound mapping checks and query/update fuzz runs support this slice,
+  not aggregate/group budgets or full G4.2 acceptance.
   Native CLI subprocess tests now preserve their selected transport features,
   avoiding a shared-binary overwrite that broke the combined integration run.
   Local implementation is not publication or production recovery qualification

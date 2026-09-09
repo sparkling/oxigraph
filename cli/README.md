@@ -372,6 +372,30 @@ Embedded callers use `SortBufferBudget` with
 `SparqlEvaluator::with_sort_buffer_budget`; cloned handles deliberately share
 state, independently of any inner-join budget.
 
+Optional unsigned `max_distinct_buffer_rows` caps cumulative unique tuples
+retained by native hash DISTINCT operators. Admission creates a fresh
+`DistinctBufferBudget`; nested/repeated operators, prepared evaluator clones
+and all operations of an update share it. Each new tuple is charged before
+cloning into its set, without reserving from a source size hint. Duplicates
+already in that set do not recharge; the same tuple retained by another set
+does. Omission leaves the original unbounded path unchanged.
+
+Zero allows no retained tuples; exactly-at-cap succeeds until another unique
+tuple is attempted. Successful first-occurrence order is unchanged. Early
+consumers such as ASK or LIMIT may finish without attempting further rows;
+that is not exhaustion. This counts physical hash DISTINCT operators, including
+those emitted for REDUCED; an eliminated operator charges nothing. Aggregate
+DISTINCT, native consecutive deduplication, groups, path/dataset deduplication,
+child row creation, row width, hashing/comparison CPU and RSS are excluded.
+
+Exhaustion has the same empty noncacheable 503, failed-stream and whole-request
+rollback behavior for owned updates described above. The typed error identifies
+`DistinctBufferRows` / `DistinctBuffer`. Embedded callers attach it with
+`SparqlEvaluator::with_distinct_buffer_budget`; independent requests need fresh
+handles and borrowed transactions remain the caller's rollback responsibility.
+Join, sort and distinct budgets are independent; existing join-then-sort error
+precedence is preserved ahead of distinct failure.
+
 Optional `request_timeout_ms` (positive milliseconds) starts one absolute
 monotonic deadline **before queueing**. It is not renewed on admission, body
 read, evaluation, writer acquisition or serialization. Omitting it retains

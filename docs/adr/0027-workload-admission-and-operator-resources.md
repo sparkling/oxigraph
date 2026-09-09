@@ -9,8 +9,8 @@
   and response-flush lifetime are implemented. Optional absolute request
   deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and
   transactional paths. Opt-in encoded/decoded request-body, generated/emitted
-  result-byte, native inner-join build-row and ORDER BY buffer-row caps are
-  implemented. Fixed-pool admission counts, occupancy and queue-wait metrics
+  result-byte, native inner-join build-row, ORDER BY buffer-row and hash DISTINCT
+  retained-row caps are implemented. Fixed-pool admission counts, occupancy and queue-wait metrics
   are exported through the existing operator listener. Other operator budgets,
   excluded deadline paths, active-work disconnect, reload and full acceptance
   remain open.
@@ -487,6 +487,43 @@ privacy. Default/no-default HTTP fixtures verify authorized scrapes, excluded
 access denials, overload and HEAD behavior; persistent write/rollback/restart
 journeys remain passing. This closes the native admission-observation slice,
 not resource-use telemetry, full G4.2 acceptance or production promotion.
+
+### Native DISTINCT retained-row limit (2026-09-09)
+
+`DistinctBufferBudget` adds a third independent cumulative row counter through
+`QueryEvaluator`, `SparqlEvaluator` and CLI `max_distinct_buffer_rows`. One fresh
+handle belongs to each admission; evaluator/prepared clones, nested/repeated
+physical operators and every operation of an owned update share it. Each tuple
+newly retained in an operator's hash set is charged before cloning/insertion,
+without reserving from the source size hint. Duplicates in that set do not
+recharge, but another set retaining the same tuple does. Omission keeps the
+existing uninstrumented path and successful first-occurrence sequence.
+
+Zero permits no retained tuples. Exactly-at-cap remains usable until the next
+unique tuple is attempted, which latches `DistinctBufferRows` / `DistinctBuffer`
+failure. Early consumers such as ASK, EXISTS and LIMIT can stop before that
+attempt; their successful completion is not masking an exhausted budget.
+Shared iterator/terminal, SERVICE and owned precommit checks preserve observed
+failure, after the existing join-then-sort precedence. Owned updates roll back
+the whole request before commit; borrowed transactions remain caller-discard.
+CLI pre-header failure is empty noncacheable 503, and late failure cannot close
+as a successful truncated stream. Finite entailment retains the same handle.
+
+This counts physical hash DISTINCT, including the existing planner's lowering
+of REDUCED in both optimization modes. An eliminated operator charges nothing.
+Aggregate DISTINCT accumulators, consecutive deduplication, group/path/dataset
+buffers, child row creation, row width, hashing/comparison CPU, allocation
+capacity, inference, opaque remote work and RSS are not bounded by this counter.
+No optimizer change, broad query whitelist or production numeric default is
+introduced.
+
+Native tests cover zero/exact/+1, duplicate-heavy and bound/unbound mappings,
+first-occurrence order, repeated/nested/prepared sharing, independent counters,
+inflated source hints, denied-row clone/read behavior, terminal/masking paths,
+every owned update binding and persistent HTTP rollback/release/restart.
+Default/no-default/all-feature evaluator tests and both one-minute evaluator
+fuzz targets pass. These verify this native product slice, not full G4.2,
+resource-use telemetry, production promotion or refreshed semantic evidence.
 
 ### Remaining staged acceptance
 

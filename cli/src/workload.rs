@@ -1,6 +1,6 @@
 //! ADR-0027: process-local admission, deadlines and opt-in request/result bytes.
-//! Optional inner-join and sort-buffer row budgets are cooperative, not hard
-//! process isolation.
+//! Optional inner-join, sort-buffer and distinct-buffer row budgets are
+//! cooperative, not hard process isolation.
 //!
 //! Profiles are explicit and immutable for this controller's lifetime. All
 //! requests have one priority; eligible requests are FIFO, skipping a saturated
@@ -13,7 +13,9 @@
 use crate::access::{ListenerKind, RequestContext};
 use oxhttp::model::header::{CACHE_CONTROL, RETRY_AFTER};
 use oxhttp::model::{Body, Extensions, Response, StatusCode};
-use oxigraph::sparql::{CancellationToken, InnerJoinBuildBudget, SortBufferBudget};
+use oxigraph::sparql::{
+    CancellationToken, DistinctBufferBudget, InnerJoinBuildBudget, SortBufferBudget,
+};
 use serde::Deserialize;
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
@@ -57,8 +59,8 @@ impl From<RequestBodyBudget> for oxhttp::RequestBodyLimits {
 
 /// No capacity defaults: the operator supplies every limit. This version only
 /// promises admission limits, optional cooperative request deadlines and entity
-/// byte/inner-join build-row/sort-buffer row limits, not per-principal fairness
-/// or live reload.
+/// byte/inner-join build-row/sort-buffer/distinct-buffer row limits, not
+/// per-principal fairness or live reload.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkloadPolicy {
@@ -80,6 +82,8 @@ pub struct WorkloadPolicy {
     max_inner_join_build_rows: Option<u64>,
     #[serde(default)]
     max_sort_buffer_rows: Option<u64>,
+    #[serde(default)]
+    max_distinct_buffer_rows: Option<u64>,
     retry_after_seconds: u32,
     classes: BTreeMap<String, ClassLimits>,
 }
@@ -645,6 +649,11 @@ impl AdmissionController {
                 .policy
                 .max_sort_buffer_rows
                 .map(SortBufferBudget::new),
+            distinct_buffer_budget: self
+                .0
+                .policy
+                .max_distinct_buffer_rows
+                .map(DistinctBufferBudget::new),
         })))
     }
 }
@@ -678,6 +687,7 @@ struct LeaseInner {
     cancellation: CancellationToken,
     inner_join_build_budget: Option<InnerJoinBuildBudget>,
     sort_buffer_budget: Option<SortBufferBudget>,
+    distinct_buffer_budget: Option<DistinctBufferBudget>,
 }
 impl WorkloadLease {
     /// One cumulative handle created at admission, shared by every native
@@ -689,6 +699,11 @@ impl WorkloadLease {
     /// shared by every native query/update evaluator in this request.
     pub fn sort_buffer_budget(&self) -> Option<&SortBufferBudget> {
         self.0.sort_buffer_budget.as_ref()
+    }
+    /// One cumulative `DISTINCT` retained-row handle created at admission,
+    /// shared by every native query/update evaluator in this request.
+    pub fn distinct_buffer_budget(&self) -> Option<&DistinctBufferBudget> {
+        self.0.distinct_buffer_budget.as_ref()
     }
     /// Serialized/emitted result bytes; excludes HTTP framing and host memory.
     pub fn result_byte_limit(&self) -> Option<oxhttp::ResponseBodyLimit> {

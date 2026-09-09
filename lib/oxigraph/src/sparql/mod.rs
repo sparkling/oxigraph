@@ -52,9 +52,10 @@ use crate::store::{Store, Transaction};
 pub use spareval::{
     AggregateFunctionAccumulator, BoundedJoinCostModel, BoundedJoinPlanning, CancellationReason,
     CancellationToken, CardinalityFeedback, CardinalityFeedbackNode, DefaultServiceHandler,
-    EstimateBasis, InnerJoinBuildBudget, JoinPlanningReport, QueryDatasetSpecification,
-    QueryEvaluationError, QueryExplanation, QueryResource, QueryResourcePhase, QueryResults,
-    QuerySolution, QuerySolutionIter, QueryTripleIter, ServiceHandler, SortBufferBudget,
+    DistinctBufferBudget, EstimateBasis, InnerJoinBuildBudget, JoinPlanningReport,
+    QueryDatasetSpecification, QueryEvaluationError, QueryExplanation, QueryResource,
+    QueryResourcePhase, QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter,
+    ServiceHandler, SortBufferBudget,
 };
 use spareval::{QueryEvaluator, QueryableDataset};
 use spargebra::SparqlParser;
@@ -536,6 +537,15 @@ impl SparqlEvaluator {
     /// inner-join budget; other operator buffers are not bounded.
     pub fn with_sort_buffer_budget(mut self, budget: SortBufferBudget) -> Self {
         self.inner = self.inner.with_sort_buffer_budget(budget);
+        self
+    }
+
+    /// Attaches an explicitly shared cumulative native `DISTINCT` retained-row
+    /// budget. Clones and all operations of an update share it. Create a
+    /// fresh budget for each independent request. It is additive to the
+    /// inner-join and sort budgets; other operator buffers are not bounded.
+    pub fn with_distinct_buffer_budget(mut self, budget: DistinctBufferBudget) -> Self {
+        self.inner = self.inner.with_distinct_buffer_budget(budget);
         self
     }
 

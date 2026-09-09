@@ -199,7 +199,12 @@ row widths and RSS are outside this named counter. Independent
 `max_sort_buffer_rows` now caps cumulative native `ORDER BY` buffer rows before
 decoded sort-key construction and insertion, preserving order and duplicates.
 It shares the same typed-failure, rollback and failed-stream behavior; earlier
-expression work and comparator CPU are not bounded. With a workload policy,
+expression work and comparator CPU are not bounded. Independent
+`max_distinct_buffer_rows` caps cumulative unique tuples retained by native hash
+DISTINCT operators, including planner-lowered REDUCED, before cloning into their
+sets. Duplicates in one set do not recharge; nested sets and update operations
+share the cap, failure and rollback behavior. Aggregate DISTINCT, groups,
+row width and hashing CPU remain outside it. With a workload policy,
 operator `/metrics` now exports active/queued pool gauges, terminal admission
 counts and queue-wait histograms: 60 fixed-label samples without request data.
 Admission is not execution success; lease release is not proof of rollback.

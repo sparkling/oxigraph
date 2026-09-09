@@ -1301,8 +1301,13 @@ expression work and comparator CPU remain outside it. The existing operator
 metrics endpoint now exports 60 fixed-label admission samples for data/operator
 occupancy, returned dispositions and queued waits. Native and authenticated wire
 tests preserve refusal, cancellation, lease ownership and persistent journeys;
-no-workload output and readiness decisions are unchanged. Broader operator
-budgets, fairness, workload reload, resource-use telemetry and full ADR-0027
+no-workload output and readiness decisions are unchanged. An independent
+DISTINCT retained-row cap now charges new tuples before hash-set cloning,
+including planner-lowered REDUCED, with preserved results and owned rollback.
+Duplicates within a set do not recharge; nested sets and update operations share
+the cap. Bound/unbound mappings, native feature tests and query/update fuzz pass;
+aggregate DISTINCT, groups, row width and hashing CPU remain excluded. Broader
+operator budgets, fairness, workload reload, resource-use telemetry and full ADR-0027
 acceptance remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no
 fine-grained SPARQL policy or general evaluator resource quotas are claimed.
