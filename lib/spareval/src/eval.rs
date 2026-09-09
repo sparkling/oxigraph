@@ -1514,6 +1514,25 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         encoded_variables: &mut Vec<Variable>,
         stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
     ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        // Only native reads may be skipped by the empty-probe check. In
+        // particular, keep SERVICE dispatch and custom expression ordering.
+        fn is_native_read_join_tree(pattern: &QueryExpression) -> bool {
+            match pattern {
+                QueryExpression::QuadPattern { .. } | QueryExpression::Path { .. } => true,
+                QueryExpression::Join { left, right, .. } => {
+                    is_native_read_join_tree(left) && is_native_read_join_tree(right)
+                }
+                _ => false,
+            }
+        }
+
+        let preflight_probe = matches!(algorithm, JoinAlgorithm::HashBuildLeftProbeRight { keys } if keys.is_empty())
+            && self.budgets.is_empty()
+            // Older modes must still surface incompatible build-side terms,
+            // even if an independently evaluated probe would turn out empty.
+            && (!cfg!(feature = "sparql-12") || self.dataset.version == SparqlVersion::V1_2)
+            && matches!(right, QueryExpression::QuadPattern { .. })
+            && is_native_read_join_tree(left);
         // A variable SERVICE endpoint is selected from the current solution
         // mapping. Evaluate the other join side first so it may bind that
         // endpoint before SERVICE dispatch.
@@ -1564,7 +1583,29 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                 let budget = self.budgets.inner_join_build().cloned();
                 if keys.is_empty() {
                     // Cartesian product
+                    let cancellation_token = self.dataset.cancellation_token.clone();
                     Ok(Rc::new(move |from| {
+                        let preflighted_probe = if preflight_probe {
+                            if let Err(error) = cancellation_token.ensure_alive() {
+                                return Box::new(once(Err(error)));
+                            }
+                            // Keep the original input/graph scope, not build
+                            // bindings. Reuse the first tuple when nonempty.
+                            let mut rows = probe(from.clone()).peekable();
+                            let is_empty = rows.peek().is_none();
+                            // A backend may cancel at EOF without yielding a row.
+                            if let Err(error) = cancellation_token.ensure_alive() {
+                                return Box::new(once(Err(error)));
+                            }
+                            if is_empty {
+                                return Box::new(empty());
+                            }
+                            // A pending probe error does not outrank a build
+                            // error or override an empty build's old behavior.
+                            Some(rows)
+                        } else {
+                            None
+                        };
                         let built_values = if let Some(budget) = &budget {
                             // Do not reserve from the input's untrusted size hint.
                             let mut rows = Vec::new();
@@ -1587,7 +1628,8 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                             // We don't bother to execute the other side
                             return Box::new(empty());
                         }
-                        let mut probe_iter = probe(from).peekable();
+                        let mut probe_iter =
+                            preflighted_probe.unwrap_or_else(|| probe(from).peekable());
                         if probe_iter.peek().is_none() {
                             // We know it's empty and can discard errors
                             return Box::new(empty());

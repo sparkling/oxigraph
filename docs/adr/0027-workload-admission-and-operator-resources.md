@@ -563,9 +563,21 @@ covered. This is a native product slice, not full G4.2 acceptance or promotion.
 The subsequent query fuzz run found a separate unbudgeted property-path/DISTINCT
 OOM (`oom-428a86b5479b5a512f12339afbe6dedb33d73113`, SHA-256
 `b2827c45e0f23e6112be571129de320979abc3b040c2f3bc37da6dda6c9d8850`).
-It contains no grouping operator and exceeded the unchanged 2048 MiB fuzz cap.
-The input is preserved and this broader query-fuzz gate remains failed;
-passing group tests and the separate update fuzz run do not close it.
+It contains no grouping operator and originally reached 2,284 MiB against the
+unchanged 2048 MiB fuzz cap. The input is preserved unchanged. Passing group
+tests and the separate update fuzz run did not close that gate, and the optional
+group cap is not its repair.
+
+The gate is now closed by the separate
+[ADR-0023 empty-probe short-circuit](0023-statistics-and-bounded-join-planning.md#empty-probe-short-circuit-for-cartesian-joins-2026-09-09):
+optimization-disabled evaluation materialized a whole left-deep Cartesian build
+before observing an absent right-hand quad predicate. The exact original input
+now replays in 1.544 seconds with exit status zero under the same 2048 MiB cap
+and unchanged oracle, and fresh 60-second runs complete 35,338 query and 23,091
+update executions, each with exit status zero. This closes the reproduced
+query-fuzz gate for that preserved input. It supplies no general evaluator
+memory bound, and broader resource accounting, fairness, workload reload and
+full G4.2 acceptance remain open.
 
 ### Remaining staged acceptance
 

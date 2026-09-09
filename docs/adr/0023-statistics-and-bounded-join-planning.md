@@ -246,6 +246,61 @@ the expensive streamed fan-out or all possible query OOMs. No frozen oracle,
 expected result, dependency or promotion boundary changes. Full G3.2 corpus
 performance acceptance remains open.
 
+### Empty-probe short-circuit for Cartesian joins (2026-09-09)
+
+A different preserved query-fuzzer input,
+`oom-428a86b5479b5a512f12339afbe6dedb33d73113` recorded under
+[ADR-0027](0027-workload-admission-and-operator-resources.md#native-accumulator-group-budget-slice-2026-09-09),
+failed for a cause the orientation correction above does not address, and does
+not replace that history. Its optimization-disabled evaluation lowers a large
+left-deep quad and path prefix to `HashBuildLeftProbeRight` with empty keys, and
+the [evaluator](../../lib/spareval/src/eval.rs) materialized that entire
+Cartesian build before observing that the right-hand quad predicate is absent
+from the dataset.
+
+The Cartesian branch now preflights the probe. This applies only when the join
+is `HashBuildLeftProbeRight` with no keys, the right child is a direct quad
+pattern, the left child is recursively quad patterns, paths and joins, no
+optional row budget is configured, and either the full RDF-1.2 term mode is
+selected or the version feature is disabled. Both children are still compiled
+and their compilation errors surfaced before any probe runs. The probe is
+evaluated against the original input tuple and graph scope rather than build
+bindings; a nonempty probe reuses that same iterator with its first tuple
+intact, so tuple order and duplicate multiplicity are unchanged. The
+cancellation token is checked before and after the peek, including a backend
+that cancels at EOF without yielding a row.
+
+A configured `InnerJoinBuildBudget`, `SortBufferBudget`, `DistinctBufferBudget`
+or `GroupBufferBudget` disables the preflight even when unexhausted or unused by
+the operation, preserving build-first charging and read order. Older term modes,
+build trees containing `SERVICE` or custom expressions, and keyed hash joins
+also retain the previous build-first evaluation order.
+
+This is a physical short-circuit inside one existing operator. Leaf discovery,
+join keys, estimator formulas, bounded-profile identities, default-profile
+selection, physical plans, statistics profiles and dependencies are unchanged.
+No general memory or CPU bound follows: the same shape with a nonempty probe
+still materializes its prefix.
+
+Eleven independent tests in
+[`empty_join_probe.rs`](../../lib/spareval/tests/empty_join_probe.rs), ten
+without the SPARQL 1.2 feature, drive an instrumented dataset that counts build
+and probe reads. They cover skipped nested Cartesian and path prefixes, ordering
+and duplicate multiplicity derived from the dataset's own iteration order and
+cross-checked against the budget-forced build-first path, named-graph scope,
+each configured budget, dispatched `SERVICE` and custom-function build subtrees,
+cancellation at probe EOF, build/probe error precedence, and older-mode
+incompatible terms. The exact original input replays in 1.544 seconds under the
+unchanged 2048 MiB fuzz cap and unchanged oracle. 103 default, 103 no-default
+and 112 all-feature `spareval` tests, 18 `sparopt` tests, 49 conformance entry
+points and 458 `oxigraph` store tests pass. This repairs the reproduced failure
+for that shape; full G3.2 corpus performance acceptance remains open.
+
+A locked optimized CLI build then succeeded, and 38 existing `access_http`
+tests, including write, rollback and restart journeys, passed against that
+exact release artifact under an identical checked hash before and after the
+run.
+
 ### G3.2 opt-in native bounded planning (2026-09-08)
 
 [`BoundedJoinPlanning`](../../lib/sparopt/src/optimizer/bounded.rs) exposes an

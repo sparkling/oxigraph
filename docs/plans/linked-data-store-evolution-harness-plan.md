@@ -1313,11 +1313,16 @@ input. Repeated keys do not recharge; nested/prepared execution and whole
 updates share the cap. Native accumulator/read probes, every owned update
 binding and HTTP refusal/failed-stream/restart tests verify the slice. Per-group
 DISTINCT sets, GROUP_CONCAT contents, temporary keys and RSS remain excluded.
-The latest query-fuzzer run found a separate property-path/DISTINCT OOM; the
-preserved input and still-failed gate are recorded in ADR-0027. Its repair is
-the next release-blocker step, not another harness prerequisite. Broader
-operator budgets, fairness, workload reload, resource-use telemetry and full ADR-0027
-acceptance remain open.
+The separate property-path/DISTINCT query-fuzzer OOM recorded in ADR-0027 is now
+repaired: an
+[empty-probe short-circuit](../adr/0023-statistics-and-bounded-join-planning.md#empty-probe-short-circuit-for-cartesian-joins-2026-09-09)
+skips an unbudgeted native quad/path Cartesian build whose right-hand quad
+predicate is absent, and the preserved input replays under its unchanged memory
+cap with fresh query and update fuzz runs passing. Configured row budgets,
+older term modes, `SERVICE` and keyed joins keep their previous order, and no
+general evaluator memory bound follows. Broader operator budgets, fairness,
+workload reload, resource-use telemetry and full ADR-0027 acceptance remain
+open.
 Separate frozen promotion and future G4.4 compatibility remain open; no
 fine-grained SPARQL policy or general evaluator resource quotas are claimed.
 

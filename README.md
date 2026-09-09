@@ -220,6 +220,14 @@ a smaller hash-build input is available. Native result/budget regressions and
 the original OOM-input replay verify this
 [targeted memory-failure correction](docs/adr/0023-statistics-and-bounded-join-planning.md#greedy-hash-build-orientation-correction-2026-09-09);
 it is not a general query-time or memory guarantee.
+A separate preserved query-fuzzer input that materialized a large left-deep
+Cartesian build before noticing an absent right-hand quad predicate is repaired
+by an
+[empty-probe short-circuit](docs/adr/0023-statistics-and-bounded-join-planning.md#empty-probe-short-circuit-for-cartesian-joins-2026-09-09)
+that runs only for unbudgeted native quad/path build trees. Its exact input
+replays under the unchanged fuzz cap and fresh query/update fuzz runs pass.
+Configured row budgets, older term modes, `SERVICE` and keyed joins keep their
+previous evaluation order, and no general memory bound is claimed.
 See [ADR-0026](docs/adr/0026-service-identity-and-authorization.md#native-acceptance-closure-2026-09-09).
 RocksDB remains the persistent backend. The custom-backend tests prove the
 public extension contract, not deployment of a separate replacement backend.

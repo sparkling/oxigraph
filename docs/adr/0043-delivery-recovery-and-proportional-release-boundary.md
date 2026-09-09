@@ -194,9 +194,24 @@
   GROUP_CONCAT contents, temporary keys and RSS remain outside the counter.
   The owner explicitly selected Codex-only execution for this slice after the
   Claude/Fable account pause; this does not assert restored Claude availability.
-  A subsequent query-fuzzer property-path/DISTINCT OOM remains a separate
-  release blocker; the input and unchanged memory limit are preserved under
-  ADR-0027. Group-feature tests are not a substitute for repairing that gate.
+  For the repair that followed, the owner explicitly selected native Opus
+  execution: Claude Code 2.1.261 reporting model `claude-opus-5` with
+  `apiKeySource` none, on the native subscription. That session reviewed the
+  inherited production patch, repaired and expanded the independent tests, and
+  completed the replay and fuzz verification; it did not author the production
+  change. That is one observed session, not a restored-account or
+  provider-availability claim. A model preference is not an automatic
+  safety-block bypass and not authority for an unannounced subscription or
+  model fallback.
+  The query-fuzzer property-path/DISTINCT OOM preserved under ADR-0027 is no
+  longer a release blocker. An
+  [empty-probe short-circuit](0023-statistics-and-bounded-join-planning.md#empty-probe-short-circuit-for-cartesian-joins-2026-09-09)
+  skips an unbudgeted native quad/path Cartesian build whose right-hand quad
+  predicate is absent, and the exact preserved input replays under its unchanged
+  memory limit with fresh query and update fuzz runs passing. Configured row
+  budgets, older term modes, `SERVICE` and keyed joins keep their previous
+  order. ADR-0023 and ADR-0027 remain Proposed; broader resource, fairness and
+  reload gates stay open, and no milestone or programme completion follows.
   Native CLI subprocess tests now preserve their selected transport features,
   avoiding a shared-binary overwrite that broke the combined integration run.
   Local implementation is not publication or production recovery qualification
