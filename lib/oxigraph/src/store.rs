@@ -987,21 +987,37 @@ impl Store {
     /// repeatable-read view, including empty named graphs, without opening a
     /// write-capable transaction. It therefore also works for stores opened
     /// with [`Store::open_read_only`].
+    #[cfg(any(
+        feature = "datalog",
+        feature = "rdfs",
+        feature = "owl2-rl",
+        feature = "shacl"
+    ))]
     pub(crate) fn snapshot_contents(
         &self,
     ) -> Result<(Dataset, Vec<NamedOrBlankNode>), StorageError> {
+        self.snapshot_contents_with_control(|| Ok::<(), StorageError>(()))
+    }
+
+    pub(crate) fn snapshot_contents_with_control<E: From<StorageError>>(
+        &self,
+        mut check: impl FnMut() -> Result<(), E>,
+    ) -> Result<(Dataset, Vec<NamedOrBlankNode>), E> {
+        check()?;
         let reader = self.storage.snapshot();
-        let mut dataset = reader
-            .quads_for_pattern(None, None, None, None)
-            .map(|quad| reader.decode_quad(&quad?))
-            .collect::<Result<Dataset, _>>()?;
-        let named_graphs = reader
-            .named_graphs()
-            .map(|graph_name| reader.decode_named_or_blank_node(&graph_name?))
-            .collect::<Result<Vec<_>, _>>()?;
-        for graph_name in &named_graphs {
-            dataset.insert_named_graph(graph_name.clone());
+        let mut dataset = Dataset::new();
+        for quad in reader.quads_for_pattern(None, None, None, None) {
+            check()?;
+            dataset.insert(reader.decode_quad(&quad?)?);
         }
+        let mut named_graphs = Vec::new();
+        for graph_name in reader.named_graphs() {
+            check()?;
+            let graph_name = reader.decode_named_or_blank_node(&graph_name?)?;
+            dataset.insert_named_graph(graph_name.clone());
+            named_graphs.push(graph_name);
+        }
+        check()?;
         Ok((dataset, named_graphs))
     }
 

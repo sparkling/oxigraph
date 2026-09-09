@@ -7,7 +7,7 @@
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
   and response-flush lifetime are implemented. Optional absolute request
-  deadlines now cover the native Simple/transactional paths. Resource budgets,
+  deadlines now cover native Simple/finite-RDF queries and transactional paths. Resource budgets,
   excluded deadline paths, queued disconnect, reload and full acceptance remain open
 - Programme task: `task-1787728711461-3isex6`
 - **Depends on**:
@@ -164,11 +164,45 @@ empty topology, custom/lazy SERVICE SILENT and LOAD SILENT timeout distinctions,
 Graph Store parser topology/blank-node scope and persistent wire journeys.
 These tests are additive product regressions, not rewritten qualification evidence.
 
-This is still a cooperative, opt-in slice: deadline-bound materialized entailment
+This is still a cooperative, opt-in slice: deadline-bound RDFS/OWL materialization
 and the legacy nontransactional Graph Store bulk path return unsupported (400)
 until they gain the necessary checkpoints. Individual parser, custom callback,
 DNS and native storage calls are not preemptible. Queued socket disconnect,
 resource accounting, exported admission metrics and full acceptance remain open.
+
+### Finite RDF and shared materialization controls (2026-09-09)
+
+Finite RDF is now admitted under request-deadline profiles. One control begins
+before the repeatable-read snapshot, observes both evaluator and materialization
+option tokens, and checks snapshot decoding, effective FROM/RDF merges, finite
+RDF inference, visible-result projection and owned query scans. Graph-prefix
+copies, empty named graphs, graph-local inference and blank-node scope are
+preserved. No transaction or store write is introduced by query materialization.
+No-match scans check before filtering; failure cannot return a partial dataset.
+
+The existing relative `QueryEntailmentOptions::with_timeout` remains a
+materialization-only budget, now including preparation rather than restarting
+at inference entry. It is cleared after success. Explicit token deadlines and
+cancellation remain active for subsequent dataset reads. The dataset's
+`QueryableDataset::Error` is now `QueryEntailmentError`, not `Infallible`;
+consumers with that associated type pinned must handle the typed error.
+Native materialization uses the monotonic standard clock; WASM uses the
+workspace's existing `web-time` package through a target-specific dependency.
+No new package or native runtime is introduced.
+HTTP and Store observations preserve `TimedOut` versus `Cancelled` instead
+of classifying either as semantic inconsistency.
+
+The Datalog callback bridge also reaches existing RDFS/OWL engine checkpoints,
+but this alone does not close their deadline support: initial copies, sparse
+specialized scans, output and memory-accounting work still need instrumentation.
+Those are the next G4.2 product step, followed by queued disconnect and resource
+accounting. No profile, expected semantic result or protected receipt is changed.
+Native regressions cover expiry before binding, mid-snapshot cancellation,
+EOF cancellation, retained explicit tokens, materialization-budget lifetime,
+typed metrics/HTTP status and unchanged FROM/empty-graph semantics. A loopback
+CLI journey exercises finite RDF inference under an actual workload deadline
+followed by write/rollback/restart persistence. These are native product checks,
+not refreshed Datalog mutation-competence or RDFS/OWL qualification receipts.
 
 ### Remaining staged acceptance
 

@@ -1,17 +1,20 @@
 #![warn(missing_docs)]
 
+use self::control::Control;
 #[cfg(any(feature = "owl2-rl", feature = "rdfs"))]
 use crate::model::BlankNode;
 use crate::model::vocab::rdf;
 #[cfg(feature = "rdfs")]
 use crate::model::vocab::rdfs;
 use crate::model::{Dataset, GraphName, NamedNode, NamedOrBlankNode, Quad, Term};
+use crate::sparql::{CancellationToken, QueryEvaluationError};
 use crate::store::StorageError;
 #[cfg(any(feature = "owl2-rl", feature = "rdfs"))]
 use std::collections::HashSet;
 use std::fmt;
 use std::time::Duration;
 
+mod control;
 mod dataset;
 pub use dataset::QueryEntailmentDataset;
 
@@ -155,11 +158,22 @@ impl fmt::Display for QueryEntailment {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 /// Options controlling bounded query-time entailment materialization.
 pub struct QueryEntailmentOptions {
     profile: QueryEntailment,
     timeout: Option<Duration>,
+    cancellation_token: Option<CancellationToken>,
+}
+
+impl fmt::Debug for QueryEntailmentOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("QueryEntailmentOptions")
+            .field("profile", &self.profile)
+            .field("timeout", &self.timeout)
+            .field("has_cancellation_token", &self.cancellation_token.is_some())
+            .finish()
+    }
 }
 
 impl QueryEntailmentOptions {
@@ -168,6 +182,7 @@ impl QueryEntailmentOptions {
         Self {
             profile,
             timeout: None,
+            cancellation_token: None,
         }
     }
 
@@ -177,9 +192,19 @@ impl QueryEntailmentOptions {
     }
 
     #[must_use]
-    /// Sets the maximum time allowed for finite materialization.
+    /// Sets the cooperative time budget, starting before snapshot copying and
+    /// shared by dataset construction and inference. Once materialization
+    /// succeeds, only explicit cancellation tokens and their deadlines remain.
     pub const fn with_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Shares caller cancellation and its absolute deadline with materialization.
+    /// Prepared queries also observe their evaluator's token automatically.
+    #[must_use]
+    pub fn with_cancellation_token(mut self, token: CancellationToken) -> Self {
+        self.cancellation_token = Some(token);
         self
     }
 }
@@ -187,6 +212,9 @@ impl QueryEntailmentOptions {
 #[derive(Debug, thiserror::Error)]
 /// Failure while preparing a query-time entailment dataset.
 pub enum QueryEntailmentError {
+    /// Cancellation or deadline expiry while preparing or reading the dataset.
+    #[error(transparent)]
+    Evaluation(#[from] QueryEvaluationError),
     /// Reading the Store snapshot failed.
     #[error(transparent)]
     Storage(#[from] StorageError),
@@ -258,19 +286,23 @@ fn rdf_required_datatypes() -> Vec<NamedNode> {
 fn rdf12_finite(
     base: &Dataset,
     named_graphs: &[GraphName],
+    control: &Control,
 ) -> Result<Dataset, QueryEntailmentError> {
-    let reasons = base
-        .iter()
-        .filter(|quad| has_ill_typed_required_literal(&quad.object))
-        .count();
+    let mut reasons = 0;
+    for quad in base {
+        control.check()?;
+        reasons += usize::from(has_ill_typed_required_literal(&quad.object));
+    }
     if reasons != 0 {
         return Err(QueryEntailmentError::RdfInconsistent { reasons });
     }
-    let mut result = base.clone();
+    let mut result = control.copy(base)?;
     for graph in std::iter::once(GraphName::DefaultGraph).chain(named_graphs.iter().cloned()) {
+        control.check()?;
         insert_rdf_axioms(&mut result, &graph);
     }
     for quad in base {
+        control.check()?;
         for predicate in predicates_in_quad(&quad) {
             result.insert(Quad::new(
                 predicate,
@@ -290,16 +322,23 @@ fn rdf12_finite(
             }
         }
     }
+    control.check()?;
     Ok(result)
 }
 
 #[cfg(feature = "rdfs")]
-fn rdfs_working_dataset(base: &Dataset, named_graphs: &[GraphName]) -> Dataset {
-    let mut result = base.clone();
+fn rdfs_working_dataset(
+    base: &Dataset,
+    named_graphs: &[GraphName],
+    control: &Control,
+) -> Result<Dataset, QueryEntailmentError> {
+    let mut result = control.copy(base)?;
     for graph in std::iter::once(GraphName::DefaultGraph).chain(named_graphs.iter().cloned()) {
+        control.check()?;
         insert_rdf_axioms(&mut result, &graph);
     }
     for quad in base {
+        control.check()?;
         for node in named_nodes_in_quad(&quad) {
             if is_container_membership_property(&node) {
                 for (predicate, object) in [
@@ -317,7 +356,8 @@ fn rdfs_working_dataset(base: &Dataset, named_graphs: &[GraphName]) -> Dataset {
             }
         }
     }
-    result
+    control.check()?;
+    Ok(result)
 }
 
 fn insert_rdf_axioms(dataset: &mut Dataset, graph: &GraphName) {
@@ -343,47 +383,62 @@ fn insert_rdf_axioms(dataset: &mut Dataset, graph: &GraphName) {
 }
 
 #[cfg(any(feature = "owl2-rl", feature = "rdfs"))]
-fn visible_dataset(base: &Dataset, closure: &Dataset) -> Dataset {
-    let base_blank_nodes = blank_nodes(base);
-    let mut visible = base.clone();
-    visible.extend(closure.iter().filter(|quad| {
-        blank_nodes_in_quad(quad)
+fn visible_dataset(
+    base: &Dataset,
+    closure: &Dataset,
+    control: &Control,
+) -> Result<Dataset, QueryEntailmentError> {
+    let base_blank_nodes = blank_nodes(base, control)?;
+    let mut visible = control.copy(base)?;
+    for quad in closure {
+        control.check()?;
+        if blank_nodes_in_quad(&quad)
             .iter()
             .all(|node| base_blank_nodes.contains(node))
-    }));
-    visible
+        {
+            visible.insert(quad);
+        }
+    }
+    control.check()?;
+    Ok(visible)
 }
 
 #[cfg(any(feature = "owl2-rl", feature = "rdfs"))]
 fn reject_reserved_witnesses(
     dataset: &Dataset,
     prefix: &'static str,
+    control: &Control,
 ) -> Result<(), QueryEntailmentError> {
-    if let Some(label) = blank_nodes(dataset)
-        .into_iter()
-        .map(|node| node.as_str().to_owned())
-        .find(|label| label.starts_with(prefix))
-    {
-        Err(QueryEntailmentError::ReservedWitnessLabel { label, prefix })
-    } else {
-        Ok(())
+    for node in blank_nodes(dataset, control)? {
+        control.check()?;
+        if node.as_str().starts_with(prefix) {
+            return Err(QueryEntailmentError::ReservedWitnessLabel {
+                label: node.as_str().to_owned(),
+                prefix,
+            });
+        }
     }
+    control.check()
 }
 
 #[cfg(any(feature = "owl2-rl", feature = "rdfs"))]
-fn blank_nodes(dataset: &Dataset) -> HashSet<BlankNode> {
-    let mut nodes = dataset
-        .iter()
-        .flat_map(|quad| blank_nodes_in_quad(&quad))
-        .collect::<HashSet<_>>();
-    nodes.extend(dataset.named_graphs().filter_map(|graph_name| {
+fn blank_nodes(
+    dataset: &Dataset,
+    control: &Control,
+) -> Result<HashSet<BlankNode>, QueryEntailmentError> {
+    let mut nodes = HashSet::new();
+    for quad in dataset {
+        control.check()?;
+        nodes.extend(blank_nodes_in_quad(&quad));
+    }
+    for graph_name in dataset.named_graphs() {
+        control.check()?;
         if let NamedOrBlankNode::BlankNode(node) = graph_name {
-            Some(node)
-        } else {
-            None
+            nodes.insert(node);
         }
-    }));
-    nodes
+    }
+    control.check()?;
+    Ok(nodes)
 }
 
 #[cfg(any(feature = "owl2-rl", feature = "rdfs"))]

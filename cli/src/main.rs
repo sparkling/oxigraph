@@ -1814,14 +1814,16 @@ fn evaluate_sparql_query(
 
     check_request(request)?;
     let mut cancellation = request_cancellation(request);
-    if entailment != QueryEntailment::Simple
-        && cancellation
-            .as_ref()
-            .and_then(CancellationToken::deadline)
-            .is_some()
+    if matches!(
+        entailment,
+        QueryEntailment::Rdfs12Finite | QueryEntailment::Owl2RlRdfBounded
+    ) && cancellation
+        .as_ref()
+        .and_then(CancellationToken::deadline)
+        .is_some()
     {
         return Err(bad_request(
-            "materialized entailment is unsupported with request deadlines",
+            "RDFS and OWL materialization are unsupported with request deadlines",
         ));
     }
     if let Some(timeout) = timeout {
@@ -3110,7 +3112,16 @@ fn bad_request(message: impl fmt::Display) -> HttpError {
     (StatusCode::BAD_REQUEST, message.to_string())
 }
 
-fn query_request_refused(message: impl fmt::Display) -> HttpError {
+fn query_request_refused(message: oxigraph::sparql::QueryEntailmentError) -> HttpError {
+    if matches!(
+        &message,
+        oxigraph::sparql::QueryEntailmentError::Evaluation(
+            oxigraph::sparql::QueryEvaluationError::TimedOut
+                | oxigraph::sparql::QueryEvaluationError::Cancelled
+        )
+    ) {
+        return (StatusCode::REQUEST_TIMEOUT, message.to_string());
+    }
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         format!("Query request refused: {message}"),

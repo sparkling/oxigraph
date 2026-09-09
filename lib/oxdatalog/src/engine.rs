@@ -25,7 +25,7 @@ mod strata;
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 /// A clonable, one-way cancellation signal shared by an evaluation and its caller.
 ///
 /// Clones observe the same atomic flag. Cancellation is cooperative: the engine
@@ -33,12 +33,39 @@ mod tests;
 /// checkpoints and then returns [`EvaluationError::Cancelled`].
 pub struct CancellationToken {
     cancelled: Arc<AtomicBool>,
+    check: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+}
+
+impl std::fmt::Debug for CancellationToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CancellationToken")
+            .field("cancelled", &self.cancelled)
+            .field("has_external_check", &self.check.is_some())
+            .finish()
+    }
 }
 
 impl CancellationToken {
     /// Creates a token in the non-cancelled state.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Links a caller-owned cancellation signal to engine checkpoints.
+    ///
+    /// The callback must be fast, nonblocking and must not call this token.
+    /// Returning `true` permanently cancels this token and all its clones.
+    /// No thread or runtime is required; the callback runs on the evaluator.
+    #[must_use]
+    pub fn with_cancellation_check(
+        mut self,
+        check: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> Self {
+        let previous = self.check.take();
+        self.check = Some(Arc::new(move || {
+            previous.as_ref().is_some_and(|check| check()) || check()
+        }));
+        self
     }
 
     /// Permanently marks this token and all of its clones as cancelled.
@@ -48,6 +75,13 @@ impl CancellationToken {
 
     /// Returns whether cancellation has been requested.
     pub fn is_cancelled(&self) -> bool {
+        if self.cancelled.load(Ordering::Acquire) {
+            return true;
+        }
+        if self.check.as_ref().is_some_and(|check| check()) {
+            self.cancel();
+            return true;
+        }
         self.cancelled.load(Ordering::Acquire)
     }
 }

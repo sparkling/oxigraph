@@ -282,8 +282,13 @@ deadline. The old query-only `--timeout` uses a deadline token, not a detached
 sleeping thread. The transport watcher is stopped and joined on completion
 before connection reuse; timeout never releases capacity still owned by work.
 
-Deadline-enabled queries currently reject materialized entailment (non-Simple)
-with 400. Deadline-enabled Graph Store PUT and non-multipart POST reject the
+Deadline-enabled queries support Simple and finite RDF materialization. One
+request deadline spans snapshot copying, FROM/RDF merge construction, finite
+RDF inference and materialized reads, including scans with no matching rows.
+Cancellation/expiry during materialization returns 408 before response streaming.
+RDFS and OWL materialization still return 400 under request-deadline profiles:
+their internal sparse scans and closure construction need further checkpoints.
+Deadline-enabled Graph Store PUT and non-multipart POST reject the
 legacy `no_transaction` bulk path with 400. Their missing cooperative checkpoints
 are follow-up work; other methods retain their normal handling of that flag.
 Individual parser, custom callback, DNS and native storage calls remain

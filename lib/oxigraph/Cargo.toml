@@ -87,6 +87,7 @@ rstar = { version = "0.13", default-features = false, optional = true }
 spargeo = { workspace = true, optional = true }
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+web-time.workspace = true
 getrandom.workspace = true
 js-sys = { workspace = true, optional = true }
 rand = "0.10"

@@ -136,10 +136,15 @@
   G4.2 now adds opt-in bounded pre-body admission, queue cancellation/expiry,
   a separate operator pool and response-flush lease ownership. Native admission
   and HTTP tests support this slice, not full request-resource governance.
-  The next slice adds absolute lease deadlines, typed timeout propagation,
+  The native deadline slice adds absolute lease deadlines, typed timeout propagation,
   pre-commit rollback and failed-stream checks for native Simple/transactional
   paths; excluded materialization/bulk paths fail explicitly. ADR-0027 retains
   resource accounting, queued disconnect and full acceptance as open work.
+  Finite RDF now shares request control across snapshot/FROM construction,
+  materialization and owned reads, with typed expiry and preserved topology.
+  The relative materialization budget still ends at successful preparation;
+  enclosing request deadlines do not. RDFS/OWL inner-loop instrumentation is
+  the next product slice, not a new harness or semantic-profile project.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

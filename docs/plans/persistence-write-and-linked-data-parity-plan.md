@@ -20,7 +20,7 @@
   ADR-0034 through ADR-0041, and P1-P3 breadth are future roadmap work and do
   not gate R1
 - Date: 2026-08-24
-- Updated: 2026-09-08
+- Updated: 2026-09-09
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
 - Previous upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Current audited upstream head: `7ce152a1d910d5662027a5bcbe7c32cee0a4e059`
@@ -1401,8 +1401,11 @@ denial. G4.2 now implements opt-in bounded global/class admission, eligible FIFO
 queue expiry/token cancellation, separate operator capacity and leases held
 through response flush. Optional absolute deadlines now cover queue/body I/O,
 Simple evaluation, owned writes/final pre-commit and response streams; typed
-timeouts cannot be hidden by SILENT. Deadline-bound materialized entailment and
-legacy nontransactional bulk paths fail explicitly until instrumented. Resource
+timeouts cannot be hidden by SILENT. Finite RDF materialization now shares
+deadline/cancellation through snapshot copying, FROM construction, inference
+and owned reads, preserving the materialization-only relative budget contract.
+RDFS/OWL internal copies/sparse scans/output accounting are the next G4.2 step;
+those deadline paths and legacy nontransactional bulk still fail explicitly. Resource
 budgets, queued socket disconnect, reload, exported counters and full ADR-0027
 acceptance remain open.
 Separate ADR-0026 frozen promotion and

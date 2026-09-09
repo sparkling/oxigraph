@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-26
+- Updated: 2026-09-09 (additive caller cancellation bridge)
 - Deciders: Oxigraph parity programme
 - Implementation status: D0, D1, and D2 implemented as bounded native profiles
 - **Related**:
@@ -58,6 +59,13 @@ exhaustion returns the typed
   views.
 - Memory accounting is deterministic for the runtime-owned workset, not an
   allocator-exact process measurement.
+- A caller may attach a fast, nonblocking cancellation check to a token without
+  introducing a runtime/thread or a dependency on its caller. A true result
+  latches the shared atomic flag; clones retain explicit cancellation semantics.
+  Oxigraph uses this bridge for request cancellation. Deadline provenance remains
+  in the caller, not in the engine's boolean cancellation signal. Native tests
+  verify latching and mid-input cancellation; this does not refresh any pinned
+  mutation or consumer qualification receipt.
 
 ## Implementation evidence
 

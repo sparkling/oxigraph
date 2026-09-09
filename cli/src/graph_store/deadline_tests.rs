@@ -121,3 +121,54 @@ fn deadline_profile_rejects_only_uninstrumented_paths_before_work() -> Result<()
     ensure!(store.is_empty()?);
     Ok(())
 }
+
+#[cfg(feature = "rdf-12")]
+#[test]
+fn deadline_profile_allows_finite_rdf_inference() -> Result<()> {
+    let store = Store::new()?;
+    store.insert(Quad::new(
+        NamedNode::new("urn:s")?,
+        NamedNode::new("urn:p")?,
+        NamedNode::new("urn:o")?,
+        GraphName::DefaultGraph,
+    ))?;
+    let request = request(
+        CancellationToken::new().with_deadline(Instant::now() + std::time::Duration::from_secs(10)),
+    )?;
+    let result = crate::evaluate_sparql_query(
+        &store,
+        &oxigraph::sparql::SparqlEvaluator::new(),
+        "ASK { <urn:p> a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> }",
+        None,
+        false,
+        Vec::new(),
+        Vec::new(),
+        &request,
+        oxigraph::sparql::QueryEntailment::Rdf12Finite,
+        None,
+    )
+    .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+    ensure!(result.status() == StatusCode::OK);
+    let body = result.into_body().to_string()?;
+    ensure!(body.contains("true"), "{body}");
+    ensure!(store.len()? == 1);
+    Ok(())
+}
+
+#[test]
+fn entailment_deadline_maps_to_timeout_not_semantic_refusal() {
+    use oxigraph::sparql::{QueryEntailmentError, QueryEvaluationError};
+    for error in [
+        QueryEvaluationError::TimedOut,
+        QueryEvaluationError::Cancelled,
+    ] {
+        assert_eq!(
+            crate::query_request_refused(QueryEntailmentError::Evaluation(error)).0,
+            StatusCode::REQUEST_TIMEOUT
+        );
+    }
+    assert_eq!(
+        crate::query_request_refused(QueryEntailmentError::RdfInconsistent { reasons: 1 }).0,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+}

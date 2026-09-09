@@ -85,6 +85,14 @@ fn start_with_workload(
     read_only: bool,
     workload: Option<&Value>,
 ) -> Result<Running> {
+    start_with_workload_entailment(policy, read_only, workload, None)
+}
+fn start_with_workload_entailment(
+    policy: &Value,
+    read_only: bool,
+    workload: Option<&Value>,
+    entailment: Option<&str>,
+) -> Result<Running> {
     let directory = assert_fs::TempDir::new()?;
     let location = directory.path().join("store");
     if read_only {
@@ -118,6 +126,9 @@ fn start_with_workload(
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(std::fs::File::create(directory.path().join("stderr.log"))?);
+    if let Some(entailment) = entailment {
+        command.arg("--entailment").arg(entailment);
+    }
     if let Some(workload) = workload {
         let path = directory.path().join("workload.json");
         std::fs::write(&path, serde_json::to_vec(workload)?)?;
@@ -1008,6 +1019,39 @@ fn workload_deadline_closes_stalled_body_then_allows_write_rollback_restart() ->
         work_counters(&running)? == before,
         "incomplete body entered RDF work"
     );
+    write_rollback_and_restart(running)
+}
+
+#[cfg(feature = "rdf-12")]
+#[test]
+fn finite_rdf_workload_deadline_supports_inference_and_persistent_journey() -> Result<()> {
+    let mut profile = workload(1, 1, 3000);
+    profile["request_timeout_ms"] = json!(3000);
+    let running =
+        start_with_workload_entailment(&config(), false, Some(&profile), Some("rdf-1.2-finite"))?;
+    ensure!(
+        sparql(
+            &running,
+            WRITER,
+            "/update",
+            "INSERT DATA { <urn:seed> <urn:predicate> <urn:object> }"
+        )?
+        .status
+            == 204
+    );
+    let response = sparql(
+        &running,
+        READER,
+        "/query",
+        "ASK { <urn:predicate> a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> }",
+    )?;
+    ensure!(
+        response.status == 200,
+        "{} {}",
+        response.status,
+        response.body
+    );
+    ensure!(serde_json::from_str::<Value>(&response.body)?["boolean"] == true);
     write_rollback_and_restart(running)
 }
 

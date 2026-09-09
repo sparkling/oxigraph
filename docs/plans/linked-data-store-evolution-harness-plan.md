@@ -19,7 +19,7 @@
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
-- Updated: 2026-09-08
+- Updated: 2026-09-09
 - Repository: `oxigraph/oxigraph` clone maintained by this fork
 - Previous programme baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
@@ -1268,9 +1268,12 @@ native delivery task. Its first slice now provides opt-in global/class admission
 eligible FIFO, queue expiry/token cancellation, separate operator capacity and
 leases retained through response flush. Optional absolute deadlines now cover
 queue/body I/O, Simple evaluation, owned writes/final pre-commit and response
-streams; typed timeouts cannot be hidden by SILENT. Deadline-bound materialized
-entailment and legacy nontransactional bulk paths fail explicitly until
-instrumented. Resource budgets, queued socket disconnect, reload, exported
+streams; typed timeouts cannot be hidden by SILENT. Finite RDF now shares
+deadline/cancellation across snapshot/FROM construction, inference and owned
+reads; relative materialization timeouts still end on successful preparation.
+RDFS/OWL internal copies/sparse scans/output accounting are the next G4.2 step.
+Their deadline paths and legacy nontransactional bulk remain explicitly unsupported.
+Resource budgets, queued socket disconnect, reload, exported
 counters and full ADR-0027 acceptance remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no
 fine-grained SPARQL policy or evaluator resource quotas are claimed.

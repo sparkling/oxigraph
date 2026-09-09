@@ -246,6 +246,12 @@ fn error_outcome(mut error: &(dyn Error + 'static)) -> EvaluationOutcome {
                 UpdateEvaluationError::Storage(error) => error,
                 _ => break,
             }
+        } else if let Some(error) = error.downcast_ref::<crate::sparql::QueryEntailmentError>() {
+            match error {
+                crate::sparql::QueryEntailmentError::Evaluation(error) => error,
+                crate::sparql::QueryEntailmentError::Storage(error) => error,
+                _ => break,
+            }
         } else if let Some(error) = error.downcast_ref::<StorageError>() {
             match error {
                 StorageError::Io(error) => error,
@@ -333,6 +339,18 @@ mod tests {
 
     #[test]
     fn deadline_outcomes_are_distinct_from_explicit_cancellation() {
+        assert_eq!(
+            error_outcome(&crate::sparql::QueryEntailmentError::Evaluation(
+                QueryEvaluationError::TimedOut
+            )),
+            EvaluationOutcome::TimedOut
+        );
+        assert_eq!(
+            error_outcome(&QueryEvaluationError::Dataset(Box::new(
+                crate::sparql::QueryEntailmentError::Evaluation(QueryEvaluationError::Cancelled)
+            ))),
+            EvaluationOutcome::Cancelled
+        );
         assert_eq!(
             error_outcome(&QueryEvaluationError::TimedOut),
             EvaluationOutcome::TimedOut

@@ -633,14 +633,6 @@ impl SparqlEvaluator {
     /// ```
     pub fn for_query(self, query: Query) -> PreparedSparqlQuery {
         let dataset = query.dataset().cloned().map(Into::into).unwrap_or_default();
-        #[cfg(all(
-            not(target_family = "wasm"),
-            any(
-                feature = "text-index",
-                feature = "spatial-index",
-                feature = "statistics"
-            )
-        ))]
         let cancellation_token = self.cancellation_token.clone();
         let evaluator = self.into_evaluator();
         PreparedSparqlQuery {
@@ -650,14 +642,6 @@ impl SparqlEvaluator {
             #[cfg(feature = "http-client")]
             service_client: evaluator.service_client,
             substitutions: HashMap::new(),
-            #[cfg(all(
-                not(target_family = "wasm"),
-                any(
-                    feature = "text-index",
-                    feature = "spatial-index",
-                    feature = "statistics"
-                )
-            ))]
             cancellation_token,
         }
     }
@@ -780,14 +764,6 @@ impl Default for SparqlEvaluator {
 #[must_use]
 pub struct PreparedSparqlQuery {
     evaluator: QueryEvaluator,
-    #[cfg(all(
-        not(target_family = "wasm"),
-        any(
-            feature = "text-index",
-            feature = "spatial-index",
-            feature = "statistics"
-        )
-    ))]
     cancellation_token: Option<CancellationToken>,
     #[cfg(feature = "http-client")]
     service_client: Option<HttpClient>,
@@ -895,6 +871,7 @@ impl PreparedSparqlQuery {
             store,
             options,
             &self.dataset,
+            self.cancellation_token.clone(),
         ) {
             Ok(dataset) => dataset,
             Err(error) => {

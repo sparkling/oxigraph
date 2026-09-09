@@ -20,6 +20,51 @@ fn value(name: &str) -> Value {
 }
 
 #[test]
+fn external_cancellation_is_latched_and_preserves_shared_explicit_cancel() {
+    use super::CancellationToken;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let original = CancellationToken::new();
+    let token = original
+        .clone()
+        .with_cancellation_check(move || observed.fetch_add(1, Ordering::Relaxed) == 2);
+    assert!(!token.is_cancelled());
+    assert!(!token.clone().is_cancelled());
+    assert!(token.is_cancelled());
+    assert!(original.is_cancelled());
+    assert!(token.clone().is_cancelled());
+    assert_eq!(calls.load(Ordering::Relaxed), 3);
+}
+
+#[test]
+fn external_cancellation_stops_engine_mid_input_without_partial_result() {
+    use super::{CancellationToken, EvaluationError};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let options = EvaluationOptions {
+        cancellation_token: CancellationToken::new()
+            .with_cancellation_check(move || observed.fetch_add(1, Ordering::Relaxed) == 50),
+        ..EvaluationOptions::default()
+    };
+    let fact = Fact::new(RelationId::new("input").unwrap(), vec![value("seed")]);
+    let result = Engine::default().evaluate(
+        &Program::new(Vec::new()),
+        std::iter::repeat_n(fact, 1_000),
+        &options,
+    );
+    assert!(matches!(result, Err(EvaluationError::Cancelled)));
+    assert_eq!(calls.load(Ordering::Relaxed), 51);
+}
+
+#[test]
 fn bind_defensively_rejects_a_mismatched_constant() {
     let relation = RelationId::new("input").unwrap();
     let wanted = value("wanted");
