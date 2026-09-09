@@ -1,11 +1,13 @@
 use super::{State, Target};
 use crate::{HttpError, internal_server_error};
+use oxhttp::model::{Body, Request};
 use oxigraph::model::GraphName;
 use oxigraph::store::{Store, Transaction};
 
 pub(super) fn from_transaction(
     transaction: &Transaction<'_>,
     target: &Target,
+    request: &Request<Body>,
 ) -> Result<State, HttpError> {
     let exists = match target {
         Target::Dataset | Target::DefaultGraph => true,
@@ -23,13 +25,19 @@ pub(super) fn from_transaction(
             transaction.quads_for_pattern(None, None, None, Some(&graph_name))
         }
     }
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(internal_server_error)?;
+    .map(|quad| {
+        crate::check_request(request)?;
+        quad.map_err(internal_server_error)
+    })
+    .collect::<Result<Vec<_>, HttpError>>()?;
     let named_graphs = if matches!(target, Target::Dataset) {
         transaction
             .named_graphs()
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(internal_server_error)?
+            .map(|graph| {
+                crate::check_request(request)?;
+                graph.map_err(internal_server_error)
+            })
+            .collect::<Result<Vec<_>, HttpError>>()?
     } else {
         Vec::new()
     };
@@ -40,7 +48,11 @@ pub(super) fn from_transaction(
     })
 }
 
-pub(super) fn from_read_only_store(store: &Store, target: &Target) -> Result<State, HttpError> {
+pub(super) fn from_read_only_store(
+    store: &Store,
+    target: &Target,
+    request: &Request<Body>,
+) -> Result<State, HttpError> {
     // A disk-backed Store::open_read_only handle is an immutable RocksDB view, so
     // its targeted snapshots all observe the same state without a write transaction.
     let exists = match target {
@@ -59,13 +71,19 @@ pub(super) fn from_read_only_store(store: &Store, target: &Target) -> Result<Sta
             store.quads_for_pattern(None, None, None, Some(&graph_name))
         }
     }
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(internal_server_error)?;
+    .map(|quad| {
+        crate::check_request(request)?;
+        quad.map_err(internal_server_error)
+    })
+    .collect::<Result<Vec<_>, HttpError>>()?;
     let named_graphs = if matches!(target, Target::Dataset) {
         store
             .named_graphs()
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(internal_server_error)?
+            .map(|graph| {
+                crate::check_request(request)?;
+                graph.map_err(internal_server_error)
+            })
+            .collect::<Result<Vec<_>, HttpError>>()?
     } else {
         Vec::new()
     };

@@ -251,7 +251,8 @@ configured `Retry-After`. Queue expiry returns 503. No rejected request opens a
 dataset transaction or starts evaluation/egress. Capacity remains held through
 body processing, response serialization **and socket flush**, releasing on
 success, observed I/O failure or Rust unwind. A slow client still holds its
-slot; admission limits do not shorten the existing transport timeout.
+slot until its work ends; without a request deadline, admission limits do not
+shorten the existing transport timeout.
 
 Files are bounded to 64 KiB and 16 classes, with ASCII alphanumeric/`_-` names
 of 1–32 bytes, a positive version, positive active limits/queue timeout and
@@ -262,6 +263,32 @@ class causes requests using it to fail closed with 503, never fall back.
 The admission policy itself is immutable until restart; malformed/unknown
 fields and arithmetic overflow are rejected at startup.
 
+Optional `request_timeout_ms` (positive milliseconds) starts one absolute
+monotonic deadline **before queueing**. It is not renewed on admission, body
+read, evaluation, writer acquisition or serialization. Omitting it retains
+the existing timeout behavior. Expiry while queued returns 503; a cooperative
+HTTP checkpoint before response output reports 408 when the socket is still
+usable. The transport closes both directions at expiry, so clients must also
+handle a closed connection or incomplete response, not expect a final status.
+An expired partial stream never receives a successful chunk terminator.
+
+The shared token distinguishes timeout from explicit cancellation. Simple
+queries, built-in SERVICE/LOAD (including SILENT), owned SPARQL updates and
+transactional Graph Store writes observe it. A final pre-commit checkpoint
+rolls back staged data and empty graphs; expiry after a commit attempt cannot
+prove rollback, and losing the response does not mean the write did not commit.
+Readiness uses the earlier of its own 250 ms limit and the remaining request
+deadline. The old query-only `--timeout` uses a deadline token, not a detached
+sleeping thread. The transport watcher is stopped and joined on completion
+before connection reuse; timeout never releases capacity still owned by work.
+
+Deadline-enabled queries currently reject materialized entailment (non-Simple)
+with 400. Deadline-enabled Graph Store PUT and non-multipart POST reject the
+legacy `no_transaction` bulk path with 400. Their missing cooperative checkpoints
+are follow-up work; other methods retain their normal handling of that flag.
+Individual parser, custom callback, DNS and native storage calls remain
+cooperative boundaries, not preemptible CPU or hard real-time guarantees.
+
 The public Rust `AdmissionController::acquire` accepts a cancellation token;
 queued cancellation is checked every 10 ms of scheduled execution. Cancelling
 an active lease does not prematurely free its capacity. `snapshot()` exposes
@@ -269,8 +296,8 @@ active/queued counts without principal or query data. Idle/header connections
 remain subject to a separate transport cap (active + queued + one rejection
 connection for each listener), so this is not unlimited overload responsiveness.
 
-Still pending: queued-socket disconnect detection, total-request deadlines and
-token propagation through every parser/evaluator/write path, resource counters,
+Still pending: queued-socket disconnect detection, deadline support for the
+explicitly excluded paths above, finer parser/evaluator work counters,
 per-principal/priority scheduling, atomic workload reload, exported metrics and
 operational qualification. Cooperative admission is not a hard RSS/CPU/fd/disk
 guarantee; use external process/container controls. This stage does not complete

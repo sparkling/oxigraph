@@ -224,8 +224,11 @@ fn check_control(
     control: &TransactionStartControl,
     started: Instant,
 ) -> Result<(), QueryEvaluationError> {
-    if control.is_cancelled() {
-        return Err(QueryEvaluationError::Cancelled);
+    if let Some(reason) = control.cancellation_reason() {
+        return Err(match reason {
+            spareval::CancellationReason::Cancelled => QueryEvaluationError::Cancelled,
+            spareval::CancellationReason::TimedOut => QueryEvaluationError::TimedOut,
+        });
     }
     if control
         .timeout()

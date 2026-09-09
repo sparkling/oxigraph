@@ -1,17 +1,21 @@
 use crate::io::{
-    decode_request_body, decode_request_headers, encode_response, encode_response_with_connection,
-    BUFFER_CAPACITY,
+    BUFFER_CAPACITY, decode_request_body, decode_request_headers, encode_response,
+    encode_response_with_connection,
 };
-use crate::model::header::{InvalidHeaderValue, CONNECTION, CONTENT_TYPE, EXPECT, SERVER};
+use crate::model::header::{CONNECTION, CONTENT_TYPE, EXPECT, InvalidHeaderValue, SERVER};
 use crate::model::request::Builder as RequestBuilder;
 use crate::model::{Body, Extensions, HeaderValue, Request, Response, StatusCode, Version};
 use std::any::Any;
 use std::fmt;
-use std::io::{copy, sink, BufReader, BufWriter, Error, ErrorKind, Result, Write};
+use std::io::{BufReader, BufWriter, Error, ErrorKind, Result, Write, copy, sink};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{Builder as ThreadBuilder, JoinHandle};
 use std::time::Duration;
+
+mod deadline;
+use deadline::DeadlineWatch;
+pub use deadline::RequestDeadline;
 
 /// Socket-derived context for an accepted connection, never taken from HTTP headers.
 ///
@@ -152,12 +156,12 @@ impl Server {
     pub fn with_request_admission(
         mut self,
         admission: impl Fn(
-                &RequestBuilder,
-                ConnectionInfo,
-            ) -> std::result::Result<Extensions, Box<Response<Body>>>
-            + Send
-            + Sync
-            + 'static,
+            &RequestBuilder,
+            ConnectionInfo,
+        ) -> std::result::Result<Extensions, Box<Response<Body>>>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.request_admission = Some(Arc::new(admission));
         self
@@ -298,6 +302,8 @@ fn accept_request(
     while connection_state == ConnectionState::KeepAlive {
         let mut admission_denied = false;
         let mut admission_lifetime = None;
+        // Declared after the lease: stop/join the timer before releasing capacity.
+        let mut deadline_watch = None;
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, stream.try_clone()?);
         let (mut response, new_connection_state) = match decode_request_headers(&mut reader, false)
         {
@@ -310,6 +316,9 @@ fn accept_request(
                     Ok(context) => {
                         let extensions = request.extensions_mut().unwrap();
                         admission_lifetime = context.get::<RequestLifetime>().cloned();
+                        if let Some(deadline) = context.get::<RequestDeadline>() {
+                            deadline_watch = Some(DeadlineWatch::start(&stream, deadline.0)?);
+                        }
                         extensions.extend(context);
                         extensions.insert(connection);
                         // Handles Expect only after admission.
@@ -371,6 +380,9 @@ fn accept_request(
                 .or_insert_with(|| server.clone());
         }
 
+        if let Some(watch) = &deadline_watch {
+            watch.check()?;
+        }
         let writer = BufWriter::with_capacity(BUFFER_CAPACITY, stream);
         stream = if admission_denied {
             encode_response_with_connection(&mut response, writer, true)
@@ -379,6 +391,10 @@ fn accept_request(
         }?
         .into_inner()
         .map_err(|e| e.into_error())?;
+        if let Some(watch) = &deadline_watch {
+            watch.check()?;
+        }
+        drop(deadline_watch);
         drop(admission_lifetime);
     }
     Ok(())
@@ -502,30 +518,41 @@ mod tests {
 
     #[test]
     fn test_regular_http_operations() -> Result<()> {
-        test_server("localhost", 9999, [
-            "GET / HTTP/1.1\nhost: localhost:9999\n\n",
-            "POST /foo HTTP/1.1\nhost: localhost:9999\nexpect: 100-continue\nconnection:close\ncontent-length:4\n\nabcd",
-        ], [
-            "HTTP/1.1 200 OK\r\nserver: OxHTTP/1.0\r\ncontent-length: 4\r\n\r\nhome",
-            "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 404 Not Found\r\nserver: OxHTTP/1.0\r\ncontent-length: 0\r\n\r\n"
-        ])
+        test_server(
+            "localhost",
+            9999,
+            [
+                "GET / HTTP/1.1\nhost: localhost:9999\n\n",
+                "POST /foo HTTP/1.1\nhost: localhost:9999\nexpect: 100-continue\nconnection:close\ncontent-length:4\n\nabcd",
+            ],
+            [
+                "HTTP/1.1 200 OK\r\nserver: OxHTTP/1.0\r\ncontent-length: 4\r\n\r\nhome",
+                "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 404 Not Found\r\nserver: OxHTTP/1.0\r\ncontent-length: 0\r\n\r\n",
+            ],
+        )
     }
 
     #[test]
     fn test_bad_request() -> Result<()> {
         test_server(
-            "::1", 9998,
+            "::1",
+            9998,
             ["GET / HTTP/1.1\nhost: localhost:9999\nfoo\n\n"],
-            ["HTTP/1.1 400 Bad Request\r\ncontent-type: text/plain; charset=utf-8\r\nserver: OxHTTP/1.0\r\ncontent-length: 19\r\n\r\ninvalid header name"],
+            [
+                "HTTP/1.1 400 Bad Request\r\ncontent-type: text/plain; charset=utf-8\r\nserver: OxHTTP/1.0\r\ncontent-length: 19\r\n\r\ninvalid header name",
+            ],
         )
     }
 
     #[test]
     fn test_bad_expect() -> Result<()> {
         test_server(
-            "127.0.0.1", 9997,
+            "127.0.0.1",
+            9997,
             ["GET / HTTP/1.1\nhost: localhost:9999\nexpect: bad\n\n"],
-            ["HTTP/1.1 417 Expectation Failed\r\ncontent-type: text/plain; charset=utf-8\r\nserver: OxHTTP/1.0\r\ncontent-length: 43\r\n\r\nExpect header value 'bad' is not supported."],
+            [
+                "HTTP/1.1 417 Expectation Failed\r\ncontent-type: text/plain; charset=utf-8\r\nserver: OxHTTP/1.0\r\ncontent-length: 43\r\n\r\nExpect header value 'bad' is not supported.",
+            ],
         )
     }
 

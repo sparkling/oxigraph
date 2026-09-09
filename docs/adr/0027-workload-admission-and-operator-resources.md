@@ -6,8 +6,9 @@
 - Deciders: Oxigraph parity programme
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
-  and response-flush lifetime are implemented. Whole-request budgets, queued
-  socket-disconnect propagation, reload and full acceptance remain open
+  and response-flush lifetime are implemented. Optional absolute request
+  deadlines now cover the native Simple/transactional paths. Resource budgets,
+  excluded deadline paths, queued disconnect, reload and full acceptance remain open
 - Programme task: `task-1787728711461-3isex6`
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
@@ -134,10 +135,40 @@ successful subsequent write/query and rollback/restart with admission enabled.
 
 This closes a native product slice, **not** the full admission or G4.2 gate.
 Queued sockets do not yet propagate disconnect into their cancellation token.
-Request-wide deadlines, resource accounting, differentiated priorities,
+Resource accounting, differentiated priorities,
 per-principal fairness, atomic workload reload, exported admission metrics and
 the remaining staged/operational evaluators remain outstanding. Configured
 example capacities are illustrative, not baselined production defaults.
+
+### Native deadline slice (2026-09-09)
+
+An optional positive `request_timeout_ms` binds the lease token to an absolute
+monotonic deadline before queue acquisition; earlier caller deadlines cannot
+be extended. Queue residence consumes that same deadline. The public token
+and query/update errors distinguish `TimedOut` from explicit `Cancelled`;
+metrics retain that distinction. SERVICE checks both sides of handler and
+iterator calls, including EOF. A whole-request timeout is never SILENT-able;
+an ordinary remote-policy timeout keeps its existing SILENT semantics.
+
+OxHTTP's per-admitted-request watcher shuts down socket I/O at expiry and is
+stopped/joined before keep-alive reuse. It cannot preempt application work or
+release a still-owned lease. Native query/result iteration, transactional
+Graph Store parsing/topology/representation loops, writer admission and the
+final pre-commit boundary observe the shared token. Readiness uses the earlier
+request/probe bound. Expiry after CommitAttempted never proves rollback.
+The old query-only sleeping timeout thread is replaced with a token deadline.
+
+Native tests cover stalled Expect bodies, failed partial streams, timer reuse,
+typed queue/writer expiry, owned-update and final-checkpoint rollback including
+empty topology, custom/lazy SERVICE SILENT and LOAD SILENT timeout distinctions,
+Graph Store parser topology/blank-node scope and persistent wire journeys.
+These tests are additive product regressions, not rewritten qualification evidence.
+
+This is still a cooperative, opt-in slice: deadline-bound materialized entailment
+and the legacy nontransactional Graph Store bulk path return unsupported (400)
+until they gain the necessary checkpoints. Individual parser, custom callback,
+DNS and native storage calls are not preemptible. Queued socket disconnect,
+resource accounting, exported admission metrics and full acceptance remain open.
 
 ### Remaining staged acceptance
 

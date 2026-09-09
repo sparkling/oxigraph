@@ -14,6 +14,9 @@ pub enum UpdateEvaluationError {
     /// The update was cancelled before its commit attempt began.
     #[error("SPARQL update evaluation was cancelled")]
     Cancelled,
+    /// The absolute request deadline elapsed before its commit attempt began.
+    #[error("SPARQL update deadline elapsed")]
+    TimedOut,
     /// An error from the storage.
     #[error(transparent)]
     Storage(#[from] StorageError),
@@ -63,6 +66,7 @@ impl From<QueryEvaluationError> for UpdateEvaluationError {
     fn from(error: QueryEvaluationError) -> Self {
         match error {
             QueryEvaluationError::Cancelled => Self::Cancelled,
+            QueryEvaluationError::TimedOut => Self::TimedOut,
             QueryEvaluationError::Dataset(error) => Self::from_boxed_dataset_error(error),
             QueryEvaluationError::Service(error) => Self::Service(error),
             QueryEvaluationError::UnexpectedDefaultGraph => Self::Storage(
@@ -104,6 +108,7 @@ impl From<UpdateEvaluationError> for io::Error {
     fn from(error: UpdateEvaluationError) -> Self {
         match error {
             UpdateEvaluationError::Cancelled => Self::new(io::ErrorKind::Interrupted, error),
+            UpdateEvaluationError::TimedOut => Self::new(io::ErrorKind::TimedOut, error),
             UpdateEvaluationError::Storage(error) => error.into(),
             UpdateEvaluationError::GraphParsing(error) => error.into(),
             UpdateEvaluationError::Dataset(error)

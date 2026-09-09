@@ -871,6 +871,7 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
                 &self.client,
             )
         });
+        ensure_update_deadline(self.cancellation_token.as_ref())?;
         match loaded {
             Ok(loaded) => {
                 #[cfg(feature = "http-client")]
@@ -1257,6 +1258,7 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
                 &self.client,
             )
         });
+        ensure_update_deadline(self.cancellation_token.as_ref())?;
         match loaded {
             Ok(loaded) => {
                 #[cfg(feature = "http-client")]
@@ -1401,10 +1403,10 @@ fn ensure_update_start_alive(
 fn ensure_update_alive(
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<(), UpdateEvaluationError> {
-    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
-        Err(UpdateEvaluationError::Cancelled)
-    } else {
-        Ok(())
+    match cancellation_token.and_then(CancellationToken::cancellation_reason) {
+        Some(spareval::CancellationReason::Cancelled) => Err(UpdateEvaluationError::Cancelled),
+        Some(spareval::CancellationReason::TimedOut) => Err(UpdateEvaluationError::TimedOut),
+        None => Ok(()),
     }
 }
 
@@ -1414,9 +1416,9 @@ where
 {
     match start_error {
         TransactionStartError::Cancelled => UpdateEvaluationError::Cancelled,
+        TransactionStartError::TimedOut => UpdateEvaluationError::TimedOut,
         TransactionStartError::Backend(error) => UpdateEvaluationError::dataset(error),
-        error @ (TransactionStartError::RequirementsNotMet { .. }
-        | TransactionStartError::TimedOut) => {
+        error @ TransactionStartError::RequirementsNotMet { .. } => {
             UpdateEvaluationError::Unexpected(Box::new(UpdateTransactionStartError(error)))
         }
     }
@@ -1427,21 +1429,28 @@ fn egress_update_error(error: EgressError) -> UpdateEvaluationError {
     UpdateEvaluationError::Service(Box::new(error))
 }
 
-fn can_silence_load_error(
-    #[cfg_attr(
-        not(feature = "http-client"),
-        expect(
-            unused_variables,
-            reason = "egress errors only exist with the HTTP client"
-        )
-    )]
-    error: &UpdateEvaluationError,
-) -> bool {
+fn can_silence_load_error(error: &UpdateEvaluationError) -> bool {
+    if matches!(
+        error,
+        UpdateEvaluationError::TimedOut | UpdateEvaluationError::Cancelled
+    ) {
+        return false;
+    }
     #[cfg(feature = "http-client")]
     if find_egress_error(error).is_some_and(|error| error.kind() == EgressErrorKind::Cancelled) {
         return false;
     }
     true
+}
+
+fn ensure_update_deadline(token: Option<&CancellationToken>) -> Result<(), UpdateEvaluationError> {
+    if token.and_then(CancellationToken::cancellation_reason)
+        == Some(crate::sparql::CancellationReason::TimedOut)
+    {
+        Err(UpdateEvaluationError::TimedOut)
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(feature = "http-client")]

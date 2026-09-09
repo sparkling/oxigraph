@@ -990,6 +990,27 @@ fn workload(queued: usize, class_queued: usize, timeout_ms: u64) -> Value {
         "classes":{"default":{"max_active":1,"max_queued":class_queued}}})
 }
 
+#[test]
+fn workload_deadline_closes_stalled_body_then_allows_write_rollback_restart() -> Result<()> {
+    let mut profile = workload(1, 1, 3000);
+    profile["request_timeout_ms"] = json!(1000);
+    let running = start_with_workload(&config(), false, Some(&profile))?;
+    let before = work_counters(&running)?;
+    let mut occupied = occupy_admission(&running)?;
+    let mut response = Vec::new();
+    match occupied.read_to_end(&mut response) {
+        Ok(_) => (),
+        Err(error) if error.kind() == ErrorKind::ConnectionReset => (),
+        Err(error) => return Err(error.into()),
+    }
+    ensure!(response.is_empty(), "expired body returned a final success");
+    ensure!(
+        work_counters(&running)? == before,
+        "incomplete body entered RDF work"
+    );
+    write_rollback_and_restart(running)
+}
+
 fn occupy_admission(running: &Running) -> Result<TcpStream> {
     let mut stream = TcpStream::connect(running.public)?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;

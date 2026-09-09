@@ -59,6 +59,148 @@ impl Clone for NeverClone {
 }
 
 #[test]
+fn deadline_unblocks_stalled_expect_body_and_releases_capacity() -> Result<()> {
+    let drops = Arc::new(AtomicUsize::new(0));
+    let admission_drops = Arc::clone(&drops);
+    let (mut stream, worker) = connect(
+        Server::new(|request| {
+            let mut body = Vec::new();
+            drop(request.body_mut().read_to_end(&mut body));
+            Response::builder()
+                .body(Body::from("must not succeed"))
+                .unwrap()
+        })
+        .with_request_admission(move |_, _| {
+            let mut context = Extensions::new();
+            context.insert(RequestDeadline(
+                std::time::Instant::now() + Duration::from_millis(250),
+            ));
+            context.insert(RequestLifetime::new(LeaseDrop(Arc::clone(
+                &admission_drops,
+            ))));
+            Ok(context)
+        }),
+    )?;
+    stream.write_all(
+        b"POST / HTTP/1.1\r\nhost: localhost\r\nexpect: 100-continue\r\ncontent-length: 10\r\n\r\n",
+    )?;
+    expect_bytes(&mut stream, b"HTTP/1.1 100 Continue\r\n\r\n")?;
+    assert_eq!(drops.load(Ordering::SeqCst), 0);
+    assert!(read_closed_response(&mut stream)?.is_empty());
+    assert_eq!(
+        worker.join().unwrap().unwrap_err().kind(),
+        ErrorKind::TimedOut
+    );
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+#[test]
+fn deadline_fails_partial_stream_without_releasing_a_running_handler() -> Result<()> {
+    struct Payload {
+        remaining: usize,
+        release: std::sync::mpsc::Receiver<()>,
+    }
+    impl Read for Payload {
+        fn read(&mut self, buffer: &mut [u8]) -> Result<usize> {
+            if buffer.is_empty() {
+                return Ok(0);
+            }
+            if self.remaining != 0 {
+                let length = buffer.len().min(self.remaining);
+                self.remaining -= length;
+                buffer[..length].fill(b'x');
+                return Ok(length);
+            }
+            self.release
+                .recv_timeout(Duration::from_secs(3))
+                .map_err(Error::other)?;
+            Ok(0)
+        }
+    }
+    let drops = Arc::new(AtomicUsize::new(0));
+    let admission_drops = Arc::clone(&drops);
+    let (release, released) = std::sync::mpsc::channel();
+    let released = Mutex::new(Some(released));
+    let (mut stream, worker) = connect(
+        Server::new(move |request| {
+            request.extensions_mut().clear();
+            Response::builder()
+                .body(Body::from_read(Payload {
+                    remaining: 128 * 1024,
+                    release: released.lock().unwrap().take().unwrap(),
+                }))
+                .unwrap()
+        })
+        .with_request_admission(move |_, _| {
+            let mut context = Extensions::new();
+            context.insert(RequestDeadline(
+                std::time::Instant::now() + Duration::from_millis(250),
+            ));
+            context.insert(RequestLifetime::new(LeaseDrop(Arc::clone(
+                &admission_drops,
+            ))));
+            Ok(context)
+        }),
+    )?;
+    stream.write_all(b"GET / HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n")?;
+    let response = read_closed_response(&mut stream)?;
+    assert!(
+        response.starts_with("HTTP/1.1 200 OK") && response.contains("xxxx"),
+        "{response}"
+    );
+    assert!(
+        !response.ends_with("0\r\n\r\n"),
+        "expired stream acquired a valid terminator"
+    );
+    assert_eq!(
+        drops.load(Ordering::SeqCst),
+        0,
+        "I/O shutdown cannot release active work"
+    );
+    release.send(()).unwrap();
+    assert!(worker.join().unwrap().is_err());
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+#[test]
+fn completed_deadline_watch_cannot_close_next_keepalive_request() -> Result<()> {
+    let old_deadline = Arc::new(Mutex::new(None::<std::time::Instant>));
+    let admission_deadline = Arc::clone(&old_deadline);
+    let (mut stream, worker) = connect(
+        Server::new(move |request| {
+            if request.uri().path() == "/second" {
+                let deadline = old_deadline.lock().unwrap().unwrap();
+                thread::sleep(
+                    deadline.saturating_duration_since(std::time::Instant::now())
+                        + Duration::from_millis(40),
+                );
+            }
+            Response::builder().body(Body::from("ok")).unwrap()
+        })
+        .with_request_admission(move |request, _| {
+            let mut context = Extensions::new();
+            if request.uri_ref().unwrap().path() == "/first" {
+                let deadline = std::time::Instant::now() + Duration::from_millis(250);
+                *admission_deadline.lock().unwrap() = Some(deadline);
+                context.insert(RequestDeadline(deadline));
+            }
+            Ok(context)
+        }),
+    )?;
+    stream.write_all(b"GET /first HTTP/1.1\r\nhost: localhost\r\n\r\n")?;
+    expect_bytes(
+        &mut stream,
+        b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok",
+    )?;
+    stream.write_all(b"GET /second HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n")?;
+    assert!(read_closed_response(&mut stream)?.ends_with("\r\n\r\nok"));
+    worker.join().unwrap()?;
+    Ok(())
+}
+
+#[test]
 fn lifetime_guard_survives_request_clear_and_streaming_then_drops_once() -> Result<()> {
     struct Payload {
         drops: Arc<AtomicUsize>,

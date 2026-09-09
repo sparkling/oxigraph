@@ -234,3 +234,73 @@ fn invalid_profiles_and_missing_context_fail_closed() -> Result<()> {
     controller.validate_access(&crate::access::AccessController::anonymous(false))?;
     Ok(())
 }
+
+#[test]
+fn deadline_is_absolute_including_queue_wait_and_keeps_active_ownership() -> Result<()> {
+    let mut policy = controller(1, 1, 1, 1)?.0.policy.clone();
+    policy.request_timeout_ms = Some(40);
+    let controller = AdmissionController::new(policy)?;
+    let held = acquire(&controller, "default")?;
+    let deadline = held.deadline().unwrap();
+    ensure!(matches!(
+        controller.acquire("default", ListenerKind::Data, CancellationToken::new()),
+        Err(WorkloadError::RequestTimedOut)
+    ));
+    ensure!(Instant::now() >= deadline);
+    ensure!(held.check() == Err(WorkloadError::RequestTimedOut));
+    ensure!(controller.snapshot()?.active == 1 && controller.snapshot()?.queued == 0);
+    drop(held);
+    let next = acquire(&controller, "default")?;
+    ensure!(next.deadline().unwrap() > deadline);
+    Ok(())
+}
+
+#[test]
+fn expired_tokens_fail_before_fast_admission_and_final_activation() -> Result<()> {
+    let controller = controller(1, 0, 1, 0)?;
+    let expired = CancellationToken::new().with_deadline(Instant::now());
+    ensure!(matches!(
+        controller.acquire("default", ListenerKind::Data, expired),
+        Err(WorkloadError::RequestTimedOut)
+    ));
+    let mut state = State::default();
+    let mut entry = controller.entry(
+        &mut state,
+        "default",
+        ListenerKind::Data,
+        CancellationToken::new(),
+        Instant::now(),
+    )?;
+    entry.cancellation = entry.cancellation.with_deadline(Instant::now());
+    ensure!(matches!(
+        controller.activate(&mut state, &entry),
+        Err(WorkloadError::RequestTimedOut)
+    ));
+    ensure!(state.active == 0 && state.classes.is_empty());
+    ensure!(controller.snapshot()? == AdmissionSnapshot::default());
+    let mut policy = controller.0.policy.clone();
+    policy.request_timeout_ms = Some(0);
+    ensure!(AdmissionController::new(policy).is_err());
+    Ok(())
+}
+
+#[test]
+fn queue_residence_does_not_restart_an_earlier_caller_deadline() -> Result<()> {
+    let controller = controller(1, 1, 1, 1)?;
+    let held = acquire(&controller, "default")?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let child = controller.clone();
+    let worker = thread::spawn(move || {
+        child.acquire(
+            "default",
+            ListenerKind::Data,
+            CancellationToken::new().with_deadline(deadline),
+        )
+    });
+    wait_queued(&controller, 1)?;
+    drop(held);
+    let lease = worker.join().unwrap()?;
+    ensure!(lease.deadline() == Some(deadline));
+    ensure!(lease.check().is_ok());
+    Ok(())
+}

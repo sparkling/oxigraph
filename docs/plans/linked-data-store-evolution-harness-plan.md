@@ -1266,8 +1266,12 @@ authenticated route/provider/time matrix, direct-IRI allow case and measured
 no-work-under-denial gates against product `21e1d2c8`. G4.2 is the next active
 native delivery task. Its first slice now provides opt-in global/class admission,
 eligible FIFO, queue expiry/token cancellation, separate operator capacity and
-leases retained through response flush. Total-request budgets, queued socket
-disconnect, reload, exported counters and full ADR-0027 acceptance remain open.
+leases retained through response flush. Optional absolute deadlines now cover
+queue/body I/O, Simple evaluation, owned writes/final pre-commit and response
+streams; typed timeouts cannot be hidden by SILENT. Deadline-bound materialized
+entailment and legacy nontransactional bulk paths fail explicitly until
+instrumented. Resource budgets, queued socket disconnect, reload, exported
+counters and full ADR-0027 acceptance remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no
 fine-grained SPARQL policy or evaluator resource quotas are claimed.
 

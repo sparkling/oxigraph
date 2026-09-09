@@ -17,7 +17,7 @@ mod update;
 pub use crate::dataset::ExpressionTriple;
 pub use crate::dataset::{ExpressionTerm, InternalQuad, InternalTriple, QueryableDataset};
 pub use crate::error::QueryEvaluationError;
-pub use crate::eval::CancellationToken;
+pub use crate::eval::{CancellationReason, CancellationToken};
 use crate::eval::{EvalNodeWithStats, SimpleEvaluator, Timer};
 use crate::expression::{
     CustomFunctionRegistry, ExpressionEvaluatorContext, build_expression_evaluator,

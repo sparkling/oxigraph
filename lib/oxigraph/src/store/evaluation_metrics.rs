@@ -206,6 +206,15 @@ fn error_outcome(mut error: &(dyn Error + 'static)) -> EvaluationOutcome {
     for _ in 0..32 {
         if matches!(
             error.downcast_ref::<QueryEvaluationError>(),
+            Some(QueryEvaluationError::TimedOut)
+        ) || matches!(
+            error.downcast_ref::<UpdateEvaluationError>(),
+            Some(UpdateEvaluationError::TimedOut)
+        ) {
+            return EvaluationOutcome::TimedOut;
+        }
+        if matches!(
+            error.downcast_ref::<QueryEvaluationError>(),
             Some(QueryEvaluationError::Cancelled)
         ) || matches!(
             error.downcast_ref::<UpdateEvaluationError>(),
@@ -321,6 +330,26 @@ impl<T, I: Iterator<Item = Result<T, QueryEvaluationError>>> Iterator for Observ
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deadline_outcomes_are_distinct_from_explicit_cancellation() {
+        assert_eq!(
+            error_outcome(&QueryEvaluationError::TimedOut),
+            EvaluationOutcome::TimedOut
+        );
+        assert_eq!(
+            error_outcome(&UpdateEvaluationError::TimedOut),
+            EvaluationOutcome::TimedOut
+        );
+        assert_eq!(
+            error_outcome(&QueryEvaluationError::Cancelled),
+            EvaluationOutcome::Cancelled
+        );
+        assert_eq!(
+            error_outcome(&UpdateEvaluationError::Cancelled),
+            EvaluationOutcome::Cancelled
+        );
+    }
 
     #[test]
     fn commit_error_and_unwind_remain_indeterminate() {

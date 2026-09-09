@@ -176,7 +176,11 @@ Native G4.1 acceptance is complete, including authenticated route/provider/time
 matrices and measured absence of work under denial. G4.2 now provides opt-in
 [`--workload-policy`](cli/README.md#workload-admission-fork): bounded global/class
 admission, queue expiry, a reserved operator pool and response-lifetime leases.
-Whole-request deadlines, resource accounting and full G4.2 acceptance remain open.
+Optional absolute request deadlines now span the queue, body I/O, Simple query
+evaluation, transactional writes and response streaming, with typed timeout and
+pre-commit rollback checks. Deadline-bound materialized entailment and legacy
+nontransactional bulk loading are explicitly unsupported. Resource accounting,
+queued-disconnect propagation and full G4.2 acceptance remain open.
 See [ADR-0026](docs/adr/0026-service-identity-and-authorization.md#native-acceptance-closure-2026-09-09).
 RocksDB remains the persistent backend. The custom-backend tests prove the
 public extension contract, not deployment of a separate replacement backend.

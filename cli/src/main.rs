@@ -41,9 +41,11 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+#[cfg(test)]
+use std::thread;
 use std::thread::available_parallelism;
 use std::time::{Duration, Instant};
-use std::{fmt, fs, str, thread};
+use std::{fmt, fs, str};
 use url::form_urlencoded;
 
 mod cli;
@@ -1157,16 +1159,19 @@ fn serve(
         let method = request.method().clone();
         finalize_response(
             &method,
-            handle_request(
-                request,
-                &store,
-                &sparql_evaluator,
-                read_only,
-                union_default_graph,
-                entailment,
-                timeout,
-            )
-            .unwrap_or_else(|(status, message)| error(status, message)),
+            check_request(request)
+                .and_then(|()| {
+                    handle_request(
+                        request,
+                        &store,
+                        &sparql_evaluator,
+                        read_only,
+                        union_default_graph,
+                        entailment,
+                        timeout,
+                    )
+                })
+                .unwrap_or_else(|(status, message)| error(status, message)),
         )
     });
     let on_request: Box<dyn Fn(&mut Request<Body>) -> Response<Body> + Send + Sync> = if cors {
@@ -1552,6 +1557,29 @@ fn base_url(request: &Request<Body>) -> String {
     }
 }
 
+/// Shared admission token: no new cancellation domain inside a request.
+fn request_cancellation(request: &Request<Body>) -> Option<CancellationToken> {
+    request
+        .extensions()
+        .get::<oxigraph_cli::workload::WorkloadLease>()
+        .map(|lease| lease.cancellation_token().clone())
+}
+
+fn check_request(request: &Request<Body>) -> Result<(), HttpError> {
+    if let Some(lease) = request
+        .extensions()
+        .get::<oxigraph_cli::workload::WorkloadLease>()
+    {
+        lease.check().map_err(|_| {
+            (
+                StatusCode::REQUEST_TIMEOUT,
+                "Request cancelled or deadline elapsed".into(),
+            )
+        })?;
+    }
+    Ok(())
+}
+
 fn resolve_with_base(request: &Request<Body>, url: &str) -> Result<NamedNode, HttpError> {
     let iri = IriRef::parse(url).map_err(bad_request)?;
     Ok(if iri.is_absolute() {
@@ -1665,6 +1693,13 @@ fn limited_string_body(request: &mut Request<Body>) -> Result<String, HttpError>
 }
 
 fn limited_body(request: &mut Request<Body>) -> Result<Vec<u8>, HttpError> {
+    check_request(request)?;
+    let result = read_limited_body(request);
+    check_request(request)?;
+    result
+}
+
+fn read_limited_body(request: &mut Request<Body>) -> Result<Vec<u8>, HttpError> {
     let body = request.body_mut();
     if let Some(body_len) = body.len() {
         if body_len > MAX_HTTP_BODY_SIZE {
@@ -1777,19 +1812,31 @@ fn evaluate_sparql_query(
         evaluator = evaluator.with_version(version.into());
     }
 
+    check_request(request)?;
+    let mut cancellation = request_cancellation(request);
+    if entailment != QueryEntailment::Simple
+        && cancellation
+            .as_ref()
+            .and_then(CancellationToken::deadline)
+            .is_some()
+    {
+        return Err(bad_request(
+            "materialized entailment is unsupported with request deadlines",
+        ));
+    }
     if let Some(timeout) = timeout {
-        let cancellation_token = CancellationToken::new();
-        evaluator = evaluator.with_cancellation_token(cancellation_token.clone());
-        thread::Builder::new()
-            .name("SPARQL evaluation timeout".into())
-            .spawn(move || {
-                thread::sleep(timeout);
-                cancellation_token.cancel();
-            })
-            .map_err(internal_server_error)?;
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .ok_or_else(|| bad_request("Query timeout is out of range"))?;
+        cancellation = Some(cancellation.unwrap_or_default().with_deadline(deadline));
+    }
+    if let Some(cancellation) = &cancellation {
+        evaluator = evaluator.with_cancellation_token(cancellation.clone());
     }
 
-    let mut prepared = evaluator.parse_query(query).map_err(bad_request)?;
+    let parsed = evaluator.parse_query(query);
+    check_request(request)?;
+    let mut prepared = parsed.map_err(bad_request)?;
 
     if use_default_graph_as_union {
         if !default_graph_uris.is_empty() || !named_graph_uris.is_empty() {
@@ -1818,7 +1865,11 @@ fn evaluate_sparql_query(
     let results = if entailment == QueryEntailment::Simple {
         prepared.on_store(store).execute()
     } else {
-        let options = QueryEntailmentOptions::new(entailment).with_timeout(timeout);
+        let remaining = cancellation
+            .as_ref()
+            .and_then(CancellationToken::deadline)
+            .map(|deadline| deadline.saturating_duration_since(Instant::now()));
+        let options = QueryEntailmentOptions::new(entailment).with_timeout(remaining);
         prepared
             .on_store_with_entailment(store, &options)
             .map_err(query_request_refused)?
@@ -1990,7 +2041,13 @@ fn evaluate_sparql_update(
     if let Some(version) = version {
         evaluator = evaluator.with_version(version.into());
     }
-    let mut prepared = evaluator.parse_update(update).map_err(bad_request)?;
+    check_request(request)?;
+    if let Some(cancellation) = request_cancellation(request) {
+        evaluator = evaluator.with_cancellation_token(cancellation);
+    }
+    let parsed = evaluator.parse_update(update);
+    check_request(request)?;
+    let mut prepared = parsed.map_err(bad_request)?;
 
     if use_default_graph_as_union {
         if !default_graph_uris.is_empty() || !named_graph_uris.is_empty() {

@@ -104,6 +104,11 @@ impl TransactionStartControl {
 
     /// Returns whether transaction admission has been cancelled.
     pub fn is_cancelled(&self) -> bool {
+        self.cancellation_reason().is_some()
+    }
+
+    /// Preserves explicit cancellation versus absolute token deadline expiry.
+    pub fn cancellation_reason(&self) -> Option<spareval::CancellationReason> {
         #[cfg(all(
             not(target_family = "wasm"),
             any(
@@ -112,14 +117,14 @@ impl TransactionStartControl {
                 feature = "statistics"
             )
         ))]
-        if self
+        if let Some(reason) = self
             .query_cancellation
             .as_ref()
-            .is_some_and(spareval::CancellationToken::is_cancelled)
+            .and_then(spareval::CancellationToken::cancellation_reason)
         {
-            return true;
+            return Some(reason);
         }
-        self.cancellation.is_cancelled()
+        self.cancellation.cancellation_reason()
     }
 
     // Preserve the caller's control while also observing the enclosing query.
@@ -145,8 +150,11 @@ impl TransactionStartControl {
     }
 
     pub(crate) fn check(&self, started_at: Instant) -> Result<(), TransactionStartControlError> {
-        if self.is_cancelled() {
-            return Err(TransactionStartControlError::Cancelled);
+        if let Some(reason) = self.cancellation_reason() {
+            return Err(match reason {
+                spareval::CancellationReason::Cancelled => TransactionStartControlError::Cancelled,
+                spareval::CancellationReason::TimedOut => TransactionStartControlError::TimedOut,
+            });
         }
         if self
             .timeout

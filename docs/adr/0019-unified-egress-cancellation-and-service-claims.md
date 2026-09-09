@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-08-26
+- Updated: 2026-09-09
 - Deciders: Oxigraph parity programme
 - Implementation status: G1.5's unified-egress, G1.5b's owned-update
   cancellation, and G1.5c's negotiated backend-admission profiles are
@@ -65,6 +65,15 @@ advertised. ADR-0011's conservative SPARQL 1.0/1.1 disclosure remains the
 baseline until richer claims have exact endpoint evidence.
 
 ## Acceptance boundary
+
+The additive ADR-0027 native deadline slice extends the token with an optional
+absolute monotonic deadline and distinct query/update `TimedOut` outcomes.
+Built-in and custom SERVICE boundaries check handler/iterator return, including
+EOF; whole-request deadlines cannot be SILENT-ed, while ordinary remote-policy
+timeouts retain their prior semantics. Owned writes still check before commit,
+never infer rollback after a commit attempt, and metrics distinguish timeout
+from explicit cancellation. New native tests supplement, and do not refresh or
+promote, the pinned G1.5-G1.6 qualification evidence below.
 
 The accepted bounded G1.5-G1.6 implementation profile proves:
 

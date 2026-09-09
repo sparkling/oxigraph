@@ -463,12 +463,18 @@ impl RequestContext {
     }
 
     fn ensure_alive(&self) -> Result<(), EgressError> {
-        if self
+        if let Some(reason) = self
             .cancellation
             .as_ref()
-            .is_some_and(CancellationToken::is_cancelled)
+            .and_then(CancellationToken::cancellation_reason)
         {
-            Err(self.error(EgressErrorKind::Cancelled, None))
+            Err(self.error(
+                match reason {
+                    spareval::CancellationReason::Cancelled => EgressErrorKind::Cancelled,
+                    spareval::CancellationReason::TimedOut => EgressErrorKind::Timeout,
+                },
+                None,
+            ))
         } else if self
             .deadline
             .is_some_and(|deadline| Instant::now() >= deadline)
@@ -576,6 +582,10 @@ impl HttpClient {
         self.context.ensure_alive()
     }
 
+    pub(crate) fn cancellation_reason(&self) -> Option<crate::sparql::CancellationReason> {
+        self.context.cancellation.as_ref()?.cancellation_reason()
+    }
+
     pub(crate) fn validate_document_target(&self, target: &str) -> Result<(), EgressError> {
         self.context.ensure_alive()?;
         if self.context.policy.is_some() {
@@ -665,8 +675,31 @@ impl HttpClient {
         context: RequestContext,
     ) -> Result<(String, EgressBody), EgressError> {
         context.ensure_alive()?;
-        let response = self
-            .client
+        // Use the remaining absolute budget for blocking network operations,
+        // while retaining the earlier egress-policy timeout and redirect rules.
+        let deadline_client = context
+            .cancellation
+            .as_ref()
+            .and_then(CancellationToken::deadline)
+            .map(|deadline| {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                build_client(
+                    Some(
+                        context
+                            .timeout
+                            .map_or(remaining, |timeout| timeout.min(remaining)),
+                    ),
+                    if context.policy.is_some() {
+                        0
+                    } else {
+                        self.redirection_limit
+                    },
+                )
+            });
+        context.ensure_alive()?;
+        let response = deadline_client
+            .as_ref()
+            .unwrap_or(&self.client)
             .request(request)
             .map_err(|error| context.map_transport_error(error))?;
         context.ensure_alive()?;

@@ -14,7 +14,7 @@ pub(super) fn conditions(
     target: &Target,
     selected: Option<&str>,
 ) -> Result<Decision, HttpError> {
-    let digest = state_digest(state, target);
+    let digest = state_digest(state, target, request)?;
     evaluate(request, state.exists, |tag| {
         selected.map_or_else(
             || current_for_any_format(tag, target, &digest),
@@ -38,10 +38,15 @@ pub(super) fn require_mutation_preconditions(
     }
 }
 
-pub(super) fn state_digest(state: &State, target: &Target) -> String {
+pub(super) fn state_digest(
+    state: &State,
+    target: &Target,
+    request: &Request<Body>,
+) -> Result<String, HttpError> {
     let mut hasher = Sha256::new();
     hasher.update(if state.exists { b"exists" } else { b"absent" });
     for quad in &state.quads {
+        crate::check_request(request)?;
         if matches!(target, Target::Dataset) {
             hasher.update(quad.to_string().as_bytes());
         } else {
@@ -56,6 +61,7 @@ pub(super) fn state_digest(state: &State, target: &Target) -> String {
     }
     if matches!(target, Target::Dataset) {
         for graph_name in &state.named_graphs {
+            crate::check_request(request)?;
             hasher.update(b"named-graph\0");
             hasher.update(graph_name.to_string().as_bytes());
             hasher.update(b"\0");
@@ -66,7 +72,7 @@ pub(super) fn state_digest(state: &State, target: &Target) -> String {
         result.push(char::from(HEX[usize::from(byte >> 4)]));
         result.push(char::from(HEX[usize::from(byte & 0x0f)]));
     }
-    result
+    Ok(result)
 }
 
 pub(super) fn etag_opaque(selected: RdfResponseFormat, digest: &str) -> String {

@@ -162,12 +162,24 @@ fn handle(request: &mut Request<Body>, store: &Store, started: bool) -> Response
             "{\"status\":\"not_ready\",\"reasons\":[\"clock\"]}\n".into(),
         );
     };
+    let cancellation = crate::request_cancellation(request);
+    let timeout = cancellation
+        .as_ref()
+        .and_then(oxigraph::sparql::CancellationToken::deadline)
+        .map_or(Duration::from_millis(250), |deadline| {
+            deadline
+                .saturating_duration_since(std::time::Instant::now())
+                .min(Duration::from_millis(250))
+        });
+    let control = cancellation.map_or_else(TransactionStartControl::new, |token| {
+        TransactionStartControl::new().with_cancellation_token(token)
+    });
     let snapshot = store.operational_snapshot(
-        &ReadinessPolicy::default().with_timeout(Duration::from_millis(250)),
+        &ReadinessPolicy::default().with_timeout(timeout),
         &ContributorRegistry::default(),
         &[],
         now,
-        &TransactionStartControl::new(),
+        &control,
         if started {
             CircuitState::Closed
         } else {

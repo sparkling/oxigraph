@@ -12,8 +12,9 @@ pub(super) fn response(
     target: &Target,
     selected: RdfResponseFormat,
     etag: String,
+    request: &Request<Body>,
 ) -> Result<Response<Body>, HttpError> {
-    let body = serialize(state, target, selected)?;
+    let body = serialize(state, target, selected, request)?;
     Response::builder()
         .header(CONTENT_TYPE, rdf_response_media_type(selected))
         .header(oxhttp::model::header::CONTENT_LENGTH, body.len())
@@ -52,6 +53,7 @@ fn serialize(
     state: &State,
     target: &Target,
     selected: RdfResponseFormat,
+    request: &Request<Body>,
 ) -> Result<Vec<u8>, HttpError> {
     let mut serializer = selected
         .serializer()
@@ -59,6 +61,7 @@ fn serialize(
         .for_writer(Vec::new());
     let mut non_empty_named_graphs = HashSet::new();
     for quad in &state.quads {
+        crate::check_request(request)?;
         if matches!(target, Target::Dataset) {
             selected.ensure_quad(quad).map_err(not_acceptable)?;
             match &quad.graph_name {
@@ -87,6 +90,7 @@ fn serialize(
     }
     if matches!(target, Target::Dataset) {
         for graph_name in &state.named_graphs {
+            crate::check_request(request)?;
             if !non_empty_named_graphs.contains(graph_name) {
                 serializer
                     .serialize_empty_graph(graph_name)
@@ -94,6 +98,7 @@ fn serialize(
             }
         }
     }
+    crate::check_request(request)?;
     serializer.finish().map_err(internal_server_error)
 }
 

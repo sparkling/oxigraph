@@ -89,6 +89,14 @@ fn service_error(
     error: impl Error + Send + Sync + 'static,
     client: &HttpClient,
 ) -> QueryEvaluationError {
+    // A request deadline is fatal even for SERVICE SILENT. A remote policy
+    // timeout remains a service failure and retains its existing SILENT rules.
+    if let Some(reason) = client.cancellation_reason() {
+        return match reason {
+            crate::sparql::CancellationReason::Cancelled => QueryEvaluationError::Cancelled,
+            crate::sparql::CancellationReason::TimedOut => QueryEvaluationError::TimedOut,
+        };
+    }
     if find_egress_error(&error).is_some_and(|error| error.kind() == EgressErrorKind::Cancelled) {
         return QueryEvaluationError::Cancelled;
     }

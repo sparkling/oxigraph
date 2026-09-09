@@ -51,6 +51,8 @@ pub enum QueryEvaluationError {
     InvalidStorageTripleTerm,
     #[error("The SPARQL operation has been cancelled")]
     Cancelled,
+    #[error("The SPARQL operation deadline has elapsed")]
+    TimedOut,
     #[doc(hidden)]
     #[error(transparent)]
     Unexpected(Box<dyn Error + Send + Sync>),
@@ -74,7 +76,8 @@ impl QueryEvaluationError {
             QueryEvaluationError::InvalidStorageTripleTerm => true,
             QueryEvaluationError::UnsupportedSparqlVersion(_)
             | QueryEvaluationError::IncompatibleTerm { .. }
-            | QueryEvaluationError::Cancelled => false,
+            | QueryEvaluationError::Cancelled
+            | QueryEvaluationError::TimedOut => false,
         }
     }
 }

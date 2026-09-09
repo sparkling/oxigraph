@@ -27,8 +27,8 @@ pub struct ClassLimits {
 }
 
 /// No capacity defaults: the operator supplies every limit. This version only
-/// promises admission limits, not request deadlines, per-principal fairness,
-/// resource accounting, hard host isolation or live reload.
+/// promises admission limits and optional cooperative request deadlines, not
+/// per-principal fairness, resource accounting, hard host isolation or live reload.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkloadPolicy {
@@ -40,6 +40,8 @@ pub struct WorkloadPolicy {
     operator_max_active: usize,
     operator_max_queued: usize,
     queue_timeout_ms: u64,
+    #[serde(default)]
+    request_timeout_ms: Option<u64>,
     retry_after_seconds: u32,
     classes: BTreeMap<String, ClassLimits>,
 }
@@ -96,6 +98,12 @@ impl WorkloadPolicy {
                 .and_then(|n| n.checked_add(1))
                 .is_none()
             || self.queue_timeout_ms == 0
+            || self.request_timeout_ms.is_some_and(|timeout| {
+                timeout == 0
+                    || Instant::now()
+                        .checked_add(Duration::from_millis(timeout))
+                        .is_none()
+            })
             || Instant::now()
                 .checked_add(Duration::from_millis(self.queue_timeout_ms))
                 .is_none()
@@ -131,6 +139,7 @@ pub enum WorkloadError {
     Unavailable,
     Overloaded(AdmissionScope),
     AdmissionTimedOut,
+    RequestTimedOut,
     Cancelled,
 }
 
@@ -143,6 +152,7 @@ impl fmt::Display for WorkloadError {
             Self::Unavailable => "admission unavailable",
             Self::Overloaded(_) => "workload overloaded",
             Self::AdmissionTimedOut => "admission timed out",
+            Self::RequestTimedOut => "request deadline elapsed",
             Self::Cancelled => "admission cancelled",
         })
     }
@@ -248,11 +258,19 @@ impl AdmissionController {
         cancellation: CancellationToken,
     ) -> Result<WorkloadLease, WorkloadError> {
         let now = Instant::now();
+        let cancellation = if let Some(timeout) = self.0.policy.request_timeout_ms {
+            cancellation.with_deadline(
+                now.checked_add(Duration::from_millis(timeout))
+                    .ok_or(WorkloadError::InvalidPolicy)?,
+            )
+        } else {
+            cancellation
+        };
         let mut state = self.lock()?;
         let entry = self.entry(&mut state, class, listener, cancellation, now)?;
-        Self::purge(&mut state, now);
+        Self::purge(&mut state, Instant::now());
         if self.available(&state, &entry) && self.first_eligible(&state, entry.operator).is_none() {
-            return Ok(self.activate(&mut state, &entry));
+            return self.activate(&mut state, &entry);
         }
         self.check_queue_capacity(&state, &entry)?;
         let id = entry.id;
@@ -269,8 +287,13 @@ impl AdmissionController {
         loop {
             let mut state = self.lock()?;
             let now = Instant::now();
-            let failure = if cancellation.is_cancelled() {
-                Some(WorkloadError::Cancelled)
+            let failure = if let Some(reason) = cancellation.cancellation_reason() {
+                Some(match reason {
+                    oxigraph::sparql::CancellationReason::TimedOut => {
+                        WorkloadError::RequestTimedOut
+                    }
+                    oxigraph::sparql::CancellationReason::Cancelled => WorkloadError::Cancelled,
+                })
             } else if now >= deadline {
                 Some(WorkloadError::AdmissionTimedOut)
             } else {
@@ -296,7 +319,7 @@ impl AdmissionController {
                 let lease = self.activate(&mut state, &entry);
                 drop(state);
                 drop(ticket);
-                return Ok(lease);
+                return lease;
             }
             let wait = deadline
                 .saturating_duration_since(now)
@@ -328,6 +351,9 @@ impl AdmissionController {
             });
         match result {
             Ok(lease) => {
+                if let Some(deadline) = lease.deadline() {
+                    context.insert(oxhttp::RequestDeadline(deadline));
+                }
                 context.insert(oxhttp::RequestLifetime::new(lease.clone()));
                 context.insert(lease);
                 Ok(())
@@ -362,8 +388,11 @@ impl AdmissionController {
         if !self.0.policy.classes.contains_key(class) {
             return Err(WorkloadError::UnknownClass);
         }
-        if cancellation.is_cancelled() {
-            return Err(WorkloadError::Cancelled);
+        if let Some(reason) = cancellation.cancellation_reason() {
+            return Err(match reason {
+                oxigraph::sparql::CancellationReason::TimedOut => WorkloadError::RequestTimedOut,
+                oxigraph::sparql::CancellationReason::Cancelled => WorkloadError::Cancelled,
+            });
         }
         let id = state.next_id;
         state.next_id = id.checked_add(1).ok_or(WorkloadError::Unavailable)?;
@@ -422,19 +451,25 @@ impl AdmissionController {
         scope.map_or(Ok(()), |scope| Err(WorkloadError::Overloaded(scope)))
     }
 
-    fn activate(&self, state: &mut State, entry: &Entry) -> WorkloadLease {
+    fn activate(&self, state: &mut State, entry: &Entry) -> Result<WorkloadLease, WorkloadError> {
+        if let Some(reason) = entry.cancellation.cancellation_reason() {
+            return Err(match reason {
+                oxigraph::sparql::CancellationReason::TimedOut => WorkloadError::RequestTimedOut,
+                oxigraph::sparql::CancellationReason::Cancelled => WorkloadError::Cancelled,
+            });
+        }
         if entry.operator {
             state.operator_active += 1;
         } else {
             state.active += 1;
             *state.classes.entry(entry.class.clone()).or_default() += 1;
         }
-        WorkloadLease(Arc::new(LeaseInner {
+        Ok(WorkloadLease(Arc::new(LeaseInner {
             controller: self.clone(),
             class: entry.class.clone(),
             operator: entry.operator,
             cancellation: entry.cancellation.clone(),
-        }))
+        })))
     }
 }
 
@@ -467,6 +502,21 @@ struct LeaseInner {
     cancellation: CancellationToken,
 }
 impl WorkloadLease {
+    pub fn deadline(&self) -> Option<Instant> {
+        self.0.cancellation.deadline()
+    }
+
+    /// A synchronous cooperative checkpoint, including the final precommit check.
+    /// Returning after CommitAttempted cannot prove rollback of that attempt.
+    pub fn check(&self) -> Result<(), WorkloadError> {
+        match self.0.cancellation.cancellation_reason() {
+            Some(oxigraph::sparql::CancellationReason::TimedOut) => {
+                Err(WorkloadError::RequestTimedOut)
+            }
+            Some(oxigraph::sparql::CancellationReason::Cancelled) => Err(WorkloadError::Cancelled),
+            None => Ok(()),
+        }
+    }
     pub fn policy_id(&self) -> &str {
         &self.0.controller.0.policy.policy_id
     }

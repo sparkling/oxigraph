@@ -8,9 +8,13 @@ use oxhttp::model::header::{CACHE_CONTROL, CONTENT_TYPE, ETAG, LOCATION, VARY};
 use oxhttp::model::{Body, Method, Request, Response, StatusCode};
 use oxigraph::io::{RdfFormat, RdfParser};
 use oxigraph::model::{GraphName, NamedNode, NamedOrBlankNode, Quad};
-use oxigraph::store::{Store, Transaction};
+use oxigraph::store::{
+    NegotiatedTransactionalDataset, Store, Transaction, TransactionRequest, TransactionStartControl,
+};
 use rand::random;
 
+#[cfg(test)]
+mod deadline_tests;
 mod legacy;
 mod representation;
 #[cfg(test)]
@@ -38,6 +42,7 @@ pub fn handle(
     store: &Store,
     read_only: bool,
 ) -> Result<Response<Body>, HttpError> {
+    crate::check_request(request)?;
     if !matches!(
         *request.method(),
         Method::GET | Method::HEAD | Method::PUT | Method::POST | Method::DELETE
@@ -83,16 +88,16 @@ fn get(
     read_only: bool,
 ) -> Result<Response<Body>, HttpError> {
     let state = if read_only {
-        state::from_read_only_store(store, target)?
+        state::from_read_only_store(store, target, request)?
     } else {
-        let transaction = store.start_transaction().map_err(internal_server_error)?;
-        state::from_transaction(&transaction, target)?
+        let transaction = start_transaction(store, request)?;
+        state::from_transaction(&transaction, target, request)?
     };
     if !state.exists {
         return Err(not_found(target));
     }
     let format = representation::format(request, target)?;
-    let digest = state_digest(&state, target);
+    let digest = state_digest(&state, target, request)?;
     let opaque = etag_opaque(format, &digest);
     match conditions(request, &state, target, Some(&opaque))? {
         Decision::PreconditionFailed => return Err(precondition_failed()),
@@ -107,7 +112,7 @@ fn get(
         }
         Decision::Proceed => {}
     }
-    representation::response(&state, target, format, quoted_etag(&opaque))
+    representation::response(&state, target, format, quoted_etag(&opaque), request)
 }
 
 fn put(
@@ -117,20 +122,21 @@ fn put(
 ) -> Result<Response<Body>, HttpError> {
     let format = input_format(request)?;
     if url_has_query_parameter(request, "no_transaction") {
-        let transaction = store.start_transaction().map_err(internal_server_error)?;
-        let current = state::from_transaction(&transaction, target)?;
+        reject_unbounded_legacy(request)?;
+        let transaction = start_transaction(store, request)?;
+        let current = state::from_transaction(&transaction, target, request)?;
         require_mutation_preconditions(request, &current, target)?;
         let created = !current.exists;
         drop(transaction);
         return legacy::put(request, store, target, format, created);
     }
     let body = limited_body(request)?;
-    let mut transaction = store.start_transaction().map_err(internal_server_error)?;
-    let current = state::from_transaction(&transaction, target)?;
+    let mut transaction = start_transaction(store, request)?;
+    let current = state::from_transaction(&transaction, target, request)?;
     require_mutation_preconditions(request, &current, target)?;
     let created = !current.exists;
     replace(&mut transaction, request, target, format, &body)?;
-    transaction.commit().map_err(internal_server_error)?;
+    commit(transaction, request)?;
     Response::builder()
         .status(if created {
             StatusCode::CREATED
@@ -166,8 +172,9 @@ fn post(
         None
     };
     if url_has_query_parameter(request, "no_transaction") && boundary.is_none() {
-        let transaction = store.start_transaction().map_err(internal_server_error)?;
-        let current = state::from_transaction(&transaction, target)?;
+        reject_unbounded_legacy(request)?;
+        let transaction = start_transaction(store, request)?;
+        let current = state::from_transaction(&transaction, target, request)?;
         require_mutation_preconditions(request, &current, target)?;
         if matches!(target, Target::NamedGraph(_)) && !current.exists {
             return Err(not_found(target));
@@ -181,8 +188,8 @@ fn post(
         );
     }
     let body = limited_body(request)?;
-    let mut transaction = store.start_transaction().map_err(internal_server_error)?;
-    let current = state::from_transaction(&transaction, target)?;
+    let mut transaction = start_transaction(store, request)?;
+    let current = state::from_transaction(&transaction, target, request)?;
     require_mutation_preconditions(request, &current, target)?;
     if matches!(target, Target::NamedGraph(_)) && !current.exists {
         return Err(not_found(target));
@@ -239,7 +246,7 @@ fn post(
             &body,
         )?;
     }
-    transaction.commit().map_err(internal_server_error)?;
+    commit(transaction, request)?;
     let mut response = Response::builder().status(if created {
         StatusCode::CREATED
     } else {
@@ -256,8 +263,8 @@ fn delete(
     store: &Store,
     target: &Target,
 ) -> Result<Response<Body>, HttpError> {
-    let mut transaction = store.start_transaction().map_err(internal_server_error)?;
-    let current = state::from_transaction(&transaction, target)?;
+    let mut transaction = start_transaction(store, request)?;
+    let current = state::from_transaction(&transaction, target, request)?;
     if !current.exists {
         return Err(not_found(target));
     }
@@ -271,7 +278,7 @@ fn delete(
             .remove_named_graph(&graph.clone().into())
             .map_err(internal_server_error)?,
     }
-    transaction.commit().map_err(internal_server_error)?;
+    commit(transaction, request)?;
     Response::builder()
         .status(StatusCode::NO_CONTENT)
         .body(Body::empty())
@@ -292,9 +299,7 @@ fn replace(
             if url_has_query_parameter(request, "lenient") {
                 parser = parser.lenient();
             }
-            transaction
-                .load_from_slice(parser, body)
-                .map_err(loader_to_http_error)
+            load(transaction, request, parser, body)
         }
         Target::DefaultGraph => {
             transaction
@@ -335,9 +340,7 @@ fn load_graph(
         Target::DefaultGraph | Target::Dataset => base_url(request),
     };
     parser = parser.with_base_iri(&base).map_err(bad_request)?;
-    transaction
-        .load_from_slice(parser, body)
-        .map_err(loader_to_http_error)
+    load(transaction, request, parser, body)
 }
 
 fn load_multipart(
@@ -349,6 +352,7 @@ fn load_multipart(
     graph_formats_only: bool,
 ) -> Result<(), HttpError> {
     for part in multipart::parse_multipart(body, boundary).map_err(bad_request)? {
+        crate::check_request(request)?;
         let format = RdfFormat::from_media_type(&part.content_type)
             .ok_or_else(|| unsupported_media_type(&part.content_type))?;
         if graph_formats_only
@@ -362,6 +366,104 @@ fn load_multipart(
         load_graph(transaction, request, target, format, part.body)?;
     }
     Ok(())
+}
+
+fn commit(transaction: Transaction<'_>, request: &Request<Body>) -> Result<(), HttpError> {
+    // The last cooperative checkpoint is BEFORE CommitAttempted. Never report
+    // timeout/rollback merely because the clock expires after commit returns.
+    crate::check_request(request)?;
+    transaction.commit().map_err(internal_server_error)
+}
+
+fn start_transaction<'a>(
+    store: &'a Store,
+    request: &Request<Body>,
+) -> Result<Transaction<'a>, HttpError> {
+    crate::check_request(request)?;
+    if let Some(token) = crate::request_cancellation(request) {
+        store
+            .start_transaction_with_control(
+                TransactionRequest::default(),
+                TransactionStartControl::new().with_cancellation_token(token),
+            )
+            .map(|transaction| transaction.into_transaction())
+            .map_err(internal_server_error)
+    } else {
+        store.start_transaction().map_err(internal_server_error)
+    }
+}
+
+fn reject_unbounded_legacy(request: &Request<Body>) -> Result<(), HttpError> {
+    if request
+        .extensions()
+        .get::<oxigraph_cli::workload::WorkloadLease>()
+        .is_some_and(|lease| lease.deadline().is_some())
+    {
+        Err(bad_request(
+            "nontransactional bulk loading is unsupported with request deadlines",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn load(
+    transaction: &mut Transaction<'_>,
+    request: &Request<Body>,
+    parser: RdfParser,
+    body: &[u8],
+) -> Result<(), HttpError> {
+    crate::check_request(request)?;
+    if crate::request_cancellation(request).is_none() {
+        return transaction
+            .load_from_slice(parser, body)
+            .map_err(loader_to_http_error);
+    }
+    // Preserve parser topology and one document-scoped blank-node renaming.
+    // Reader checkpoints can stop parsing between input reads; an individual
+    // parser call remains cooperative, not preemptible CPU isolation.
+    let dataset = parser
+        .rename_blank_nodes()
+        .for_reader(CheckedReader {
+            inner: body,
+            request,
+        })
+        .collect_dataset()
+        .map_err(|error| {
+            crate::check_request(request)
+                .err()
+                .unwrap_or_else(|| bad_request(error))
+        })?;
+    for graph in dataset.named_graphs() {
+        crate::check_request(request)?;
+        transaction.insert_named_graph(graph);
+    }
+    for quad in &dataset {
+        crate::check_request(request)?;
+        transaction.insert(quad);
+    }
+    crate::check_request(request)
+}
+
+struct CheckedReader<'a> {
+    inner: &'a [u8],
+    request: &'a Request<Body>,
+}
+impl std::io::Read for CheckedReader<'_> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        if let Some(reason) =
+            crate::request_cancellation(self.request).and_then(|token| token.cancellation_reason())
+        {
+            let kind = match reason {
+                oxigraph::sparql::CancellationReason::TimedOut => std::io::ErrorKind::TimedOut,
+                // Interrupted is retried by Read helpers, so it cannot signal
+                // permanent request cancellation.
+                oxigraph::sparql::CancellationReason::Cancelled => std::io::ErrorKind::Other,
+            };
+            return Err(std::io::Error::new(kind, "request no longer active"));
+        }
+        std::io::Read::read(&mut self.inner, buffer)
+    }
 }
 
 fn input_format(request: &Request<Body>) -> Result<RdfFormat, HttpError> {

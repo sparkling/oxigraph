@@ -330,8 +330,11 @@ impl Store {
     ) -> OperationalSnapshot {
         let started = Instant::now();
         let check = || {
-            if control.is_cancelled() {
-                Some(ReadinessReason::Cancelled)
+            if let Some(reason) = control.cancellation_reason() {
+                Some(match reason {
+                    crate::sparql::CancellationReason::Cancelled => ReadinessReason::Cancelled,
+                    crate::sparql::CancellationReason::TimedOut => ReadinessReason::TimedOut,
+                })
             } else if started.elapsed() >= policy.timeout
                 || control
                     .timeout()

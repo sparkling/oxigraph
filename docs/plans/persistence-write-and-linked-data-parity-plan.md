@@ -1399,8 +1399,12 @@ Evaluator-only `2d54ddfa` closes its remaining native acceptance matrix against
 product `21e1d2c8`, including direct-IRI access and observable zero work under
 denial. G4.2 now implements opt-in bounded global/class admission, eligible FIFO,
 queue expiry/token cancellation, separate operator capacity and leases held
-through response flush. Total-request budgets, queued socket disconnect,
-reload, exported counters and full ADR-0027 acceptance remain open.
+through response flush. Optional absolute deadlines now cover queue/body I/O,
+Simple evaluation, owned writes/final pre-commit and response streams; typed
+timeouts cannot be hidden by SILENT. Deadline-bound materialized entailment and
+legacy nontransactional bulk paths fail explicitly until instrumented. Resource
+budgets, queued socket disconnect, reload, exported counters and full ADR-0027
+acceptance remain open.
 Separate ADR-0026 frozen promotion and
 future facade compatibility remain open; native delivery does not claim
 fine-grained SPARQL filtering or evaluator resource quotas.

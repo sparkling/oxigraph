@@ -146,6 +146,7 @@ impl<'a, D: QueryableDataset<'a>> EvalDataset<'a, D> {
         cancellation_token: CancellationToken,
         version: SparqlVersion,
     ) -> Result<Self, QueryEvaluationError> {
+        cancellation_token.ensure_alive()?;
         if !version.is_supported() {
             return Err(QueryEvaluationError::UnsupportedSparqlVersion(version));
         }
@@ -789,11 +790,19 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                 error.get_or_insert(e);
             } else {
                 // We have found a valid tuple
-                return (Ok(true), stats);
+                return (
+                    self.dataset
+                        .cancellation_token
+                        .ensure_alive()
+                        .map(|()| true),
+                    stats,
+                );
             }
         }
         (
-            if let Some(e) = error {
+            if let Err(e) = self.dataset.cancellation_token.ensure_alive() {
+                Err(e)
+            } else if let Some(e) = error {
                 Err(e)
             } else {
                 Ok(false)
@@ -844,14 +853,17 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             Err(e) => return (Err(e), stats),
         };
         (
-            Ok(QueryTripleIter::new(ConstructIterator {
-                eval: self.clone(),
-                iter: eval(from),
-                template,
-                buffered_results: Vec::default(),
-                already_emitted_results: FxHashSet::default(),
-                bnodes: Vec::default(),
-            })),
+            Ok(QueryTripleIter::new(cancellable_iter(
+                ConstructIterator {
+                    eval: self.clone(),
+                    iter: eval(from),
+                    template,
+                    buffered_results: Vec::default(),
+                    already_emitted_results: FxHashSet::default(),
+                    bnodes: Vec::default(),
+                },
+                self.dataset.cancellation_token.clone(),
+            ))),
             stats,
         )
     }
@@ -875,13 +887,16 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             Err(e) => return (Err(e), stats),
         };
         (
-            Ok(QueryTripleIter::new(DescribeIterator {
-                eval: self.clone(),
-                tuples_to_describe: eval(from),
-                nodes_described: FxHashSet::default(),
-                nodes_to_describe: Vec::default(),
-                quads: Box::new(empty()),
-            })),
+            Ok(QueryTripleIter::new(cancellable_iter(
+                DescribeIterator {
+                    eval: self.clone(),
+                    tuples_to_describe: eval(from),
+                    nodes_described: FxHashSet::default(),
+                    nodes_to_describe: Vec::default(),
+                    quads: Box::new(empty()),
+                },
+                self.dataset.cancellation_token.clone(),
+            ))),
             stats,
         )
     }
@@ -2168,10 +2183,12 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             Term::NamedNode(service_name) => service_name,
             term => return Err(QueryEvaluationError::InvalidServiceName(term)),
         };
+        self.dataset.cancellation_token.ensure_alive()?;
         let iter =
             self.service_handler
-                .handle(&service_name, query_expression, self.base_iri.as_ref())?;
-        Ok(self.encode_bindings(variables, iter))
+                .handle(&service_name, query_expression, self.base_iri.as_ref());
+        self.dataset.cancellation_token.ensure_alive()?;
+        Ok(self.encode_bindings(variables, iter?))
     }
 
     fn accumulator_builder(
@@ -2476,7 +2493,8 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         iter: QuerySolutionIter<'a>,
     ) -> InternalTuplesIterator<'a, D::InternalTerm> {
         let dataset = self.dataset.clone();
-        Box::new(iter.map(move |solution| {
+        let checked = cancellable_iter(iter, dataset.cancellation_token.clone());
+        Box::new(checked.map(move |solution| {
             dataset.cancellation_token.ensure_alive()?;
             let mut encoded_terms = InternalTuple::with_capacity(variables.len());
             for (variable, term) in &solution? {
@@ -2597,6 +2615,7 @@ fn decode_bindings<'a, D: QueryableDataset<'a>>(
     variables: Arc<[Variable]>,
 ) -> QuerySolutionIter<'a> {
     let tuple_size = variables.len();
+    let iter = cancellable_iter(iter, dataset.cancellation_token.clone());
     QuerySolutionIter::from_tuples(
         variables,
         Box::new(iter.map(move |values| {
@@ -2609,6 +2628,36 @@ fn decode_bindings<'a, D: QueryableDataset<'a>>(
             Ok(result)
         })),
     )
+}
+
+/// Check both sides of a possibly foreign iterator call, including clean EOF.
+/// Expiry is emitted once and fused; ordinary inner errors retain their behavior.
+fn cancellable_iter<T>(
+    mut iter: impl Iterator<Item = Result<T, QueryEvaluationError>>,
+    cancellation: CancellationToken,
+) -> impl Iterator<Item = Result<T, QueryEvaluationError>> {
+    let mut ended = false;
+    std::iter::from_fn(move || {
+        if ended {
+            return None;
+        }
+        let result = cancellation.ensure_alive().and_then(|()| {
+            let next = iter.next();
+            cancellation.ensure_alive()?;
+            Ok(next)
+        });
+        match result {
+            Ok(Some(value)) => Some(value),
+            Ok(None) => {
+                ended = true;
+                None
+            }
+            Err(error) => {
+                ended = true;
+                Some(Err(error))
+            }
+        }
+    })
 }
 
 fn encode_initial_bindings<'a, D: QueryableDataset<'a>>(
@@ -4633,6 +4682,14 @@ impl Timer {
 #[derive(Clone, Default)]
 pub struct CancellationToken {
     value: Arc<AtomicBool>,
+    deadline: Option<std::time::Instant>,
+}
+
+/// Why a cooperative cancellation checkpoint has stopped the operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CancellationReason {
+    Cancelled,
+    TimedOut,
 }
 
 impl CancellationToken {
@@ -4640,7 +4697,27 @@ impl CancellationToken {
     pub fn new() -> Self {
         Self {
             value: Arc::new(AtomicBool::new(false)),
+            deadline: None,
         }
+    }
+
+    /// Bounds this token and subsequent clones by an absolute monotonic deadline.
+    /// An existing earlier deadline cannot be extended. Explicit cancellation
+    /// remains shared with pre-existing clones, but their deadline is unchanged.
+    /// Expiry is observed synchronously at cancellation checkpoints; it does not
+    /// preempt arbitrary blocking code or spawn a timer thread.
+    #[must_use]
+    pub fn with_deadline(mut self, deadline: std::time::Instant) -> Self {
+        self.deadline = Some(
+            self.deadline
+                .map_or(deadline, |current| current.min(deadline)),
+        );
+        self
+    }
+
+    /// The deadline attached to this token, if any.
+    pub fn deadline(&self) -> Option<std::time::Instant> {
+        self.deadline
     }
 
     #[inline]
@@ -4650,14 +4727,77 @@ impl CancellationToken {
 
     #[inline]
     pub fn is_cancelled(&self) -> bool {
+        self.cancellation_reason().is_some()
+    }
+
+    /// Explicit cancellation takes precedence when both conditions are present.
+    /// Deadline-free tokens do not read the clock at checkpoints.
+    pub fn cancellation_reason(&self) -> Option<CancellationReason> {
+        if self.value.load(atomic::Ordering::Relaxed) {
+            Some(CancellationReason::Cancelled)
+        } else if self
+            .deadline
+            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+        {
+            Some(CancellationReason::TimedOut)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(test)]
+    fn is_cancelled_at(&self, now: std::time::Instant) -> bool {
         self.value.load(atomic::Ordering::Relaxed)
+            || self.deadline.is_some_and(|deadline| now >= deadline)
     }
 
     fn ensure_alive(&self) -> Result<(), QueryEvaluationError> {
-        if self.is_cancelled() {
-            Err(QueryEvaluationError::Cancelled)
-        } else {
-            Ok(())
+        match self.cancellation_reason() {
+            Some(CancellationReason::Cancelled) => Err(QueryEvaluationError::Cancelled),
+            Some(CancellationReason::TimedOut) => Err(QueryEvaluationError::TimedOut),
+            None => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod cancellation_deadline_tests {
+    use super::CancellationToken;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn absolute_deadline_boundary_and_clone_cancellation() {
+        let before = Instant::now();
+        let deadline = before + Duration::from_secs(1);
+        let original = CancellationToken::new();
+        let bounded = original.clone().with_deadline(deadline);
+        let clone = bounded.clone();
+        assert!(!bounded.is_cancelled_at(deadline - Duration::from_nanos(1)));
+        assert!(bounded.is_cancelled_at(deadline));
+        assert!(clone.is_cancelled_at(deadline + Duration::from_nanos(1)));
+        assert!(!original.is_cancelled_at(deadline));
+        assert_eq!(
+            bounded
+                .clone()
+                .with_deadline(deadline + Duration::from_secs(2))
+                .deadline(),
+            Some(deadline)
+        );
+        assert_eq!(
+            bounded.clone().with_deadline(before).deadline(),
+            Some(before)
+        );
+        original.cancel();
+        assert!(bounded.is_cancelled_at(before) && clone.is_cancelled_at(before));
+    }
+
+    #[test]
+    fn expired_token_is_observed_without_a_timer_thread() {
+        let token = CancellationToken::new().with_deadline(Instant::now());
+        assert!(token.is_cancelled());
+        assert!(matches!(
+            token.ensure_alive(),
+            Err(super::QueryEvaluationError::TimedOut)
+        ));
     }
 }
