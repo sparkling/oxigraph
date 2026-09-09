@@ -28,7 +28,7 @@ struct Running {
     public: SocketAddr,
     admin: SocketAddr,
     policy: PathBuf,
-    _directory: assert_fs::TempDir,
+    directory: assert_fs::TempDir,
 }
 fn binary() -> std::ffi::OsString {
     // Reuse the same native tests against an explicitly identified release artifact.
@@ -110,7 +110,7 @@ fn start(policy: &Value, read_only: bool) -> Result<Running> {
         .env_remove("NOTIFY_SOCKET")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(std::fs::File::create(directory.path().join("stderr.log"))?);
     drop(public);
     drop(admin);
     let mut running = Running {
@@ -119,7 +119,7 @@ fn start(policy: &Value, read_only: bool) -> Result<Running> {
         public: public_address,
         admin: admin_address,
         policy: policy_path,
-        _directory: directory,
+        directory,
     };
     wait_ready(&mut running)?;
     Ok(running)
@@ -742,7 +742,9 @@ fn read_status_head(stream: &mut TcpStream) -> Result<u16> {
 
 #[test]
 fn invalid_or_ambiguous_policy_never_opens_the_store() -> Result<()> {
-    oxigraph_cli::access::AccessPolicy::from_json(include_bytes!("../examples/access-policy.json"))?;
+    oxigraph_cli::access::AccessPolicy::from_json(include_bytes!(
+        "../examples/access-policy.json"
+    ))?;
     let directory = assert_fs::TempDir::new()?;
     let policy = directory.path().join("access.json");
     let mut bad = config();
@@ -769,5 +771,190 @@ fn invalid_or_ambiguous_policy_never_opens_the_store() -> Result<()> {
         .arg("--unsafe-allow-remote-anonymous")
         .output()?;
     ensure!(!output.status.success());
+    Ok(())
+}
+
+#[test]
+fn allowed_direct_graph_iri_round_trips_through_the_shared_target() -> Result<()> {
+    let mut policy = config();
+    for rule in policy["rules"].as_array_mut().context("rules")? {
+        if rule["subject"] == READER && rule["endpoint"] == "graph-store" {
+            rule["graphs"] = json!([{"kind":"named-graph","iri":"http://localhost/store/direct"}]);
+        }
+    }
+    let running = start(&policy, false)?;
+    let body = "<urn:direct-subject> <urn:p> <urn:o> .";
+    let response = wire(
+        running.public,
+        &format!(
+            "PUT /store/direct HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: text/turtle\r\nIf-None-Match: *\r\nContent-Length: {}\r\n{}\r\n{body}",
+            body.len(),
+            identity(WRITER, 1)?
+        ),
+    )?;
+    ensure!(response.status == 201);
+    for method in ["GET", "HEAD"] {
+        let response = wire(
+            running.public,
+            &format!(
+                "{method} /store/direct HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nAccept: application/n-triples\r\n{}\r\n",
+                identity(READER, 1)?
+            ),
+        )?;
+        ensure!(response.status == 200);
+        ensure!(if method == "GET" {
+            response.body.contains("urn:direct-subject")
+        } else {
+            response.body.is_empty()
+        });
+    }
+    let indirect = request(
+        running.public,
+        "GET",
+        "/store?graph=http%3A%2F%2Flocalhost%2Fstore%2Fdirect",
+        &format!("{}Accept: application/n-triples\r\n", identity(READER, 1)?),
+        "",
+    )?;
+    ensure!(indirect.status == 200 && indirect.body.contains("urn:direct-subject"));
+    ensure!(
+        request(
+            running.public,
+            "GET",
+            "/store/direct",
+            &identity(READER, 1)?,
+            ""
+        )?
+        .status
+            == 403,
+        "different authority must select a different direct graph"
+    );
+    Ok(())
+}
+
+fn work_counters(running: &Running) -> Result<Vec<String>> {
+    let metrics = request(
+        running.admin,
+        "GET",
+        "/metrics",
+        &identity(OPERATOR, 1)?,
+        "",
+    )?;
+    ensure!(metrics.status == 200);
+    let lines = metrics
+        .body
+        .lines()
+        .filter(|line| {
+            [
+                "oxigraph_transaction",
+                "oxigraph_queries",
+                "oxigraph_query_duration",
+                "oxigraph_updates",
+                "oxigraph_update_duration",
+                "oxigraph_egress",
+            ]
+            .iter()
+            .any(|prefix| line.starts_with(prefix))
+        })
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    ensure!(!lines.is_empty(), "work counters absent");
+    Ok(lines)
+}
+
+#[test]
+fn denied_work_never_starts_transactions_evaluation_or_egress() -> Result<()> {
+    let running = start(&config(), false)?;
+    let trap = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+    trap.set_nonblocking(true)?;
+    let remote = format!("http://{}/private-denied-resource", trap.local_addr()?);
+    let before = work_counters(&running)?;
+    let cases = [
+        (
+            READER,
+            "/update",
+            "application/sparql-update",
+            format!("LOAD <{remote}>"),
+        ),
+        (
+            OPERATOR,
+            "/query",
+            "application/sparql-query",
+            format!("SELECT * WHERE {{ SERVICE <{remote}> {{ ?s ?p ?o }} }}"),
+        ),
+        (
+            READER,
+            "/sparql",
+            "application/x-www-form-urlencoded",
+            "query=ASK%7B%7D&update=malformed-private-query".into(),
+        ),
+        (
+            READER,
+            "/store?graph=urn:allowed",
+            "text/turtle",
+            "malformed-private-graph-body".into(),
+        ),
+    ];
+    for (subject, path, content, body) in cases {
+        let response = request(
+            running.public,
+            "POST",
+            path,
+            &format!(
+                "{}Content-Type: {content}\r\nAuthorization: Bearer private-denied-token\r\nCookie: private-denied-cookie\r\n",
+                identity(subject, 1)?
+            ),
+            &body,
+        )?;
+        ensure!(
+            response.status == 403 && response.body.is_empty(),
+            "denial exposed or parsed {path}"
+        );
+    }
+    ensure!(
+        work_counters(&running)? == before,
+        "denied requests started measured work"
+    );
+    ensure!(
+        trap.accept()
+            .is_err_and(|error| error.kind() == ErrorKind::WouldBlock),
+        "denied egress connected to local observer"
+    );
+    let logs = std::fs::read_to_string(running.directory.path().join("stderr.log"))?;
+    for private in [
+        READER,
+        OPERATOR,
+        "private-denied-token",
+        "private-denied-cookie",
+        "private-denied-resource",
+        "malformed-private-query",
+        "malformed-private-graph-body",
+    ] {
+        ensure!(!logs.contains(private), "request material reached stderr");
+    }
+    // Positive controls ensure a constant/empty observer cannot pass this test.
+    ensure!(
+        sparql(
+            &running,
+            WRITER,
+            "/update",
+            "INSERT DATA { <urn:positive> <urn:p> <urn:o> }"
+        )?
+        .status
+            == 204
+    );
+    ensure!(
+        sparql(
+            &running,
+            READER,
+            "/query",
+            "ASK { <urn:positive> <urn:p> <urn:o> }"
+        )?
+        .status
+            == 200
+    );
+    ensure!(
+        work_counters(&running)? != before,
+        "successful work was not measured"
+    );
     Ok(())
 }

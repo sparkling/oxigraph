@@ -1,0 +1,17 @@
+{
+  "format":"oxigraph-access-v1", "policy_id":"acceptance-v1", "version":1,
+  "proxy":{"peers":["127.0.0.1"],"issuer":"acceptance-edge","audience":"acceptance-store","version":1,"max_lifetime_seconds":60,"clock_skew_seconds":5},
+  "anonymous_liveness":false,"workload_classes":["default"],
+  "rules":[
+    {"subject":"allowed","endpoint":"ui","methods":["GET","HEAD","POST","QUERY","PUT","DELETE","PATCH","OPTIONS"],"operations":["discovery"],"workload_class":"default"},
+    {"subject":"allowed","endpoint":"query","methods":["GET","HEAD","POST","QUERY","PUT","DELETE","PATCH","OPTIONS"],"operations":["discovery","query"],"workload_class":"default"},
+    {"subject":"allowed","endpoint":"update","methods":["GET","HEAD","POST","QUERY","PUT","DELETE","PATCH","OPTIONS"],"operations":["discovery","update"],"workload_class":"default"},
+    {"subject":"allowed","endpoint":"sparql","methods":["GET","HEAD","POST","QUERY","PUT","DELETE","PATCH","OPTIONS"],"operations":["discovery","query","update"],"workload_class":"default"},
+    {"subject":"allowed","endpoint":"graph-store","methods":["GET","HEAD","POST","QUERY","PUT","DELETE","PATCH","OPTIONS"],"operations":["graph-read","graph-write"],"graphs":[{"kind":"all"}],"workload_class":"default"},
+    {"subject":"allowed","endpoint":"health","methods":["GET","HEAD","POST","QUERY","PUT","DELETE","PATCH","OPTIONS"],"operations":["health"],"workload_class":"default"},
+    {"subject":"allowed","endpoint":"ready","methods":["GET","HEAD","POST","QUERY","PUT","DELETE","PATCH","OPTIONS"],"operations":["operator"],"workload_class":"default"},
+    {"subject":"allowed","endpoint":"metrics","methods":["GET","HEAD","POST","QUERY","PUT","DELETE","PATCH","OPTIONS"],"operations":["operator"],"workload_class":"default"},
+    {"subject":"allowed","endpoint":"audit","methods":["GET","HEAD","POST","QUERY","PUT","DELETE","PATCH","OPTIONS"],"operations":["operator"],"workload_class":"default"},
+    {"subject":"allowed","endpoint":"access-policy","methods":["GET","HEAD","POST","QUERY","PUT","DELETE","PATCH","OPTIONS"],"operations":["operator"],"workload_class":"default"}
+  ]
+}

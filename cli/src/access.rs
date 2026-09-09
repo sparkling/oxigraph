@@ -3,6 +3,8 @@
 mod operation;
 mod policy;
 pub mod target;
+#[cfg(test)]
+mod tests;
 
 pub use operation::{Endpoint, ListenerKind, OperationKind, RequestOperation};
 pub use policy::{AccessPolicy, PolicyError};
