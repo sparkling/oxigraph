@@ -440,6 +440,62 @@ fn join_budget_getters_share_state_but_new_admissions_do_not() -> Result<()> {
 }
 
 #[test]
+fn sort_budget_getters_share_state_but_new_admissions_do_not() -> Result<()> {
+    let mut policy = controller(1, 0, 1, 0)?.0.policy.clone();
+    let unconfigured = acquire(&AdmissionController::new(policy.clone())?, "default")?;
+    ensure!(unconfigured.sort_buffer_budget().is_none());
+    drop(unconfigured);
+    policy.max_sort_buffer_rows = Some(2);
+    let controller = AdmissionController::new(policy)?;
+    let first = acquire(&controller, "default")?;
+    // The sort option alone never creates a join handle.
+    ensure!(first.inner_join_build_budget().is_none());
+    let retained = first.sort_buffer_budget().unwrap().clone();
+    ensure!(retained.limit() == 2);
+    let evaluator = oxigraph::sparql::SparqlEvaluator::new()
+        .without_optimizations()
+        .with_sort_buffer_budget(first.sort_buffer_budget().unwrap().clone());
+    evaluator
+        .parse_query("ASK { { SELECT ?x WHERE { VALUES ?x { 2 1 } } ORDER BY ?x } }")?
+        .on_store(&oxigraph::store::Store::new()?)
+        .execute()?;
+    ensure!(
+        retained.charged_rows() == 2 && first.sort_buffer_budget().unwrap().charged_rows() == 2
+    );
+    drop(first);
+    let second = acquire(&controller, "default")?;
+    ensure!(second.sort_buffer_budget().unwrap().charged_rows() == 0);
+    ensure!(retained.charged_rows() == 2);
+    Ok(())
+}
+
+#[test]
+fn sort_budget_policy_parses_zero_and_coexists_with_the_join_cap() -> Result<()> {
+    let policy = WorkloadPolicy::from_json(&serde_json::to_vec(&json!({
+        "format":"oxigraph-admission-v1", "policy_id":"test", "version":1,
+        "max_active":1, "max_queued":0, "operator_max_active":1,
+        "operator_max_queued":0, "queue_timeout_ms":2000, "retry_after_seconds":2,
+        "max_inner_join_build_rows":7, "max_sort_buffer_rows":0,
+        "classes":{"default":{"max_active":1,"max_queued":0}}
+    }))?)?;
+    ensure!(policy.max_sort_buffer_rows == Some(0) && policy.max_inner_join_build_rows == Some(7));
+    let lease = acquire(&AdmissionController::new(policy)?, "default")?;
+    ensure!(lease.sort_buffer_budget().unwrap().limit() == 0);
+    ensure!(lease.inner_join_build_budget().unwrap().limit() == 7);
+    ensure!(
+        WorkloadPolicy::from_json(&serde_json::to_vec(&json!({
+            "format":"oxigraph-admission-v1", "policy_id":"test", "version":1,
+            "max_active":1, "max_queued":0, "operator_max_active":1,
+            "operator_max_queued":0, "queue_timeout_ms":2000, "retry_after_seconds":2,
+            "max_sort_buffer_rows":-1,
+            "classes":{"default":{"max_active":1,"max_queued":0}}
+        }))?)
+        .is_err()
+    );
+    Ok(())
+}
+
+#[test]
 fn expired_tokens_fail_before_fast_admission_and_final_activation() -> Result<()> {
     let controller = controller(1, 0, 1, 0)?;
     let expired = CancellationToken::new().with_deadline(Instant::now());

@@ -1427,8 +1427,11 @@ not change optimizer behavior or impose a broad query whitelist. A separate
 ADR-0023 correction now builds the smaller estimated side of greedy hash joins,
 repairing the reproduced split-path OOM with unchanged results and fuzz limits.
 Exact-input replay and fresh query/update fuzz runs pass; streamed fan-out cost
-is not eliminated. Broader operator budgets, fairness, workload
-reload, exported counters and full ADR-0027 acceptance remain open.
+is not eliminated. An independent cumulative ORDER BY buffer-row cap now
+charges before decoded sort-key construction/insertion, with preserved ordering,
+duplicate results, typed sticky failure and owned-update rollback. Earlier
+expression work and comparator CPU remain outside it. Broader operator budgets,
+fairness, workload reload, exported counters and full ADR-0027 acceptance remain open.
 Separate ADR-0026 frozen promotion and
 future facade compatibility remain open; native delivery does not claim
 fine-grained SPARQL filtering or general evaluator resource quotas.

@@ -171,6 +171,10 @@
   hash-build input in greedy joins, without changing nullable-path domains or
   SERVICE binding order. Exact-input replay and fresh query/update fuzz lanes
   pass; the expensive streamed fan-out and broader G4.2 work remain open.
+  An independent cumulative ORDER BY row cap now limits decoded sort-key/buffer
+  construction, preserving order, duplicates, shared failure and owned-update
+  rollback. Earlier expression work, comparator CPU and other buffers remain
+  outside it; full workload-governance and promotion gates stay open.
   Native CLI subprocess tests now preserve their selected transport features,
   avoiding a shared-binary overwrite that broke the combined integration run.
   Local implementation is not publication or production recovery qualification

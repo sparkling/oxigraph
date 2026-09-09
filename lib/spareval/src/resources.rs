@@ -9,12 +9,15 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 pub enum QueryResource {
     /// Rows inserted into native Cartesian and hash inner-join build tables.
     InnerJoinBuildRows,
+    /// Rows admitted into native `ORDER BY` sort buffers.
+    SortBufferRows,
 }
 
 impl fmt::Display for QueryResource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InnerJoinBuildRows => f.write_str("inner_join_build_rows"),
+            Self::SortBufferRows => f.write_str("sort_buffer_rows"),
         }
     }
 }
@@ -24,12 +27,71 @@ impl fmt::Display for QueryResource {
 #[non_exhaustive]
 pub enum QueryResourcePhase {
     JoinBuild,
+    SortBuffer,
 }
 
 impl fmt::Display for QueryResourcePhase {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::JoinBuild => f.write_str("join_build"),
+            Self::SortBuffer => f.write_str("sort_buffer"),
+        }
+    }
+}
+
+/// One cumulative row counter with a sticky failure, shared by every clone.
+#[derive(Debug)]
+struct RowBudgetState {
+    resource: QueryResource,
+    phase: QueryResourcePhase,
+    limit: u64,
+    charged: AtomicU64,
+    exhausted: AtomicBool,
+}
+
+impl RowBudgetState {
+    fn new(resource: QueryResource, phase: QueryResourcePhase, limit: u64) -> Arc<Self> {
+        Arc::new(Self {
+            resource,
+            phase,
+            limit,
+            charged: AtomicU64::new(0),
+            exhausted: AtomicBool::new(false),
+        })
+    }
+
+    fn charged_rows(&self) -> u64 {
+        self.charged.load(Ordering::Acquire)
+    }
+
+    fn check(&self) -> Result<(), QueryEvaluationError> {
+        if self.exhausted.load(Ordering::Acquire) {
+            Err(self.error())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn charge(&self) -> Result<(), QueryEvaluationError> {
+        self.check()?;
+        if self
+            .charged
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                (used < self.limit).then(|| used + 1)
+            })
+            .is_err()
+        {
+            self.exhausted.store(true, Ordering::Release);
+            return Err(self.error());
+        }
+        Ok(())
+    }
+
+    fn error(&self) -> QueryEvaluationError {
+        QueryEvaluationError::ResourceLimitExceeded {
+            resource: self.resource,
+            phase: self.phase,
+            limit: self.limit,
         }
     }
 }
@@ -45,23 +107,16 @@ impl fmt::Display for QueryResourcePhase {
 /// This does not bound probes, scans, row width, other operator buffers,
 /// planning, inference, foreign SERVICE work, or process memory/CPU.
 #[derive(Debug, Clone)]
-pub struct InnerJoinBuildBudget(Arc<InnerJoinBuildState>);
-
-#[derive(Debug)]
-struct InnerJoinBuildState {
-    limit: u64,
-    charged: AtomicU64,
-    exhausted: AtomicBool,
-}
+pub struct InnerJoinBuildBudget(Arc<RowBudgetState>);
 
 impl InnerJoinBuildBudget {
     #[must_use]
     pub fn new(limit: u64) -> Self {
-        Self(Arc::new(InnerJoinBuildState {
+        Self(RowBudgetState::new(
+            QueryResource::InnerJoinBuildRows,
+            QueryResourcePhase::JoinBuild,
             limit,
-            charged: AtomicU64::new(0),
-            exhausted: AtomicBool::new(false),
-        }))
+        ))
     }
 
     #[must_use]
@@ -72,40 +127,107 @@ impl InnerJoinBuildBudget {
     /// Successfully charged destination rows, never greater than the limit.
     #[must_use]
     pub fn charged_rows(&self) -> u64 {
-        self.0.charged.load(Ordering::Acquire)
+        self.0.charged_rows()
     }
 
     /// Checks the sticky failure, without consuming a row or resetting it.
     pub fn check(&self) -> Result<(), QueryEvaluationError> {
-        if self.0.exhausted.load(Ordering::Acquire) {
-            Err(self.error())
-        } else {
-            Ok(())
-        }
+        self.0.check()
     }
 
     pub(crate) fn charge(&self) -> Result<(), QueryEvaluationError> {
-        self.check()?;
-        if self
-            .0
-            .charged
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
-                (used < self.0.limit).then(|| used + 1)
-            })
-            .is_err()
-        {
-            self.0.exhausted.store(true, Ordering::Release);
-            return Err(self.error());
-        }
-        Ok(())
+        self.0.charge()
+    }
+}
+
+/// An explicit, shared, cumulative native `ORDER BY` sort-buffer row budget.
+///
+/// Clones share the same counter and sticky failure. Create a fresh budget for
+/// an independent request; reusing an evaluator does not reset its budget.
+/// Every successful child tuple admitted to a native sort buffer (including
+/// duplicates and repeated/nested `ORDER BY` invocations) is charged before
+/// its decoded sort-key vector is built and before it is inserted into the
+/// destination buffer. `ORDER BY` expressions may already have been evaluated
+/// by an upstream extend operator; that earlier expression work and its
+/// allocations are not charged. An attempted row beyond the limit fails the
+/// budget permanently; reaching the limit exactly is not failure, and omitting
+/// `ORDER BY` charges nothing.
+///
+/// This does not bound row width, comparator work, other operator buffers,
+/// planning, inference, foreign SERVICE work, or process memory/CPU.
+#[derive(Debug, Clone)]
+pub struct SortBufferBudget(Arc<RowBudgetState>);
+
+impl SortBufferBudget {
+    #[must_use]
+    pub fn new(limit: u64) -> Self {
+        Self(RowBudgetState::new(
+            QueryResource::SortBufferRows,
+            QueryResourcePhase::SortBuffer,
+            limit,
+        ))
     }
 
-    fn error(&self) -> QueryEvaluationError {
-        QueryEvaluationError::ResourceLimitExceeded {
-            resource: QueryResource::InnerJoinBuildRows,
-            phase: QueryResourcePhase::JoinBuild,
-            limit: self.0.limit,
+    #[must_use]
+    pub fn limit(&self) -> u64 {
+        self.0.limit
+    }
+
+    /// Successfully admitted sort-buffer rows, never greater than the limit.
+    #[must_use]
+    pub fn charged_rows(&self) -> u64 {
+        self.0.charged_rows()
+    }
+
+    /// Checks the sticky failure, without consuming a row or resetting it.
+    pub fn check(&self) -> Result<(), QueryEvaluationError> {
+        self.0.check()
+    }
+
+    pub(crate) fn charge(&self) -> Result<(), QueryEvaluationError> {
+        self.0.charge()
+    }
+}
+
+/// Every optional cooperative budget one evaluator carries. Checks keep the
+/// existing precedence: an inner-join failure is reported before a sort one.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ResourceBudgets {
+    inner_join_build: Option<InnerJoinBuildBudget>,
+    sort_buffer: Option<SortBufferBudget>,
+}
+
+impl ResourceBudgets {
+    pub(crate) fn new(
+        inner_join_build: Option<InnerJoinBuildBudget>,
+        sort_buffer: Option<SortBufferBudget>,
+    ) -> Self {
+        Self {
+            inner_join_build,
+            sort_buffer,
         }
+    }
+
+    pub(crate) fn inner_join_build(&self) -> Option<&InnerJoinBuildBudget> {
+        self.inner_join_build.as_ref()
+    }
+
+    pub(crate) fn sort_buffer(&self) -> Option<&SortBufferBudget> {
+        self.sort_buffer.as_ref()
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.inner_join_build.is_none() && self.sort_buffer.is_none()
+    }
+
+    pub(crate) fn check(&self) -> Result<(), QueryEvaluationError> {
+        if let Some(budget) = &self.inner_join_build {
+            budget.check()?;
+        }
+        if let Some(budget) = &self.sort_buffer {
+            budget.check()?;
+        }
+        Ok(())
     }
 }
 
@@ -113,19 +235,19 @@ impl InnerJoinBuildBudget {
 /// inner error or return EOF after triggering the shared latch.
 pub(crate) fn budgeted_iter<T>(
     mut iter: impl Iterator<Item = Result<T, QueryEvaluationError>>,
-    budget: InnerJoinBuildBudget,
+    budgets: ResourceBudgets,
 ) -> impl Iterator<Item = Result<T, QueryEvaluationError>> {
     let mut finished = false;
     std::iter::from_fn(move || {
         if finished {
             return None;
         }
-        if let Err(error) = budget.check() {
+        if let Err(error) = budgets.check() {
             finished = true;
             return Some(Err(error));
         }
         let item = iter.next();
-        if let Err(error) = budget.check() {
+        if let Err(error) = budgets.check() {
             finished = true;
             return Some(Err(error));
         }
@@ -161,5 +283,49 @@ mod tests {
         max.check().unwrap();
         assert!(max.charge().is_err());
         assert_eq!(max.charged_rows(), u64::MAX);
+    }
+
+    #[test]
+    fn sort_budget_is_typed_shared_and_independent_of_the_join_budget() {
+        let sort = SortBufferBudget::new(1);
+        let clone = sort.clone();
+        assert_eq!(sort.limit(), 1);
+        sort.charge().unwrap();
+        clone.check().unwrap();
+        assert_eq!(clone.charged_rows(), 1);
+        assert!(matches!(
+            clone.charge(),
+            Err(QueryEvaluationError::ResourceLimitExceeded {
+                resource: QueryResource::SortBufferRows,
+                phase: QueryResourcePhase::SortBuffer,
+                limit: 1,
+            })
+        ));
+        assert!(sort.check().is_err());
+        assert_eq!(sort.charged_rows(), 1);
+        let zero = SortBufferBudget::new(0);
+        zero.check().unwrap();
+        assert!(zero.charge().is_err());
+        let join = InnerJoinBuildBudget::new(0);
+        join.check().unwrap();
+        let budgets = ResourceBudgets::new(Some(join.clone()), Some(sort));
+        assert!(!budgets.is_empty());
+        assert!(matches!(
+            budgets.check(),
+            Err(QueryEvaluationError::ResourceLimitExceeded {
+                resource: QueryResource::SortBufferRows,
+                ..
+            })
+        ));
+        assert!(join.charge().is_err());
+        assert!(matches!(
+            budgets.check(),
+            Err(QueryEvaluationError::ResourceLimitExceeded {
+                resource: QueryResource::InnerJoinBuildRows,
+                ..
+            })
+        ));
+        assert!(ResourceBudgets::default().is_empty());
+        ResourceBudgets::default().check().unwrap();
     }
 }

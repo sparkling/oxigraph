@@ -25,7 +25,10 @@ use crate::expression::{
 };
 pub use crate::feedback::{CardinalityFeedback, CardinalityFeedbackNode, EstimateBasis};
 pub use crate::model::{QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter};
-pub use crate::resources::{InnerJoinBuildBudget, QueryResource, QueryResourcePhase};
+use crate::resources::ResourceBudgets;
+pub use crate::resources::{
+    InnerJoinBuildBudget, QueryResource, QueryResourcePhase, SortBufferBudget,
+};
 use crate::service::ServiceHandlerRegistry;
 pub use crate::service::{DefaultServiceHandler, ServiceHandler};
 pub use crate::update::{DeleteInsertIter, DeleteInsertQuad};
@@ -86,6 +89,7 @@ pub struct QueryEvaluator {
     bounded_join_planning: Option<BoundedJoinPlanning>,
     cancellation_token: Option<CancellationToken>,
     inner_join_build_budget: Option<InnerJoinBuildBudget>,
+    sort_buffer_budget: Option<SortBufferBudget>,
     version: SparqlVersion,
 }
 
@@ -114,6 +118,7 @@ impl QueryEvaluator {
             bounded_join_planning: None,
             cancellation_token: None,
             inner_join_build_budget: None,
+            sort_buffer_budget: None,
             version: SparqlVersion::current(),
         }
     }
@@ -604,6 +609,28 @@ impl QueryEvaluator {
         self.inner_join_build_budget.as_ref()
     }
 
+    /// Attaches a shared cumulative native `ORDER BY` sort-buffer row budget.
+    /// Evaluator clones and repeated executions share it, including native
+    /// DELETE/INSERT operations. Use a fresh budget for an independent request.
+    /// It is independent of, and additive to, the inner-join build budget.
+    #[must_use]
+    pub fn with_sort_buffer_budget(mut self, budget: SortBufferBudget) -> Self {
+        self.sort_buffer_budget = Some(budget);
+        self
+    }
+
+    /// Returns the explicitly attached shared sort-buffer budget, if any.
+    pub fn sort_buffer_budget(&self) -> Option<&SortBufferBudget> {
+        self.sort_buffer_budget.as_ref()
+    }
+
+    fn resource_budgets(&self) -> ResourceBudgets {
+        ResourceBudgets::new(
+            self.inner_join_build_budget.clone(),
+            self.sort_buffer_budget.clone(),
+        )
+    }
+
     fn simple_evaluator<'a, D: QueryableDataset<'a>>(
         &self,
         dataset: D,
@@ -611,9 +638,8 @@ impl QueryEvaluator {
         base_iri: Option<&Iri<OxString>>,
         version: SparqlVersion,
     ) -> Result<SimpleEvaluator<'a, D>, QueryEvaluationError> {
-        if let Some(budget) = &self.inner_join_build_budget {
-            budget.check()?;
-        }
+        let budgets = self.resource_budgets();
+        budgets.check()?;
         SimpleEvaluator::new(
             dataset,
             base_iri.cloned(),
@@ -625,9 +651,7 @@ impl QueryEvaluator {
             self.run_stats,
             version,
         )
-        .map(|evaluator| {
-            evaluator.with_inner_join_build_budget(self.inner_join_build_budget.clone())
-        })
+        .map(|evaluator| evaluator.with_resource_budgets(budgets))
     }
 }
 

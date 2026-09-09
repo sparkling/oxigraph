@@ -1826,13 +1826,7 @@ fn evaluate_sparql_query(
         evaluator = evaluator.with_cancellation_token(cancellation.clone());
     }
 
-    if let Some(budget) = request
-        .extensions()
-        .get::<oxigraph_cli::workload::WorkloadLease>()
-        .and_then(oxigraph_cli::workload::WorkloadLease::inner_join_build_budget)
-    {
-        evaluator = evaluator.with_inner_join_build_budget(budget.clone());
-    }
+    evaluator = with_lease_budgets(evaluator, request);
     let parsed = evaluator.parse_query(query);
     check_request(request)?;
     let mut prepared = parsed.map_err(bad_request)?;
@@ -2052,13 +2046,7 @@ fn evaluate_sparql_update(
     if let Some(cancellation) = request_cancellation(request) {
         evaluator = evaluator.with_cancellation_token(cancellation);
     }
-    if let Some(budget) = request
-        .extensions()
-        .get::<oxigraph_cli::workload::WorkloadLease>()
-        .and_then(oxigraph_cli::workload::WorkloadLease::inner_join_build_budget)
-    {
-        evaluator = evaluator.with_inner_join_build_budget(budget.clone());
-    }
+    evaluator = with_lease_budgets(evaluator, request);
     let parsed = evaluator.parse_update(update);
     check_request(request)?;
     let mut prepared = parsed.map_err(bad_request)?;
@@ -2123,6 +2111,24 @@ fn query_evaluation_error(error: oxigraph::sparql::QueryEvaluationError) -> Http
     } else {
         internal_server_error(error)
     }
+}
+
+/// Attach every shared per-lease cooperative row budget before parsing, so all
+/// native query/update evaluation (including materialization modes bound later
+/// from the same evaluator) charges the same request-scoped handles.
+fn with_lease_budgets(mut evaluator: SparqlEvaluator, request: &Request<Body>) -> SparqlEvaluator {
+    if let Some(lease) = request
+        .extensions()
+        .get::<oxigraph_cli::workload::WorkloadLease>()
+    {
+        if let Some(budget) = lease.inner_join_build_budget() {
+            evaluator = evaluator.with_inner_join_build_budget(budget.clone());
+        }
+        if let Some(budget) = lease.sort_buffer_budget() {
+            evaluator = evaluator.with_sort_buffer_budget(budget.clone());
+        }
+    }
+    evaluator
 }
 
 fn rdf_content_negotiation(request: &Request<Body>) -> Result<RdfResponseFormat, HttpError> {

@@ -195,8 +195,12 @@ close as failed streams, never error text plus successful EOF. Optional
 `max_inner_join_build_rows` now caps cumulative native Cartesian/hash inner-join
 build rows across a request, including multi-operation updates. Exhaustion is
 typed and sticky, with owned-update rollback; streaming joins, other buffers,
-row widths and RSS are outside this named counter. Broader resource accounting, active-work disconnect
-propagation and full G4.2 acceptance remain open.
+row widths and RSS are outside this named counter. Independent
+`max_sort_buffer_rows` now caps cumulative native `ORDER BY` buffer rows before
+decoded sort-key construction and insertion, preserving order and duplicates.
+It shares the same typed-failure, rollback and failed-stream behavior; earlier
+expression work and comparator CPU are not bounded. Broader resource accounting,
+active-work disconnect propagation and full G4.2 acceptance remain open.
 The planner also avoids materializing large accumulated path fan-outs when
 a smaller hash-build input is available. Native result/budget regressions and
 the original OOM-input replay verify this

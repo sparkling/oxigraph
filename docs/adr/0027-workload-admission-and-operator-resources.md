@@ -9,8 +9,9 @@
   and response-flush lifetime are implemented. Optional absolute request
   deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and
   transactional paths. Opt-in encoded/decoded request-body, generated/emitted
-  result-byte and native inner-join build-row caps are implemented. Other operator budgets,
-  excluded deadline paths, active-work disconnect, reload and full acceptance remain open.
+  result-byte, native inner-join build-row and ORDER BY buffer-row caps are
+  implemented. Other operator budgets, excluded deadline paths, active-work
+  disconnect, reload and full acceptance remain open.
   Observed queued socket errors now release admission; FIN-only/silent loss uses timeouts
 - Programme task: `task-1787728711461-3isex6`
 - **Depends on**:
@@ -408,6 +409,36 @@ semantics. The original input completes in 166.361 seconds with no cap or oracle
 change, and fresh query/update fuzz runs pass. This is not a repair supplied by
 the optional build-row budget, nor a general CPU/RSS guarantee: the streamed
 fan-out remains expensive. The raw input is preserved unchanged.
+
+### Native ORDER BY buffer-row limit (2026-09-09)
+
+`SortBufferBudget` adds an independent cumulative row counter through
+`QueryEvaluator`, `SparqlEvaluator` and CLI `max_sort_buffer_rows`. Each admission
+creates a fresh handle; evaluator/prepared clones, nested/repeated sorts and
+all operations of an owned update share it. Every successful child tuple,
+including duplicates, is charged before decoded sort-key construction and
+destination insertion. The bounded path ignores the child's size hint.
+Zero permits empty sorts and unsorted work; exactly-at-cap succeeds, and the
+next attempted admission permanently exhausts the budget. Omission preserves
+the prior collection path, ordering and duplicate results.
+
+The typed error identifies `SortBufferRows` / `SortBuffer`. Existing shared
+iterator, ASK, SERVICE and precommit checkpoints now observe both row budgets,
+with inner-join failure checked first. Neither EXISTS, aggregate/UNION masking,
+SILENT nor buffered-result EOF can erase an exhausted shared handle. All owned
+native update bindings roll back on observed failure before commit; borrowed
+transactions retain caller-discard responsibility. CLI maps observed pre-header
+failure to empty noncacheable 503 and late failure to a failed stream. Finite
+entailment queries retain the same evaluator handles after preparation.
+
+Native tests cover zero/exact/+1, duplicate ordering, repeated/prepared/nested
+execution, independent counters, inflated source size hints, denied-row key
+construction, masking, all owned update bindings and persistent HTTP rollback,
+lease release and restart. Earlier ORDER BY expressions may execute in an
+upstream Extend operator; their work/allocations, row width, comparator CPU,
+other buffers, inference and RSS remain outside this counter. This closes the
+native sort-buffer slice, not full G4.2 or a promotion gate. No dependency,
+numeric default, semantic fixture or protected evidence is changed.
 
 ### Remaining staged acceptance
 

@@ -138,7 +138,7 @@ impl PreparedSparqlUpdate {
         let transaction = (|| {
             ensure_update_start_alive(
                 &self.update,
-                self.evaluator.inner_join_build_budget(),
+                &self.evaluator,
                 self.cancellation_token.as_ref(),
                 #[cfg(feature = "http-client")]
                 &self.client,
@@ -263,9 +263,9 @@ impl PreparedSparqlUpdate {
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>,
     ) -> Result<SemanticChangeSet, UpdateEvaluationError> {
         let mut transaction = ChangeTrackingTransaction::new(transaction);
-        let budget = self.evaluator.inner_join_build_budget().cloned();
+        let budgets = UpdateBudgets::capture(&self.evaluator);
         let result = (|| {
-            ensure_update_budget(budget.as_ref())?;
+            budgets.check()?;
             ensure_update_alive(self.cancellation_token.as_ref())?;
             ReadableUpdateEvaluator {
                 transaction: &mut transaction,
@@ -278,7 +278,7 @@ impl PreparedSparqlUpdate {
             .eval_all(&self.update.operations, &self.using_datasets)
             .map_err(unwrap_tracking_error::<T::Error>)?;
             let changes = transaction.changes().map_err(tracking_error)?;
-            ensure_update_budget(budget.as_ref())?;
+            budgets.check()?;
             ensure_update_alive(self.cancellation_token.as_ref())?;
             Ok(changes)
         })();
@@ -317,7 +317,7 @@ impl PreparedSparqlUpdate {
     ) -> BoundPreparedSparqlUpdate<'a, 'b> {
         let transaction = ensure_update_start_alive(
             &self.update,
-            self.evaluator.inner_join_build_budget(),
+            &self.evaluator,
             self.cancellation_token.as_ref(),
             #[cfg(feature = "http-client")]
             &self.client,
@@ -367,7 +367,7 @@ impl<D: TransactionalDataset> BoundTransactionalSparqlUpdate<'_, D> {
     pub fn execute_with_changes(self) -> Result<SemanticChangeSet, UpdateEvaluationError> {
         ensure_update_start_alive(
             &self.update,
-            self.evaluator.inner_join_build_budget(),
+            &self.evaluator,
             self.cancellation_token.as_ref(),
             #[cfg(feature = "http-client")]
             &self.client,
@@ -397,7 +397,7 @@ impl<D: TransactionalDataset> BoundTransactionalSparqlUpdate<'_, D> {
     pub fn execute(self) -> Result<(), UpdateEvaluationError> {
         ensure_update_start_alive(
             &self.update,
-            self.evaluator.inner_join_build_budget(),
+            &self.evaluator,
             self.cancellation_token.as_ref(),
             #[cfg(feature = "http-client")]
             &self.client,
@@ -406,9 +406,9 @@ impl<D: TransactionalDataset> BoundTransactionalSparqlUpdate<'_, D> {
             .dataset
             .start_transaction()
             .map_err(UpdateEvaluationError::dataset)?;
-        let budget = self.evaluator.inner_join_build_budget().cloned();
+        let budgets = UpdateBudgets::capture(&self.evaluator);
         let result = (|| {
-            ensure_update_budget(budget.as_ref())?;
+            budgets.check()?;
             ensure_update_alive(self.cancellation_token.as_ref())?;
             ReadableUpdateEvaluator {
                 transaction: &mut transaction,
@@ -419,7 +419,7 @@ impl<D: TransactionalDataset> BoundTransactionalSparqlUpdate<'_, D> {
                 client: self.client,
             }
             .eval_all(&self.update.operations, &self.using_datasets)?;
-            ensure_update_budget(budget.as_ref())?;
+            budgets.check()?;
             ensure_update_alive(self.cancellation_token.as_ref())
         })();
         match result {
@@ -458,7 +458,7 @@ impl<D: NegotiatedTransactionalDataset> BoundNegotiatedSparqlUpdate<'_, D> {
     pub fn execute_with_changes(self) -> Result<SemanticChangeSet, UpdateEvaluationError> {
         ensure_update_start_alive(
             &self.update,
-            self.evaluator.inner_join_build_budget(),
+            &self.evaluator,
             self.cancellation_token.as_ref(),
             #[cfg(feature = "http-client")]
             &self.client,
@@ -495,7 +495,7 @@ impl<D: NegotiatedTransactionalDataset> BoundNegotiatedSparqlUpdate<'_, D> {
     pub fn execute(self) -> Result<(), UpdateEvaluationError> {
         ensure_update_start_alive(
             &self.update,
-            self.evaluator.inner_join_build_budget(),
+            &self.evaluator,
             self.cancellation_token.as_ref(),
             #[cfg(feature = "http-client")]
             &self.client,
@@ -511,9 +511,9 @@ impl<D: NegotiatedTransactionalDataset> BoundNegotiatedSparqlUpdate<'_, D> {
             .start_transaction_with_control(self.request, control)
             .map_err(update_transaction_start_error)?
             .into_transaction();
-        let budget = self.evaluator.inner_join_build_budget().cloned();
+        let budgets = UpdateBudgets::capture(&self.evaluator);
         let result = (|| {
-            ensure_update_budget(budget.as_ref())?;
+            budgets.check()?;
             ensure_update_alive(self.cancellation_token.as_ref())?;
             ReadableUpdateEvaluator {
                 transaction: &mut transaction,
@@ -524,7 +524,7 @@ impl<D: NegotiatedTransactionalDataset> BoundNegotiatedSparqlUpdate<'_, D> {
                 client: self.client,
             }
             .eval_all(&self.update.operations, &self.using_datasets)?;
-            ensure_update_budget(budget.as_ref())?;
+            budgets.check()?;
             ensure_update_alive(self.cancellation_token.as_ref())
         })();
         match result {
@@ -562,7 +562,7 @@ impl<D: OutcomeAwareTransactionalDataset> BoundKeyedSparqlUpdate<'_, D> {
     pub fn execute_with_changes(self) -> Result<SemanticChangeSet, UpdateEvaluationError> {
         ensure_update_start_alive(
             &self.prepared.update,
-            self.prepared.evaluator.inner_join_build_budget(),
+            &self.prepared.evaluator,
             self.prepared.cancellation_token.as_ref(),
             #[cfg(feature = "http-client")]
             &self.prepared.client,
@@ -691,7 +691,7 @@ pub struct BoundPreparedSparqlUpdate<'a, 'b> {
 impl BoundPreparedSparqlUpdate<'_, '_> {
     /// Evaluate the update against the given store.
     pub fn execute(self) -> Result<(), UpdateEvaluationError> {
-        let budget = self.evaluator.inner_join_build_budget().cloned();
+        let budgets = UpdateBudgets::capture(&self.evaluator);
         let mut observation = self.observation;
         if let Some(observation) = &mut observation {
             observation.begin();
@@ -708,7 +708,7 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
                 }
                 .eval_all(&self.update.operations, &self.using_datasets)?;
                 ensure_update_alive(self.cancellation_token.as_ref())?;
-                ensure_update_budget(budget.as_ref())?;
+                budgets.check()?;
                 if let Some(observation) = &mut observation {
                     observation.before_commit();
                 }
@@ -736,7 +736,7 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
                 }
                 .eval_all(&self.update.operations, &self.using_datasets)?;
                 ensure_update_alive(self.cancellation_token.as_ref())?;
-                ensure_update_budget(budget.as_ref())?;
+                budgets.check()?;
                 if let Some(observation) = &mut observation {
                     observation.before_commit();
                 }
@@ -783,9 +783,9 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
                 self.client.ensure_alive().map_err(egress_update_error)?;
             }
             ensure_update_alive(self.cancellation_token.as_ref())?;
-            ensure_update_budget(self.query_evaluator.inner_join_build_budget())?;
+            ensure_update_budget(&self.query_evaluator)?;
             self.eval(update, using_dataset)?;
-            ensure_update_budget(self.query_evaluator.inner_join_build_budget())?;
+            ensure_update_budget(&self.query_evaluator)?;
         }
         #[cfg(feature = "http-client")]
         if updates
@@ -860,9 +860,9 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
         let mutations = prepared
             .execute(WritableDatasetView::new(&*self.transaction))?
             .collect::<Result<Vec<_>, _>>()?;
-        ensure_update_budget(self.query_evaluator.inner_join_build_budget())?;
+        ensure_update_budget(&self.query_evaluator)?;
         for mutation in mutations {
-            ensure_update_budget(self.query_evaluator.inner_join_build_budget())?;
+            ensure_update_budget(&self.query_evaluator)?;
             ensure_update_alive(self.cancellation_token.as_ref())?;
             match mutation {
                 DeleteInsertQuad::Delete(quad) => self
@@ -1178,9 +1178,9 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
                 self.client.ensure_alive().map_err(egress_update_error)?;
             }
             ensure_update_alive(self.cancellation_token.as_ref())?;
-            ensure_update_budget(self.query_evaluator.inner_join_build_budget())?;
+            ensure_update_budget(&self.query_evaluator)?;
             self.eval(update, using_dataset)?;
-            ensure_update_budget(self.query_evaluator.inner_join_build_budget())?;
+            ensure_update_budget(&self.query_evaluator)?;
             self.storage_for_initial_read.take(); // We unset the initial reader because we have likely mutated the store state.
         }
         #[cfg(feature = "http-client")]
@@ -1257,9 +1257,9 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
         let mutations = prepared
             .execute(DatasetView::new(storage.snapshot()))?
             .collect::<Result<Vec<_>, _>>()?;
-        ensure_update_budget(self.query_evaluator.inner_join_build_budget())?;
+        ensure_update_budget(&self.query_evaluator)?;
         for mutation in mutations {
-            ensure_update_budget(self.query_evaluator.inner_join_build_budget())?;
+            ensure_update_budget(&self.query_evaluator)?;
             ensure_update_alive(self.cancellation_token.as_ref())?;
             match mutation {
                 DeleteInsertQuad::Delete(quad) => self.transaction.remove(&quad),
@@ -1370,9 +1370,9 @@ fn validate_update_terms(
     updates: &[GraphUpdateOperation],
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<(), UpdateEvaluationError> {
-    ensure_update_budget(evaluator.inner_join_build_budget())?;
+    ensure_update_budget(evaluator)?;
     for update in updates {
-        ensure_update_budget(evaluator.inner_join_build_budget())?;
+        ensure_update_budget(evaluator)?;
         ensure_update_alive(cancellation_token)?;
         match update {
             GraphUpdateOperation::InsertData(operation) => {
@@ -1415,7 +1415,7 @@ fn validate_loaded_terms(
 
 fn ensure_update_start_alive(
     _update: &Update,
-    budget: Option<&spareval::InnerJoinBuildBudget>,
+    evaluator: &QueryEvaluator,
     cancellation_token: Option<&CancellationToken>,
     #[cfg(feature = "http-client")] client: &HttpClient,
 ) -> Result<(), UpdateEvaluationError> {
@@ -1427,14 +1427,42 @@ fn ensure_update_start_alive(
     {
         client.ensure_alive().map_err(egress_update_error)?;
     }
-    ensure_update_budget(budget)?;
+    ensure_update_budget(evaluator)?;
     ensure_update_alive(cancellation_token)
 }
 
-fn ensure_update_budget(
-    budget: Option<&spareval::InnerJoinBuildBudget>,
-) -> Result<(), UpdateEvaluationError> {
-    if let Some(budget) = budget {
+/// Every shared cooperative row budget of one update request, captured so the
+/// final pre-commit check survives moving the evaluator into an operation loop.
+/// Precedence matches the evaluator: inner-join rows before sort-buffer rows.
+struct UpdateBudgets {
+    inner_join_build: Option<spareval::InnerJoinBuildBudget>,
+    sort_buffer: Option<spareval::SortBufferBudget>,
+}
+
+impl UpdateBudgets {
+    fn capture(evaluator: &QueryEvaluator) -> Self {
+        Self {
+            inner_join_build: evaluator.inner_join_build_budget().cloned(),
+            sort_buffer: evaluator.sort_buffer_budget().cloned(),
+        }
+    }
+
+    fn check(&self) -> Result<(), UpdateEvaluationError> {
+        if let Some(budget) = &self.inner_join_build {
+            budget.check()?;
+        }
+        if let Some(budget) = &self.sort_buffer {
+            budget.check()?;
+        }
+        Ok(())
+    }
+}
+
+fn ensure_update_budget(evaluator: &QueryEvaluator) -> Result<(), UpdateEvaluationError> {
+    if let Some(budget) = evaluator.inner_join_build_budget() {
+        budget.check()?;
+    }
+    if let Some(budget) = evaluator.sort_buffer_budget() {
         budget.check()?;
     }
     Ok(())

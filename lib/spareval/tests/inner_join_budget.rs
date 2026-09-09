@@ -1,3 +1,6 @@
+mod common;
+
+use common::{SwallowingService, consume};
 use oxrdf::{Dataset, NamedNode};
 use spareval::{
     InnerJoinBuildBudget, QueryEvaluationError, QueryEvaluator, QueryResource, QueryResourcePhase,
@@ -10,22 +13,12 @@ use std::sync::{
 };
 
 fn resource_error(error: QueryEvaluationError, limit: u64) {
-    assert!(
-        matches!(error, QueryEvaluationError::ResourceLimitExceeded {
-        resource: QueryResource::InnerJoinBuildRows,
-        phase: QueryResourcePhase::JoinBuild,
-        limit: actual,
-    } if actual == limit)
+    common::resource_error(
+        error,
+        QueryResource::InnerJoinBuildRows,
+        QueryResourcePhase::JoinBuild,
+        limit,
     );
-}
-
-fn consume(evaluator: &QueryEvaluator, query: &str) -> Result<usize, QueryEvaluationError> {
-    let parsed = SparqlParser::new().parse_query(query).unwrap();
-    match evaluator.prepare(&parsed).execute(&Dataset::new())? {
-        QueryResults::Solutions(mut rows) => rows.try_fold(0, |count, row| row.map(|_| count + 1)),
-        QueryResults::Boolean(value) => Ok(usize::from(value)),
-        QueryResults::Graph(mut rows) => rows.try_fold(0, |count, row| row.map(|_| count + 1)),
-    }
 }
 
 #[test]
@@ -144,12 +137,6 @@ fn zero_allows_work_without_materializing_an_inner_join() {
     resource_error(consume(&evaluator, "ASK {}").unwrap_err(), 0);
 }
 
-struct SwallowingService {
-    budget: InnerJoinBuildBudget,
-    lazy: bool,
-    calls: Arc<AtomicUsize>,
-}
-
 #[test]
 fn buffered_graph_results_observe_failure_from_a_shared_execution() {
     let dataset = Dataset::from_iter([
@@ -192,58 +179,31 @@ fn buffered_graph_results_observe_failure_from_a_shared_execution() {
         assert!(rows.next().is_none());
     }
 }
-impl spareval::ServiceHandler for SwallowingService {
-    type Error = std::convert::Infallible;
-    fn handle(
-        &self,
-        _: &spargebra::algebra::QueryExpression,
-        _: Option<&oxiri::Iri<oxrdf::OxString>>,
-    ) -> Result<spareval::QuerySolutionIter<'static>, Self::Error> {
-        let budget = self.budget.clone();
-        let exhaust = move || {
-            let evaluator = QueryEvaluator::new()
-                .without_optimizations()
-                .with_inner_join_build_budget(budget.clone());
-            resource_error(
-                consume(
-                    &evaluator,
-                    "SELECT * WHERE { VALUES ?x { 1 2 } VALUES ?y { 3 } }",
-                )
-                .unwrap_err(),
-                1,
-            );
-        };
-        if self.lazy {
-            let calls = Arc::clone(&self.calls);
-            Ok(spareval::QuerySolutionIter::new(
-                Arc::from([]),
-                std::iter::from_fn(move || {
-                    let call = calls.fetch_add(1, Ordering::SeqCst);
-                    if call > 10 {
-                        return None;
-                    }
-                    exhaust();
-                    Some(Ok(spareval::QuerySolution::from((Arc::from([]), vec![]))))
-                }),
-            ))
-        } else {
-            exhaust();
-            Ok(spareval::QuerySolutionIter::new(Arc::from([]), []))
-        }
-    }
-}
 
 #[test]
 fn service_silent_cannot_hide_shared_exhaustion_at_dispatch_or_eof() {
     for lazy in [false, true] {
         let budget = InnerJoinBuildBudget::new(1);
         let calls = Arc::new(AtomicUsize::new(0));
+        let shared = budget.clone();
         let evaluator = QueryEvaluator::new()
             .with_inner_join_build_budget(budget.clone())
             .with_service_handler(
                 NamedNode::new_unchecked("urn:service"),
                 SwallowingService {
-                    budget,
+                    exhaust: Arc::new(move || {
+                        let evaluator = QueryEvaluator::new()
+                            .without_optimizations()
+                            .with_inner_join_build_budget(shared.clone());
+                        resource_error(
+                            consume(
+                                &evaluator,
+                                "SELECT * WHERE { VALUES ?x { 1 2 } VALUES ?y { 3 } }",
+                            )
+                            .unwrap_err(),
+                            1,
+                        );
+                    }),
                     lazy,
                     calls: Arc::clone(&calls),
                 },

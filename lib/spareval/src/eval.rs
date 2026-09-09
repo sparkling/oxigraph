@@ -704,7 +704,7 @@ pub struct SimpleEvaluator<'a, D: QueryableDataset<'a>> {
     custom_aggregate_functions: Rc<CustomAggregateFunctionRegistry>,
     run_stats: bool,
     cardinality_estimator: Option<Arc<dyn CardinalityEstimator>>,
-    inner_join_build_budget: Option<crate::InnerJoinBuildBudget>,
+    budgets: crate::resources::ResourceBudgets,
 }
 
 impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
@@ -728,24 +728,18 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             custom_aggregate_functions,
             run_stats,
             cardinality_estimator: None,
-            inner_join_build_budget: None,
+            budgets: crate::resources::ResourceBudgets::default(),
         })
     }
 
-    pub fn with_inner_join_build_budget(
-        mut self,
-        budget: Option<crate::InnerJoinBuildBudget>,
-    ) -> Self {
-        self.inner_join_build_budget = budget;
+    pub fn with_resource_budgets(mut self, budgets: crate::resources::ResourceBudgets) -> Self {
+        self.budgets = budgets;
         self
     }
 
     fn ensure_alive(&self) -> Result<(), QueryEvaluationError> {
         self.dataset.cancellation_token.ensure_alive()?;
-        if let Some(budget) = &self.inner_join_build_budget {
-            budget.check()?;
-        }
-        Ok(())
+        self.budgets.check()
     }
 
     pub fn with_cardinality_estimator(
@@ -779,7 +773,7 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                 self.dataset.clone(),
                 eval(from),
                 Arc::from(variables),
-                self.inner_join_build_budget.clone(),
+                self.budgets.clone(),
             )),
             stats,
         )
@@ -913,10 +907,10 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         iter: impl Iterator<Item = Result<Triple, QueryEvaluationError>> + 'a,
     ) -> QueryTripleIter<'a> {
         let iter = cancellable_iter(iter, self.dataset.cancellation_token.clone());
-        if let Some(budget) = &self.inner_join_build_budget {
-            QueryTripleIter::new(crate::resources::budgeted_iter(iter, budget.clone()))
-        } else {
+        if self.budgets.is_empty() {
             QueryTripleIter::new(iter)
+        } else {
+            QueryTripleIter::new(crate::resources::budgeted_iter(iter, self.budgets.clone()))
         }
     }
 
@@ -1092,15 +1086,15 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             Ok(e) => e,
             Err(e) => return (Err(e), stats),
         };
-        if let Some(budget) = &self.inner_join_build_budget {
-            let budget = budget.clone();
+        if !self.budgets.is_empty() {
+            let budgets = self.budgets.clone();
             evaluator = Rc::new(move |tuple| {
-                if let Err(error) = budget.check() {
+                if let Err(error) = budgets.check() {
                     return Box::new(once(Err(error)));
                 }
                 Box::new(crate::resources::budgeted_iter(
                     evaluator(tuple),
-                    budget.clone(),
+                    budgets.clone(),
                 ))
             });
         }
@@ -1567,7 +1561,7 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             JoinAlgorithm::HashBuildLeftProbeRight { keys } => {
                 let build = left;
                 let probe = right;
-                let budget = self.inner_join_build_budget.clone();
+                let budget = self.budgets.inner_join_build().cloned();
                 if keys.is_empty() {
                     // Cartesian product
                     Ok(Rc::new(move |from| {
@@ -1936,23 +1930,42 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             })
             .collect::<Vec<_>>();
         let dataset = self.dataset.clone();
+        let budget = self.budgets.sort_buffer().cloned();
         Ok(Rc::new(move |from| {
-            let mut tuples_and_sort_keys = match child(from)
-                .map(|tuple| {
-                    let tuple = tuple?;
-                    let sort_terms = by
-                        .iter()
-                        .map(|(_, variable_key)| {
-                            tuple
-                                .get(*variable_key)
-                                .map(|term| dataset.externalize_expression_term(term.clone()))
-                                .transpose()
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    Ok((tuple, sort_terms))
-                })
-                .collect::<Result<Vec<_>, _>>()
-            {
+            let sort_keys = |tuple: &InternalTuple<D::InternalTerm>| {
+                by.iter()
+                    .map(|(_, variable_key)| {
+                        tuple
+                            .get(*variable_key)
+                            .map(|term| dataset.externalize_expression_term(term.clone()))
+                            .transpose()
+                    })
+                    .collect::<Result<Vec<_>, QueryEvaluationError>>()
+            };
+            let collected = if let Some(budget) = &budget {
+                // Charge each admitted tuple before its decoded sort-key vector
+                // or buffer slot exists (upstream expression evaluation is not
+                // charged); never reserve from the child's untrusted size hint.
+                let mut rows = Vec::new();
+                child(from)
+                    .try_for_each(|tuple| {
+                        let tuple = tuple?;
+                        budget.charge()?;
+                        let sort_terms = sort_keys(&tuple)?;
+                        rows.push((tuple, sort_terms));
+                        Ok(())
+                    })
+                    .map(|()| rows)
+            } else {
+                child(from)
+                    .map(|tuple| {
+                        let tuple = tuple?;
+                        let sort_terms = sort_keys(&tuple)?;
+                        Ok((tuple, sort_terms))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            };
+            let mut tuples_and_sort_keys = match collected {
                 Ok(values) => values,
                 Err(error) => return Box::new(once(Err(error))),
             };
@@ -2563,10 +2576,13 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             }
             Ok(encoded_terms)
         });
-        if let Some(budget) = &self.inner_join_build_budget {
-            Box::new(crate::resources::budgeted_iter(encoded, budget.clone()))
-        } else {
+        if self.budgets.is_empty() {
             Box::new(encoded)
+        } else {
+            Box::new(crate::resources::budgeted_iter(
+                encoded,
+                self.budgets.clone(),
+            ))
         }
     }
 }
@@ -2582,7 +2598,7 @@ impl<'a, D: QueryableDataset<'a>> Clone for SimpleEvaluator<'a, D> {
             custom_aggregate_functions: Rc::clone(&self.custom_aggregate_functions),
             run_stats: self.run_stats,
             cardinality_estimator: self.cardinality_estimator.clone(),
-            inner_join_build_budget: self.inner_join_build_budget.clone(),
+            budgets: self.budgets.clone(),
         }
     }
 }
@@ -2675,7 +2691,7 @@ fn decode_bindings<'a, D: QueryableDataset<'a>>(
     dataset: EvalDataset<'a, D>,
     iter: InternalTuplesIterator<'a, D::InternalTerm>,
     variables: Arc<[Variable]>,
-    budget: Option<crate::InnerJoinBuildBudget>,
+    budgets: crate::resources::ResourceBudgets,
 ) -> QuerySolutionIter<'a> {
     let tuple_size = variables.len();
     let iter = cancellable_iter(iter, dataset.cancellation_token.clone());
@@ -2688,13 +2704,13 @@ fn decode_bindings<'a, D: QueryableDataset<'a>>(
         }
         Ok(result)
     });
-    if let Some(budget) = budget {
+    if budgets.is_empty() {
+        QuerySolutionIter::from_tuples(variables, Box::new(decoded))
+    } else {
         QuerySolutionIter::from_tuples(
             variables,
-            Box::new(crate::resources::budgeted_iter(decoded, budget)),
+            Box::new(crate::resources::budgeted_iter(decoded, budgets)),
         )
-    } else {
-        QuerySolutionIter::from_tuples(variables, Box::new(decoded))
     }
 }
 

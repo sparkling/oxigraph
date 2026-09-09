@@ -355,6 +355,23 @@ Embedded callers may attach `InnerJoinBuildBudget` using
 so independent requests need fresh handles. Borrowed transactions remain the
 caller's rollback responsibility. This is not a general query-work/RSS quota.
 
+Optional `max_sort_buffer_rows` independently caps cumulative native `ORDER BY`
+buffer rows. For example, `"max_sort_buffer_rows": 100000` is an illustrative
+operator choice, not a default. One fresh budget belongs to each admission;
+duplicates, nested/repeated sorts and all update operations share its counter.
+Zero permits empty sorts and unsorted work. Exactly-at-cap succeeds; the next
+row permanently exhausts the budget. Omission preserves the unbounded sort path.
+
+Each admitted tuple is charged before decoded sort-key construction and buffer
+insertion, without reserving from the source iterator's size hint. Earlier
+`ORDER BY` expression evaluation, row width, comparator CPU, other buffers,
+inference and RSS are not bounded. Successful result order and duplicates are
+unchanged. Exhaustion has the same 503/failed-stream and owned-update rollback
+behavior described above, including under subqueries, EXISTS and SERVICE SILENT.
+Embedded callers use `SortBufferBudget` with
+`SparqlEvaluator::with_sort_buffer_budget`; cloned handles deliberately share
+state, independently of any inner-join budget.
+
 Optional `request_timeout_ms` (positive milliseconds) starts one absolute
 monotonic deadline **before queueing**. It is not renewed on admission, body
 read, evaluation, writer acquisition or serialization. Omitting it retains
