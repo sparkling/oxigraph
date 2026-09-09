@@ -213,6 +213,18 @@ impl AccessController {
             .map_err(|_| AccessError::Provider)
     }
 
+    /// Runs a bounded local check while retaining one coherent access-policy
+    /// read guard. Callers must not invoke an access-policy write while the
+    /// callback runs. ADR-0027 uses this access-before-workload lock order for
+    /// its atomic cross-policy validation and swap.
+    pub(crate) fn with_workload_classes<T>(
+        &self,
+        check: impl FnOnce(&[String]) -> T,
+    ) -> Result<T, AccessError> {
+        let policy = self.policy.read().map_err(|_| AccessError::Provider)?;
+        Ok(check(&policy.workload_classes))
+    }
+
     pub fn new(policy: AccessPolicy, read_only: bool) -> Self {
         Self {
             policy: RwLock::new(Arc::new(policy)),

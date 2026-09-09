@@ -210,6 +210,17 @@ reload including in-flight/keep-alive behavior. Default and no-default lanes
 pass; the existing default CLI and anonymous operator/listener suites retain
 compatibility. These are native implementation results, not frozen promotion.
 
+ADR-0027 now adds a separate `Endpoint::WorkloadPolicy`, serialized
+`workload-policy`, for empty POST `/workload/policy/reload` on the loopback
+operator listener. It requires its own explicit operator rule; access-policy,
+metrics, audit, reader and other operator grants do not imply it. The route is
+present only for the file-backed trusted-proxy control path and accepts no
+query, caller path or body. Access authentication/authorization still completes
+before workload admission and body handling. Access-policy reload remains an
+independent transaction and may introduce a workload class that admission then
+denies closed until a compatible workload reload; there is no default fallback
+or combined two-policy commit.
+
 ### Native acceptance closure (2026-09-09)
 
 Evaluator-only commit `2d54ddfa` adds an independent

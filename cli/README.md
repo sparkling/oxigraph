@@ -175,6 +175,8 @@ The example grants readers `/query`, writers `/update`, and operators the
 listed admin endpoints; it intentionally grants neither UI nor `/sparql` nor
 Graph Store. Available endpoints are `ui`, `query`, `update`, `sparql`,
 `graph-store`, `health`, `ready`, `metrics`, `audit`, and `access-policy`.
+`workload-policy` is a separate operator endpoint and is never implied by any
+of those grants.
 Operations are `discovery`, `query`, `update`, `graph-read`, `graph-write`,
 `health`, and `operator`. Workload classes are operator-defined labels.
 The optional admission profile below assigns their active/queued capacities;
@@ -204,6 +206,15 @@ On the optional loopback admin listener, explicitly authorized operators can:
   Keep `policy_id` unchanged and increase **both** policy `version` and proxy
   `version`. Replace the file atomically first. Valid reload returns 204;
   invalid/stale replacement returns generic 400 and keeps the previous policy.
+- `POST /workload/policy/reload` with an explicit `workload-policy` / `operator`
+  grant and `Content-Length: 0`: atomically reread the configured startup
+  workload file. This route exists only when a trusted-proxy file profile and
+  loopback admin listener are configured. It accepts no path, query string, or
+  JSON body. Missing/in-memory-only workload configuration and rejected
+  candidates return the same bounded generic 400 convention. Rejection keeps
+  the in-memory policy but does not repair or roll back the configured disk file.
+  Cancellation/deadline failure at either reload checkpoint returns an empty,
+  noncacheable 408 and also preserves the in-memory policy.
 - `GET`/`HEAD /access/audit`: retrieve the last 256 admission events and the
   count overwritten. Events contain fixed operation/reason labels, request ID,
   policy ID/version and process-/policy-version-scoped salted pseudonyms, never
@@ -214,6 +225,15 @@ Reload affects new admissions, including the next keep-alive request. An
 already-admitted request keeps its immutable policy snapshot; reload does not
 cancel it retroactively. Optional `anonymous_liveness` permits only GET/HEAD
 `/health` on the admin listener, not readiness/metrics or data access.
+
+A minimal additional access-policy rule for the workload route is:
+
+```json
+{"subject":"operator","endpoint":"workload-policy","methods":["POST"],"operations":["operator"],"workload_class":"default"}
+```
+
+It grants only this route; existing general operator, access-policy, metrics,
+audit, reader, or anonymous rules do not imply it.
 
 Embedders can use `oxigraph_cli::access::{RequestIdentityProvider,
 RequestAuthorizer, AccessPolicy, AccessController}` with OxHTTP's admission
@@ -253,15 +273,44 @@ body processing, response serialization **and socket flush**, releasing on
 success, observed I/O failure or Rust unwind. A slow client still holds its
 slot until its work ends; without a request deadline, admission limits do not
 shorten the existing transport timeout.
+HTTP admission renders overload advice from the immutable policy snapshot for
+that attempt. A standalone `AdmissionController::denial(error)` call instead
+uses the controller's current policy because it has no attempt snapshot.
 
-Files are bounded to 64 KiB and 16 classes, with ASCII alphanumeric/`_-` names
-of 1–32 bytes, a positive version, positive active limits/queue timeout and
+Sources must resolve to regular files (including symlinks to regular files)
+and are bounded to 64 KiB and 16 classes, with
+ASCII alphanumeric/`_-` names of 1–32 bytes, a positive version, positive active
+limits/queue timeout and
 `retry_after_seconds` from 1 to 300. Queue capacities may be zero. The `default`
 class is required for anonymous requests. Every configured access-policy class
 must exist before store open. An access-policy reload introducing an unmapped
 class causes requests using it to fail closed with 503, never fall back.
-The admission policy itself is immutable until restart; malformed/unknown
-fields and arithmetic overflow are rejected at startup.
+File-backed admission controllers retain the configured startup path. An
+authorized `POST /workload/policy/reload` rereads at most 64 KiB outside the
+scheduler mutex, then atomically installs a candidate only when `policy_id` is
+unchanged, `version` strictly increases, every class in one coherent current
+access-policy snapshot exists, and the candidate's data/operator active-plus-
+queued envelope does not exceed the corresponding startup transport ceiling.
+Listener semaphores therefore never grow live. Malformed, oversized, stale,
+equal-version, wrong-ID, unmapped-class and envelope-growing candidates keep the
+last good in-memory policy without repairing the configured source. The admitted
+request's cancellation/deadline is checked before file access and at the final
+locked swap checkpoint; an expired attempt cannot install its prepared candidate.
+This bounded synchronous read does not claim hard filesystem-I/O preemption or
+protection against hostile local filesystem races. An independently reloaded
+access policy may still introduce
+an unmapped class; requests assigned to it fail closed until a compatible
+workload policy is installed, with no default-class fallback.
+
+Each admission attempt takes one coherent `Arc<WorkloadPolicy>` snapshot.
+Queued entries and lease clones retain it, so its queue/request deadlines,
+request/result and row budgets, retry advice, identity and version drain
+unchanged after reload. New attempts use the new caps against all outstanding
+old and new occupancy. Lower limits are prospective: reload does not evict or
+cancel work, reorder queues, reset metrics, shrink existing budgets, release
+capacity, or change an admitted response guard. Classes removed from the new
+policy remain usable only by already queued/active snapshots; obsolete zero-
+count accounting entries are discarded after drain.
 
 Optional `request_body_limits` adds two explicit unsigned byte caps to that
 same profile (illustrative values, not production defaults):
@@ -460,6 +509,11 @@ an active lease does not prematurely free its capacity. `snapshot()` exposes
 active/queued counts without principal or query data. Idle/header connections
 remain subject to a separate transport cap (active + queued + one rejection
 connection for each listener), so this is not unlimited overload responsiveness.
+`AdmissionController::reload(&AccessController)` is likewise a convenience
+local control API and performs no authentication itself; embedders must call it
+only after an explicit authorized operator decision. HTTP-style callers should
+use `reload_with_cancellation` with their admitted token so the pre-I/O and
+final-swap checks apply. Controllers created without a file fail reload safely.
 
 Both CLI listeners use `AdmissionController::admit_request` to poll a trusted
 OxHTTP `AdmissionAbort` during queue waits and before activation. An observed
@@ -477,7 +531,7 @@ fixed-length and chunked half-closed request fixtures remain successful.
 
 Still pending: active-work disconnect propagation, deadline support for the
 explicitly excluded paths above, finer parser/evaluator work counters,
-per-principal/priority scheduling, atomic workload reload, resource-use metrics and
+per-principal/priority scheduling, resource-use metrics and
 operational qualification. Cooperative admission is not a hard RSS/CPU/fd/disk
 guarantee; use external process/container controls. This stage does not complete
 G4.2 or promote the Proposed ADR.

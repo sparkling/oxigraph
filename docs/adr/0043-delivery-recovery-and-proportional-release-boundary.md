@@ -165,7 +165,7 @@
   tables across each request, including multi-operation update rollback. Typed
   sticky failure survives empty probes, EXISTS, ASK/UNION and shared SERVICE
   handlers. Streaming joins, other buffers and RSS are explicitly outside this
-  counter. Broader resource/fairness/reload/metrics acceptance remains open;
+  counter. Broader resource/fairness/metrics acceptance remains open;
   full G4.2 is not complete.
   The subsequent unbudgeted query-fuzzer OOM is repaired by choosing the smaller
   hash-build input in greedy joins, without changing nullable-path domains or
@@ -179,7 +179,7 @@
   for pool occupancy, returned admission dispositions and queue waits, without
   changing readiness or counting lease release as execution success. Default
   and no-default unit/wire tests cover denial, overload and persistent journeys;
-  full G4.2 resource/fairness/reload acceptance remains open.
+  full G4.2 resource/fairness acceptance remains open.
   An independent cumulative native DISTINCT retained-row cap now charges only
   new tuples before cloning into each hash set, including planner-lowered
   REDUCED. Nested sets and update operations share typed failure and owned
@@ -214,6 +214,19 @@
   reload gates stay open, and no milestone or programme completion follows.
   Native CLI subprocess tests now preserve their selected transport features,
   avoiding a shared-binary overwrite that broke the combined integration run.
+  The next ADR-0027 product slice adds file-backed atomic workload-policy reload
+  through a new explicit loopback operator grant. One immutable policy snapshot
+  stays with each attempt, queued entry and lease; old work drains while new
+  prospective caps account for all outstanding occupancy. Candidate class
+  coverage is checked under a coherent access read guard, startup listener
+  transport envelopes cannot grow live, and invalid replacements preserve the
+  last good policy and telemetry. Default/no-default native controller and real
+  HTTP tests cover authorization, input rejection, cross-policy unknown classes
+  and live limit replacement. This is source delivery under the proportional
+  product boundary, not full G4.2 qualification or promotion.
+  The owner selected native `gpt-5.6-sol`; implementation used high reasoning,
+  followed by parent review, focused corrections and release validation, with
+  one source writer at a time and the parent as the only Git writer.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

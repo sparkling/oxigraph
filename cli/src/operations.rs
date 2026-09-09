@@ -1,5 +1,7 @@
 //! Opt-in process-lifetime loopback observations; no SPARQL or maintenance API.
-use oxhttp::model::header::{ALLOW, CACHE_CONTROL, CONTENT_TYPE};
+use oxhttp::model::header::{
+    ALLOW, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING,
+};
 use oxhttp::model::{Body, Method, Request, Response, StatusCode};
 use oxhttp::{ListeningServer, Server};
 use oxigraph::store::{
@@ -7,7 +9,7 @@ use oxigraph::store::{
     ReadinessPolicy, ReadinessReason, Store, TransactionStartControl,
 };
 use oxigraph_cli::access::{AccessController, ListenerKind};
-use oxigraph_cli::workload::{AdmissionController, AdmissionMetrics, WorkloadError};
+use oxigraph_cli::workload::{AdmissionController, AdmissionMetrics, WorkloadError, WorkloadLease};
 use std::fmt::Write as _;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -40,7 +42,7 @@ pub(super) fn spawn(
             return oxigraph_cli::access::denial(error);
         }
         if access.is_proxy_profile() {
-            if let Some(response) = access_operation(request, &access) {
+            if let Some(response) = operator_operation(request, &access, telemetry.as_ref()) {
                 return response;
             }
         }
@@ -64,12 +66,44 @@ pub(super) fn spawn(
     .spawn()
 }
 
-fn access_operation(request: &Request<Body>, access: &AccessController) -> Option<Response<Body>> {
+fn operator_operation(
+    request: &Request<Body>,
+    access: &AccessController,
+    workload: Option<&AdmissionController>,
+) -> Option<Response<Body>> {
     let (status, body) = match (request.uri().path(), request.method().as_str()) {
         ("/access/policy/reload", "POST") => {
             if request.body().len() == Some(0) {
                 match access.reload() {
                     Ok(_) => (StatusCode::NO_CONTENT, String::new()),
+                    Err(_) => (
+                        StatusCode::BAD_REQUEST,
+                        "{\"error\":\"policy_reload_rejected\"}\n".into(),
+                    ),
+                }
+            } else {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "{\"error\":\"body_not_supported\"}\n".into(),
+                )
+            }
+        }
+        ("/workload/policy/reload", "POST") => {
+            if known_empty_body(request) {
+                let result = request
+                    .extensions()
+                    .get::<WorkloadLease>()
+                    .ok_or(WorkloadError::MissingAccessContext)
+                    .and_then(|lease| {
+                        workload
+                            .ok_or(WorkloadError::Unavailable)?
+                            .reload_with_cancellation(access, lease.cancellation_token())
+                    });
+                match result {
+                    Ok(_) => (StatusCode::NO_CONTENT, String::new()),
+                    Err(WorkloadError::RequestTimedOut | WorkloadError::Cancelled) => {
+                        (StatusCode::REQUEST_TIMEOUT, String::new())
+                    }
                     Err(_) => (
                         StatusCode::BAD_REQUEST,
                         "{\"error\":\"policy_reload_rejected\"}\n".into(),
@@ -99,6 +133,15 @@ fn access_operation(request: &Request<Body>, access: &AccessController) -> Optio
         _ => return None,
     };
     Some(response(request, status, "application/json", body))
+}
+
+fn known_empty_body(request: &Request<Body>) -> bool {
+    request.body().len() == Some(0)
+        && request.headers().get(TRANSFER_ENCODING).is_none()
+        && request
+            .headers()
+            .get(CONTENT_LENGTH)
+            .is_some_and(|value| value == "0")
 }
 
 /// Fail closed before invoking any application handler during partial startup.

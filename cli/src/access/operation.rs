@@ -15,6 +15,7 @@ pub enum Endpoint {
     Ready,
     Metrics,
     AccessPolicy,
+    WorkloadPolicy,
     Audit,
     Unknown,
 }
@@ -82,6 +83,9 @@ impl RequestOperation {
                 ("/metrics", "GET" | "HEAD") => (Endpoint::Metrics, vec![OperationKind::Operator]),
                 ("/access/policy/reload", "POST") => {
                     (Endpoint::AccessPolicy, vec![OperationKind::Operator])
+                }
+                ("/workload/policy/reload", "POST") => {
+                    (Endpoint::WorkloadPolicy, vec![OperationKind::Operator])
                 }
                 ("/access/audit", "GET" | "HEAD") => {
                     (Endpoint::Audit, vec![OperationKind::Operator])
@@ -158,5 +162,51 @@ impl RequestOperation {
         self.required
             .iter()
             .any(|kind| matches!(kind, OperationKind::Update | OperationKind::GraphWrite))
+    }
+}
+
+#[cfg(test)]
+mod workload_policy_tests {
+    use super::*;
+
+    #[test]
+    fn workload_reload_is_a_distinct_post_only_operator_operation() {
+        let headers = HeaderMap::new();
+        for (listener, method, path, endpoint) in [
+            (
+                ListenerKind::Operator,
+                Method::POST,
+                "/workload/policy/reload",
+                Endpoint::WorkloadPolicy,
+            ),
+            (
+                ListenerKind::Operator,
+                Method::GET,
+                "/workload/policy/reload",
+                Endpoint::Unknown,
+            ),
+            (
+                ListenerKind::Data,
+                Method::POST,
+                "/workload/policy/reload",
+                Endpoint::Unknown,
+            ),
+        ] {
+            let uri: Uri = format!("http://localhost{path}").parse().unwrap();
+            let operation = RequestOperation::classify(&uri, &method, &headers, listener).unwrap();
+            assert_eq!(operation.endpoint, endpoint);
+            assert_eq!(
+                operation.required,
+                vec![if endpoint == Endpoint::WorkloadPolicy {
+                    OperationKind::Operator
+                } else {
+                    OperationKind::Unknown
+                }]
+            );
+        }
+        assert_eq!(
+            serde_json::to_string(&Endpoint::WorkloadPolicy).unwrap(),
+            "\"workload-policy\""
+        );
     }
 }

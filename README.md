@@ -213,8 +213,16 @@ contents, temporary keys and RSS are not bounded. With a workload policy,
 operator `/metrics` now exports active/queued pool gauges, terminal admission
 counts and queue-wait histograms: 60 fixed-label samples without request data.
 Admission is not execution success; lease release is not proof of rollback.
-Broader resource accounting, active-work disconnect propagation, fairness,
-workload reload and full G4.2 acceptance remain open.
+File-backed controllers now support atomic operator workload-policy reload on
+the loopback admin listener through a new explicit `workload-policy` grant.
+Each attempt, queued entry and lease retains one policy snapshot; old work drains
+under its original deadlines/budgets while new attempts apply prospective caps
+to all outstanding occupancy. Reload preserves queues, capacity and metrics,
+cannot grow the startup data/operator transport envelopes, and rejects stale,
+wrong-ID, invalid or access-class-incomplete candidates without replacing the
+last good policy. Existing operator/access-policy/metrics/audit grants gain no
+new authority. Broader resource accounting, active-work disconnect propagation,
+fairness and full G4.2 acceptance remain open.
 The planner also avoids materializing large accumulated path fan-outs when
 a smaller hash-build input is available. Native result/budget regressions and
 the original OOM-input replay verify this

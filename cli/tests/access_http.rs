@@ -29,8 +29,10 @@ struct Running {
     public: SocketAddr,
     admin: SocketAddr,
     policy: PathBuf,
+    workload_policy: Option<PathBuf>,
     directory: assert_fs::TempDir,
     readiness_method: &'static str,
+    startup_log_offset: usize,
 }
 fn binary() -> std::ffi::OsString {
     // Reuse the same native tests against an explicitly identified release artifact.
@@ -59,6 +61,14 @@ fn config() -> Value {
     json!({"format":"oxigraph-access-v1","policy_id":"test-policy","version":1,
         "proxy":{"peers":["127.0.0.1"],"issuer":"fixture-edge","audience":"fixture-store","version":1,"max_lifetime_seconds":60},
         "anonymous_liveness":true,"workload_classes":["default"],"rules":rules})
+}
+fn workload_reload_config() -> Value {
+    let mut policy = config();
+    policy["rules"]
+        .as_array_mut()
+        .expect("rules array")
+        .push(json!({"subject":OPERATOR,"endpoint":"workload-policy","methods":["POST"],"operations":["operator"],"workload_class":"default"}));
+    policy
 }
 fn assertion(subject: &str, version: u64) -> Result<Value> {
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
@@ -192,11 +202,14 @@ fn try_start_with_workload_entailment(
     if let Some(entailment) = entailment {
         command.arg("--entailment").arg(entailment);
     }
-    if let Some(workload) = workload {
+    let workload_path = if let Some(workload) = workload {
         let path = directory.path().join("workload.json");
         std::fs::write(&path, serde_json::to_vec(workload)?)?;
-        command.arg("--workload-policy").arg(path);
-    }
+        command.arg("--workload-policy").arg(&path);
+        Some(path)
+    } else {
+        None
+    };
     drop(public);
     drop(admin);
     let mut running = Running {
@@ -205,14 +218,18 @@ fn try_start_with_workload_entailment(
         public: public_address,
         admin: admin_address,
         policy: policy_path,
+        workload_policy: workload_path,
         directory,
-        // A zero result cap deliberately disallows the GET health body; HEAD
-        // still verifies successful startup without weakening status checking.
-        readiness_method: if workload.is_some_and(|profile| profile["max_result_bytes"] == 0) {
+        // An explicit result cap may be smaller than the generated readiness
+        // representation. Keep the readiness request bodyless in that case;
+        // the zero-cap fixture in particular must not require response bytes.
+        readiness_method: if workload.is_some_and(|profile| !profile["max_result_bytes"].is_null())
+        {
             "HEAD"
         } else {
             "GET"
         },
+        startup_log_offset: 0,
     };
     wait_ready(&mut running)?;
     Ok(running)
@@ -234,14 +251,52 @@ fn wait_ready(running: &mut Running) -> Result<()> {
             }
             anyhow::bail!(diagnostic);
         }
-        if request(running.admin, running.readiness_method, "/health", "", "")
-            .is_ok_and(|response| response.status == 200)
+        // `serve` emits this exact line only after both listeners bind and
+        // `started` becomes true. Liveness alone (or CORS preflight, which
+        // bypasses the data gate) is insufficient. `/ready` cannot be the
+        // fixture barrier when a test intentionally denies all proxy peers or
+        // forbids every generated response byte. Each restart needs a NEW line.
+        let stderr = std::fs::read_to_string(running.directory.path().join("stderr.log"))?;
+        let announced = startup_announced(&stderr, running.startup_log_offset, running.public);
+        if announced
+            && request(running.admin, running.readiness_method, "/health", "", "")
+                .is_ok_and(|response| response.status == 200)
         {
+            running.startup_log_offset = stderr.len();
             return Ok(());
         }
-        ensure!(Instant::now() < deadline, "startup timed out");
+        ensure!(
+            Instant::now() < deadline,
+            "startup timed out: fresh startup announcement={announced}"
+        );
         thread::sleep(Duration::from_millis(10));
     }
+}
+
+fn startup_announced(stderr: &str, offset: usize, public: SocketAddr) -> bool {
+    let expected = format!("Listening for requests at http://{public}");
+    stderr
+        .get(offset..)
+        .is_some_and(|tail| tail.lines().any(|line| line == expected))
+}
+
+#[test]
+fn startup_barrier_rejects_partial_or_previous_process_announcements() {
+    let address: SocketAddr = (Ipv4Addr::LOCALHOST, 12345).into();
+    let previous = format!("Listening for requests at http://{address}\n");
+    assert!(!startup_announced("Opening store\n", 0, address));
+    assert!(startup_announced(&previous, 0, address));
+    assert!(!startup_announced(&previous, previous.len(), address));
+    assert!(!startup_announced(
+        &format!("{previous}Opening store\n"),
+        previous.len(),
+        address,
+    ));
+    assert!(startup_announced(
+        &format!("{previous}Opening store\n{previous}"),
+        previous.len(),
+        address,
+    ));
 }
 
 #[test]
@@ -259,8 +314,10 @@ fn startup_failure_reports_exit_status_and_cli_diagnostic() -> Result<()> {
         public: (Ipv4Addr::LOCALHOST, 0).into(),
         admin: (Ipv4Addr::LOCALHOST, 0).into(),
         policy: directory.path().join("unused.json"),
+        workload_policy: None,
         directory,
         readiness_method: "GET",
+        startup_log_offset: 0,
     };
     let error = wait_ready(&mut running).unwrap_err().to_string();
     let status = running.child.0.wait()?;
@@ -876,6 +933,295 @@ fn reload_retains_in_flight_snapshot_but_readmits_keep_alive_requests() -> Resul
     ensure!(
         result.status == 200 && serde_json::from_str::<Value>(&result.body)?["boolean"] == true
     );
+    Ok(())
+}
+
+#[test]
+fn workload_reload_is_explicit_loopback_operator_only_and_bodyless() -> Result<()> {
+    let existing = start_with_workload(&config(), false, Some(&workload(1, 1, 500)))?;
+    for (subject, expected) in [(READER, 403), (OPERATOR, 403)] {
+        ensure!(
+            request(
+                existing.admin,
+                "POST",
+                "/workload/policy/reload",
+                &identity(subject, 1)?,
+                "",
+            )?
+            .status
+                == expected
+        );
+    }
+    ensure!(request(existing.admin, "POST", "/workload/policy/reload", "", "",)?.status == 401);
+    for (headers, expected) in [
+        (identity(OPERATOR, 1)?, 403),
+        (identity(READER, 1)?, 403),
+        (String::new(), 401),
+    ] {
+        let denied = wire(
+            existing.admin,
+            &format!(
+                "POST /workload/policy/reload HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: 8\r\nExpect: 100-continue\r\n{}\r\n",
+                existing.admin, headers
+            ),
+        )?;
+        ensure!(denied.status == expected && denied.body.is_empty());
+        ensure!(
+            !denied.head.contains("100 Continue"),
+            "denied reload requested its malformed body"
+        );
+    }
+    drop(existing);
+
+    let no_workload = start(&workload_reload_config(), false)?;
+    let rejected = request(
+        no_workload.admin,
+        "POST",
+        "/workload/policy/reload",
+        &identity(OPERATOR, 1)?,
+        "",
+    )?;
+    ensure!(rejected.status == 400 && rejected.body == "{\"error\":\"policy_reload_rejected\"}\n");
+    drop(no_workload);
+
+    let policy = workload_reload_config();
+    let running = start_with_workload(&policy, false, Some(&workload(1, 1, 500)))?;
+    for response in [
+        request(
+            running.admin,
+            "GET",
+            "/workload/policy/reload",
+            &identity(OPERATOR, 1)?,
+            "",
+        )?,
+        request(
+            running.admin,
+            "POST",
+            "/workload/policy/reload?path=private",
+            &identity(OPERATOR, 1)?,
+            "",
+        )?,
+        request(
+            running.public,
+            "POST",
+            "/workload/policy/reload",
+            &identity(OPERATOR, 1)?,
+            "",
+        )?,
+    ] {
+        ensure!(response.status == 403 && response.body.is_empty());
+    }
+    let body = request(
+        running.admin,
+        "POST",
+        "/workload/policy/reload",
+        &identity(OPERATOR, 1)?,
+        "not-empty",
+    )?;
+    ensure!(body.status == 400 && body.body == "{\"error\":\"body_not_supported\"}\n");
+    let chunked = wire(
+        running.admin,
+        &format!(
+            "POST /workload/policy/reload HTTP/1.1\r\nHost: {}\r\nTransfer-Encoding: chunked\r\n{}\r\n0\r\n\r\n",
+            running.admin,
+            identity(OPERATOR, 1)?
+        ),
+    )?;
+    ensure!(chunked.status == 400 && chunked.body.contains("body_not_supported"));
+
+    let mut next = workload(1, 1, 500);
+    next["version"] = json!(2);
+    write_policy(
+        running
+            .workload_policy
+            .as_deref()
+            .context("workload path missing")?,
+        &next,
+    )?;
+    ensure!(
+        request(
+            running.admin,
+            "POST",
+            "/workload/policy/reload",
+            &identity(OPERATOR, 1)?,
+            "",
+        )?
+        .status
+            == 204
+    );
+    Ok(())
+}
+
+#[test]
+fn workload_reload_changes_new_real_limits_but_keeps_admitted_snapshot() -> Result<()> {
+    let mut v1 = workload(1, 1, 3000);
+    v1["max_result_bytes"] = json!(1024);
+    v1["request_body_limits"] = json!({"max_encoded_bytes":1024,"max_decoded_bytes":1024});
+    for read_only in [false, true] {
+        let running = start_with_workload(&workload_reload_config(), read_only, Some(&v1))?;
+        let query = "ASK {}";
+        let mut admitted = TcpStream::connect(running.public)?;
+        admitted.set_read_timeout(Some(Duration::from_secs(3)))?;
+        write!(
+            admitted,
+            "POST /query HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nContent-Type: application/sparql-query\r\nAccept: application/sparql-results+json\r\nContent-Length: {}\r\nExpect: 100-continue\r\n{}\r\n",
+            running.public,
+            query.len(),
+            identity(READER, 1)?,
+        )?;
+        ensure!(read_status_head(&mut admitted)? == 100);
+
+        let mut v2 = workload(1, 1, 3000);
+        v2["version"] = json!(2);
+        v2["max_result_bytes"] = json!(0);
+        v2["request_body_limits"] = json!({"max_encoded_bytes":0,"max_decoded_bytes":0});
+        write_policy(
+            running
+                .workload_policy
+                .as_deref()
+                .context("workload path missing")?,
+            &v2,
+        )?;
+        ensure!(
+            request(
+                running.admin,
+                "POST",
+                "/workload/policy/reload",
+                &identity(OPERATOR, 1)?,
+                "",
+            )?
+            .status
+                == 204
+        );
+        admitted.write_all(query.as_bytes())?;
+        let mut final_response = String::new();
+        admitted.read_to_string(&mut final_response)?;
+        let final_response = decode_wire(&final_response)?;
+        ensure!(final_response.status == 200 && final_response.body.contains("true"));
+
+        let body_limited = sparql(&running, READER, "/query", query)?;
+        ensure!(body_limited.status == 413 && body_limited.body.is_empty());
+        let result_limited = request(
+            running.public,
+            "GET",
+            "/query?query=ASK%20%7B%7D",
+            &format!(
+                "{}Accept: application/sparql-results+json\r\n",
+                identity(READER, 1)?
+            ),
+            "",
+        )?;
+        ensure!(result_limited.status == 503 && result_limited.body.is_empty());
+
+        let mut v3 = v1.clone();
+        v3["version"] = json!(3);
+        write_policy(
+            running
+                .workload_policy
+                .as_deref()
+                .context("workload path missing")?,
+            &v3,
+        )?;
+        ensure!(
+            request(
+                running.admin,
+                "POST",
+                "/workload/policy/reload",
+                &identity(OPERATOR, 1)?,
+                "",
+            )?
+            .status
+                == 204
+        );
+        ensure!(sparql(&running, READER, "/query", query)?.status == 200);
+        if read_only {
+            drop(running);
+        } else {
+            write_rollback_and_restart(running)?;
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn access_reload_may_introduce_unknown_class_until_workload_catches_up() -> Result<()> {
+    let running =
+        start_with_workload(&workload_reload_config(), false, Some(&workload(1, 1, 500)))?;
+    let mut access_v2 = workload_reload_config();
+    access_v2["version"] = json!(2);
+    access_v2["proxy"]["version"] = json!(2);
+    access_v2["workload_classes"] = json!(["default", "unmapped"]);
+    for rule in access_v2["rules"].as_array_mut().context("rules")? {
+        if rule["subject"] == READER && rule["endpoint"] == "query" {
+            rule["workload_class"] = json!("unmapped");
+        }
+    }
+    write_policy(&running.policy, &access_v2)?;
+    ensure!(
+        request(
+            running.admin,
+            "POST",
+            "/access/policy/reload",
+            &identity(OPERATOR, 1)?,
+            "",
+        )?
+        .status
+            == 204
+    );
+    let query_v2 = || {
+        request(
+            running.public,
+            "POST",
+            "/query",
+            &format!(
+                "{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json\r\n",
+                identity(READER, 2)?
+            ),
+            "ASK {}",
+        )
+    };
+    ensure!(query_v2()?.status == 503);
+
+    let mut workload_v2 = workload(1, 1, 500);
+    workload_v2["version"] = json!(2);
+    write_policy(
+        running
+            .workload_policy
+            .as_deref()
+            .context("workload path missing")?,
+        &workload_v2,
+    )?;
+    ensure!(
+        request(
+            running.admin,
+            "POST",
+            "/workload/policy/reload",
+            &identity(OPERATOR, 2)?,
+            "",
+        )?
+        .status
+            == 400
+    );
+    workload_v2["classes"]["unmapped"] = json!({"max_active":1,"max_queued":1});
+    write_policy(
+        running
+            .workload_policy
+            .as_deref()
+            .context("workload path missing")?,
+        &workload_v2,
+    )?;
+    ensure!(
+        request(
+            running.admin,
+            "POST",
+            "/workload/policy/reload",
+            &identity(OPERATOR, 2)?,
+            "",
+        )?
+        .status
+            == 204
+    );
+    ensure!(query_v2()?.status == 200);
     Ok(())
 }
 

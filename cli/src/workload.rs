@@ -2,9 +2,11 @@
 //! Optional inner-join, sort-buffer and distinct-buffer row budgets are
 //! cooperative, not hard process isolation.
 //!
-//! Profiles are explicit and immutable for this controller's lifetime. All
-//! requests have one priority; eligible requests are FIFO, skipping a saturated
-//! class so it cannot block another class. Operator capacity is a separate pool.
+//! Profiles are explicit and immutable per admission attempt. File-backed
+//! controllers may atomically reload after an authorized local/operator decision.
+//! All requests have one priority; eligible requests are FIFO, skipping a
+//! saturated class so it cannot block another class. Operator capacity is a
+//! separate pool.
 //!
 //! Admission telemetry ([`metrics`]) is process-local and observational only:
 //! every returned `acquire` result is counted exactly once, queue waits are the
@@ -21,7 +23,7 @@ use serde::Deserialize;
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -60,8 +62,8 @@ impl From<RequestBodyBudget> for oxhttp::RequestBodyLimits {
 
 /// No capacity defaults: the operator supplies every limit. This version only
 /// promises admission limits, optional cooperative request deadlines and entity
-/// byte/inner-join build-row/sort-buffer/distinct-buffer/group-buffer row limits, not
-/// per-principal fairness or live reload.
+/// byte/inner-join build-row/sort-buffer/distinct-buffer/group-buffer row limits,
+/// not per-principal fairness.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkloadPolicy {
@@ -94,9 +96,18 @@ pub struct WorkloadPolicy {
 impl WorkloadPolicy {
     /// Bounded JSON read and validation; call before opening a store/listener.
     pub fn load(path: &Path) -> Result<Self, WorkloadError> {
+        let path_metadata = std::fs::metadata(path).map_err(|_| WorkloadError::InvalidPolicy)?;
+        if !path_metadata.is_file() || path_metadata.len() > MAX_PROFILE_BYTES {
+            return Err(WorkloadError::InvalidPolicy);
+        }
+        let file = std::fs::File::open(path).map_err(|_| WorkloadError::InvalidPolicy)?;
+        let opened_metadata = file.metadata().map_err(|_| WorkloadError::InvalidPolicy)?;
+        if !opened_metadata.is_file() || opened_metadata.len() > MAX_PROFILE_BYTES {
+            return Err(WorkloadError::InvalidPolicy);
+        }
         let mut bytes = Vec::new();
-        std::fs::File::open(path)
-            .and_then(|file| file.take(MAX_PROFILE_BYTES + 1).read_to_end(&mut bytes))
+        file.take(MAX_PROFILE_BYTES + 1)
+            .read_to_end(&mut bytes)
             .map_err(|_| WorkloadError::InvalidPolicy)?;
         Self::from_json(&bytes)
     }
@@ -212,13 +223,25 @@ pub struct AdmissionSnapshot {
     pub operator_queued: usize,
 }
 
-#[derive(Default)]
 struct State {
+    policy: Arc<WorkloadPolicy>,
     active: usize,
     operator_active: usize,
     classes: BTreeMap<String, usize>,
     queue: VecDeque<Entry>,
     next_id: u64,
+}
+impl State {
+    fn new(policy: Arc<WorkloadPolicy>) -> Self {
+        Self {
+            policy,
+            active: 0,
+            operator_active: 0,
+            classes: BTreeMap::new(),
+            queue: VecDeque::new(),
+            next_id: 0,
+        }
+    }
 }
 struct Entry {
     id: u64,
@@ -226,9 +249,12 @@ struct Entry {
     operator: bool,
     deadline: Instant,
     cancellation: CancellationToken,
+    policy: Arc<WorkloadPolicy>,
 }
 struct Inner {
+    // Immutable startup envelope. Live policy values are in `State::policy`.
     policy: WorkloadPolicy,
+    source: Option<PathBuf>,
     state: Mutex<State>,
     changed: Condvar,
     // Fixed-size telemetry only. Locked after `state` when both are needed and
@@ -247,15 +273,19 @@ impl AdmissionController {
         &self,
         access: &crate::access::AccessController,
     ) -> Result<(), WorkloadError> {
-        if access
-            .workload_classes()
+        access
+            .with_workload_classes(|classes| {
+                let state = self.lock()?;
+                if classes
+                    .iter()
+                    .any(|class| !state.policy.classes.contains_key(class))
+                {
+                    Err(WorkloadError::UnknownClass)
+                } else {
+                    Ok(())
+                }
+            })
             .map_err(|_| WorkloadError::Unavailable)?
-            .iter()
-            .any(|class| !self.0.policy.classes.contains_key(class))
-        {
-            return Err(WorkloadError::UnknownClass);
-        }
-        Ok(())
     }
 
     /// Include one additional connection to return overload without a body.
@@ -269,17 +299,119 @@ impl AdmissionController {
     }
 
     pub fn new(policy: WorkloadPolicy) -> Result<Self, WorkloadError> {
+        Self::new_with_source(policy, None)
+    }
+
+    fn new_with_source(
+        policy: WorkloadPolicy,
+        source: Option<PathBuf>,
+    ) -> Result<Self, WorkloadError> {
         policy.validate()?;
+        let current = Arc::new(policy.clone());
         Ok(Self(Arc::new(Inner {
             policy,
-            state: Mutex::new(State::default()),
+            source,
+            state: Mutex::new(State::new(current)),
             changed: Condvar::new(),
             metrics: Mutex::new(AdmissionMetrics::default()),
         })))
     }
 
     pub fn from_file(path: &Path) -> Result<Self, WorkloadError> {
-        Self::new(WorkloadPolicy::load(path)?)
+        Self::new_with_source(WorkloadPolicy::load(path)?, Some(path.to_owned()))
+    }
+
+    /// Atomically installs the configured file's next policy snapshot.
+    ///
+    /// This method does not authenticate its caller. Invoke it only from an
+    /// authorized local/operator control path. The file is bounded, read and
+    /// validated before the scheduler mutex is acquired. The access-policy read
+    /// guard is then held before the workload lock, so the candidate covers one
+    /// coherent set of currently declared workload classes at the swap point.
+    /// In-memory controllers have no reload source and fail closed.
+    pub fn reload(&self, access: &crate::access::AccessController) -> Result<u64, WorkloadError> {
+        self.reload_inner(access, None)
+    }
+
+    /// Like [`Self::reload`], but tied to an admitted request's cancellation.
+    /// Cancellation is checked before file access and again at the final locked
+    /// swap checkpoint, so a request that expires while preparing or waiting for
+    /// either policy lock cannot replace the last-good snapshot.
+    pub fn reload_with_cancellation(
+        &self,
+        access: &crate::access::AccessController,
+        cancellation: &CancellationToken,
+    ) -> Result<u64, WorkloadError> {
+        self.reload_inner(access, Some(cancellation))
+    }
+
+    fn reload_inner(
+        &self,
+        access: &crate::access::AccessController,
+        cancellation: Option<&CancellationToken>,
+    ) -> Result<u64, WorkloadError> {
+        if let Some(cancellation) = cancellation {
+            check_cancellation(cancellation)?;
+        }
+        let path = self.0.source.as_ref().ok_or(WorkloadError::InvalidPolicy)?;
+        let candidate = Arc::new(WorkloadPolicy::load(path)?);
+        self.apply_candidate(access, candidate, cancellation)
+    }
+
+    fn apply_candidate(
+        &self,
+        access: &crate::access::AccessController,
+        candidate: Arc<WorkloadPolicy>,
+        cancellation: Option<&CancellationToken>,
+    ) -> Result<u64, WorkloadError> {
+        let data_ceiling = candidate
+            .max_active
+            .checked_add(candidate.max_queued)
+            .and_then(|value| value.checked_add(1))
+            .ok_or(WorkloadError::InvalidPolicy)?;
+        let operator_ceiling = candidate
+            .operator_max_active
+            .checked_add(candidate.operator_max_queued)
+            .and_then(|value| value.checked_add(1))
+            .ok_or(WorkloadError::InvalidPolicy)?;
+        if data_ceiling > self.connection_limit(ListenerKind::Data)
+            || operator_ceiling > self.connection_limit(ListenerKind::Operator)
+        {
+            return Err(WorkloadError::InvalidPolicy);
+        }
+        access
+            .with_workload_classes(|classes| {
+                let mut state = self.lock()?;
+                if candidate.policy_id != state.policy.policy_id
+                    || candidate.version <= state.policy.version
+                    || classes
+                        .iter()
+                        .any(|class| !candidate.classes.contains_key(class))
+                {
+                    return Err(
+                        if classes
+                            .iter()
+                            .any(|class| !candidate.classes.contains_key(class))
+                        {
+                            WorkloadError::UnknownClass
+                        } else {
+                            WorkloadError::InvalidPolicy
+                        },
+                    );
+                }
+                if let Some(cancellation) = cancellation {
+                    check_cancellation(cancellation)?;
+                }
+                let version = candidate.version;
+                state.policy = Arc::clone(&candidate);
+                // Only active ownership is retained here. Removed classes with
+                // no active lease need no permanent map entry; queued entries
+                // retain their own immutable policy and class snapshots.
+                state.classes.retain(|_, active| *active != 0);
+                self.0.changed.notify_all();
+                Ok(version)
+            })
+            .map_err(|_| WorkloadError::Unavailable)?
     }
 
     fn lock(&self) -> Result<MutexGuard<'_, State>, WorkloadError> {
@@ -359,10 +491,32 @@ impl AdmissionController {
         cancellation: CancellationToken,
         abort: Option<&oxhttp::AdmissionAbort>,
     ) -> Result<WorkloadLease, WorkloadError> {
+        self.acquire_with_abort_snapshot(class, listener, cancellation, abort)
+            .0
+    }
+
+    fn acquire_with_abort_snapshot(
+        &self,
+        class: &str,
+        listener: ListenerKind,
+        cancellation: CancellationToken,
+        abort: Option<&oxhttp::AdmissionAbort>,
+    ) -> (
+        Result<WorkloadLease, WorkloadError>,
+        Option<Arc<WorkloadPolicy>>,
+    ) {
         let mut queue_wait = None;
-        let result = self.try_acquire(class, listener, cancellation, abort, &mut queue_wait);
+        let mut policy = None;
+        let result = self.try_acquire(
+            class,
+            listener,
+            cancellation,
+            abort,
+            &mut queue_wait,
+            &mut policy,
+        );
         self.record(listener, &result, queue_wait);
-        result
+        (result, policy)
     }
 
     /// `queue_wait` is set only when the request entered the queue: from its
@@ -374,9 +528,13 @@ impl AdmissionController {
         cancellation: CancellationToken,
         abort: Option<&oxhttp::AdmissionAbort>,
         queue_wait: &mut Option<Duration>,
+        attempt_policy: &mut Option<Arc<WorkloadPolicy>>,
     ) -> Result<WorkloadLease, WorkloadError> {
         let now = Instant::now();
-        let cancellation = if let Some(timeout) = self.0.policy.request_timeout_ms {
+        let mut state = self.lock()?;
+        let policy = Arc::clone(&state.policy);
+        *attempt_policy = Some(Arc::clone(&policy));
+        let cancellation = if let Some(timeout) = policy.request_timeout_ms {
             cancellation.with_deadline(
                 now.checked_add(Duration::from_millis(timeout))
                     .ok_or(WorkloadError::InvalidPolicy)?,
@@ -387,16 +545,16 @@ impl AdmissionController {
         if abort.is_some_and(oxhttp::AdmissionAbort::is_aborted) {
             cancellation.cancel();
         }
-        let mut state = self.lock()?;
-        let entry = self.entry(&mut state, class, listener, cancellation, now)?;
+        let entry = Self::entry(&mut state, class, listener, cancellation, now, policy)?;
         Self::purge(&mut state, Instant::now());
-        if self.available(&state, &entry) && self.first_eligible(&state, entry.operator).is_none() {
+        if Self::available(&state, &entry) && Self::first_eligible(&state, entry.operator).is_none()
+        {
             if abort.is_some_and(oxhttp::AdmissionAbort::is_aborted) {
                 entry.cancellation.cancel();
             }
             return self.activate(&mut state, &entry);
         }
-        self.check_queue_capacity(&state, &entry)?;
+        Self::check_queue_capacity(&state, &entry)?;
         let id = entry.id;
         let deadline = entry.deadline;
         let cancellation = entry.cancellation.clone();
@@ -442,7 +600,7 @@ impl AdmissionController {
                 return Err(error);
             }
             let operator = listener == ListenerKind::Operator;
-            if self.first_eligible(&state, operator) == Some(id) {
+            if Self::first_eligible(&state, operator) == Some(id) {
                 let index = state
                     .queue
                     .iter()
@@ -505,17 +663,15 @@ impl AdmissionController {
         listener: ListenerKind,
         abort: Option<&oxhttp::AdmissionAbort>,
     ) -> Result<(), Box<Response<Body>>> {
-        let result = context
-            .get::<RequestContext>()
-            .ok_or(WorkloadError::MissingAccessContext)
-            .and_then(|access| {
-                self.acquire_with_abort(
-                    &access.grant().workload_class,
-                    listener,
-                    CancellationToken::new(),
-                    abort,
-                )
-            });
+        let (result, policy) = match context.get::<RequestContext>() {
+            Some(access) => self.acquire_with_abort_snapshot(
+                &access.grant().workload_class,
+                listener,
+                CancellationToken::new(),
+                abort,
+            ),
+            None => (Err(WorkloadError::MissingAccessContext), None),
+        };
         match result {
             Ok(lease) => {
                 if let Some(limit) = lease.result_byte_limit() {
@@ -531,11 +687,25 @@ impl AdmissionController {
                 context.insert(lease);
                 Ok(())
             }
-            Err(error) => Err(Box::new(self.denial(error))),
+            Err(error) => Err(Box::new(policy.map_or_else(
+                || self.denial(error),
+                |policy| Self::denial_with_policy(error, &policy),
+            ))),
         }
     }
 
     pub fn denial(&self, error: WorkloadError) -> Response<Body> {
+        let Ok(state) = self.lock() else {
+            return Response::builder()
+                .status(StatusCode::SERVICE_UNAVAILABLE)
+                .header(CACHE_CONTROL, "no-store")
+                .body(Body::empty())
+                .unwrap();
+        };
+        Self::denial_with_policy(error, &state.policy)
+    }
+
+    fn denial_with_policy(error: WorkloadError, policy: &WorkloadPolicy) -> Response<Body> {
         let class = error == WorkloadError::Overloaded(AdmissionScope::Class);
         let mut response = Response::builder()
             .status(if class {
@@ -545,20 +715,20 @@ impl AdmissionController {
             })
             .header(CACHE_CONTROL, "no-store");
         if class {
-            response = response.header(RETRY_AFTER, self.0.policy.retry_after_seconds);
+            response = response.header(RETRY_AFTER, policy.retry_after_seconds);
         }
         response.body(Body::empty()).unwrap()
     }
 
     fn entry(
-        &self,
         state: &mut State,
         class: &str,
         listener: ListenerKind,
         cancellation: CancellationToken,
         now: Instant,
+        policy: Arc<WorkloadPolicy>,
     ) -> Result<Entry, WorkloadError> {
-        if !self.0.policy.classes.contains_key(class) {
+        if !policy.classes.contains_key(class) {
             return Err(WorkloadError::UnknownClass);
         }
         if let Some(reason) = cancellation.cancellation_reason() {
@@ -574,27 +744,28 @@ impl AdmissionController {
             class: class.into(),
             operator: listener == ListenerKind::Operator,
             deadline: now
-                .checked_add(Duration::from_millis(self.0.policy.queue_timeout_ms))
+                .checked_add(Duration::from_millis(policy.queue_timeout_ms))
                 .ok_or(WorkloadError::InvalidPolicy)?,
             cancellation,
+            policy,
         })
     }
 
-    fn available(&self, state: &State, entry: &Entry) -> bool {
+    fn available(state: &State, entry: &Entry) -> bool {
         if entry.operator {
-            state.operator_active < self.0.policy.operator_max_active
+            state.operator_active < entry.policy.operator_max_active
         } else {
-            state.active < self.0.policy.max_active
+            state.active < entry.policy.max_active
                 && state.classes.get(&entry.class).copied().unwrap_or(0)
-                    < self.0.policy.classes[&entry.class].max_active
+                    < entry.policy.classes[&entry.class].max_active
         }
     }
 
-    fn first_eligible(&self, state: &State, operator: bool) -> Option<u64> {
+    fn first_eligible(state: &State, operator: bool) -> Option<u64> {
         state
             .queue
             .iter()
-            .find(|entry| entry.operator == operator && self.available(state, entry))
+            .find(|entry| entry.operator == operator && Self::available(state, entry))
             .map(|entry| entry.id)
     }
 
@@ -604,18 +775,18 @@ impl AdmissionController {
             .retain(|entry| now < entry.deadline && !entry.cancellation.is_cancelled());
     }
 
-    fn check_queue_capacity(&self, state: &State, entry: &Entry) -> Result<(), WorkloadError> {
+    fn check_queue_capacity(state: &State, entry: &Entry) -> Result<(), WorkloadError> {
         let scope = if entry.operator {
-            (state.queue.iter().filter(|e| e.operator).count() >= self.0.policy.operator_max_queued)
+            (state.queue.iter().filter(|e| e.operator).count() >= entry.policy.operator_max_queued)
                 .then_some(AdmissionScope::Operator)
-        } else if state.queue.iter().filter(|e| !e.operator).count() >= self.0.policy.max_queued {
+        } else if state.queue.iter().filter(|e| !e.operator).count() >= entry.policy.max_queued {
             Some(AdmissionScope::Global)
         } else if state
             .queue
             .iter()
             .filter(|e| !e.operator && e.class == entry.class)
             .count()
-            >= self.0.policy.classes[&entry.class].max_queued
+            >= entry.policy.classes[&entry.class].max_queued
         {
             Some(AdmissionScope::Class)
         } else {
@@ -642,23 +813,17 @@ impl AdmissionController {
             class: entry.class.clone(),
             operator: entry.operator,
             cancellation: entry.cancellation.clone(),
-            inner_join_build_budget: self
-                .0
+            policy: Arc::clone(&entry.policy),
+            inner_join_build_budget: entry
                 .policy
                 .max_inner_join_build_rows
                 .map(InnerJoinBuildBudget::new),
-            sort_buffer_budget: self
-                .0
-                .policy
-                .max_sort_buffer_rows
-                .map(SortBufferBudget::new),
-            distinct_buffer_budget: self
-                .0
+            sort_buffer_budget: entry.policy.max_sort_buffer_rows.map(SortBufferBudget::new),
+            distinct_buffer_budget: entry
                 .policy
                 .max_distinct_buffer_rows
                 .map(DistinctBufferBudget::new),
-            group_buffer_budget: self
-                .0
+            group_buffer_budget: entry
                 .policy
                 .max_group_buffer_rows
                 .map(GroupBufferBudget::new),
@@ -693,6 +858,7 @@ struct LeaseInner {
     class: String,
     operator: bool,
     cancellation: CancellationToken,
+    policy: Arc<WorkloadPolicy>,
     inner_join_build_budget: Option<InnerJoinBuildBudget>,
     sort_buffer_budget: Option<SortBufferBudget>,
     distinct_buffer_budget: Option<DistinctBufferBudget>,
@@ -722,20 +888,13 @@ impl WorkloadLease {
     /// Serialized/emitted result bytes; excludes HTTP framing and host memory.
     pub fn result_byte_limit(&self) -> Option<oxhttp::ResponseBodyLimit> {
         self.0
-            .controller
-            .0
             .policy
             .max_result_bytes
             .map(oxhttp::ResponseBodyLimit)
     }
     /// Immutable request-body bounds for the trusted HTTP admission hook.
     pub fn request_body_limits(&self) -> Option<oxhttp::RequestBodyLimits> {
-        self.0
-            .controller
-            .0
-            .policy
-            .request_body_limits
-            .map(Into::into)
+        self.0.policy.request_body_limits.map(Into::into)
     }
     pub fn deadline(&self) -> Option<Instant> {
         self.0.cancellation.deadline()
@@ -744,22 +903,24 @@ impl WorkloadLease {
     /// A synchronous cooperative checkpoint, including the final precommit check.
     /// Returning after CommitAttempted cannot prove rollback of that attempt.
     pub fn check(&self) -> Result<(), WorkloadError> {
-        match self.0.cancellation.cancellation_reason() {
-            Some(oxigraph::sparql::CancellationReason::TimedOut) => {
-                Err(WorkloadError::RequestTimedOut)
-            }
-            Some(oxigraph::sparql::CancellationReason::Cancelled) => Err(WorkloadError::Cancelled),
-            None => Ok(()),
-        }
+        check_cancellation(&self.0.cancellation)
     }
     pub fn policy_id(&self) -> &str {
-        &self.0.controller.0.policy.policy_id
+        &self.0.policy.policy_id
     }
     pub fn policy_version(&self) -> u64 {
-        self.0.controller.0.policy.version
+        self.0.policy.version
     }
     pub fn cancellation_token(&self) -> &CancellationToken {
         &self.0.cancellation
+    }
+}
+
+fn check_cancellation(cancellation: &CancellationToken) -> Result<(), WorkloadError> {
+    match cancellation.cancellation_reason() {
+        Some(oxigraph::sparql::CancellationReason::TimedOut) => Err(WorkloadError::RequestTimedOut),
+        Some(oxigraph::sparql::CancellationReason::Cancelled) => Err(WorkloadError::Cancelled),
+        None => Ok(()),
     }
 }
 impl Drop for LeaseInner {
@@ -774,7 +935,14 @@ impl Drop for LeaseInner {
             state.operator_active -= 1;
         } else {
             state.active -= 1;
-            *state.classes.get_mut(&self.class).unwrap() -= 1;
+            let remove = {
+                let active = state.classes.get_mut(&self.class).unwrap();
+                *active -= 1;
+                *active == 0
+            };
+            if remove {
+                state.classes.remove(&self.class);
+            }
         }
         self.controller.0.changed.notify_all();
     }

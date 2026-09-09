@@ -11,8 +11,10 @@
   transactional paths. Opt-in encoded/decoded request-body, generated/emitted
   result-byte, native inner-join build-row, ORDER BY buffer-row, hash DISTINCT
   retained-row and accumulator-group caps are implemented. Fixed-pool admission counts, occupancy and queue-wait metrics
-  are exported through the existing operator listener. Other operator budgets,
-  excluded deadline paths, active-work disconnect, reload and full acceptance
+  are exported through the existing operator listener. File-backed policy
+  reload is atomic and operator-usable with immutable per-attempt snapshots and
+  startup transport ceilings. Other operator budgets, excluded deadline paths,
+  active-work disconnect and full acceptance
   remain open.
   Observed queued socket errors now release admission; FIN-only/silent loss uses timeouts
 - Programme task: `task-1787728711461-3isex6`
@@ -141,9 +143,9 @@ successful subsequent write/query and rollback/restart with admission enabled.
 
 This closes a native product slice, **not** the full admission or G4.2 gate.
 The subsequent queued-abort slice below propagates observed socket failures.
-Resource accounting, differentiated priorities,
-per-principal fairness, atomic workload reload, exported admission metrics and
-the remaining staged/operational evaluators remain outstanding. Configured
+Resource accounting, differentiated priorities, per-principal fairness and
+the remaining staged/operational evaluators remain outstanding. Later slices
+below implement admission metrics and atomic workload reload. Configured
 example capacities are illustrative, not baselined production defaults.
 
 ### Native deadline slice (2026-09-09)
@@ -240,7 +242,8 @@ write/rollback/restart. A single RDF term parse/format, collection operation or
 native call remains non-preemptible. Transient copies/order grouping are not a
 complete allocation/RSS budget. This closes the native OWL deadline slice, not
 full G4.2 or a refreshed protected semantic/promotion receipt. The next queued
-transport-error slice is described below; resource/fairness/reload/metrics remain.
+transport-error slice is described below; later sections close reload/metrics
+while resource/fairness work remains.
 
 ### Observed queued transport failures (2026-09-09)
 
@@ -276,9 +279,9 @@ and verifies absent abandoned data and persistent successful data after restart,
 followed by the write/rollback/restart positive control. The reset fixture uses
 Linux's unread-response close behavior; it is not cross-platform reset evidence.
 
-The next implemented request-body slice is below. Result bytes, broader
-resource/fairness/reload/exported-metrics and the remaining staged acceptance
-gates remain open; ADR status is unchanged.
+The next implemented request-body slice is below. Later sections close result
+bytes, reload and exported admission metrics; broader resource/fairness and the
+remaining staged acceptance gates remain open. ADR status is unchanged.
 
 ### Native request-body byte limits (2026-09-09)
 
@@ -396,8 +399,9 @@ consumed row; cap 64 succeeds), keyed/Cartesian joins, duplicates/nesting,
 masking, exactly-at-cap and zero, multi-operation atomicity through every owned
 binding, and CLI buffered/streamed failures with slot release and restart.
 These supplement rather than refresh pinned qualification evidence. Other
-operator counters, active disconnect, workload reload, exported admission/resource
-telemetry and complete G4.2 acceptance remain outstanding.
+operator counters, active disconnect, resource telemetry and complete G4.2
+acceptance remain outstanding; later sections close admission telemetry and
+workload reload.
 
 Validation also found a separate **unbudgeted** query-fuzzer OOM:
 `oom-1007e2363b10d32274268b884b4bc2ef68bd4a7a` (raw SHA256
@@ -576,8 +580,74 @@ now replays in 1.544 seconds with exit status zero under the same 2048 MiB cap
 and unchanged oracle, and fresh 60-second runs complete 35,338 query and 23,091
 update executions, each with exit status zero. This closes the reproduced
 query-fuzz gate for that preserved input. It supplies no general evaluator
-memory bound, and broader resource accounting, fairness, workload reload and
+memory bound, and broader resource accounting and fairness plus
 full G4.2 acceptance remain open.
+
+### Native atomic workload-policy reload (2026-09-09)
+
+File-backed `AdmissionController`s now retain their configured regular-file
+startup source and expose `reload(&AccessController)` as a convenience for an
+already-authorized local/operator caller. The controller itself performs no
+authentication. The cancellation-aware form used by HTTP checks the admitted
+token before file access and again at the final locked swap checkpoint. It reads
+and validates at most 64 KiB before taking the scheduling mutex. This synchronous
+bound is not hard filesystem-I/O preemption or protection against hostile local
+filesystem races. With access-before-workload
+lock ordering, the atomic swap holds one coherent access-policy read guard and
+requires the same workload `policy_id`, a strictly increasing version, all
+currently declared access classes, and data/operator active-plus-queued totals
+no larger than the original listener transport envelopes. In-memory-only and
+missing-file controllers fail closed. Invalid, oversized, equal/stale,
+wrong-ID, class-incomplete and either-envelope-growing candidates preserve the
+last good in-memory snapshot; rejection does not repair the configured disk file.
+
+Every admission attempt clones exactly one `Arc<WorkloadPolicy>` while holding
+the scheduler state lock. Queue entries and leases/clones retain it. That one
+snapshot supplies queue and request deadlines, request/result byte caps, all
+four implemented row budgets, retry advice and policy identity/version. Reload
+does not reorder or evict queued entries, reset occupancy/metrics, enlarge an
+existing budget, release live capacity, or change response-lifetime ownership.
+Already active/queued requests drain under their old snapshots. New attempts
+use the replacement limits against all outstanding shared counts; reduced caps
+are prospective rather than an instantaneous global shrink. Removed classes
+continue only for old queued/active snapshots, and zero-count obsolete class
+entries are deleted so repeated class changes remain bounded.
+HTTP admission failures retain their attempt-specific snapshot for retry advice;
+standalone `denial(error)` rendering uses the current policy because there is no
+attempt snapshot.
+
+The trusted-proxy access profile adds a distinct serialized
+`workload-policy` endpoint requiring `OperationKind::Operator`. Empty
+`POST /workload/policy/reload` is handled only on the loopback operator listener
+with explicit `Content-Length: 0`, no transfer encoding and no query. It rereads
+the startup file and returns 204 or the existing bounded generic reload-rejection
+400; cancellation/deadline failure returns empty noncacheable 408. It accepts no
+caller path or JSON. Existing access-policy, metrics, audit, general operator,
+reader and anonymous grants receive no privilege; data-plane/non-POST/query/body
+attempts fail. Authorization and admission remain before body or RDF access,
+and lease/deadline/result guards remain attached. Missing workload setup fails
+closed. No route is advertised and defaults are unchanged.
+
+The minimal additional rule is
+`{"subject":"operator","endpoint":"workload-policy","methods":["POST"],"operations":["operator"],"workload_class":"default"}`.
+It grants only this route and does not broaden an existing operator rule.
+
+Access-policy reload remains independent: it may introduce a class absent from
+the current workload policy. Subsequent requests assigned to that class are
+denied closed and never consume default capacity. A later workload reload must
+cover the coherent current access class set, but the two policies do not form a
+new joint transaction.
+
+Native controller tests cover candidate/schema/regular-source/version/identity/
+class and both transport-envelope failures, prepared-candidate cancellation at
+the final swap, concurrent old/new coherent snapshots, exact old active/queued
+budgets and deadlines through reload, clone release, prospective lower caps,
+removed-class drain, bounded accounting and preserved telemetry. Default and
+no-default loopback tests cover the distinct grant and pre-body denial matrix,
+body/query/data-port rejection, serve and serve-read-only request/result-limit
+replacement with an already admitted v1 request, writable rollback/restart, and
+the independent access-reload unknown-class window. These are source-level
+native product checks, not G4.2 production qualification or promotion.
 
 ### Remaining staged acceptance
 

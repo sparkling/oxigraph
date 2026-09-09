@@ -1,6 +1,9 @@
 use super::*;
 use anyhow::{Result, ensure};
 use serde_json::json;
+use std::path::{Path, PathBuf};
+use std::sync::Barrier;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 
 fn controller(
@@ -34,6 +37,507 @@ fn wait_queued(controller: &AdmissionController, count: usize) -> Result<()> {
         ensure!(Instant::now() < deadline, "queue did not reach {count}");
         thread::yield_now();
     }
+    Ok(())
+}
+
+fn reload_policy(
+    version: u64,
+    max_active: usize,
+    max_queued: usize,
+    operator_max_active: usize,
+    operator_max_queued: usize,
+    classes: &[(&str, usize, usize)],
+) -> serde_json::Value {
+    let classes = classes
+        .iter()
+        .map(|(name, active, queued)| {
+            (
+                (*name).to_owned(),
+                json!({"max_active":active,"max_queued":queued}),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    json!({
+        "format":"oxigraph-admission-v1", "policy_id":"reload-test", "version":version,
+        "max_active":max_active, "max_queued":max_queued,
+        "operator_max_active":operator_max_active,
+        "operator_max_queued":operator_max_queued,
+        "queue_timeout_ms":4000, "request_timeout_ms":5000,
+        "request_body_limits":{"max_encoded_bytes":1000,"max_decoded_bytes":1001},
+        "max_result_bytes":1002, "max_inner_join_build_rows":1003,
+        "max_sort_buffer_rows":1004, "max_distinct_buffer_rows":1005,
+        "max_group_buffer_rows":1006, "retry_after_seconds":7,
+        "classes":classes
+    })
+}
+
+fn write_workload(path: &Path, policy: &serde_json::Value) -> Result<()> {
+    let temporary = path.with_extension("next");
+    std::fs::write(&temporary, serde_json::to_vec(policy)?)?;
+    std::fs::rename(temporary, path)?;
+    Ok(())
+}
+
+fn file_controller(
+    policy: &serde_json::Value,
+) -> Result<(assert_fs::TempDir, PathBuf, AdmissionController)> {
+    let directory = assert_fs::TempDir::new()?;
+    let path = directory.path().join("workload.json");
+    write_workload(&path, policy)?;
+    let controller = AdmissionController::from_file(&path)?;
+    Ok((directory, path, controller))
+}
+
+struct UnusedIdentity;
+impl crate::access::RequestIdentityProvider for UnusedIdentity {
+    fn authenticate(
+        &self,
+        _: crate::access::RequestMetadata<'_>,
+        _: u64,
+        _: Instant,
+    ) -> std::result::Result<crate::access::RequestPrincipal, crate::access::AccessError> {
+        Err(crate::access::AccessError::Provider)
+    }
+}
+struct UnusedAuthorizer;
+impl crate::access::RequestAuthorizer for UnusedAuthorizer {
+    fn authorize(
+        &self,
+        _: &crate::access::RequestPrincipal,
+        _: &crate::access::RequestOperation,
+        _: Instant,
+    ) -> std::result::Result<crate::access::AccessGrant, crate::access::AccessError> {
+        Err(crate::access::AccessError::Denied)
+    }
+}
+fn access_with_classes(classes: &[&str]) -> Result<crate::access::AccessController> {
+    Ok(crate::access::AccessController::new(
+        crate::access::AccessPolicy::new(
+            "workload-test-access".into(),
+            1,
+            Arc::new(UnusedIdentity),
+            Arc::new(UnusedAuthorizer),
+            classes.iter().map(|class| (*class).to_owned()).collect(),
+            Duration::from_secs(1),
+        )?,
+        false,
+    ))
+}
+
+#[test]
+fn reload_rejects_bad_identity_versions_classes_sources_and_transport_growth() -> Result<()> {
+    let initial = reload_policy(2, 2, 2, 2, 1, &[("default", 2, 2), ("second", 2, 2)]);
+    let (_directory, path, controller) = file_controller(&initial)?;
+    let access = access_with_classes(&["default", "second"])?;
+    ensure!(controller.connection_limit(ListenerKind::Data) == 5);
+    ensure!(controller.connection_limit(ListenerKind::Operator) == 4);
+
+    let mut invalid = reload_policy(3, 2, 2, 2, 1, &[("default", 2, 2), ("second", 2, 2)]);
+    invalid["unknown"] = json!(true);
+    write_workload(&path, &invalid)?;
+    ensure!(controller.reload(&access).is_err());
+    std::fs::write(&path, vec![b' '; MAX_PROFILE_BYTES as usize + 1])?;
+    ensure!(controller.reload(&access).is_err());
+
+    for candidate in [
+        reload_policy(2, 2, 2, 2, 1, &[("default", 2, 2), ("second", 2, 2)]),
+        reload_policy(1, 2, 2, 2, 1, &[("default", 2, 2), ("second", 2, 2)]),
+    ] {
+        write_workload(&path, &candidate)?;
+        ensure!(controller.reload(&access).is_err());
+    }
+    let mut wrong_id = reload_policy(3, 2, 2, 2, 1, &[("default", 2, 2), ("second", 2, 2)]);
+    wrong_id["policy_id"] = json!("other");
+    write_workload(&path, &wrong_id)?;
+    ensure!(controller.reload(&access).is_err());
+    for candidate in [
+        reload_policy(3, 3, 2, 2, 1, &[("default", 3, 2), ("second", 3, 2)]),
+        reload_policy(3, 2, 2, 3, 1, &[("default", 2, 2), ("second", 2, 2)]),
+    ] {
+        write_workload(&path, &candidate)?;
+        ensure!(controller.reload(&access).is_err());
+    }
+    // The current access snapshot also declares `second`; removing it is
+    // rejected at the workload swap even though the workload schema is valid.
+    write_workload(&path, &reload_policy(3, 2, 2, 2, 1, &[("default", 2, 2)]))?;
+    ensure!(matches!(
+        controller.reload(&access),
+        Err(WorkloadError::UnknownClass)
+    ));
+    ensure!(acquire(&controller, "default")?.policy_version() == 2);
+
+    let good = reload_policy(3, 1, 2, 1, 1, &[("default", 1, 2)]);
+    write_workload(&path, &good)?;
+    let default_access = crate::access::AccessController::anonymous(false);
+    ensure!(controller.reload(&default_access)? == 3);
+    ensure!(controller.connection_limit(ListenerKind::Data) == 5);
+    ensure!(controller.connection_limit(ListenerKind::Operator) == 4);
+    ensure!(acquire(&controller, "default")?.policy_version() == 3);
+    std::fs::remove_file(&path)?;
+    ensure!(controller.reload(&default_access).is_err());
+    ensure!(acquire(&controller, "default")?.policy_version() == 3);
+
+    let memory = self::controller(1, 0, 1, 0)?;
+    ensure!(memory.reload(&default_access).is_err());
+    Ok(())
+}
+
+#[test]
+fn workload_sources_must_be_regular_files() -> Result<()> {
+    let directory = assert_fs::TempDir::new()?;
+    ensure!(matches!(
+        WorkloadPolicy::load(directory.path()),
+        Err(WorkloadError::InvalidPolicy)
+    ));
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::net::UnixListener;
+
+        let socket_path = directory.path().join("workload.sock");
+        let _socket = UnixListener::bind(&socket_path)?;
+        ensure!(matches!(
+            WorkloadPolicy::load(&socket_path),
+            Err(WorkloadError::InvalidPolicy)
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn regular_file_symlink_remains_a_valid_startup_and_reload_source() -> Result<()> {
+    use std::os::unix::fs::symlink;
+
+    let directory = assert_fs::TempDir::new()?;
+    let target = directory.path().join("policy.json");
+    let link = directory.path().join("configured-policy.json");
+    write_workload(&target, &reload_policy(1, 2, 2, 1, 0, &[("default", 2, 2)]))?;
+    symlink(&target, &link)?;
+    let controller = AdmissionController::from_file(&link)?;
+    ensure!(acquire(&controller, "default")?.policy_version() == 1);
+    write_workload(&target, &reload_policy(2, 2, 2, 1, 0, &[("default", 2, 2)]))?;
+    ensure!(controller.reload(&crate::access::AccessController::anonymous(false))? == 2);
+    ensure!(acquire(&controller, "default")?.policy_version() == 2);
+
+    let directory_link = directory.path().join("not-a-policy.json");
+    symlink(directory.path(), &directory_link)?;
+    ensure!(matches!(
+        WorkloadPolicy::load(&directory_link),
+        Err(WorkloadError::InvalidPolicy)
+    ));
+    Ok(())
+}
+
+#[test]
+fn cancelled_or_expired_prepared_candidate_cannot_cross_the_swap_boundary() -> Result<()> {
+    let initial = reload_policy(1, 2, 2, 1, 0, &[("default", 2, 2)]);
+    let (_directory, path, controller) = file_controller(&initial)?;
+    let access = crate::access::AccessController::anonymous(false);
+    let candidate = Arc::new(WorkloadPolicy::from_json(&serde_json::to_vec(
+        &reload_policy(2, 2, 2, 1, 0, &[("default", 2, 2)]),
+    )?)?);
+
+    let cancelled = CancellationToken::new();
+    cancelled.cancel();
+    ensure!(matches!(
+        controller.apply_candidate(&access, Arc::clone(&candidate), Some(&cancelled)),
+        Err(WorkloadError::Cancelled)
+    ));
+    ensure!(controller.0.state.lock().unwrap().policy.version == 1);
+
+    let expired = CancellationToken::new().with_deadline(Instant::now());
+    ensure!(matches!(
+        controller.apply_candidate(&access, candidate, Some(&expired)),
+        Err(WorkloadError::RequestTimedOut)
+    ));
+    ensure!(controller.0.state.lock().unwrap().policy.version == 1);
+
+    std::fs::remove_file(path)?;
+    ensure!(matches!(
+        controller.reload_with_cancellation(&access, &cancelled),
+        Err(WorkloadError::Cancelled)
+    ));
+    Ok(())
+}
+
+#[test]
+fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
+    let initial = reload_policy(1, 1, 2, 1, 1, &[("default", 1, 2)]);
+    let (_directory, path, controller) = file_controller(&initial)?;
+    let access = crate::access::AccessController::anonymous(false);
+    let active = acquire(&controller, "default")?;
+    let active_clone = active.clone();
+    let active_deadline = active.deadline();
+    ensure!(
+        active
+            .inner_join_build_budget()
+            .map(InnerJoinBuildBudget::limit)
+            == Some(1003)
+    );
+    ensure!(active.sort_buffer_budget().map(SortBufferBudget::limit) == Some(1004));
+    ensure!(
+        active
+            .distinct_buffer_budget()
+            .map(DistinctBufferBudget::limit)
+            == Some(1005)
+    );
+    ensure!(active.group_buffer_budget().map(GroupBufferBudget::limit) == Some(1006));
+    let queued_controller = controller.clone();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let waiter = thread::spawn(move || {
+        sender
+            .send(queued_controller.acquire(
+                "default",
+                ListenerKind::Data,
+                CancellationToken::new(),
+            ))
+            .unwrap();
+    });
+    wait_queued(&controller, 1)?;
+    let (queued_admission_deadline, queued_request_deadline) = {
+        let state = controller.0.state.lock().unwrap();
+        let queued = state.queue.front().expect("queued attempt");
+        (queued.deadline, queued.cancellation.deadline())
+    };
+    let before = controller.metrics()?;
+
+    let mut lower = reload_policy(2, 1, 0, 1, 0, &[("default", 1, 0)]);
+    lower["request_timeout_ms"] = json!(100);
+    lower["queue_timeout_ms"] = json!(50);
+    lower["request_body_limits"] = json!({"max_encoded_bytes":0,"max_decoded_bytes":0});
+    lower["max_result_bytes"] = json!(0);
+    lower["max_inner_join_build_rows"] = json!(0);
+    lower["max_sort_buffer_rows"] = json!(0);
+    lower["max_distinct_buffer_rows"] = json!(0);
+    lower["max_group_buffer_rows"] = json!(0);
+    lower["retry_after_seconds"] = json!(9);
+    write_workload(&path, &lower)?;
+    ensure!(controller.reload(&access)? == 2);
+    ensure!(active.deadline() == active_deadline);
+    {
+        let state = controller.0.state.lock().unwrap();
+        let queued = state.queue.front().expect("queued attempt after reload");
+        ensure!(queued.deadline == queued_admission_deadline);
+        ensure!(queued.cancellation.deadline() == queued_request_deadline);
+    }
+    ensure!(
+        controller.metrics()? == before,
+        "reload reset admission metrics"
+    );
+    ensure!(
+        AdmissionController::denial_with_policy(
+            WorkloadError::Overloaded(AdmissionScope::Class),
+            &active.0.policy,
+        )
+        .headers()[RETRY_AFTER]
+            == "7"
+    );
+    ensure!(
+        controller
+            .denial(WorkloadError::Overloaded(AdmissionScope::Class))
+            .headers()[RETRY_AFTER]
+            == "9"
+    );
+    ensure!(matches!(
+        raw(&controller, "default"),
+        Err(WorkloadError::Overloaded(AdmissionScope::Global))
+    ));
+    drop(active);
+    ensure!(controller.snapshot()?.active == 1 && controller.snapshot()?.queued == 1);
+    drop(active_clone);
+    let queued = receiver.recv_timeout(Duration::from_secs(3))??;
+    waiter.join().unwrap();
+    ensure!(queued.policy_version() == 1 && queued.policy_id() == "reload-test");
+    ensure!(queued.deadline() == queued_request_deadline);
+    ensure!(queued.result_byte_limit() == Some(oxhttp::ResponseBodyLimit(1002)));
+    ensure!(
+        queued.request_body_limits()
+            == Some(oxhttp::RequestBodyLimits {
+                max_encoded_bytes: 1000,
+                max_decoded_bytes: 1001,
+            })
+    );
+    ensure!(
+        queued
+            .inner_join_build_budget()
+            .map(InnerJoinBuildBudget::limit)
+            == Some(1003)
+    );
+    ensure!(queued.sort_buffer_budget().map(SortBufferBudget::limit) == Some(1004));
+    ensure!(
+        queued
+            .distinct_buffer_budget()
+            .map(DistinctBufferBudget::limit)
+            == Some(1005)
+    );
+    ensure!(queued.group_buffer_budget().map(GroupBufferBudget::limit) == Some(1006));
+    ensure!(matches!(
+        raw(&controller, "default"),
+        Err(WorkloadError::Overloaded(AdmissionScope::Global))
+    ));
+    drop(queued);
+    let v2 = acquire(&controller, "default")?;
+    ensure!(v2.policy_version() == 2);
+    ensure!(v2.result_byte_limit() == Some(oxhttp::ResponseBodyLimit(0)));
+    ensure!(
+        v2.inner_join_build_budget()
+            .map(InnerJoinBuildBudget::limit)
+            == Some(0)
+    );
+    ensure!(v2.sort_buffer_budget().map(SortBufferBudget::limit) == Some(0));
+    ensure!(v2.distinct_buffer_budget().map(DistinctBufferBudget::limit) == Some(0));
+    ensure!(v2.group_buffer_budget().map(GroupBufferBudget::limit) == Some(0));
+    ensure!(v2.deadline().is_some_and(|deadline| {
+        deadline.saturating_duration_since(Instant::now()) <= Duration::from_millis(100)
+    }));
+    Ok(())
+}
+
+#[test]
+fn lower_active_cap_counts_old_occupancy_without_retroactive_release() -> Result<()> {
+    let initial = reload_policy(1, 2, 1, 1, 0, &[("default", 2, 1)]);
+    let (_directory, path, controller) = file_controller(&initial)?;
+    let access = crate::access::AccessController::anonymous(false);
+    let first = acquire(&controller, "default")?;
+    let second = acquire(&controller, "default")?;
+    write_workload(&path, &reload_policy(2, 1, 0, 1, 0, &[("default", 1, 0)]))?;
+    controller.reload(&access)?;
+    ensure!(controller.snapshot()?.active == 2);
+    ensure!(matches!(
+        raw(&controller, "default"),
+        Err(WorkloadError::Overloaded(AdmissionScope::Global))
+    ));
+    drop(first);
+    ensure!(controller.snapshot()?.active == 1);
+    ensure!(matches!(
+        raw(&controller, "default"),
+        Err(WorkloadError::Overloaded(AdmissionScope::Global))
+    ));
+    drop(second);
+    let v2 = acquire(&controller, "default")?;
+    ensure!(v2.policy_version() == 2 && controller.snapshot()?.active == 1);
+    Ok(())
+}
+
+#[test]
+fn removed_class_queues_drain_and_obsolete_counts_stay_bounded() -> Result<()> {
+    let initial = reload_policy(1, 2, 2, 1, 0, &[("default", 1, 1), ("old", 1, 1)]);
+    let (_directory, path, controller) = file_controller(&initial)?;
+    let access = crate::access::AccessController::anonymous(false);
+    let held = acquire(&controller, "old")?;
+    let queued_controller = controller.clone();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let waiter = thread::spawn(move || sender.send(raw(&queued_controller, "old")).unwrap());
+    wait_queued(&controller, 1)?;
+    write_workload(&path, &reload_policy(2, 2, 2, 1, 0, &[("default", 1, 1)]))?;
+    ensure!(controller.reload(&access)? == 2);
+    ensure!(matches!(
+        raw(&controller, "old"),
+        Err(WorkloadError::UnknownClass)
+    ));
+    drop(held);
+    let old = receiver.recv_timeout(Duration::from_secs(3))??;
+    waiter.join().unwrap();
+    ensure!(old.policy_version() == 1);
+    drop(old);
+    ensure!(controller.0.state.lock().unwrap().classes.is_empty());
+
+    for version in 3..=40 {
+        let name = format!("class-{version}");
+        write_workload(
+            &path,
+            &reload_policy(version, 2, 2, 1, 0, &[("default", 1, 1), (&name, 1, 1)]),
+        )?;
+        controller.reload(&access)?;
+        drop(acquire(&controller, &name)?);
+        ensure!(controller.0.state.lock().unwrap().classes.is_empty());
+    }
+    Ok(())
+}
+
+#[test]
+fn concurrent_admissions_observe_only_coherent_policy_snapshots() -> Result<()> {
+    let initial = reload_policy(1, 8, 0, 1, 0, &[("default", 8, 0)]);
+    let (_directory, path, controller) = file_controller(&initial)?;
+    let access = Arc::new(crate::access::AccessController::anonymous(false));
+    let running = Arc::new(AtomicBool::new(true));
+    let start = Arc::new(Barrier::new(5));
+    let old_observed = Arc::new(Barrier::new(5));
+    let old_count = Arc::new(AtomicUsize::new(0));
+    let new_count = Arc::new(AtomicUsize::new(0));
+    let mut workers = Vec::new();
+    for _ in 0..4 {
+        let controller = controller.clone();
+        let running = Arc::clone(&running);
+        let start = Arc::clone(&start);
+        let old_observed = Arc::clone(&old_observed);
+        let old_count = Arc::clone(&old_count);
+        let new_count = Arc::clone(&new_count);
+        workers.push(thread::spawn(move || {
+            start.wait();
+            let mut saw_old = false;
+            let mut saw_new = false;
+            while running.load(Ordering::Acquire) {
+                if let Ok(lease) = raw(&controller, "default") {
+                    let policy = &lease.0.policy;
+                    let base = if policy.version % 2 == 0 { 2000 } else { 1000 };
+                    assert_eq!(policy.request_body_limits.unwrap().max_encoded_bytes, base);
+                    assert_eq!(
+                        policy.request_body_limits.unwrap().max_decoded_bytes,
+                        base + 1
+                    );
+                    assert_eq!(policy.max_result_bytes, Some(base + 2));
+                    assert_eq!(policy.max_inner_join_build_rows, Some(base + 3));
+                    assert_eq!(policy.max_sort_buffer_rows, Some(base + 4));
+                    assert_eq!(policy.max_distinct_buffer_rows, Some(base + 5));
+                    assert_eq!(policy.max_group_buffer_rows, Some(base + 6));
+                    assert_eq!(policy.retry_after_seconds, if base == 1000 { 7 } else { 9 });
+                    if policy.version == 1 && !saw_old {
+                        saw_old = true;
+                        old_count.fetch_add(1, Ordering::AcqRel);
+                        old_observed.wait();
+                    } else if policy.version >= 2 && !saw_new {
+                        saw_new = true;
+                        new_count.fetch_add(1, Ordering::AcqRel);
+                    }
+                }
+            }
+            assert!(saw_old && saw_new);
+        }));
+    }
+    start.wait();
+    old_observed.wait();
+    ensure!(old_count.load(Ordering::Acquire) == 4);
+    for version in 2..=80 {
+        let base = if version % 2 == 0 { 2000 } else { 1000 };
+        let mut candidate = reload_policy(version, 8, 0, 1, 0, &[("default", 8, 0)]);
+        candidate["request_body_limits"] =
+            json!({"max_encoded_bytes":base,"max_decoded_bytes":base+1});
+        candidate["max_result_bytes"] = json!(base + 2);
+        candidate["max_inner_join_build_rows"] = json!(base + 3);
+        candidate["max_sort_buffer_rows"] = json!(base + 4);
+        candidate["max_distinct_buffer_rows"] = json!(base + 5);
+        candidate["max_group_buffer_rows"] = json!(base + 6);
+        candidate["retry_after_seconds"] = json!(if base == 1000 { 7 } else { 9 });
+        write_workload(&path, &candidate)?;
+        ensure!(controller.reload(&access)? == version);
+        if version == 2 {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while new_count.load(Ordering::Acquire) != 4 {
+                ensure!(
+                    Instant::now() < deadline,
+                    "workers did not all observe the replacement snapshot"
+                );
+                thread::yield_now();
+            }
+        }
+    }
+    running.store(false, Ordering::Release);
+    for worker in workers {
+        worker.join().unwrap();
+    }
+    ensure!(controller.snapshot()? == AdmissionSnapshot::default());
     Ok(())
 }
 
@@ -198,31 +702,33 @@ fn deterministic_fifo_eligible_class_and_expiry_boundary() -> Result<()> {
     let now = Instant::now();
     // Drive the real selection/expiry functions with an explicit clock and one
     // occupied class. No live lease is attached to this local state fixture.
-    let mut state = State {
-        active: 1,
-        ..State::default()
-    };
+    let mut state = State::new(Arc::new(controller.0.policy.clone()));
+    state.active = 1;
     state.classes.insert("default".into(), 1);
-    let waiting = controller.entry(
+    let policy = Arc::clone(&state.policy);
+    let waiting = AdmissionController::entry(
         &mut state,
         "default",
         ListenerKind::Data,
         CancellationToken::new(),
         now,
+        policy,
     )?;
-    let following = controller.entry(
+    let policy = Arc::clone(&state.policy);
+    let following = AdmissionController::entry(
         &mut state,
         "second",
         ListenerKind::Data,
         CancellationToken::new(),
         now,
+        policy,
     )?;
     let (first, second, deadline) = (waiting.id, following.id, waiting.deadline);
     state.queue.extend([waiting, following]);
-    ensure!(controller.first_eligible(&state, false) == Some(second));
+    ensure!(AdmissionController::first_eligible(&state, false) == Some(second));
     state.active = 0;
     state.classes.insert("default".into(), 0);
-    ensure!(controller.first_eligible(&state, false) == Some(first));
+    ensure!(AdmissionController::first_eligible(&state, false) == Some(first));
     AdmissionController::purge(&mut state, deadline - Duration::from_nanos(1));
     ensure!(state.queue.len() == 2);
     AdmissionController::purge(&mut state, deadline);
@@ -633,13 +1139,15 @@ fn expired_tokens_fail_before_fast_admission_and_final_activation() -> Result<()
         controller.acquire("default", ListenerKind::Data, expired),
         Err(WorkloadError::RequestTimedOut)
     ));
-    let mut state = State::default();
-    let mut entry = controller.entry(
+    let mut state = State::new(Arc::new(controller.0.policy.clone()));
+    let policy = Arc::clone(&state.policy);
+    let mut entry = AdmissionController::entry(
         &mut state,
         "default",
         ListenerKind::Data,
         CancellationToken::new(),
         Instant::now(),
+        policy,
     )?;
     entry.cancellation = entry.cancellation.with_deadline(Instant::now());
     ensure!(matches!(

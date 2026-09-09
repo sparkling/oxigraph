@@ -16,6 +16,9 @@
   G3.1 native physical statistics, dataset-scoped cost integration and term-free
   estimated/observed-row feedback are implemented. G3.2 opt-in native bounded
   planning is implemented; frozen-corpus acceptance and promotion remain open.
+  G4.2 now includes atomic file-backed workload-policy reload with immutable
+  per-attempt snapshots and an explicit loopback operator grant; full workload
+  governance acceptance remains open.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
@@ -1320,9 +1323,17 @@ skips an unbudgeted native quad/path Cartesian build whose right-hand quad
 predicate is absent, and the preserved input replays under its unchanged memory
 cap with fresh query and update fuzz runs passing. Configured row budgets,
 older term modes, `SERVICE` and keyed joins keep their previous order, and no
-general evaluator memory bound follows. Broader operator budgets, fairness,
-workload reload, resource-use telemetry and full ADR-0027 acceptance remain
-open.
+general evaluator memory bound follows. File-backed workload policy now reloads
+atomically through a distinct explicitly granted loopback operator route. Each
+attempt, queued entry and lease retains one coherent snapshot; old work drains
+under its original deadlines/budgets while new caps apply prospectively against
+all outstanding occupancy. Candidates must preserve identity, advance version,
+cover the coherent current access class set and stay within both startup
+transport envelopes. Invalid replacements preserve queues, capacity and metrics;
+independent access reload may still create an unknown class that admission
+denies closed. Default/no-default native controller and real HTTP tests verify
+this source slice. Broader operator budgets, fairness, resource-use telemetry
+and full ADR-0027 acceptance remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no
 fine-grained SPARQL policy or general evaluator resource quotas are claimed.
 
