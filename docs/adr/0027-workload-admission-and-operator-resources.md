@@ -9,8 +9,8 @@
   and response-flush lifetime are implemented. Optional absolute request
   deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and
   transactional paths. Opt-in encoded/decoded request-body, generated/emitted
-  result-byte, native inner-join build-row, ORDER BY buffer-row and hash DISTINCT
-  retained-row caps are implemented. Fixed-pool admission counts, occupancy and queue-wait metrics
+  result-byte, native inner-join build-row, ORDER BY buffer-row, hash DISTINCT
+  retained-row and accumulator-group caps are implemented. Fixed-pool admission counts, occupancy and queue-wait metrics
   are exported through the existing operator listener. Other operator budgets,
   excluded deadline paths, active-work disconnect, reload and full acceptance
   remain open.
@@ -524,6 +524,48 @@ every owned update binding and persistent HTTP rollback/release/restart.
 Default/no-default/all-feature evaluator tests and both one-minute evaluator
 fuzz targets pass. These verify this native product slice, not full G4.2,
 resource-use telemetry, production promotion or refreshed semantic evidence.
+
+### Native accumulator-group budget slice (2026-09-09)
+
+`GroupBufferBudget` adds an independent shared counter through `QueryEvaluator`,
+`SparqlEvaluator` and CLI `max_group_buffer_rows`. One unit is charged for each
+new native group-map entry, before constructing its accumulators or obtaining
+the map entry. Repeated keys within a map do not recharge; nested maps, cloned
+evaluators, prepared re-executions and all operations of an owned update share
+the cumulative handle. Each CLI admission gets a fresh handle. Omission keeps
+the original grouping path and result semantics unchanged.
+
+Zero permits no constructed groups. A physical global aggregate creates one
+empty-key group even on runtime-empty input, and charges before touching its
+child. Empty keyed input creates no groups. Exactly-at-cap remains valid until
+another group is attempted, which latches `GroupBufferRows` / `GroupBuffer`.
+Optimizer-eliminated groups charge nothing; existing optimization is unchanged.
+Group accumulation is eager, so an outer ASK, EXISTS or LIMIT cannot conceal
+an already exceeded cap. Iterator, SERVICE, terminal and owned precommit checks
+include this handle after existing join, sort and distinct failure precedence.
+Owned updates roll back the entire request; borrowed transactions are caller-
+discard. HTTP pre-header refusal and failed-stream behavior remain unchanged.
+
+The limit counts group-map entries, not their contents or child rows. Temporary
+keys/row width, aggregate DISTINCT sets, GROUP_CONCAT growth, hashing/comparison
+or accumulator CPU, allocation capacity, other operators, inference, opaque
+remote work and RSS remain excluded. No dependency, optimizer change, numeric
+production default or general memory-bound claim is introduced.
+
+Native tests check zero/exact/+1, repeated and bound/unbound keys, COUNT/SUM and
+HAVING results, runtime-empty global groups, eliminated groups, cumulative
+nested/prepared sharing and independent counters. An instrumented custom
+aggregate proves denied groups construct no accumulator and stop child reads.
+All six owned update bindings, an independent commit/rollback probe, HTTP
+refusal/stream failure, finite RDF and fresh-admission/restart journeys are
+covered. This is a native product slice, not full G4.2 acceptance or promotion.
+
+The subsequent query fuzz run found a separate unbudgeted property-path/DISTINCT
+OOM (`oom-428a86b5479b5a512f12339afbe6dedb33d73113`, SHA-256
+`b2827c45e0f23e6112be571129de320979abc3b040c2f3bc37da6dda6c9d8850`).
+It contains no grouping operator and exceeded the unchanged 2048 MiB fuzz cap.
+The input is preserved and this broader query-fuzz gate remains failed;
+passing group tests and the separate update fuzz run do not close it.
 
 ### Remaining staged acceptance
 

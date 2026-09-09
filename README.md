@@ -204,7 +204,12 @@ expression work and comparator CPU are not bounded. Independent
 DISTINCT operators, including planner-lowered REDUCED, before cloning into their
 sets. Duplicates in one set do not recharge; nested sets and update operations
 share the cap, failure and rollback behavior. Aggregate DISTINCT, groups,
-row width and hashing CPU remain outside it. With a workload policy,
+row width and hashing CPU remain outside it. Independent
+`max_group_buffer_rows` now caps new native accumulator groups before their
+construction and map insertion. Repeated keys do not recharge; global aggregates
+count one group even on runtime-empty input. Nested groups and update operations
+share the cap and rollback behavior. Per-group DISTINCT sets, GROUP_CONCAT
+contents, temporary keys and RSS are not bounded. With a workload policy,
 operator `/metrics` now exports active/queued pool gauges, terminal admission
 counts and queue-wait histograms: 60 fixed-label samples without request data.
 Admission is not execution success; lease release is not proof of rollback.

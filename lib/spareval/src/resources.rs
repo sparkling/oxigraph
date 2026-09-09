@@ -17,6 +17,8 @@ pub enum QueryResource {
     SortBufferRows,
     /// Unique tuples retained by native `DISTINCT` hash sets.
     DistinctBufferRows,
+    /// Accumulator groups retained by native grouping operators.
+    GroupBufferRows,
 }
 
 impl fmt::Display for QueryResource {
@@ -25,6 +27,7 @@ impl fmt::Display for QueryResource {
             Self::InnerJoinBuildRows => f.write_str("inner_join_build_rows"),
             Self::SortBufferRows => f.write_str("sort_buffer_rows"),
             Self::DistinctBufferRows => f.write_str("distinct_buffer_rows"),
+            Self::GroupBufferRows => f.write_str("group_buffer_rows"),
         }
     }
 }
@@ -36,6 +39,7 @@ pub enum QueryResourcePhase {
     JoinBuild,
     SortBuffer,
     DistinctBuffer,
+    GroupBuffer,
 }
 
 impl fmt::Display for QueryResourcePhase {
@@ -44,6 +48,7 @@ impl fmt::Display for QueryResourcePhase {
             Self::JoinBuild => f.write_str("join_build"),
             Self::SortBuffer => f.write_str("sort_buffer"),
             Self::DistinctBuffer => f.write_str("distinct_buffer"),
+            Self::GroupBuffer => f.write_str("group_buffer"),
         }
     }
 }
@@ -251,14 +256,62 @@ impl DistinctBufferBudget {
     }
 }
 
+/// An explicit, shared, cumulative native accumulator-group budget.
+///
+/// Each new group is charged before its accumulators are constructed and the
+/// group is inserted. Repeated keys within one group map do not charge again.
+/// A global aggregate creates one empty-key group even on empty input, so a
+/// zero limit rejects it before reading its child. Empty keyed input creates
+/// no groups. Reaching the limit exactly succeeds until another group is tried.
+///
+/// Clones, nested groups and prepared re-executions share the counter and sticky
+/// failure. Create a fresh budget for each independent request. Only physical
+/// grouping operators count; eliminated operators and ungrouped work do not.
+/// This does not bound child/key creation or width, per-group aggregate DISTINCT
+/// sets, GROUP_CONCAT contents, hashing or accumulator CPU, allocator capacity,
+/// other buffers, inference, foreign SERVICE work, or process memory.
+#[derive(Debug, Clone)]
+pub struct GroupBufferBudget(Arc<RowBudgetState>);
+
+impl GroupBufferBudget {
+    #[must_use]
+    pub fn new(limit: u64) -> Self {
+        Self(RowBudgetState::new(
+            QueryResource::GroupBufferRows,
+            QueryResourcePhase::GroupBuffer,
+            limit,
+        ))
+    }
+
+    #[must_use]
+    pub fn limit(&self) -> u64 {
+        self.0.limit
+    }
+
+    /// Successfully admitted groups, never greater than the limit.
+    #[must_use]
+    pub fn charged_rows(&self) -> u64 {
+        self.0.charged_rows()
+    }
+
+    /// Checks the sticky failure without consuming a group or resetting it.
+    pub fn check(&self) -> Result<(), QueryEvaluationError> {
+        self.0.check()
+    }
+
+    pub(crate) fn charge(&self) -> Result<(), QueryEvaluationError> {
+        self.0.charge()
+    }
+}
+
 /// Every optional cooperative budget one evaluator carries. Checks keep the
-/// existing precedence: an inner-join failure is reported before a sort one,
-/// and a sort failure before a distinct one.
+/// existing precedence: inner-join, sort, distinct, then group failures.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ResourceBudgets {
     inner_join_build: Option<InnerJoinBuildBudget>,
     sort_buffer: Option<SortBufferBudget>,
     distinct_buffer: Option<DistinctBufferBudget>,
+    group_buffer: Option<GroupBufferBudget>,
 }
 
 impl ResourceBudgets {
@@ -266,11 +319,13 @@ impl ResourceBudgets {
         inner_join_build: Option<InnerJoinBuildBudget>,
         sort_buffer: Option<SortBufferBudget>,
         distinct_buffer: Option<DistinctBufferBudget>,
+        group_buffer: Option<GroupBufferBudget>,
     ) -> Self {
         Self {
             inner_join_build,
             sort_buffer,
             distinct_buffer,
+            group_buffer,
         }
     }
 
@@ -290,6 +345,11 @@ impl ResourceBudgets {
         self.inner_join_build.is_none()
             && self.sort_buffer.is_none()
             && self.distinct_buffer.is_none()
+            && self.group_buffer.is_none()
+    }
+
+    pub(crate) fn group_buffer(&self) -> Option<&GroupBufferBudget> {
+        self.group_buffer.as_ref()
     }
 
     pub(crate) fn check(&self) -> Result<(), QueryEvaluationError> {
@@ -300,6 +360,9 @@ impl ResourceBudgets {
             budget.check()?;
         }
         if let Some(budget) = &self.distinct_buffer {
+            budget.check()?;
+        }
+        if let Some(budget) = &self.group_buffer {
             budget.check()?;
         }
         Ok(())
@@ -383,7 +446,7 @@ mod tests {
         assert!(zero.charge().is_err());
         let join = InnerJoinBuildBudget::new(0);
         join.check().unwrap();
-        let budgets = ResourceBudgets::new(Some(join.clone()), Some(sort), None);
+        let budgets = ResourceBudgets::new(Some(join.clone()), Some(sort), None, None);
         assert!(!budgets.is_empty());
         assert!(matches!(
             budgets.check(),
@@ -437,7 +500,8 @@ mod tests {
         // only when the join and sort handles are intact.
         let join = InnerJoinBuildBudget::new(0);
         let sort = SortBufferBudget::new(0);
-        let budgets = ResourceBudgets::new(Some(join.clone()), Some(sort.clone()), Some(distinct));
+        let budgets =
+            ResourceBudgets::new(Some(join.clone()), Some(sort.clone()), Some(distinct), None);
         assert!(!budgets.is_empty());
         assert!(matches!(
             budgets.check(),
@@ -462,8 +526,44 @@ mod tests {
                 ..
             })
         ));
-        let only = ResourceBudgets::new(None, None, Some(DistinctBufferBudget::new(0)));
+        let only = ResourceBudgets::new(None, None, Some(DistinctBufferBudget::new(0)), None);
         assert!(!only.is_empty());
         only.check().unwrap();
+    }
+
+    #[test]
+    fn group_budget_is_typed_shared_and_checked_after_distinct() {
+        let group = GroupBufferBudget::new(1);
+        let clone = group.clone();
+        group.charge().unwrap();
+        clone.check().unwrap();
+        assert_eq!(clone.limit(), 1);
+        assert_eq!(clone.charged_rows(), 1);
+        assert!(clone.charge().is_err());
+        let budgets = ResourceBudgets::new(None, None, None, Some(group));
+        assert!(!budgets.is_empty());
+        assert!(matches!(
+            budgets.check(),
+            Err(QueryEvaluationError::ResourceLimitExceeded {
+                resource: QueryResource::GroupBufferRows,
+                phase: QueryResourcePhase::GroupBuffer,
+                limit: 1,
+            })
+        ));
+        let distinct = DistinctBufferBudget::new(0);
+        let budgets = ResourceBudgets::new(None, None, Some(distinct.clone()), Some(clone));
+        assert!(distinct.charge().is_err());
+        assert!(matches!(
+            budgets.check(),
+            Err(QueryEvaluationError::ResourceLimitExceeded {
+                resource: QueryResource::DistinctBufferRows,
+                ..
+            })
+        ));
+        assert_eq!(
+            QueryResource::GroupBufferRows.to_string(),
+            "group_buffer_rows"
+        );
+        assert_eq!(QueryResourcePhase::GroupBuffer.to_string(), "group_buffer");
     }
 }

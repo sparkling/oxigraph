@@ -375,6 +375,54 @@ fn distinct_buffer_budget_spans_operations_and_rolls_back_the_owned_request()
     Ok(())
 }
 
+#[test]
+fn group_buffer_budget_spans_operations_and_rolls_back_the_owned_request()
+-> Result<(), Box<dyn Error>> {
+    use oxigraph::sparql::{GroupBufferBudget, QueryResource, QueryResourcePhase};
+    for limit in [3, 4] {
+        let initial = three_quads();
+        let dataset =
+            CancellationProbeDataset::new(initial.clone(), CancellationToken::new(), None);
+        let budget = GroupBufferBudget::new(limit);
+        let result = SparqlEvaluator::new()
+            .without_optimizations()
+            .with_group_buffer_budget(budget.clone())
+            .parse_update(
+                "INSERT DATA { <urn:start> <urn:p> <urn:o> };
+                INSERT { ?s <urn:first> <urn:o> } WHERE {
+                    { SELECT ?s (COUNT(*) AS ?n) WHERE { VALUES ?s { <urn:b> <urn:a> <urn:b> } } GROUP BY ?s } };
+                INSERT { ?s <urn:second> <urn:o> } WHERE {
+                    { SELECT ?s (COUNT(*) AS ?n) WHERE { VALUES ?s { <urn:b> <urn:a> <urn:b> } } GROUP BY ?s } };
+                INSERT DATA { <urn:end> <urn:p> <urn:o> }",
+            )?
+            .on_dataset(&dataset)
+            .execute();
+        if limit == 3 {
+            assert!(matches!(
+                result,
+                Err(UpdateEvaluationError::ResourceLimitExceeded {
+                    resource: QueryResource::GroupBufferRows,
+                    phase: QueryResourcePhase::GroupBuffer,
+                    limit: 3
+                })
+            ));
+            // The first three mutations were staged, then everything rolled back.
+            assert_eq!(dataset.snapshot(), initial);
+            assert_eq!(dataset.state.commits.get(), 0);
+            assert_eq!(dataset.state.rollbacks.get(), 1);
+            assert_eq!(dataset.state.mutations.get(), 3);
+        } else {
+            result?;
+            assert_eq!(dataset.snapshot().len(), initial.len() + 6);
+            assert_eq!(dataset.state.commits.get(), 1);
+            assert_eq!(dataset.state.rollbacks.get(), 0);
+            budget.check()?;
+        }
+        assert_eq!(budget.charged_rows(), limit);
+    }
+    Ok(())
+}
+
 fn quad(subject: &str) -> Quad {
     Quad::new(
         NamedNode::new_unchecked(subject.to_owned()),

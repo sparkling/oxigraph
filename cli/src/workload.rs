@@ -14,7 +14,8 @@ use crate::access::{ListenerKind, RequestContext};
 use oxhttp::model::header::{CACHE_CONTROL, RETRY_AFTER};
 use oxhttp::model::{Body, Extensions, Response, StatusCode};
 use oxigraph::sparql::{
-    CancellationToken, DistinctBufferBudget, InnerJoinBuildBudget, SortBufferBudget,
+    CancellationToken, DistinctBufferBudget, GroupBufferBudget, InnerJoinBuildBudget,
+    SortBufferBudget,
 };
 use serde::Deserialize;
 use std::collections::{BTreeMap, VecDeque};
@@ -59,7 +60,7 @@ impl From<RequestBodyBudget> for oxhttp::RequestBodyLimits {
 
 /// No capacity defaults: the operator supplies every limit. This version only
 /// promises admission limits, optional cooperative request deadlines and entity
-/// byte/inner-join build-row/sort-buffer/distinct-buffer row limits, not
+/// byte/inner-join build-row/sort-buffer/distinct-buffer/group-buffer row limits, not
 /// per-principal fairness or live reload.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -84,6 +85,8 @@ pub struct WorkloadPolicy {
     max_sort_buffer_rows: Option<u64>,
     #[serde(default)]
     max_distinct_buffer_rows: Option<u64>,
+    #[serde(default)]
+    max_group_buffer_rows: Option<u64>,
     retry_after_seconds: u32,
     classes: BTreeMap<String, ClassLimits>,
 }
@@ -654,6 +657,11 @@ impl AdmissionController {
                 .policy
                 .max_distinct_buffer_rows
                 .map(DistinctBufferBudget::new),
+            group_buffer_budget: self
+                .0
+                .policy
+                .max_group_buffer_rows
+                .map(GroupBufferBudget::new),
         })))
     }
 }
@@ -688,6 +696,7 @@ struct LeaseInner {
     inner_join_build_budget: Option<InnerJoinBuildBudget>,
     sort_buffer_budget: Option<SortBufferBudget>,
     distinct_buffer_budget: Option<DistinctBufferBudget>,
+    group_buffer_budget: Option<GroupBufferBudget>,
 }
 impl WorkloadLease {
     /// One cumulative handle created at admission, shared by every native
@@ -704,6 +713,11 @@ impl WorkloadLease {
     /// shared by every native query/update evaluator in this request.
     pub fn distinct_buffer_budget(&self) -> Option<&DistinctBufferBudget> {
         self.0.distinct_buffer_budget.as_ref()
+    }
+    /// One cumulative accumulator-group handle created at admission, shared
+    /// by every native query/update evaluator in this request.
+    pub fn group_buffer_budget(&self) -> Option<&GroupBufferBudget> {
+        self.0.group_buffer_budget.as_ref()
     }
     /// Serialized/emitted result bytes; excludes HTTP framing and host memory.
     pub fn result_byte_limit(&self) -> Option<oxhttp::ResponseBodyLimit> {

@@ -1546,6 +1546,259 @@ fn sort_buffer_limit_applies_under_finite_rdf_materialization_then_persists() ->
     write_rollback_and_restart(running)
 }
 
+const GROUP_ROWS: &str = "SELECT ?p (COUNT(*) AS ?n) WHERE { ?s <urn:p> ?p } GROUP BY ?p";
+
+#[test]
+fn group_buffer_limits_rollback_multi_operation_updates_and_release_the_request() -> Result<()> {
+    for limit in [3, 4] {
+        let mut profile = workload(1, 1, 1000);
+        profile["max_group_buffer_rows"] = json!(limit);
+        let running = start_with_workload(&config(), false, Some(&profile))?;
+        ensure!(
+            sparql(
+                &running,
+                WRITER,
+                "/update",
+                "INSERT DATA { <urn:a> <urn:p> 1 . <urn:b> <urn:p> 2 . <urn:c> <urn:p> 1 }"
+            )?
+            .status
+                == 204
+        );
+        // Each GROUP BY subselect retains two groups from three rows:
+        // 4 in total across operations.
+        let update = "INSERT DATA { <urn:marker> <urn:start> true };
+            INSERT { <urn:first> <urn:value> ?p } WHERE {
+                { SELECT ?p (COUNT(*) AS ?n) WHERE { ?s <urn:p> ?p } GROUP BY ?p } };
+            INSERT { <urn:second> <urn:value> ?p } WHERE {
+                { SELECT ?p (COUNT(*) AS ?n) WHERE { ?s <urn:p> ?p } GROUP BY ?p } };
+            INSERT DATA { <urn:marker> <urn:end> true }";
+        let response = sparql(&running, WRITER, "/update", update)?;
+        if limit == 3 {
+            ensure!(
+                response.status == 503 && response.body.is_empty(),
+                "{} {}",
+                response.status,
+                response.body
+            );
+            ensure!(
+                response.head.contains("cache-control: no-store")
+                    && !response.head.contains("retry-after:")
+            );
+            for absent in [
+                "ASK { <urn:marker> <urn:start> true }",
+                "ASK { <urn:first> <urn:value> ?o }",
+                "ASK { <urn:marker> <urn:end> true }",
+            ] {
+                let response = sparql(&running, READER, "/query", absent)?;
+                ensure!(
+                    response.status == 200 && response.body.contains("false"),
+                    "{absent}: {} {}",
+                    response.status,
+                    response.body
+                );
+            }
+        } else {
+            ensure!(
+                response.status == 204,
+                "{} {}",
+                response.status,
+                response.body
+            );
+            ensure!(
+                sparql(
+                    &running,
+                    READER,
+                    "/query",
+                    "ASK { <urn:marker> <urn:end> true . <urn:second> <urn:value> 1 }"
+                )?
+                .body
+                .contains("true")
+            );
+        }
+        // A new admission gets a fresh budget and the single active slot back.
+        let response = sparql(&running, READER, "/query", GROUP_ROWS)?;
+        ensure!(
+            response.status == 200,
+            "{} {}",
+            response.status,
+            response.body
+        );
+        ensure!(
+            serde_json::from_str::<Value>(&response.body)?["results"]["bindings"]
+                .as_array()
+                .is_some_and(|rows| rows.len() == 2),
+            "{}",
+            response.body
+        );
+        write_rollback_and_restart(running)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn group_buffer_limits_buffered_refusal_and_failed_stream_are_not_success() -> Result<()> {
+    let mut profile = workload(1, 1, 1000);
+    profile["max_group_buffer_rows"] = json!(1);
+    let running = start_with_workload(&config(), false, Some(&profile))?;
+    ensure!(
+        sparql(
+            &running,
+            WRITER,
+            "/update",
+            "INSERT DATA {
+        <urn:a> <urn:p> 1; <urn:q> 2 . <urn:b> <urn:p> 3; <urn:q> 4 . <urn:c> <urn:p> 1 }"
+        )?
+        .status
+            == 204
+    );
+    let buffered = request(
+        running.public,
+        "POST",
+        "/query",
+        &format!(
+            "{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json; version=1.1\r\n",
+            identity(READER, 1)?
+        ),
+        GROUP_ROWS,
+    )?;
+    ensure!(
+        buffered.status == 503 && buffered.body.is_empty(),
+        "{} {}",
+        buffered.status,
+        buffered.body
+    );
+    ensure!(
+        buffered.head.contains("cache-control: no-store")
+            && !buffered.head.contains("retry-after:")
+    );
+    let graph = request(
+        running.public,
+        "POST",
+        "/query",
+        &format!(
+            "{}Content-Type: application/sparql-query\r\nAccept: application/n-triples; version=1.1\r\n",
+            identity(READER, 1)?
+        ),
+        "CONSTRUCT { <urn:out> <urn:value> ?p } WHERE { { SELECT ?p (COUNT(*) AS ?n) WHERE { ?s <urn:p> ?p } GROUP BY ?p } }",
+    )?;
+    ensure!(
+        graph.status == 503 && graph.body.is_empty(),
+        "{} {}",
+        graph.status,
+        graph.body
+    );
+    // Streaming serialization may send headers before observing the eager
+    // grouping failure. It must never finish as a successful truncated result.
+    let raw = raw_wire_bytes(running.public, format!(
+        "POST /query HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json\r\nContent-Length: {}\r\n\r\n{GROUP_ROWS}", identity(READER, 1)?, GROUP_ROWS.len()).as_bytes())?;
+    ensure!(raw.starts_with("HTTP/1.1 200 "), "{raw}");
+    ensure!(
+        decode_wire(&raw).is_err() && !raw.ends_with("0\r\n\r\n") && !raw.contains("exceeded"),
+        "{raw}"
+    );
+    // A buffered outer aggregate refuses before headers as well.
+    let count = request(
+        running.public,
+        "POST",
+        "/query",
+        &format!(
+            "{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json; version=1.1\r\n",
+            identity(READER, 1)?
+        ),
+        "SELECT (COUNT(*) AS ?c) WHERE { { SELECT ?p (COUNT(*) AS ?n) WHERE { ?s <urn:p> ?p } GROUP BY ?p } }",
+    )?;
+    ensure!(
+        count.status == 503 && count.body.is_empty(),
+        "{} {}",
+        count.status,
+        count.body
+    );
+    // The group cap leaves inner joins and sorts uninstrumented, and each
+    // request starts a fresh counter: exactly one group succeeds.
+    ensure!(
+        sparql(
+            &running,
+            READER,
+            "/query",
+            "SELECT ?s WHERE { ?s <urn:p> ?p . ?other <urn:q> ?q } ORDER BY ?p"
+        )?
+        .status
+            == 200
+    );
+    let single = sparql(
+        &running,
+        READER,
+        "/query",
+        "SELECT ?p (COUNT(*) AS ?n) WHERE { ?s <urn:p> ?p FILTER(?p = 1) } GROUP BY ?p",
+    )?;
+    ensure!(single.status == 200, "{} {}", single.status, single.body);
+    ensure!(
+        serde_json::from_str::<Value>(&single.body)?["results"]["bindings"]
+            .as_array()
+            .is_some_and(|rows| rows.len() == 1)
+    );
+    Ok(())
+}
+
+#[cfg(feature = "rdf-12")]
+#[test]
+fn group_buffer_limit_applies_under_finite_rdf_materialization_then_persists() -> Result<()> {
+    let mut profile = workload(1, 1, 3000);
+    profile["max_group_buffer_rows"] = json!(1);
+    let running =
+        start_with_workload_entailment(&config(), false, Some(&profile), Some("rdf-1.2-finite"))?;
+    ensure!(
+        sparql(
+            &running,
+            WRITER,
+            "/update",
+            "INSERT DATA { <urn:a> <urn:p> 1 . <urn:b> <urn:p> 2 . <urn:c> <urn:p> 1 }"
+        )?
+        .status
+            == 204
+    );
+    // Materialization must keep the same cumulative group handle.
+    let response = request(
+        running.public,
+        "POST",
+        "/query",
+        &format!(
+            "{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json; version=1.1\r\n",
+            identity(READER, 1)?
+        ),
+        GROUP_ROWS,
+    )?;
+    ensure!(
+        response.status == 503 && response.body.is_empty(),
+        "{} {}",
+        response.status,
+        response.body
+    );
+    let raw = raw_wire_bytes(running.public, format!(
+        "POST /query HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json\r\nContent-Length: {}\r\n\r\n{GROUP_ROWS}", identity(READER, 1)?, GROUP_ROWS.len()).as_bytes())?;
+    ensure!(raw.starts_with("HTTP/1.1 200 "), "{raw}");
+    ensure!(
+        decode_wire(&raw).is_err() && !raw.ends_with("0\r\n\r\n") && !raw.contains("exceeded"),
+        "{raw}"
+    );
+    let response = sparql(
+        &running,
+        READER,
+        "/query",
+        "SELECT ?s WHERE { ?s <urn:p> ?p }",
+    )?;
+    ensure!(
+        response.status == 200
+            && serde_json::from_str::<Value>(&response.body)?["results"]["bindings"]
+                .as_array()
+                .is_some_and(|rows| rows.len() == 3),
+        "{} {}",
+        response.status,
+        response.body
+    );
+    write_rollback_and_restart(running)
+}
+
 const DISTINCT_ROWS: &str = "SELECT DISTINCT ?p WHERE { ?s <urn:p> ?p }";
 
 #[test]

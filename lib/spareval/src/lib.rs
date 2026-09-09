@@ -27,7 +27,8 @@ pub use crate::feedback::{CardinalityFeedback, CardinalityFeedbackNode, Estimate
 pub use crate::model::{QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter};
 use crate::resources::ResourceBudgets;
 pub use crate::resources::{
-    DistinctBufferBudget, InnerJoinBuildBudget, QueryResource, QueryResourcePhase, SortBufferBudget,
+    DistinctBufferBudget, GroupBufferBudget, InnerJoinBuildBudget, QueryResource,
+    QueryResourcePhase, SortBufferBudget,
 };
 use crate::service::ServiceHandlerRegistry;
 pub use crate::service::{DefaultServiceHandler, ServiceHandler};
@@ -91,6 +92,7 @@ pub struct QueryEvaluator {
     inner_join_build_budget: Option<InnerJoinBuildBudget>,
     sort_buffer_budget: Option<SortBufferBudget>,
     distinct_buffer_budget: Option<DistinctBufferBudget>,
+    group_buffer_budget: Option<GroupBufferBudget>,
     version: SparqlVersion,
 }
 
@@ -121,6 +123,7 @@ impl QueryEvaluator {
             inner_join_build_budget: None,
             sort_buffer_budget: None,
             distinct_buffer_budget: None,
+            group_buffer_budget: None,
             version: SparqlVersion::current(),
         }
     }
@@ -641,11 +644,27 @@ impl QueryEvaluator {
         self.distinct_buffer_budget.as_ref()
     }
 
+    /// Attaches a shared cumulative native accumulator-group budget.
+    /// Clones, nested groups and repeated executions share it, including native
+    /// DELETE/INSERT operations. Use a fresh budget for an independent request.
+    /// It is independent of the inner-join, sort and distinct budgets.
+    #[must_use]
+    pub fn with_group_buffer_budget(mut self, budget: GroupBufferBudget) -> Self {
+        self.group_buffer_budget = Some(budget);
+        self
+    }
+
+    /// Returns the explicitly attached shared group-buffer budget, if any.
+    pub fn group_buffer_budget(&self) -> Option<&GroupBufferBudget> {
+        self.group_buffer_budget.as_ref()
+    }
+
     fn resource_budgets(&self) -> ResourceBudgets {
         ResourceBudgets::new(
             self.inner_join_build_budget.clone(),
             self.sort_buffer_budget.clone(),
             self.distinct_buffer_budget.clone(),
+            self.group_buffer_budget.clone(),
         )
     }
 

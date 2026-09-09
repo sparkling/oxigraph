@@ -1306,7 +1306,16 @@ DISTINCT retained-row cap now charges new tuples before hash-set cloning,
 including planner-lowered REDUCED, with preserved results and owned rollback.
 Duplicates within a set do not recharge; nested sets and update operations share
 the cap. Bound/unbound mappings, native feature tests and query/update fuzz pass;
-aggregate DISTINCT, groups, row width and hashing CPU remain excluded. Broader
+aggregate DISTINCT, groups, row width and hashing CPU remain outside that cap.
+An independent native accumulator-group cap now charges new group-map entries
+before accumulator construction, including the global group on runtime-empty
+input. Repeated keys do not recharge; nested/prepared execution and whole
+updates share the cap. Native accumulator/read probes, every owned update
+binding and HTTP refusal/failed-stream/restart tests verify the slice. Per-group
+DISTINCT sets, GROUP_CONCAT contents, temporary keys and RSS remain excluded.
+The latest query-fuzzer run found a separate property-path/DISTINCT OOM; the
+preserved input and still-failed gate are recorded in ADR-0027. Its repair is
+the next release-blocker step, not another harness prerequisite. Broader
 operator budgets, fairness, workload reload, resource-use telemetry and full ADR-0027
 acceptance remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no

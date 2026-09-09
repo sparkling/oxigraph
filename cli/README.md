@@ -393,8 +393,30 @@ rollback behavior for owned updates described above. The typed error identifies
 `DistinctBufferRows` / `DistinctBuffer`. Embedded callers attach it with
 `SparqlEvaluator::with_distinct_buffer_budget`; independent requests need fresh
 handles and borrowed transactions remain the caller's rollback responsibility.
-Join, sort and distinct budgets are independent; existing join-then-sort error
-precedence is preserved ahead of distinct failure.
+Join, sort, distinct and group budgets are independent; failure checks preserve
+that order.
+
+Optional unsigned `max_group_buffer_rows` caps cumulative native accumulator
+groups. For example, `"max_group_buffer_rows": 10000` is an operator choice, not
+a default. Each admission creates a fresh `GroupBufferBudget`; evaluator clones,
+nested/repeated groups and all operations of an update share it. New groups are
+charged before accumulator construction and map insertion; repeated keys within
+one map do not recharge. Omission leaves the original grouping path unchanged.
+
+Zero permits no constructed groups. An implicit global aggregate group counts
+once even on runtime-empty input; empty keyed input creates none. Exactly-at-cap
+succeeds until another group is attempted. Only physical groups count: optimizer-
+eliminated operators charge nothing. Successful mappings, aggregates and HAVING
+results are unchanged. This does not bound temporary keys or row width,
+per-group aggregate DISTINCT sets, GROUP_CONCAT contents, hashing/accumulator
+CPU, allocator capacity, inference, remote work or RSS.
+
+The typed error is `GroupBufferRows` / `GroupBuffer`, with the same noncacheable
+503, failed-stream and owned-update rollback behavior described above. Embedded
+callers use `SparqlEvaluator::with_group_buffer_budget`; independent requests
+need fresh handles and borrowed transactions remain caller-discard. Native
+grouping accumulates before emitting results, so ASK or LIMIT cannot bypass
+exhaustion merely by requesting fewer grouped results.
 
 Optional `request_timeout_ms` (positive milliseconds) starts one absolute
 monotonic deadline **before queueing**. It is not renewed on admission, body

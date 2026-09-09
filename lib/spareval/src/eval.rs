@@ -2152,6 +2152,7 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             .map(|(variable, _)| encode_variable(encoded_variables, variable))
             .collect::<Vec<_>>();
         let dataset = self.dataset.clone();
+        let group_budget = self.budgets.group_buffer().cloned();
         Ok(Rc::new(move |from| {
             let tuple_size = from.capacity();
             let key_variables = Rc::clone(&key_variables);
@@ -2161,6 +2162,11 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             >::default();
             if key_variables.is_empty() {
                 // There is always a single group if there is no GROUP BY
+                if let Some(budget) = &group_budget {
+                    if let Err(error) = budget.charge() {
+                        return Box::new(once(Err(error)));
+                    }
+                }
                 accumulators_for_group.insert(
                     Vec::new(),
                     accumulator_builders.iter().map(|c| c()).collect::<Vec<_>>(),
@@ -2172,11 +2178,20 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                     Err(error) => return Box::new(once(Err(error))),
                 };
                 // TODO avoid copy for key?
-                let key = key_variables
+                let key: Vec<_> = key_variables
                     .iter()
                     .map(|v| tuple.get(*v).cloned())
                     .collect();
 
+                if let Some(budget) = &group_budget {
+                    // Probe before entry(): a vacant entry may reserve capacity.
+                    // Temporary key creation is not part of this group counter.
+                    if !accumulators_for_group.contains_key(&key) {
+                        if let Err(error) = budget.charge() {
+                            return Box::new(once(Err(error)));
+                        }
+                    }
+                }
                 let key_accumulators = accumulators_for_group.entry(key).or_insert_with(|| {
                     accumulator_builders.iter().map(|c| c()).collect::<Vec<_>>()
                 });

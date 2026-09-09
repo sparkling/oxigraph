@@ -185,7 +185,18 @@
   REDUCED. Nested sets and update operations share typed failure and owned
   rollback; duplicates within one set do not recharge. Native feature tests,
   bound/unbound mapping checks and query/update fuzz runs support this slice,
-  not aggregate/group budgets or full G4.2 acceptance.
+  not aggregate contents or full G4.2 acceptance.
+  A native accumulator-group cap now charges new groups before construction,
+  including the implicit global group on runtime-empty input. Repeated keys
+  do not recharge; nested/prepared execution and all owned update operations
+  share the cap and sticky rollback behavior. Independent accumulator/read
+  probes and native HTTP journeys support this slice. Per-group DISTINCT sets,
+  GROUP_CONCAT contents, temporary keys and RSS remain outside the counter.
+  The owner explicitly selected Codex-only execution for this slice after the
+  Claude/Fable account pause; this does not assert restored Claude availability.
+  A subsequent query-fuzzer property-path/DISTINCT OOM remains a separate
+  release blocker; the input and unchanged memory limit are preserved under
+  ADR-0027. Group-feature tests are not a substitute for repairing that gate.
   Native CLI subprocess tests now preserve their selected transport features,
   avoiding a shared-binary overwrite that broke the combined integration run.
   Local implementation is not publication or production recovery qualification
