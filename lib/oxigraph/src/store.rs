@@ -67,6 +67,8 @@ mod spatial_index;
 mod statistics;
 #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
 mod text_index;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+pub(crate) mod upgrade;
 #[cfg(all(not(target_family = "wasm"), feature = "spatial-index"))]
 pub use spatial_index::{
     SpatialError, SpatialIndexProvider, SpatialLimits, SpatialQuery, SpatialResults,
@@ -147,6 +149,8 @@ pub use transaction_metrics::{
     TransactionDurationHistogram, TransactionMetrics, TransactionObservation,
 };
 pub use transactional::{TransactionalDataset, WritableDataset};
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+pub use upgrade::PreparedUpgrade;
 
 /// Isolation provided between concurrent writers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

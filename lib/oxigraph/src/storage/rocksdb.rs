@@ -34,7 +34,7 @@ use rustc_hash::{FxBuildHasher, FxHashSet};
 use siphasher::sip128::{Hasher128, SipHasher24};
 use spareval::CancellationToken;
 use std::collections::{HashMap, VecDeque};
-use std::fs::remove_file;
+use std::fs::{remove_file, symlink_metadata};
 use std::hash::BuildHasherDefault;
 #[cfg(feature = "rdf-12")]
 use std::hash::Hash;
@@ -187,6 +187,14 @@ pub struct RocksDbStorage {
     graphs_cf: ColumnFamily,
 }
 
+fn reject_incomplete_upgrade(path: &Path) -> Result<(), StorageError> {
+    match symlink_metadata(path.join(crate::store::upgrade::UPGRADE_GUARD)) {
+        Ok(_) => Err(StorageError::UpgradeIncomplete),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(StorageError::Io(error)),
+    }
+}
+
 impl RocksDbStorage {
     #[cfg(test)]
     pub(crate) fn corrupt_readiness_fixture(&self, field: u8) -> Result<(), StorageError> {
@@ -205,6 +213,7 @@ impl RocksDbStorage {
         path: &Path,
         options: RocksDbStorageOptions,
     ) -> Result<Self, StorageError> {
+        reject_incomplete_upgrade(path)?;
         Self::setup(Db::open_read_write_with_preflight(
             path,
             Self::column_families(),
@@ -244,6 +253,7 @@ impl RocksDbStorage {
     }
 
     pub fn open_read_only(path: &Path) -> Result<Self, StorageError> {
+        reject_incomplete_upgrade(path)?;
         // Ordinary read-only opens retain their offline/no-writer contract.
         // Classify physical metadata before setup attempts any version work.
         Self::preflight_existing(path, DbOptions::default())?;

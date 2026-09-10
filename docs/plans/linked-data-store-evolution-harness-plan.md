@@ -1287,10 +1287,15 @@ is ready. `Store::backup_legacy` and the separate `LegacyBackupReceipt` now
 provide source-preserving version-0/1 physical copies and exact package/source
 ancestry verification. Native interruption, cancellation and lock-release tests
 pass; the additive `backup-legacy` / `verify-legacy-backup` CLI journeys also
-pass alongside existing backup/restore and feature lanes; these are not upgrade
+pass alongside existing backup/restore and feature lanes. `Store::prepare_upgrade`
+now stages a verified inactive shadow copy while retaining source/backup leases;
+`PreparedUpgrade::verify` checks its exact files, metadata, journal and complete
+record. This binary refuses guarded copies through ordinary opens, including
+after moving the store directory. Preparation, cancellation/lock tests and the
+RDF-1.2 regression lane pass; these are not transformation or upgrade
 qualification. Full compatibility rejection, the envelope/classifier, resumable
 shadow transformation and its cutover/failure matrix remain outstanding.
-See [ADR-0028's native scope and limits](../adr/0028-safe-storage-schema-upgrades.md#native-unknownnewer-open-preflight-2026-09-10).
+See [ADR-0028's preparation scope and limits](../adr/0028-safe-storage-schema-upgrades.md#native-inactive-shadow-preparation-2026-09-10).
 
 G4.1 native implementation is complete: the anonymous startup boundary requires explicit
 non-loopback consent before store open and binds the exact validated address

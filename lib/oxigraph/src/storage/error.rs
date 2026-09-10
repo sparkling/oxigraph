@@ -13,6 +13,9 @@ pub enum StorageError {
     /// Error related to data corruption.
     #[error(transparent)]
     Corruption(#[from] CorruptionError),
+    /// An inactive upgrade workspace was found.
+    #[error("storage upgrade is incomplete; the prepared workspace is not activated")]
+    UpgradeIncomplete,
     /// An existing directory has an unrecognized marker or column-family layout.
     /// Opening it does not initialize, repair, or migrate it.
     #[error("unknown storage schema; inspect the offline store before opening it")]
@@ -36,9 +39,9 @@ impl From<StorageError> for io::Error {
         match error {
             StorageError::Io(error) => error,
             StorageError::Corruption(error) => error.into(),
-            error @ (StorageError::SchemaUnknown | StorageError::SchemaTooNew { .. }) => {
-                Self::new(io::ErrorKind::InvalidData, error)
-            }
+            error @ (StorageError::UpgradeIncomplete
+            | StorageError::SchemaUnknown
+            | StorageError::SchemaTooNew { .. }) => Self::new(io::ErrorKind::InvalidData, error),
             StorageError::Other(error) => Self::other(error),
         }
     }

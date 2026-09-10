@@ -129,22 +129,37 @@ impl LegacyBackupReceipt {
         directory: impl AsRef<Path>,
         options: &LegacyBackupOptions,
     ) -> Result<Self, BackupError> {
-        let started = Instant::now();
-        check(&options.control, started)?;
-        let source = stable_directory(source.as_ref())?;
-        let directory = stable_directory(directory.as_ref())?;
+        Ok(Self::verify_ancestry_leased(
+            source.as_ref(),
+            directory.as_ref(),
+            options,
+            Instant::now(),
+        )?
+        .0)
+    }
+
+    pub(super) fn verify_ancestry_leased(
+        source: &Path,
+        directory: &Path,
+        options: &LegacyBackupOptions,
+        started: Instant,
+    ) -> Result<(Self, LegacyStoreSnapshot, LegacyStoreSnapshot), BackupError> {
+        check_options(options, started)?;
+        let source = stable_directory(source)?;
+        let directory = stable_directory(directory)?;
         if source.starts_with(&directory) || directory.starts_with(&source) {
             return Err(BackupError::InvalidPath);
         }
-        let (receipt, _package_lease) = Self::verify_inner(&directory, options, started)?;
+        let (receipt, package_snapshot) = Self::verify_inner(&directory, options, started)?;
         check_native_files(&source)?;
-        let snapshot = LegacyStoreSnapshot::open(&source, options.store_options.clone().into())?;
-        receipt.check_metadata(&snapshot)?;
+        let source_snapshot =
+            LegacyStoreSnapshot::open(&source, options.store_options.clone().into())?;
+        receipt.check_metadata(&source_snapshot)?;
         if inventory(&source, options, started)? != receipt.files {
             return Err(BackupError::FileMismatch);
         }
         check(&options.control, started)?;
-        Ok(receipt)
+        Ok((receipt, source_snapshot, package_snapshot))
     }
 
     fn verify_inner(
@@ -184,7 +199,7 @@ impl LegacyBackupReceipt {
         Ok((receipt, snapshot))
     }
 
-    fn check_metadata(&self, snapshot: &LegacyStoreSnapshot) -> Result<(), BackupError> {
+    pub(super) fn check_metadata(&self, snapshot: &LegacyStoreSnapshot) -> Result<(), BackupError> {
         if self.storage_version != snapshot.version
             || self.database_id != snapshot.database_id
             || self.rocksdb_sequence != snapshot.sequence
@@ -195,7 +210,7 @@ impl LegacyBackupReceipt {
         Ok(())
     }
 
-    fn encode(&self) -> Vec<u8> {
+    pub(super) fn encode(&self) -> Vec<u8> {
         let mut bytes = MAGIC.to_vec();
         bytes.extend_from_slice(&self.storage_version.to_be_bytes());
         blob(&mut bytes, &self.database_id);
@@ -215,7 +230,7 @@ impl LegacyBackupReceipt {
         bytes
     }
 
-    fn decode(bytes: &[u8]) -> Result<Self, BackupError> {
+    pub(super) fn decode(bytes: &[u8]) -> Result<Self, BackupError> {
         let split = bytes
             .len()
             .checked_sub(32)
@@ -390,7 +405,10 @@ fn backup_inner(
     Ok(receipt)
 }
 
-fn check_options(options: &LegacyBackupOptions, started: Instant) -> Result<(), BackupError> {
+pub(super) fn check_options(
+    options: &LegacyBackupOptions,
+    started: Instant,
+) -> Result<(), BackupError> {
     check(&options.control, started)?;
     if options.max_files.get() > MAX_FILES {
         return Err(BackupError::Limit);
@@ -398,7 +416,7 @@ fn check_options(options: &LegacyBackupOptions, started: Instant) -> Result<(), 
     Ok(())
 }
 
-fn stable_directory(path: &Path) -> Result<PathBuf, BackupError> {
+pub(super) fn stable_directory(path: &Path) -> Result<PathBuf, BackupError> {
     let absolute = if path.is_absolute() {
         path.to_owned()
     } else {
@@ -417,7 +435,7 @@ fn stable_directory(path: &Path) -> Result<PathBuf, BackupError> {
     Ok(absolute.canonicalize()?)
 }
 
-fn private_directory(path: &Path) -> Result<(), BackupError> {
+pub(super) fn private_directory(path: &Path) -> Result<(), BackupError> {
     let mut builder = fs::DirBuilder::new();
     #[cfg(unix)]
     {
@@ -474,7 +492,7 @@ fn check_native_files(path: &Path) -> Result<(), BackupError> {
     Ok(())
 }
 
-fn inventory(
+pub(super) fn inventory(
     path: &Path,
     options: &LegacyBackupOptions,
     started: Instant,
@@ -604,11 +622,10 @@ mod tests {
                 assert!(matches!(result, Err(BackupError::Cancelled)));
                 assert_eq!(source_inventory(&source)?, before);
                 assert!(!destination.join(COMPLETE).exists());
-                assert!(LegacyBackupReceipt::verify(
-                    &destination,
-                    &TransactionStartControl::new()
-                )
-                .is_err());
+                assert!(
+                    LegacyBackupReceipt::verify(&destination, &TransactionStartControl::new())
+                        .is_err()
+                );
             }
         }
         Ok(())
@@ -624,12 +641,17 @@ mod tests {
             let before = source_inventory(&source)?;
             let result = backup_inner(&source, &destination, &options(), |phase| {
                 if phase == 4 {
-                    Err(BackupError::Io(io::Error::other("injected post-completion failure")))
+                    Err(BackupError::Io(io::Error::other(
+                        "injected post-completion failure",
+                    )))
                 } else {
                     Ok(())
                 }
             });
-            assert!(matches!(result, Err(BackupError::CompletionIndeterminate(_))));
+            assert!(matches!(
+                result,
+                Err(BackupError::CompletionIndeterminate(_))
+            ));
             assert!(destination.join(COMPLETE).exists());
             LegacyBackupReceipt::verify(&destination, &TransactionStartControl::new())?;
             assert_eq!(source_inventory(&source)?, before);
@@ -656,11 +678,9 @@ mod tests {
             assert!(matches!(result, Err(BackupError::Cancelled)));
             assert_eq!(source_inventory(&source)?, before);
             assert!(!destination.join(COMPLETE).exists());
-            assert!(LegacyBackupReceipt::verify(
-                &destination,
-                &TransactionStartControl::new()
-            )
-            .is_err());
+            assert!(
+                LegacyBackupReceipt::verify(&destination, &TransactionStartControl::new()).is_err()
+            );
         }
         Ok(())
     }
@@ -670,15 +690,15 @@ mod tests {
         for fail in [true, false] {
             let directory = tempfile::tempdir()?;
             let source = directory.path().join("source");
-            let destination = directory.path().join(if fail { "failed" } else { "complete" });
+            let destination = directory
+                .path()
+                .join(if fail { "failed" } else { "complete" });
             copy_fixture(1, &source)?;
             let result = backup_inner(&source, &destination, &options(), |phase| {
                 if matches!(phase, 0 | 1) {
-                    assert!(LegacyStoreSnapshot::open(
-                        &source,
-                        StoreOptions::default().into()
-                    )
-                    .is_err());
+                    assert!(
+                        LegacyStoreSnapshot::open(&source, StoreOptions::default().into()).is_err()
+                    );
                 }
                 if fail && phase == 1 {
                     Err(BackupError::Cancelled)

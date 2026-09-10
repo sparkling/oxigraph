@@ -454,6 +454,12 @@ native lock and stable, caller-controlled paths; it does not migrate or approve
 an upgrade. See [the native backup contract](docs/adr/0028-safe-storage-schema-upgrades.md#native-legacy-physical-backup-slice-2026-09-10).
 The CLI exposes `backup-legacy` and `verify-legacy-backup [--source ORIGINAL]`;
 see [operator usage](cli/README.md#offline-legacy-physical-backups-fork).
+`Store::prepare_upgrade(source, backup, fresh_destination, &options)` now stages
+an inactive copy after verifying exact backup ancestry. `PreparedUpgrade::verify`
+checks its files, physical metadata, Preflight journal and completion record.
+This binary refuses ordinary opens of the guarded copy, including after moving
+its store directory. Preparation does **not** transform or activate the store;
+see [the preparation contract and limits](docs/adr/0028-safe-storage-schema-upgrades.md#native-inactive-shadow-preparation-2026-09-10).
 
 ## Upstream Oxigraph
 

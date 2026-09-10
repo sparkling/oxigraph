@@ -5,7 +5,8 @@
 - Updated: 2026-09-10
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
-  unknown/newer-layout preflight and version-0/1 physical-backup API/CLI implemented;
+  unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
+  shadow-copy preparation API implemented;
   ordinary writable open still
   performs known version-0/1 migrations in place. Full compatibility rejection,
   schema envelopes and shadow upgrades remain open
@@ -218,6 +219,44 @@ This closes the bounded legacy physical-copy and exact-ancestry API/CLI gap, not
 G4.3. It is not the frozen legacy classifier, feature envelope, resumable shadow
 upgrade, cutover/crash matrix, logical comparison, system-RocksDB qualification
 or upgrade authorization. Those gates and the known in-place migrations remain.
+
+## Native inactive shadow preparation (2026-09-10)
+
+`Store::prepare_upgrade(source, completed_legacy_backup, fresh_destination,
+&LegacyBackupOptions)` now prepares a separate inactive workspace. Exact source
+ancestry is verified first; source and backup native leases remain held through
+copying, revalidation and completion. Neither input is migrated or changed.
+`PreparedUpgrade::verify` independently checks the embedded legacy receipt,
+bounded exact inventory, native metadata, journal and guard while leasing the
+copy. Existing current/legacy backup validators are not relaxed.
+
+The single checksummed `Preflight` journal names target version 2. Its entry and
+the inside-store `.oxigraph-upgrade-incomplete` guard are synchronized, including
+their directories and parent, before any native file is copied. The complete-last
+preparation record binds the original receipt plus journal and guard hashes.
+Earlier failures leave an unverifiable workspace; post-marker errors are
+`CompletionIndeterminate`. This is a preparation record, not an `UpgradeReceipt`,
+append/resume implementation or proof that transformation finished.
+
+Ordinary writable and read-only opens by this binary return typed
+`UpgradeIncomplete` for any present guard, including malformed guards and guarded
+current-version stores. Moving the nested store retains that refusal. The brief
+window before guard creation can leave an empty directory, but no copied native
+files. Older binaries unaware of the guard are **not** covered.
+
+Delivery workflow `f7eadfc1-35d1-4362-a2a3-a3ca91db12e4` used native Terra Medium
+integration of root-assisted implementation/tests, root-only application, and
+independent Sol Medium review. After a formatting repair, four native lanes
+passed: preparation integration (4), phase/cancellation/lease tests (4), RDF-1.2
+preparation plus legacy/current backup/restore (26), and no-default store (12).
+Rechecks and overlapping feature lanes are not additional product behavior.
+Fixtures were copied to temporary directories. Exact workflow evidence was read
+back through Ruflo MCP before handoff.
+
+This closes inactive physical preparation only. Explicit transformation, logical
+and topology comparison, verified resume, sealed upgrade receipts, activation,
+old/new-binary and crash qualification remain open. Known in-place migrations
+remain until their explicit replacement is ready; this ADR remains Proposed.
 
 ## Staged implementation and evaluator gates
 
