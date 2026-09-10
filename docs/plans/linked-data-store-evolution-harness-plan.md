@@ -1286,6 +1286,7 @@ refusal. Known version-0/1 in-place migrations remain until a shadow replacement
 is ready. `Store::backup_legacy` and the separate `LegacyBackupReceipt` now
 provide source-preserving version-0/1 physical copies and exact package/source
 ancestry verification. Native interruption, cancellation and lock-release tests
+pass; the additive `backup-legacy` / `verify-legacy-backup` CLI journeys also
 pass alongside existing backup/restore and feature lanes; these are not upgrade
 qualification. Full compatibility rejection, the envelope/classifier, resumable
 shadow transformation and its cutover/failure matrix remain outstanding.

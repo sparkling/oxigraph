@@ -935,6 +935,41 @@ native lock file even when rejected; existing data files are not changed by
 that refusal. Use `inspect` when no new file may be created.
 See [ADR-0028](../docs/adr/0028-safe-storage-schema-upgrades.md#native-metadata-inspection-slice-2026-09-10).
 
+## Offline legacy physical backups (fork)
+
+Build this fork's CLI. Stop all writers and keep source, package and destination
+paths exclusively controlled and unchanged during each operation. The legacy
+source must have an existing regular native `LOCK`; these commands never create
+one in the source or call ordinary store open/migration.
+
+```sh
+oxigraph backup-legacy --location ./legacy-data --destination ./legacy-backup-new
+oxigraph verify-legacy-backup --location ./legacy-backup-new
+oxigraph verify-legacy-backup --location ./legacy-backup-new --source ./legacy-data
+```
+
+This Unix-only physical-copy path supports the known version-0/1 layouts. Its
+fresh package contains `store/` and `oxigraph-legacy-backup.complete`. Every
+source file is copied, not hard-linked, and verified by name, length and SHA-256
+along with native version, database identity, sequence and column families.
+Verification takes the package's native lock and opens only a read-only metadata
+handle; it neither migrates nor serves the package. `--source` additionally
+requires exact source bytes, not merely a matching database identity.
+
+Output identifies the physical version, file count and receipt fingerprint.
+Creation reports `legacy_backup_complete=true`; verification reports
+`legacy_backup_verified=true` and `ancestry=not-checked` or `ancestry=exact`.
+All successful outputs state `upgrade_authorized=false`. These are not logical
+RDF/feature-compatibility results or a safe-upgrade receipt.
+
+Keep completed packages immutable. Incomplete packages cannot verify; a final
+directory-sync failure after the completion marker is explicitly indeterminate
+and must be resolved by verifying the existing package, not overwriting it.
+The format is deliberately separate from current-schema `backup --with-receipt`,
+`verify-backup` and `restore`; those commands do not accept legacy packages.
+Legacy restoration and shadow upgrade are not implemented by these commands.
+See [ADR-0028](../docs/adr/0028-safe-storage-schema-upgrades.md#native-legacy-physical-backup-slice-2026-09-10).
+
 ## Using a Docker image
 
 ### Display the help menu

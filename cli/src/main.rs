@@ -240,6 +240,59 @@ pub fn main() -> anyhow::Result<()> {
             )?;
             Ok(())
         }
+        Command::BackupLegacy {
+            location,
+            destination,
+        } => {
+            let receipt = Store::backup_legacy(
+                location,
+                destination,
+                &oxigraph::store::LegacyBackupOptions::default(),
+            )?;
+            let fingerprint = receipt
+                .fingerprint()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            writeln!(
+                stdout().lock(),
+                "legacy_backup_complete=true storage_version={} files={} fingerprint={} upgrade_authorized=false",
+                receipt.storage_version(),
+                receipt.files().len(),
+                fingerprint
+            )?;
+            Ok(())
+        }
+        Command::VerifyLegacyBackup { location, source } => {
+            let control = oxigraph::store::TransactionStartControl::new();
+            let (receipt, ancestry) = if let Some(source) = source {
+                (
+                    oxigraph::store::LegacyBackupReceipt::verify_ancestry(
+                        source, location, &control,
+                    )?,
+                    "exact",
+                )
+            } else {
+                (
+                    oxigraph::store::LegacyBackupReceipt::verify(location, &control)?,
+                    "not-checked",
+                )
+            };
+            let fingerprint = receipt
+                .fingerprint()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            writeln!(
+                stdout().lock(),
+                "legacy_backup_verified=true storage_version={} files={} fingerprint={} ancestry={} upgrade_authorized=false",
+                receipt.storage_version(),
+                receipt.files().len(),
+                fingerprint,
+                ancestry
+            )?;
+            Ok(())
+        }
         Command::Restore {
             backup,
             destination,

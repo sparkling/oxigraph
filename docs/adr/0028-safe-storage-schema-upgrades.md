@@ -5,7 +5,7 @@
 - Updated: 2026-09-10
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
-  unknown/newer-layout preflight and version-0/1 physical-backup API implemented;
+  unknown/newer-layout preflight and version-0/1 physical-backup API/CLI implemented;
   ordinary writable open still
   performs known version-0/1 migrations in place. Full compatibility rejection,
   schema envelopes and shadow upgrades remain open
@@ -201,7 +201,20 @@ legacy/current backup/restore (22), and no-default-features store tests (12).
 Feature-lane overlaps are not additional product behavior. Test fixtures were
 copied to temporary directories; their committed bytes were not changed.
 
-This closes the bounded legacy physical-copy and exact-ancestry API gap, not
+The additive `backup-legacy` and `verify-legacy-backup [--source ORIGINAL]` CLI
+commands expose these same APIs without ordinary open/migration. Output binds
+the fingerprint and distinguishes package-only from exact ancestry verification;
+every success states `upgrade_authorized=false`. Current `verify-backup` and
+`restore` do not accept the separate legacy package format.
+
+CLI workflow `31aa0787-064d-4522-a8ff-4ac18467a336` passed three new subprocess
+journeys (both legacy layouts, source/package preservation, changed ancestry,
+corruption, format separation and help), five existing backup/restore/inspection
+tests, and the combined eight-test no-default-features lane. Terra Medium
+proposed the implementation, root applied it, Sol Medium independently accepted
+the exact files/results, and Ruflo MCP read back the workflow evidence.
+
+This closes the bounded legacy physical-copy and exact-ancestry API/CLI gap, not
 G4.3. It is not the frozen legacy classifier, feature envelope, resumable shadow
 upgrade, cutover/crash matrix, logical comparison, system-RocksDB qualification
 or upgrade authorization. Those gates and the known in-place migrations remain.

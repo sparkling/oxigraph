@@ -452,6 +452,8 @@ version-0/1 stores. Its separate `LegacyBackupReceipt` verifies both the exact
 package and, optionally, unchanged source ancestry. This requires an existing
 native lock and stable, caller-controlled paths; it does not migrate or approve
 an upgrade. See [the native backup contract](docs/adr/0028-safe-storage-schema-upgrades.md#native-legacy-physical-backup-slice-2026-09-10).
+The CLI exposes `backup-legacy` and `verify-legacy-backup [--source ORIGINAL]`;
+see [operator usage](cli/README.md#offline-legacy-physical-backups-fork).
 
 ## Upstream Oxigraph
 

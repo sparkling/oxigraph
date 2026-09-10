@@ -165,6 +165,32 @@ pub enum Command {
         #[arg(short, long, value_hint = ValueHint::DirPath)]
         location: PathBuf,
     },
+    /// Create an offline, byte-preserving package of a legacy store without upgrading it
+    ///
+    /// Source and destination must be stable, exclusively controlled paths. The
+    /// existing native LOCK is used; this physical package is a separate format,
+    /// not authorization to upgrade or serve the legacy store.
+    BackupLegacy {
+        /// Existing offline legacy store directory
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
+        location: PathBuf,
+        /// Fresh directory in which the immutable package will be written
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
+        destination: PathBuf,
+    },
+    /// Verify an offline legacy physical package without ordinary store open or migration
+    ///
+    /// The package and optional source must be stable, exclusively controlled
+    /// paths. Verification uses the existing native LOCK and is not format or
+    /// upgrade approval.
+    VerifyLegacyBackup {
+        /// Directory containing the legacy package completion marker
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
+        location: PathBuf,
+        /// Optional original legacy store for exact byte-for-byte ancestry checking
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        source: Option<PathBuf>,
+    },
     /// Restore a completed backup into a fresh root; serve its store/ subdirectory
     Restore {
         /// Immutable receipt-bearing backup package
