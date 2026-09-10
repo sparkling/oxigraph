@@ -228,6 +228,10 @@ workload policy,
 operator `/metrics` now exports active/queued pool gauges, terminal admission
 counts and queue-wait histograms: 60 fixed-label samples without request data.
 Admission is not execution success; lease release is not proof of rollback.
+Another 48 fixed samples report configured native operator-budget handles
+observed at final lease release: charge totals, maximum observed charges and
+exhaustion counts. These exclude active leases and unconfigured budgets and
+are not memory/CPU measurements or query outcome counters.
 File-backed controllers now support atomic operator workload-policy reload on
 the loopback admin listener through a new explicit `workload-policy` grant.
 Each attempt, queued entry and lease retains one policy snapshot; old work drains

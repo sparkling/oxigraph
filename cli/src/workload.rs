@@ -29,7 +29,9 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 mod metrics;
+mod resource_metrics;
 pub use metrics::{AdmissionDisposition, AdmissionMetrics, AdmissionPool, QueueWaitHistogram};
+pub use resource_metrics::{ResourceOperator, ResourceUsageMetrics};
 
 const MAX_PROFILE_BYTES: u64 = 64 * 1024;
 // Cooperative queue-token observation, not an end-to-end cancellation claim.
@@ -315,6 +317,7 @@ struct Inner {
     // Fixed-size telemetry only. Locked after `state` when both are needed and
     // never held across scheduling, storage or transport work.
     metrics: Mutex<AdmissionMetrics>,
+    resource_metrics: Mutex<ResourceUsageMetrics>,
 }
 
 /// One controller must be shared by both data and operator listeners.
@@ -369,6 +372,7 @@ impl AdmissionController {
             state: Mutex::new(State::new(current)),
             changed: Condvar::new(),
             metrics: Mutex::new(AdmissionMetrics::default()),
+            resource_metrics: Mutex::new(ResourceUsageMetrics::default()),
         })))
     }
 
@@ -504,6 +508,18 @@ impl AdmissionController {
         };
         drop(state);
         Ok(metrics.with_gauges(snapshot))
+    }
+
+    /// Fixed-size resource-handle observations copied without inspecting
+    /// scheduler state. A snapshot is recorded only at the final lease drop;
+    /// independently retained library budget clones may change afterwards.
+    /// A poisoned telemetry lock fails closed instead of reporting zeros.
+    pub fn resource_metrics(&self) -> Result<ResourceUsageMetrics, WorkloadError> {
+        self.0
+            .resource_metrics
+            .lock()
+            .map_err(|_| WorkloadError::Unavailable)
+            .map(|metrics| metrics.clone())
     }
 
     /// The single terminal observation of one acquisition attempt. Called after
@@ -1090,12 +1106,82 @@ fn check_cancellation(cancellation: &CancellationToken) -> Result<(), WorkloadEr
 }
 impl Drop for LeaseInner {
     fn drop(&mut self) {
+        // Keep state-before-metrics lock order. Observation failure must not
+        // retain capacity: poisoned telemetry is recovered for this one final
+        // bounded record while public snapshots fail closed.
         let mut state = self
             .controller
             .0
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let pool = if self.operator {
+            AdmissionPool::Operator
+        } else {
+            AdmissionPool::Data
+        };
+        if self.inner_join_build_budget.is_some()
+            || self.sort_buffer_budget.is_some()
+            || self.distinct_buffer_budget.is_some()
+            || self.group_buffer_budget.is_some()
+            || self.aggregate_distinct_budget.is_some()
+            || self.path_buffer_budget.is_some()
+        {
+            let mut metrics = self
+                .controller
+                .0
+                .resource_metrics
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(budget) = &self.inner_join_build_budget {
+                metrics.record(
+                    pool,
+                    ResourceOperator::InnerJoinBuildRows,
+                    budget.charged_rows(),
+                    budget.check().is_err(),
+                );
+            }
+            if let Some(budget) = &self.sort_buffer_budget {
+                metrics.record(
+                    pool,
+                    ResourceOperator::SortBufferRows,
+                    budget.charged_rows(),
+                    budget.check().is_err(),
+                );
+            }
+            if let Some(budget) = &self.distinct_buffer_budget {
+                metrics.record(
+                    pool,
+                    ResourceOperator::DistinctBufferRows,
+                    budget.charged_rows(),
+                    budget.check().is_err(),
+                );
+            }
+            if let Some(budget) = &self.group_buffer_budget {
+                metrics.record(
+                    pool,
+                    ResourceOperator::GroupBufferRows,
+                    budget.charged_rows(),
+                    budget.check().is_err(),
+                );
+            }
+            if let Some(budget) = &self.aggregate_distinct_budget {
+                metrics.record(
+                    pool,
+                    ResourceOperator::AggregateDistinctRows,
+                    budget.charged_rows(),
+                    budget.check().is_err(),
+                );
+            }
+            if let Some(budget) = &self.path_buffer_budget {
+                metrics.record(
+                    pool,
+                    ResourceOperator::PathBufferRows,
+                    budget.charged_rows(),
+                    budget.check().is_err(),
+                );
+            }
+        }
         if self.operator {
             state.operator_active -= 1;
         } else {

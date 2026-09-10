@@ -23,7 +23,9 @@
   DISTINCT retained-key cap adds cumulative shared accounting without widening
   the older group or ordinary-DISTINCT budgets. Native property-path sets and
   closure worklists now have a separate cumulative entry cap, shared across
-  query/update execution with sticky failure and owned rollback. Full workload
+  query/update execution with sticky failure and owned rollback. Fixed-label
+  final-lease observations now expose native budget charges and exhaustion
+  separately from admission or execution outcomes. Full workload
   governance acceptance remains open.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
@@ -1346,7 +1348,7 @@ each trusted subject's allowance across classes, count old-policy occupancy
 and discard idle identities. Anonymous callers share one allowance and the
 operator reserve is unchanged. Native isolation, reload, cleanup and persistent
 HTTP journeys verify caps, not reserved service shares. Broader operator budgets,
-weighted/priority scheduling, resource-use telemetry and full ADR-0027 acceptance
+weighted/priority scheduling, broader resource telemetry and full ADR-0027 acceptance
 remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no
 fine-grained SPARQL policy or general evaluator resource quotas are claimed.

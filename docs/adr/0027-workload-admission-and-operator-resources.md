@@ -12,8 +12,9 @@
   result-byte, native inner-join build-row, ORDER BY buffer-row, hash DISTINCT
   retained-row, accumulator-group, aggregate-DISTINCT retained-key and native
   property-path buffer-entry caps are implemented. Fixed-pool admission counts,
-  occupancy and queue-wait metrics
-  are exported through the existing operator listener. File-backed policy
+  occupancy and queue-wait metrics, plus final-lease observations of the six
+  configured native operator budgets, are exported through the existing
+  operator listener. File-backed policy
   reload is atomic and operator-usable with immutable per-attempt snapshots and
   startup transport ceilings. Observed active socket errors now cancel the
   existing workload token without releasing running work's capacity. Optional
@@ -813,6 +814,60 @@ test. The identified release binary passes all 48 HTTP tests. Both required
 query/update fuzz commands exit zero: 14,200 cases in 215 seconds and 24,113 in
 61 seconds. The preserved 171-second query input consumed the query run during
 corpus initialization; no fresh query mutation phase or speedup is claimed.
+
+### Native operator-budget observations (2026-09-10)
+
+`AdmissionController::resource_metrics()` returns a separate fixed-size,
+process-local `ResourceUsageMetrics` snapshot. The final `WorkloadLease` Arc
+drop samples each configured native inner-join, sort, ordinary DISTINCT,
+group, aggregate-DISTINCT and path budget once. Zero-charge handles count;
+absent handles and still-active leases do not. Lease clones never duplicate
+an observation. Repeated/nested evaluation and all update operations have
+already charged the same handle, so telemetry neither resets nor charges it.
+
+For each fixed data/operator pool and resource/phase pair, four families export
+configured-handle observations, cumulative successful charges, observed
+exhaustions and maximum observed per-lease charge. Their names are
+`oxigraph_workload_resource_observations_total`,
+`oxigraph_workload_resource_charged_rows_total`,
+`oxigraph_workload_resource_exhausted_total` and
+`oxigraph_workload_resource_charged_rows_max`. Four families times two pools
+times six resources produce exactly 48 samples. Counts/sums saturate; no
+query, RDF, class, policy, principal, endpoint or other arbitrary strings are
+retained. The original 60 admission samples remain separate and unchanged.
+
+The existing authorized operator `/metrics` route exports the additional
+families only with a workload policy (at most 515 combined samples). Resource
+snapshot failure returns bounded 503 before storage probing, not zero-valued
+success. Drop recovers poisoned telemetry solely to finish bounded recording
+and release capacity; snapshot readers still report the poisoned lock.
+Readiness, existing byte limits, access grants and routes do not change.
+
+Observations are shared across controller clones/reloads, including old-policy
+leases, and reset for a new controller. Sampling happens at final lease release,
+not request EOF or commit. A served metrics request cannot include its own
+still-live resource handles. Independently retained embedded budget clones
+may change afterwards; those changes do not revise the earlier observation.
+These are declared operator units, not allocator/CPU/RSS measurements, byte
+budgets, active-work gauges or transaction outcomes. Buffered failure, failed
+streams, rollback and unwind all release leases, but telemetry never claims
+that release proves success or rollback. Separate observation families are
+not one atomic cross-subsystem snapshot. Full G4.2 acceptance remains open.
+
+Native validation covers all six handle mappings, final-owner and retained-clone
+behavior, reload attribution, fixed cardinality, saturation and poisoned-lock
+cleanup. Authenticated HTTP assertions observe `(count, charges, exhausted,
+maximum)` of `(7, 13, 3, 3)` after buffered/streamed failures and owned rollback,
+and `(3, 5, 1, 2)` across old/new policy handles in both serve modes. Tests wait
+for final lease cleanup rather than assuming transport EOF establishes it.
+`cargo test --locked -p oxigraph-cli --lib --bin oxigraph --test access_http`
+passes with default features (62/171/48) and `--no-default-features`
+(62/147/42, plus one pre-existing dependency-qualified ignored binary test).
+The rebuilt release executable passes all 48 HTTP cases with its SHA-256
+unchanged before/after. `cargo doc --locked -p oxigraph-cli --lib --no-deps`
+passes with the pre-existing private admission-module link warning. No
+evaluator source, dependency lock, protected evidence or production defaults
+change in this observation-only slice.
 
 ### Remaining staged acceptance
 

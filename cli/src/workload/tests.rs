@@ -409,6 +409,7 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
     ));
     drop(active);
     ensure!(controller.snapshot()?.active == 1 && controller.snapshot()?.queued == 1);
+    ensure!(controller.resource_metrics()? == ResourceUsageMetrics::default());
     drop(active_clone);
     let queued = receiver.recv_timeout(Duration::from_secs(3))??;
     waiter.join().unwrap();
@@ -448,6 +449,12 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
         Err(WorkloadError::Overloaded(AdmissionScope::Global))
     ));
     drop(queued);
+    for operator in ResourceOperator::ALL {
+        let metrics = controller.resource_metrics()?;
+        ensure!(metrics.observations(AdmissionPool::Data, operator) == 2);
+        ensure!(metrics.charged_rows(AdmissionPool::Data, operator) == 0);
+        ensure!(metrics.exhausted(AdmissionPool::Data, operator) == 0);
+    }
     let v2 = acquire(&controller, "default")?;
     ensure!(v2.policy_version() == 2);
     ensure!(v2.result_byte_limit() == Some(oxhttp::ResponseBodyLimit(0)));
@@ -468,6 +475,13 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
     ensure!(v2.deadline().is_some_and(|deadline| {
         deadline.saturating_duration_since(Instant::now()) <= Duration::from_millis(100)
     }));
+    drop(v2);
+    let metrics = controller.resource_metrics()?;
+    ensure!(controller.clone().resource_metrics()? == metrics);
+    for operator in ResourceOperator::ALL {
+        ensure!(metrics.observations(AdmissionPool::Data, operator) == 3);
+        ensure!(metrics.exhausted(AdmissionPool::Data, operator) == 0);
+    }
     Ok(())
 }
 
@@ -1254,6 +1268,140 @@ fn join_budget_getters_share_state_but_new_admissions_do_not() -> Result<()> {
 }
 
 #[test]
+fn resource_observation_is_final_lease_drop_snapshot_not_budget_liveness() -> Result<()> {
+    let mut policy = controller(1, 0, 1, 0)?.0.policy.clone();
+    policy.max_inner_join_build_rows = Some(2);
+    let controller = AdmissionController::new(policy)?;
+    let lease = acquire(&controller, "default")?;
+    let lease_clone = lease.clone();
+    let retained = lease.inner_join_build_budget().unwrap().clone();
+    let evaluator = oxigraph::sparql::SparqlEvaluator::new()
+        .without_optimizations()
+        .with_inner_join_build_budget(retained.clone());
+    evaluator
+        .clone()
+        .parse_query("ASK { VALUES ?x { 1 2 } VALUES ?y { 3 } }")?
+        .on_store(&oxigraph::store::Store::new()?)
+        .execute()?;
+    drop(lease);
+    ensure!(controller.resource_metrics()? == ResourceUsageMetrics::default());
+    drop(lease_clone);
+    let snapshot = controller.resource_metrics()?;
+    ensure!(
+        snapshot.observations(AdmissionPool::Data, ResourceOperator::InnerJoinBuildRows) == 1
+            && snapshot.charged_rows(AdmissionPool::Data, ResourceOperator::InnerJoinBuildRows)
+                == 2
+            && snapshot.exhausted(AdmissionPool::Data, ResourceOperator::InnerJoinBuildRows) == 0
+            && snapshot.charged_rows_max(AdmissionPool::Data, ResourceOperator::InnerJoinBuildRows)
+                == 2,
+        "unexpected final-drop snapshot: {snapshot:?}"
+    );
+    // The library clone remains usable after the lease has released capacity.
+    // Its later sticky exhaustion must not retroactively alter the snapshot.
+    ensure!(
+        evaluator
+            .parse_query("ASK { VALUES ?x { 4 } VALUES ?y { 5 } }")?
+            .on_store(&oxigraph::store::Store::new()?)
+            .execute()
+            .is_err()
+    );
+    ensure!(retained.check().is_err());
+    ensure!(controller.resource_metrics()? == snapshot);
+    Ok(())
+}
+
+#[test]
+fn resource_observation_wires_each_configured_native_budget() -> Result<()> {
+    let cases = [
+        (
+            ResourceOperator::InnerJoinBuildRows,
+            "SELECT * WHERE { VALUES ?x { 1 2 } VALUES ?y { 3 } }",
+        ),
+        (
+            ResourceOperator::SortBufferRows,
+            "SELECT ?x WHERE { VALUES ?x { 2 1 } } ORDER BY ?x",
+        ),
+        (
+            ResourceOperator::DistinctBufferRows,
+            "SELECT DISTINCT ?x WHERE { VALUES ?x { 1 2 } }",
+        ),
+        (
+            ResourceOperator::GroupBufferRows,
+            "SELECT ?x (COUNT(*) AS ?n) WHERE { VALUES ?x { 1 2 } } GROUP BY ?x",
+        ),
+        (
+            ResourceOperator::AggregateDistinctRows,
+            "SELECT (COUNT(DISTINCT ?x) AS ?n) WHERE { VALUES ?x { 1 2 } }",
+        ),
+        (
+            ResourceOperator::PathBufferRows,
+            "SELECT ?o WHERE { <urn:a> <urn:p>* ?o }",
+        ),
+    ];
+    for (operator, query) in cases {
+        let mut policy = controller(1, 0, 1, 0)?.0.policy.clone();
+        policy.max_inner_join_build_rows = Some(2);
+        policy.max_sort_buffer_rows = Some(2);
+        policy.max_distinct_buffer_rows = Some(2);
+        policy.max_group_buffer_rows = Some(2);
+        policy.max_aggregate_distinct_rows = Some(2);
+        policy.max_path_buffer_rows = Some(2);
+        let controller = AdmissionController::new(policy)?;
+        let lease = acquire(&controller, "default")?;
+        let mut evaluator = oxigraph::sparql::SparqlEvaluator::new().without_optimizations();
+        match operator {
+            ResourceOperator::InnerJoinBuildRows => {
+                evaluator = evaluator
+                    .with_inner_join_build_budget(lease.inner_join_build_budget().unwrap().clone())
+            }
+            ResourceOperator::SortBufferRows => {
+                evaluator =
+                    evaluator.with_sort_buffer_budget(lease.sort_buffer_budget().unwrap().clone())
+            }
+            ResourceOperator::DistinctBufferRows => {
+                evaluator = evaluator
+                    .with_distinct_buffer_budget(lease.distinct_buffer_budget().unwrap().clone())
+            }
+            ResourceOperator::GroupBufferRows => {
+                evaluator =
+                    evaluator.with_group_buffer_budget(lease.group_buffer_budget().unwrap().clone())
+            }
+            ResourceOperator::AggregateDistinctRows => {
+                evaluator = evaluator.with_aggregate_distinct_budget(
+                    lease.aggregate_distinct_budget().unwrap().clone(),
+                )
+            }
+            ResourceOperator::PathBufferRows => {
+                evaluator =
+                    evaluator.with_path_buffer_budget(lease.path_buffer_budget().unwrap().clone())
+            }
+        }
+        let oxigraph::sparql::QueryResults::Solutions(rows) = evaluator
+            .parse_query(query)?
+            .on_store(&oxigraph::store::Store::new()?)
+            .execute()?
+        else {
+            anyhow::bail!("solutions expected for {operator:?}");
+        };
+        rows.collect::<Result<Vec<_>, _>>()?;
+        drop(lease);
+        let metrics = controller.resource_metrics()?;
+        for observed in ResourceOperator::ALL {
+            ensure!(
+                metrics.observations(AdmissionPool::Data, observed) == 1,
+                "configured {observed:?} was not observed"
+            );
+            ensure!(
+                metrics.charged_rows(AdmissionPool::Data, observed)
+                    == u64::from(observed == operator) * 2,
+                "unexpected {observed:?} charge for {operator:?}: {metrics:?}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn sort_budget_getters_share_state_but_new_admissions_do_not() -> Result<()> {
     let mut policy = controller(1, 0, 1, 0)?.0.policy.clone();
     let unconfigured = acquire(&AdmissionController::new(policy.clone())?, "default")?;
@@ -1946,6 +2094,27 @@ fn poisoned_state_fails_telemetry_closed_and_counts_unavailable() -> Result<()> 
             ],
         "{recorded:?}"
     );
+    Ok(())
+}
+
+#[test]
+fn poisoned_resource_metrics_fail_closed_but_final_drop_releases_capacity() -> Result<()> {
+    let mut policy = controller(1, 0, 1, 0)?.0.policy.clone();
+    policy.max_inner_join_build_rows = Some(1);
+    let controller = AdmissionController::new(policy)?;
+    let lease = acquire(&controller, "default")?;
+    let poison = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = controller.0.resource_metrics.lock().unwrap();
+        panic!("isolated resource metrics poison");
+    }));
+    ensure!(poison.is_err());
+    ensure!(controller.resource_metrics() == Err(WorkloadError::Unavailable));
+    drop(lease);
+    ensure!(controller.snapshot()? == AdmissionSnapshot::default());
+    // The drop recovers the poisoned metrics lock solely to release the slot;
+    // public observation remains unavailable and a replacement lease can run.
+    drop(acquire(&controller, "default")?);
+    ensure!(controller.snapshot()? == AdmissionSnapshot::default());
     Ok(())
 }
 

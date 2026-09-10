@@ -9,7 +9,9 @@ use oxigraph::store::{
     ReadinessPolicy, ReadinessReason, Store, TransactionStartControl,
 };
 use oxigraph_cli::access::{AccessController, ListenerKind};
-use oxigraph_cli::workload::{AdmissionController, AdmissionMetrics, WorkloadError, WorkloadLease};
+use oxigraph_cli::workload::{
+    AdmissionController, AdmissionMetrics, ResourceUsageMetrics, WorkloadError, WorkloadLease,
+};
 use std::fmt::Write as _;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -224,6 +226,23 @@ fn admission_metrics(
     })
 }
 
+/// Resource observations are additive to admission observations. Like
+/// admission, a poisoned local snapshot withholds the entire scrape before any
+/// Store probe rather than inventing zero-valued resource series.
+fn resource_metrics(
+    request: &Request<Body>,
+    metrics: Option<Result<ResourceUsageMetrics, WorkloadError>>,
+) -> Result<Option<ResourceUsageMetrics>, Box<Response<Body>>> {
+    metrics.transpose().map_err(|_| {
+        Box::new(response(
+            request,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "application/json",
+            "{\"error\":\"resource_metrics_unavailable\"}\n".into(),
+        ))
+    })
+}
+
 fn handle(
     request: &mut Request<Body>,
     store: &Store,
@@ -263,6 +282,14 @@ fn handle(
     let admission = if path == "/metrics" {
         match admission_metrics(request, workload.map(AdmissionController::metrics)) {
             Ok(admission) => admission,
+            Err(response) => return *response,
+        }
+    } else {
+        None
+    };
+    let resources = if path == "/metrics" {
+        match resource_metrics(request, workload.map(AdmissionController::resource_metrics)) {
+            Ok(resources) => resources,
             Err(response) => return *response,
         }
     } else {
@@ -319,6 +346,9 @@ fn handle(
                 store.evaluation_metrics().write_prometheus(body)?;
                 store.policy_metrics().write_prometheus(body)?;
                 admission
+                    .as_ref()
+                    .map_or(Ok(()), |metrics| metrics.write_prometheus(body))?;
+                resources
                     .as_ref()
                     .map_or(Ok(()), |metrics| metrics.write_prometheus(body))
             },
@@ -435,13 +465,14 @@ mod tests {
     }
 
     #[test]
-    fn metrics_omit_admission_without_policy_and_fail_closed_when_unobservable() -> Result<()> {
+    fn metrics_omit_workload_families_without_policy_and_fail_closed_when_unobservable()
+    -> Result<()> {
         let store = Store::new()?;
         let (status, baseline) = scrape(&store, None)?;
         ensure!(status == StatusCode::OK, "baseline scrape failed");
         ensure!(
-            !baseline.contains("admission"),
-            "no-workload output changed: admission families present"
+            !baseline.contains("admission") && !baseline.contains("workload_resource"),
+            "no-workload output changed: workload families present"
         );
         let controller = AdmissionController::new(oxigraph_cli::workload::WorkloadPolicy::from_json(
             serde_json::json!({"format":"oxigraph-admission-v1","policy_id":"private-policy","version":1,
@@ -474,6 +505,14 @@ mod tests {
             admission == AdmissionMetrics::SAMPLES,
             "admission sample count differs: {admission}"
         );
+        let resources = body
+            .lines()
+            .filter(|line| !line.starts_with('#') && line.contains("workload_resource"))
+            .count();
+        ensure!(
+            resources == ResourceUsageMetrics::SAMPLES,
+            "resource sample count differs: {resources}"
+        );
         ensure!(
             body.contains("oxigraph_admission_active{pool=\"data\"} 1\n")
                 && body.contains("oxigraph_admission_active{pool=\"operator\"} 0\n")
@@ -489,7 +528,7 @@ mod tests {
         drop(held);
         // Fail closed with a bounded diagnostic; the Store families are withheld
         // rather than exported next to zeros or a raw error.
-        let mut request = Request::builder()
+        let request = Request::builder()
             .uri("http://localhost/metrics")
             .body(Body::empty())?;
         let unavailable = admission_metrics(&request, Some(Err(WorkloadError::Unavailable)))
@@ -510,6 +549,25 @@ mod tests {
                 && admission_metrics(&request, Some(Ok(AdmissionMetrics::default())))
                     .is_ok_and(|metrics| metrics.is_some()),
             "observable telemetry was withheld"
+        );
+        let unavailable = resource_metrics(&request, Some(Err(WorkloadError::Unavailable)))
+            .err()
+            .map(|response| *response);
+        let Some(mut unavailable) = unavailable else {
+            anyhow::bail!("unavailable resource telemetry was exported");
+        };
+        let diagnostic = std::io::read_to_string(unavailable.body_mut())?;
+        ensure!(
+            unavailable.status() == StatusCode::SERVICE_UNAVAILABLE
+                && diagnostic == "{\"error\":\"resource_metrics_unavailable\"}\n"
+                && unavailable.headers()[CACHE_CONTROL] == "no-store",
+            "resource fail-closed diagnostic differs"
+        );
+        ensure!(
+            resource_metrics(&request, None).is_ok_and(|metrics| metrics.is_none())
+                && resource_metrics(&request, Some(Ok(ResourceUsageMetrics::default())))
+                    .is_ok_and(|metrics| metrics.is_some()),
+            "observable resource telemetry was withheld"
         );
         drop(request);
         Ok(())

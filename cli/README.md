@@ -600,7 +600,7 @@ The legacy nontransactional bulk path remains outside this rollback guarantee.
 
 Still pending: deadline support for the explicitly excluded paths above,
 finer parser/evaluator work counters,
-weighted/priority scheduling, resource-use metrics and
+weighted/priority scheduling, broader resource-use metrics and
 operational qualification. Cooperative admission is not a hard RSS/CPU/fd/disk
 guarantee; use external process/container controls. This stage does not complete
 G4.2 or promote the Proposed ADR.
@@ -632,7 +632,8 @@ succeed. Startup failure exits the process and releases both listeners.
 - `GET`/`HEAD /metrics`: the same native observation as at most 21 fixed,
   label-free Prometheus text-format gauges, plus 89 bounded transaction samples
   and 154 bounded query/update samples plus 143 policy samples (at most 407 total).
-  A workload policy adds 60 admission samples (at most 467 total), described below.
+  A workload policy adds 60 admission and 48 operator-budget samples (at most
+  515 total), described below.
   A storage-not-ready result remains
   HTTP 200 with `oxigraph_ready 0`; a clock-conversion failure is 503.
 
@@ -727,8 +728,35 @@ The additive Rust view is `AdmissionController::metrics()`; the original
 four-field `snapshot()` remains unchanged.
 
 Each snapshot is internally consistent, but readiness, transaction, evaluation,
-policy and admission snapshots are not one atomic observation. See
+policy, admission and resource snapshots are not one atomic observation. See
 [ADR-0022](../docs/adr/0022-operational-readiness-backup-and-recovery.md).
+
+With a workload policy, four additional resource families report only the six
+configured native operator budgets. Fixed labels are `pool` (`data` or
+`operator`), `resource` and `phase`; there are exactly 48 samples, with no class,
+policy, principal, query or RDF labels:
+
+- `oxigraph_workload_resource_observations_total`: configured handles observed.
+- `oxigraph_workload_resource_charged_rows_total`: sum of successful charges.
+- `oxigraph_workload_resource_exhausted_total`: handles observed exhausted.
+- `oxigraph_workload_resource_charged_rows_max`: maximum observed per-lease charge.
+
+Each handle is sampled once when the last `WorkloadLease` clone is dropped,
+including zero-charge work and unwind. An active lease is not yet represented;
+an absent budget does not contribute. Old-policy leases report to the same
+controller after reload; new controllers start at zero. Counts and sums
+saturate. A scrape cannot include its own not-yet-released operator lease.
+An independently retained embedded budget can change later without changing
+the earlier observation: this is not a global end-of-work snapshot. Charges
+are the declared operator units (rows, groups, keys or path entries), not bytes,
+CPU or peak RSS. Exhaustion and lease release do not establish query success,
+transaction outcome or rollback.
+
+`AdmissionController::resource_metrics()` exposes the separate fixed-size Rust
+snapshot. A poisoned resource snapshot returns bounded 503 before the storage
+probe, not fabricated zeros, while lease cleanup still releases capacity.
+Existing admission metrics and no-workload output are unchanged. Generated and
+emitted response-byte limits still apply to the larger scrape.
 
 It is also possible to load RDF data offline using bulk loading:
 `oxigraph load --location my_data_storage_directory --file my_file.nq`

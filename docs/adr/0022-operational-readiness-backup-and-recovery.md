@@ -2,7 +2,7 @@
 
 - **Status**: Implemented (native Rust and local CLI scope)
 - **Date**: 2026-08-24
-- Updated: 2026-09-09
+- Updated: 2026-09-10
 - Deciders: Oxigraph parity programme
 - Implementation status: G2.5 native observation/contributor API and opt-in
   loopback observation endpoints, transaction terminal telemetry and Store-bound
@@ -381,6 +381,26 @@ policy, request or identity values are retained as labels. Native lifecycle,
 poisoned-lock, saturation, privacy and authenticated HTTP fixtures cover this
 integration; it does not complete G4.2 or qualify workload-aware production
 readiness. See [ADR-0027's exact observation boundary](0027-workload-admission-and-operator-resources.md#native-admission-telemetry-2026-09-09).
+
+### G4.2 operator-budget observations (2026-09-10)
+
+The existing authorized operator `/metrics` route adds 48 fixed resource
+samples with a workload policy, for at most 515 combined samples. The preceding
+60 admission samples and no-policy output stay unchanged. The separate
+`AdmissionController::resource_metrics()` snapshot observes the six configured
+native operator budgets once at final workload-lease release: configured-handle
+count, sum of charges, observed exhaustion and maximum observed per-lease
+charge. Fixed pool/resource/phase labels contain no request data.
+
+This is a process-local observation, not an execution/transaction outcome,
+hard resource ceiling or live-lease census. Embedded budget clones retained
+beyond a lease may change after its snapshot. A poisoned resource snapshot
+fails the scrape with bounded 503 before storage probing, without preventing
+capacity release. Reload retains accumulated observations and old-lease
+attribution. Readiness, Store telemetry and durable state are unchanged.
+The exact additive contract belongs to
+[ADR-0027](0027-workload-admission-and-operator-resources.md#native-operator-budget-observations-2026-09-10);
+G4.2 operational acceptance and promotion remain open.
 
 ### Native G2.6 checkpoint package (2026-09-08)
 

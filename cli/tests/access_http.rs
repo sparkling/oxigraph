@@ -1191,6 +1191,9 @@ fn path_buffer_reload_keeps_admitted_handle_and_applies_to_new_requests() -> Res
         ensure!(response.status == 200 && response.body.contains("true"));
         let refused = sparql(&running, READER, "/query", query)?;
         ensure!(refused.status == 503 && refused.body.is_empty());
+        // Both admitted-v1 handles and the exhausted v2 handle contribute to
+        // the same process-local counters; reloading must not reset them.
+        assert_path_resource_observations(&running, [3, 5, 1, 2])?;
     }
     Ok(())
 }
@@ -2079,6 +2082,9 @@ fn path_buffer_limits_refuse_buffered_output_fail_streams_and_roll_back_updates(
     for _ in 0..2 {
         ensure!(sparql(&running, READER, "/query", "ASK { <urn:x> <urn:q>* ?o }")?.status == 200);
     }
+    // Buffered refusal, failed stream and rolled-back update each report their
+    // exhausted handle, independently of the request's success or write effect.
+    assert_path_resource_observations(&running, [7, 13, 3, 3])?;
     write_rollback_and_restart(running)
 }
 
@@ -3312,6 +3318,53 @@ fn admission_sample(body: &str, family: &str, labels: &str) -> Result<u64> {
         .find(|line| line.starts_with(&prefix))
         .with_context(|| format!("missing sample {prefix}"))?;
     Ok(line[prefix.len()..].parse()?)
+}
+
+fn assert_path_resource_observations(running: &Running, expected: [u64; 4]) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let metrics = scrape(running, "GET")?;
+        ensure!(metrics.status == 200, "resource scrape: {}", metrics.status);
+        let mut actual = [0; 4];
+        for (value, family) in actual.iter_mut().zip([
+            "oxigraph_workload_resource_observations_total",
+            "oxigraph_workload_resource_charged_rows_total",
+            "oxigraph_workload_resource_exhausted_total",
+            "oxigraph_workload_resource_charged_rows_max",
+        ]) {
+            *value = admission_sample(
+                &metrics.body,
+                family,
+                "pool=\"data\",resource=\"path_buffer_rows\",phase=\"path_buffer\"",
+            )?;
+        }
+        // Transport EOF can precede final lease cleanup. Wait for that exact
+        // observation, not a timing assumption; operator scrapes use a separate pool.
+        if actual[0] >= expected[0] {
+            ensure!(
+                actual == expected,
+                "resource observations {actual:?} != {expected:?}"
+            );
+            let samples: Vec<_> = metrics
+                .body
+                .lines()
+                .filter(|line| line.starts_with("oxigraph_workload_resource_"))
+                .collect();
+            ensure!(samples.len() == 48, "unexpected resource sample count");
+            ensure!(
+                samples.iter().all(|line| {
+                    line.contains("resource=\"path_buffer_rows\"") || line.ends_with(" 0")
+                }),
+                "unconfigured resource handle was observed"
+            );
+            return Ok(());
+        }
+        ensure!(
+            Instant::now() < deadline,
+            "final lease not observed: {actual:?} != {expected:?}"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
 }
 
 const ADMISSION_DISPOSITIONS: [&str; 9] = [
