@@ -2139,6 +2139,9 @@ fn with_lease_budgets(mut evaluator: SparqlEvaluator, request: &Request<Body>) -
         if let Some(budget) = lease.path_buffer_budget() {
             evaluator = evaluator.with_path_buffer_budget(budget.clone());
         }
+        if let Some(budget) = lease.conditional_join_build_budget() {
+            evaluator = evaluator.with_conditional_join_build_budget(budget.clone());
+        }
     }
     evaluator
 }

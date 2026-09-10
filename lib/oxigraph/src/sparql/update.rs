@@ -1435,7 +1435,7 @@ fn ensure_update_start_alive(
 /// final pre-commit check survives moving the evaluator into an operation loop.
 /// Precedence matches the evaluator: inner-join rows, then sort-buffer rows,
 /// then distinct-buffer rows, group-buffer rows, aggregate-distinct keys and
-/// path-buffer entries.
+/// path-buffer entries, then conditional-join build rows.
 struct UpdateBudgets {
     inner_join_build: Option<spareval::InnerJoinBuildBudget>,
     sort_buffer: Option<spareval::SortBufferBudget>,
@@ -1443,6 +1443,7 @@ struct UpdateBudgets {
     group_buffer: Option<spareval::GroupBufferBudget>,
     aggregate_distinct: Option<spareval::AggregateDistinctBudget>,
     path_buffer: Option<spareval::PathBufferBudget>,
+    conditional_join_build: Option<spareval::ConditionalJoinBuildBudget>,
 }
 
 impl UpdateBudgets {
@@ -1454,6 +1455,7 @@ impl UpdateBudgets {
             group_buffer: evaluator.group_buffer_budget().cloned(),
             aggregate_distinct: evaluator.aggregate_distinct_budget().cloned(),
             path_buffer: evaluator.path_buffer_budget().cloned(),
+            conditional_join_build: evaluator.conditional_join_build_budget().cloned(),
         }
     }
 
@@ -1474,6 +1476,9 @@ impl UpdateBudgets {
             budget.check()?;
         }
         if let Some(budget) = &self.path_buffer {
+            budget.check()?;
+        }
+        if let Some(budget) = &self.conditional_join_build {
             budget.check()?;
         }
         Ok(())
@@ -1497,6 +1502,9 @@ fn ensure_update_budget(evaluator: &QueryEvaluator) -> Result<(), UpdateEvaluati
         budget.check()?;
     }
     if let Some(budget) = evaluator.path_buffer_budget() {
+        budget.check()?;
+    }
+    if let Some(budget) = evaluator.conditional_join_build_budget() {
         budget.check()?;
     }
     Ok(())

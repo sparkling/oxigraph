@@ -555,6 +555,24 @@ transactions remain caller-discard. Term width, source/expression temporaries,
 streaming sequences/probes, scans, hashing, allocator capacity, other operator
 buffers, inference, foreign SERVICE work, CPU and RSS are not bounded by it.
 
+Optional unsigned `max_conditional_join_build_rows` independently caps native
+OPTIONAL/MINUS right-hand build rows, including keyed and unkeyed tables.
+Each successful child row charges before destination insertion; duplicates and
+repeated/nested builds count separately. Zero permits no build rows, exactly
+at the limit succeeds, and the next attempted row permanently exhausts the
+handle. Omission preserves the original code path. This does not change physical
+plans: eliminated builds and streaming for-loop left joins charge nothing.
+
+Embedded callers attach `ConditionalJoinBuildBudget` using
+`SparqlEvaluator::with_conditional_join_build_budget`. Prepared/evaluator clones
+and all operations of an update share the handle. Each admission creates a
+fresh handle, retained across policy reload. Exhaustion is typed
+`ConditionalJoinBuildRows` / `JoinBuild`, with the same empty noncacheable 503,
+failed-stream and owned-update rollback behavior described above. Borrowed
+transactions remain caller-discard. Inner joins retain their separate counter;
+left probes, output rows/buffers, term width, planning, inference, foreign
+SERVICE work, allocator capacity, CPU and RSS are not bounded by this limit.
+
 Optional `request_timeout_ms` (positive milliseconds) starts one absolute
 monotonic deadline **before queueing**. It is not renewed on admission, body
 read, evaluation, writer acquisition or serialization. Omitting it retains
@@ -666,8 +684,8 @@ succeed. Startup failure exits the process and releases both listeners.
 - `GET`/`HEAD /metrics`: the same native observation as at most 21 fixed,
   label-free Prometheus text-format gauges, plus 89 bounded transaction samples
   and 154 bounded query/update samples plus 143 policy samples (at most 407 total).
-  A workload policy adds 60 admission and 48 operator-budget samples (at most
-  515 total), described below.
+  A workload policy adds 60 admission and 56 operator-budget samples (at most
+  523 total), described below.
   A storage-not-ready result remains
   HTTP 200 with `oxigraph_ready 0`; a clock-conversion failure is 503.
 
@@ -765,9 +783,9 @@ Each snapshot is internally consistent, but readiness, transaction, evaluation,
 policy, admission and resource snapshots are not one atomic observation. See
 [ADR-0022](../docs/adr/0022-operational-readiness-backup-and-recovery.md).
 
-With a workload policy, four additional resource families report only the six
+With a workload policy, four additional resource families report only the seven
 configured native operator budgets. Fixed labels are `pool` (`data` or
-`operator`), `resource` and `phase`; there are exactly 48 samples, with no class,
+`operator`), `resource` and `phase`; there are exactly 56 samples, with no class,
 policy, principal, query or RDF labels:
 
 - `oxigraph_workload_resource_observations_total`: configured handles observed.

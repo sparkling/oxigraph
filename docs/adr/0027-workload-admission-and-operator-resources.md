@@ -10,10 +10,10 @@
   deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and
   transactional paths. Opt-in encoded/decoded request-body, generated/emitted
   result-byte, native inner-join build-row, ORDER BY buffer-row, hash DISTINCT
-  retained-row, accumulator-group, aggregate-DISTINCT retained-key and native
-  property-path buffer-entry caps are implemented. Fixed-pool admission counts,
-  occupancy and queue-wait metrics, plus final-lease observations of the six
-  configured native operator budgets, are exported through the existing
+  retained-row, accumulator-group, aggregate-DISTINCT retained-key, native
+  property-path buffer-entry and OPTIONAL/MINUS build-row caps are implemented.
+  Fixed-pool admission counts, occupancy and queue-wait metrics, plus final-lease
+  observations of the seven configured native operator budgets, are exported through the existing
   operator listener. File-backed policy
   reload is atomic and operator-usable with immutable per-attempt snapshots and
   startup transport ceilings. Observed active socket errors now cancel the
@@ -923,6 +923,61 @@ features (69 library / 171 binary / 49 HTTP) and no defaults (69 / 147 / 43,
 plus one existing dependency-qualified binary test ignored). The rebuilt
 release executable passes all 49 HTTP cases with its SHA-256 unchanged
 before/after. No frozen qualification or performance result is inferred.
+
+### Native OPTIONAL/MINUS build-row limit (2026-09-10)
+
+`ConditionalJoinBuildBudget` is an independent shared cumulative handle attached
+through `QueryEvaluator` or `SparqlEvaluator`. Optional CLI field
+`max_conditional_join_build_rows` creates one fresh handle per admission.
+Keyed and unkeyed native MINUS buffers and hash left-join tables charge each
+successful right-hand row before destination insertion, including duplicates
+and repeated/nested builds. No iterator size hint is used to reserve an
+unbounded destination. Exactly-at-cap succeeds; the denied next charge latches
+failure. Zero permits no build rows; omission preserves the original paths.
+
+The resource/phase pair is `ConditionalJoinBuildRows` / `JoinBuild`. It checks
+after the existing six budgets, preserving their failure precedence. Prepared
+and evaluator clones, nested execution, ASK/EXISTS, SERVICE dispatch/iteration
+and every owned-update operation retain the same sticky state. Owned writes
+check before commit; borrowed transactions retain caller-discard responsibility.
+Before headers, failure returns empty noncacheable 503 without retry advice;
+after headers it fails I/O without successful truncation. Policy reload keeps
+old-attempt handles while new admissions receive the new limit.
+
+The existing inner-join-only contract and physical plans are unchanged.
+Streaming for-loop left joins and eliminated builds charge nothing. Probes,
+output rows/buffers, row width, planning/inference, foreign SERVICE work,
+allocator capacity, CPU and RSS remain outside this named counter.
+Final-lease telemetry adds its fixed resource/phase pair: seven resources now
+produce 56 samples (at most 523 combined), preserving existing sample meanings,
+the 60 admission samples and no-policy output. This is additive native product
+behavior, not replacement qualification evidence or full G4.2 acceptance.
+
+Native tests assert actual keyed plans, duplicate and exact/zero boundaries,
+empty left probes with independently counted consumption (cap 8 reads only
+9 of 64 source rows), sticky masking and pre-existing prepared clones. All six
+owned update bindings prove cap-3 rollback versus cap-4 success across two
+build operations, plus rejection of subsequent constant writes on exhaustion.
+Wire tests cover buffered SELECT/CONSTRUCT refusal, ASK refusal, failed streams
+in both serve modes, shared-update rollback, reload snapshots and restart.
+
+Validation: spareval default/all-features suites and the eight final focused
+conditional-budget tests pass. The six Store budget integration files pass
+with default, RDF-1.2 and no-default features; the upstream testsuite passes.
+CLI unit/binary tests pass in both configurations (71/171 default; 71/147
+no-default, with one existing dependency-qualified test ignored). The final
+no-default HTTP run passes 45 tests with one fixture at a time; the identified
+release executable passes all 51 HTTP tests the same way. Two later parallel
+no-default runs failed at unrelated same-port restart binds (`AddrInUse`);
+those failures are retained, not counted as passing or hidden by retries.
+The conflicting socket owner remains unproved and the fixture issue is open.
+The affected spareval library/new fixture pass strict Clippy; a broader sweep
+still reports older test lints and OxHTTP consuming-method naming lints.
+Required query/update fuzz runs exit zero: query seed `824326638` replays
+14,200 cases in 214 seconds, including the unchanged 172-second slow seed,
+without a fresh mutation phase; update seed `881983062` completes 23,688 runs
+in 61 seconds with mutations. No full-workspace lint or qualification pass
+is claimed.
 
 ### Remaining staged acceptance
 

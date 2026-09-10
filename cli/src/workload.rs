@@ -17,8 +17,8 @@ use crate::access::{ListenerKind, RequestContext};
 use oxhttp::model::header::{CACHE_CONTROL, RETRY_AFTER};
 use oxhttp::model::{Body, Extensions, Response, StatusCode};
 use oxigraph::sparql::{
-    AggregateDistinctBudget, CancellationToken, DistinctBufferBudget, GroupBufferBudget,
-    InnerJoinBuildBudget, PathBufferBudget, SortBufferBudget,
+    AggregateDistinctBudget, CancellationToken, ConditionalJoinBuildBudget, DistinctBufferBudget,
+    GroupBufferBudget, InnerJoinBuildBudget, PathBufferBudget, SortBufferBudget,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -116,6 +116,8 @@ pub struct WorkloadPolicy {
     max_aggregate_distinct_rows: Option<u64>,
     #[serde(default)]
     max_path_buffer_rows: Option<u64>,
+    #[serde(default)]
+    max_conditional_join_build_rows: Option<u64>,
     retry_after_seconds: u32,
     #[serde(default)]
     principal: Option<PrincipalLimits>,
@@ -1038,6 +1040,10 @@ impl AdmissionController {
                 .max_aggregate_distinct_rows
                 .map(AggregateDistinctBudget::new),
             path_buffer_budget: entry.policy.max_path_buffer_rows.map(PathBufferBudget::new),
+            conditional_join_build_budget: entry
+                .policy
+                .max_conditional_join_build_rows
+                .map(ConditionalJoinBuildBudget::new),
         })))
     }
 
@@ -1136,6 +1142,7 @@ struct LeaseInner {
     group_buffer_budget: Option<GroupBufferBudget>,
     aggregate_distinct_budget: Option<AggregateDistinctBudget>,
     path_buffer_budget: Option<PathBufferBudget>,
+    conditional_join_build_budget: Option<ConditionalJoinBuildBudget>,
 }
 impl WorkloadLease {
     /// One cumulative handle created at admission, shared by every native
@@ -1166,6 +1173,11 @@ impl WorkloadLease {
     /// One cumulative native path buffer-entry handle per admitted request.
     pub fn path_buffer_budget(&self) -> Option<&PathBufferBudget> {
         self.0.path_buffer_budget.as_ref()
+    }
+    /// One cumulative native OPTIONAL/MINUS right-hand build-row handle per
+    /// admitted request, independent of the inner-join handle.
+    pub fn conditional_join_build_budget(&self) -> Option<&ConditionalJoinBuildBudget> {
+        self.0.conditional_join_build_budget.as_ref()
     }
     /// Serialized/emitted result bytes; excludes HTTP framing and host memory.
     pub fn result_byte_limit(&self) -> Option<oxhttp::ResponseBodyLimit> {
@@ -1227,6 +1239,7 @@ impl Drop for LeaseInner {
             || self.group_buffer_budget.is_some()
             || self.aggregate_distinct_budget.is_some()
             || self.path_buffer_budget.is_some()
+            || self.conditional_join_build_budget.is_some()
         {
             let mut metrics = self
                 .controller
@@ -1278,6 +1291,14 @@ impl Drop for LeaseInner {
                 metrics.record(
                     pool,
                     ResourceOperator::PathBufferRows,
+                    budget.charged_rows(),
+                    budget.check().is_err(),
+                );
+            }
+            if let Some(budget) = &self.conditional_join_build_budget {
+                metrics.record(
+                    pool,
+                    ResourceOperator::ConditionalJoinBuildRows,
                     budget.charged_rows(),
                     budget.check().is_err(),
                 );

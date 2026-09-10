@@ -2023,6 +2023,160 @@ const GROUP_ROWS: &str = "SELECT ?p (COUNT(*) AS ?n) WHERE { ?s <urn:p> ?p } GRO
 const AGGREGATE_DISTINCT_ROWS: &str = "SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { ?s <urn:p> ?p }";
 
 #[test]
+fn conditional_join_limits_refuse_buffered_output_and_fail_streams_in_both_serve_modes()
+-> Result<()> {
+    for read_only in [false, true] {
+        let mut profile = workload(1, 1, 1000);
+        profile["max_conditional_join_build_rows"] = json!(1);
+        let running = start_with_workload(&config(), read_only, Some(&profile))?;
+        for pattern in [
+            "VALUES ?x { <urn:a> } OPTIONAL { VALUES ?y { 1 2 } }",
+            "VALUES ?x { <urn:a> } MINUS { VALUES ?x { <urn:b> <urn:c> } }",
+        ] {
+            let query = format!("SELECT * WHERE {{ {pattern} }}");
+            let buffered = request(
+                running.public,
+                "POST",
+                "/query",
+                &format!(
+                    "{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json; version=1.1\r\n",
+                    identity(READER, 1)?
+                ),
+                &query,
+            )?;
+            ensure!(
+                buffered.status == 503
+                    && buffered.body.is_empty()
+                    && buffered.head.contains("cache-control: no-store")
+                    && !buffered.head.contains("retry-after:"),
+                "{query}: {} {}",
+                buffered.status,
+                buffered.body
+            );
+            let graph = request(
+                running.public,
+                "POST",
+                "/query",
+                &format!(
+                    "{}Content-Type: application/sparql-query\r\nAccept: application/n-triples; version=1.1\r\n",
+                    identity(READER, 1)?
+                ),
+                &format!("CONSTRUCT {{ ?x <urn:p> <urn:o> }} WHERE {{ {pattern} }}"),
+            )?;
+            ensure!(graph.status == 503 && graph.body.is_empty());
+            let raw = raw_wire_bytes(running.public, format!(
+                "POST /query HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json\r\nContent-Length: {}\r\n\r\n{query}", identity(READER, 1)?, query.len()
+            ).as_bytes())?;
+            ensure!(
+                raw.starts_with("HTTP/1.1 200 ")
+                    && decode_wire(&raw).is_err()
+                    && !raw.ends_with("0\r\n\r\n")
+                    && !raw.contains("exceeded"),
+                "{query}: {raw}"
+            );
+            let ask = sparql(&running, READER, "/query", &format!("ASK {{ {pattern} }}"))?;
+            ensure!(ask.status == 503 && ask.body.is_empty());
+        }
+        // Every failed request releases the sole data slot. Neither a constant
+        // query nor an inner join alone consumes this independent counter.
+        for query in ["ASK {}", "ASK { VALUES ?x { 1 2 } VALUES ?y { 3 4 } }"] {
+            ensure!(sparql(&running, READER, "/query", query)?.status == 200);
+        }
+        assert_resource_observations(
+            &running,
+            "conditional_join_build_rows",
+            "join_build",
+            [10, 8, 8, 1],
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn conditional_join_limits_share_update_budget_and_preserve_reload_and_restart() -> Result<()> {
+    const PATTERN: &str = "VALUES ?x { <urn:a> } OPTIONAL { VALUES ?y { 1 2 } }";
+    for limit in [3, 4] {
+        let mut profile = workload(1, 1, 3000);
+        profile["max_conditional_join_build_rows"] = json!(limit);
+        let running = start_with_workload(&workload_reload_config(), false, Some(&profile))?;
+        let update = format!(
+            "INSERT DATA {{ <urn:marker> <urn:start> true }};
+            INSERT {{ ?x <urn:first> ?y }} WHERE {{ {PATTERN} }};
+            INSERT {{ ?x <urn:second> ?y }} WHERE {{ {PATTERN} }};
+            INSERT DATA {{ <urn:marker> <urn:end> true }}"
+        );
+        let response = sparql(&running, WRITER, "/update", &update)?;
+        ensure!(
+            response.status == if limit == 3 { 503 } else { 204 },
+            "{} {}",
+            response.status,
+            response.body
+        );
+        if limit == 3 {
+            ensure!(response.body.is_empty() && response.head.contains("cache-control: no-store"));
+        }
+        for pattern in [
+            "<urn:marker> ?p ?o",
+            "<urn:a> <urn:first> ?o",
+            "<urn:a> <urn:second> ?o",
+        ] {
+            let result = sparql(&running, READER, "/query", &format!("ASK {{ {pattern} }}"))?;
+            ensure!(
+                result.status == 200
+                    && serde_json::from_str::<Value>(&result.body)?["boolean"] == (limit == 4)
+            );
+        }
+        // An admitted request keeps its own handle across a lowering reload.
+        let query = format!("ASK {{ {PATTERN} }}");
+        let mut admitted = TcpStream::connect(running.public)?;
+        admitted.set_read_timeout(Some(Duration::from_secs(3)))?;
+        write!(
+            admitted,
+            "POST /query HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nContent-Type: application/sparql-query\r\nAccept: application/sparql-results+json\r\nContent-Length: {}\r\nExpect: 100-continue\r\n{}\r\n",
+            running.public,
+            query.len(),
+            identity(READER, 1)?
+        )?;
+        ensure!(read_status_head(&mut admitted)? == 100);
+        profile["version"] = json!(2);
+        profile["max_conditional_join_build_rows"] = json!(1);
+        write_policy(
+            running
+                .workload_policy
+                .as_deref()
+                .context("workload path missing")?,
+            &profile,
+        )?;
+        ensure!(
+            request(
+                running.admin,
+                "POST",
+                "/workload/policy/reload",
+                &identity(OPERATOR, 1)?,
+                ""
+            )?
+            .status
+                == 204
+        );
+        admitted.write_all(query.as_bytes())?;
+        let mut response = String::new();
+        admitted.read_to_string(&mut response)?;
+        let response = decode_wire(&response)?;
+        ensure!(response.status == 200 && response.body.contains("true"));
+        let refused = sparql(&running, READER, "/query", &query)?;
+        ensure!(refused.status == 503 && refused.body.is_empty());
+        assert_resource_observations(
+            &running,
+            "conditional_join_build_rows",
+            "join_build",
+            [6, limit + 3, if limit == 3 { 2 } else { 1 }, limit],
+        )?;
+        write_rollback_and_restart(running)?;
+    }
+    Ok(())
+}
+
+#[test]
 fn path_buffer_limits_refuse_buffered_output_fail_streams_and_roll_back_updates() -> Result<()> {
     let mut profile = workload(1, 1, 1000);
     profile["max_path_buffer_rows"] = json!(3);
@@ -3413,6 +3567,15 @@ fn admission_sample(body: &str, family: &str, labels: &str) -> Result<u64> {
 }
 
 fn assert_path_resource_observations(running: &Running, expected: [u64; 4]) -> Result<()> {
+    assert_resource_observations(running, "path_buffer_rows", "path_buffer", expected)
+}
+
+fn assert_resource_observations(
+    running: &Running,
+    resource: &str,
+    phase: &str,
+    expected: [u64; 4],
+) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
         let metrics = scrape(running, "GET")?;
@@ -3427,7 +3590,7 @@ fn assert_path_resource_observations(running: &Running, expected: [u64; 4]) -> R
             *value = admission_sample(
                 &metrics.body,
                 family,
-                "pool=\"data\",resource=\"path_buffer_rows\",phase=\"path_buffer\"",
+                &format!("pool=\"data\",resource=\"{resource}\",phase=\"{phase}\""),
             )?;
         }
         // Transport EOF can precede final lease cleanup. Wait for that exact
@@ -3442,10 +3605,10 @@ fn assert_path_resource_observations(running: &Running, expected: [u64; 4]) -> R
                 .lines()
                 .filter(|line| line.starts_with("oxigraph_workload_resource_"))
                 .collect();
-            ensure!(samples.len() == 48, "unexpected resource sample count");
+            ensure!(samples.len() == 56, "unexpected resource sample count");
             ensure!(
                 samples.iter().all(|line| {
-                    line.contains("resource=\"path_buffer_rows\"") || line.ends_with(" 0")
+                    line.contains(&format!("resource=\"{resource}\"")) || line.ends_with(" 0")
                 }),
                 "unconfigured resource handle was observed"
             );

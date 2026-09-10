@@ -52,11 +52,11 @@ use crate::store::{Store, Transaction};
 pub use spareval::{
     AggregateDistinctBudget, AggregateFunctionAccumulator, BoundedJoinCostModel,
     BoundedJoinPlanning, CancellationReason, CancellationToken, CardinalityFeedback,
-    CardinalityFeedbackNode, DefaultServiceHandler, DistinctBufferBudget, EstimateBasis,
-    GroupBufferBudget, InnerJoinBuildBudget, JoinPlanningReport, PathBufferBudget,
-    QueryDatasetSpecification, QueryEvaluationError, QueryExplanation, QueryResource,
-    QueryResourcePhase, QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter,
-    ServiceHandler, SortBufferBudget,
+    CardinalityFeedbackNode, ConditionalJoinBuildBudget, DefaultServiceHandler,
+    DistinctBufferBudget, EstimateBasis, GroupBufferBudget, InnerJoinBuildBudget,
+    JoinPlanningReport, PathBufferBudget, QueryDatasetSpecification, QueryEvaluationError,
+    QueryExplanation, QueryResource, QueryResourcePhase, QueryResults, QuerySolution,
+    QuerySolutionIter, QueryTripleIter, ServiceHandler, SortBufferBudget,
 };
 use spareval::{QueryEvaluator, QueryableDataset};
 use spargebra::SparqlParser;
@@ -529,6 +529,17 @@ impl SparqlEvaluator {
     /// for each independent request. Other operator buffers are not bounded.
     pub fn with_inner_join_build_budget(mut self, budget: InnerJoinBuildBudget) -> Self {
         self.inner = self.inner.with_inner_join_build_budget(budget);
+        self
+    }
+
+    /// Attaches an explicitly shared cumulative native OPTIONAL/MINUS
+    /// right-hand build-row budget. It counts build rows, not probes, outputs
+    /// or RSS, and is independent of the inner-join budget.
+    pub fn with_conditional_join_build_budget(
+        mut self,
+        budget: ConditionalJoinBuildBudget,
+    ) -> Self {
+        self.inner = self.inner.with_conditional_join_build_budget(budget);
         self
     }
 

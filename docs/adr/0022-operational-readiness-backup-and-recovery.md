@@ -402,6 +402,13 @@ The exact additive contract belongs to
 [ADR-0027](0027-workload-admission-and-operator-resources.md#native-operator-budget-observations-2026-09-10);
 G4.2 operational acceptance and promotion remain open.
 
+The subsequent native OPTIONAL/MINUS build-row slice adds the independent
+`conditional_join_build_rows` / `join_build` pair to that vocabulary. The
+current exporter has seven resources: 56 resource samples and at most 523
+combined samples. Existing labels, the 60 admission samples, no-policy output,
+final-owner sampling and snapshot failure behavior are unchanged. This is an
+additive native product contract, not replacement qualification evidence.
+
 ### Native G2.6 checkpoint package (2026-09-08)
 
 `Store::backup_with_receipt` creates an exclusively owned fresh package with

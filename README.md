@@ -223,12 +223,16 @@ deduplication/visited sets and closure worklists. Set/worklist copies count
 separately, including duplicate seed worklist entries; same-set duplicates are
 free. Clones, nested/prepared execution and owned updates share the sticky
 counter, with the same rollback and failed-stream behavior. This is an entry
-count, not a bound on term width, streaming paths, scans, CPU or RSS. With a
+count, not a bound on term width, streaming paths, scans, CPU or RSS. Independent
+`max_conditional_join_build_rows` caps native OPTIONAL/MINUS right-hand build
+rows before insertion, including duplicates and repeated builds. It shares
+sticky failure and owned-update rollback without widening the inner-join cap.
+Streaming left joins, probes, output rows, term width and RSS remain excluded. With a
 workload policy,
 operator `/metrics` now exports active/queued pool gauges, terminal admission
 counts and queue-wait histograms: 60 fixed-label samples without request data.
 Admission is not execution success; lease release is not proof of rollback.
-Another 48 fixed samples report configured native operator-budget handles
+Another 56 fixed samples report configured native operator-budget handles
 observed at final lease release: charge totals, maximum observed charges and
 exhaustion counts. These exclude active leases and unconfigured budgets and
 are not memory/CPU measurements or query outcome counters.

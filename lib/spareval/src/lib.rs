@@ -27,8 +27,8 @@ pub use crate::feedback::{CardinalityFeedback, CardinalityFeedbackNode, Estimate
 pub use crate::model::{QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter};
 use crate::resources::ResourceBudgets;
 pub use crate::resources::{
-    AggregateDistinctBudget, DistinctBufferBudget, GroupBufferBudget, InnerJoinBuildBudget,
-    PathBufferBudget, QueryResource, QueryResourcePhase, SortBufferBudget,
+    AggregateDistinctBudget, ConditionalJoinBuildBudget, DistinctBufferBudget, GroupBufferBudget,
+    InnerJoinBuildBudget, PathBufferBudget, QueryResource, QueryResourcePhase, SortBufferBudget,
 };
 use crate::service::ServiceHandlerRegistry;
 pub use crate::service::{DefaultServiceHandler, ServiceHandler};
@@ -95,6 +95,7 @@ pub struct QueryEvaluator {
     group_buffer_budget: Option<GroupBufferBudget>,
     aggregate_distinct_budget: Option<AggregateDistinctBudget>,
     path_buffer_budget: Option<PathBufferBudget>,
+    conditional_join_build_budget: Option<ConditionalJoinBuildBudget>,
     version: SparqlVersion,
 }
 
@@ -128,6 +129,7 @@ impl QueryEvaluator {
             group_buffer_budget: None,
             aggregate_distinct_budget: None,
             path_buffer_budget: None,
+            conditional_join_build_budget: None,
             version: SparqlVersion::current(),
         }
     }
@@ -693,6 +695,23 @@ impl QueryEvaluator {
         self.path_buffer_budget.as_ref()
     }
 
+    /// Attaches a shared cumulative native OPTIONAL/MINUS right-hand build-row
+    /// budget. It is independent of inner joins and does not count probes,
+    /// outputs, streaming for-loop left joins, or process memory.
+    #[must_use]
+    pub fn with_conditional_join_build_budget(
+        mut self,
+        budget: ConditionalJoinBuildBudget,
+    ) -> Self {
+        self.conditional_join_build_budget = Some(budget);
+        self
+    }
+
+    /// Returns the explicitly attached conditional-join build budget, if any.
+    pub fn conditional_join_build_budget(&self) -> Option<&ConditionalJoinBuildBudget> {
+        self.conditional_join_build_budget.as_ref()
+    }
+
     fn resource_budgets(&self) -> ResourceBudgets {
         ResourceBudgets::new(
             self.inner_join_build_budget.clone(),
@@ -702,6 +721,7 @@ impl QueryEvaluator {
             self.aggregate_distinct_budget.clone(),
         )
         .with_path_buffer(self.path_buffer_budget.clone())
+        .with_conditional_join_build(self.conditional_join_build_budget.clone())
     }
 
     fn simple_evaluator<'a, D: QueryableDataset<'a>>(

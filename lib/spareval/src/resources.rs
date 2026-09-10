@@ -13,6 +13,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 pub enum QueryResource {
     /// Rows inserted into native Cartesian and hash inner-join build tables.
     InnerJoinBuildRows,
+    /// Rows inserted into native OPTIONAL and MINUS right-hand build tables.
+    ConditionalJoinBuildRows,
     /// Rows admitted into native `ORDER BY` sort buffers.
     SortBufferRows,
     /// Unique tuples retained by native `DISTINCT` hash sets.
@@ -29,6 +31,7 @@ impl fmt::Display for QueryResource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InnerJoinBuildRows => f.write_str("inner_join_build_rows"),
+            Self::ConditionalJoinBuildRows => f.write_str("conditional_join_build_rows"),
             Self::SortBufferRows => f.write_str("sort_buffer_rows"),
             Self::DistinctBufferRows => f.write_str("distinct_buffer_rows"),
             Self::GroupBufferRows => f.write_str("group_buffer_rows"),
@@ -155,6 +158,52 @@ impl InnerJoinBuildBudget {
     }
 
     /// Checks the sticky failure, without consuming a row or resetting it.
+    pub fn check(&self) -> Result<(), QueryEvaluationError> {
+        self.0.check()
+    }
+
+    pub(crate) fn charge(&self) -> Result<(), QueryEvaluationError> {
+        self.0.charge()
+    }
+}
+
+/// An explicit, shared, cumulative native OPTIONAL/MINUS build-row budget.
+///
+/// Every successful right-hand row inserted into a native OPTIONAL or MINUS
+/// build buffer (keyed or unkeyed, including duplicates and repeated/nested
+/// builds) is charged before insertion. Clones share one cumulative counter
+/// and sticky failure; create a fresh handle for an independent request.
+/// Reaching the limit exactly succeeds; a denied next charge permanently
+/// exhausts the handle. Zero allows no destination rows.
+///
+/// This does not bound left probes, output rows/buffers, row width, streaming
+/// for-loop left joins, planning, inference, foreign SERVICE work, allocator
+/// capacity, or process memory/CPU. Existing inner-join budgets are independent.
+#[derive(Debug, Clone)]
+pub struct ConditionalJoinBuildBudget(Arc<RowBudgetState>);
+
+impl ConditionalJoinBuildBudget {
+    #[must_use]
+    pub fn new(limit: u64) -> Self {
+        Self(RowBudgetState::new(
+            QueryResource::ConditionalJoinBuildRows,
+            QueryResourcePhase::JoinBuild,
+            limit,
+        ))
+    }
+
+    #[must_use]
+    pub fn limit(&self) -> u64 {
+        self.0.limit
+    }
+
+    /// Successfully charged destination rows, never greater than the limit.
+    #[must_use]
+    pub fn charged_rows(&self) -> u64 {
+        self.0.charged_rows()
+    }
+
+    /// Checks the sticky failure without consuming a row or resetting it.
     pub fn check(&self) -> Result<(), QueryEvaluationError> {
         self.0.check()
     }
@@ -407,8 +456,8 @@ impl PathBufferBudget {
 }
 
 /// Every optional cooperative budget one evaluator carries. Checks keep the
-/// existing precedence: inner-join, sort, distinct, group, then aggregate
-/// distinct failures, followed by property-path buffer failures.
+/// existing precedence: inner-join, sort, distinct, group, aggregate distinct,
+/// property-path buffer, then conditional-join build failures.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ResourceBudgets {
     inner_join_build: Option<InnerJoinBuildBudget>,
@@ -417,6 +466,7 @@ pub(crate) struct ResourceBudgets {
     group_buffer: Option<GroupBufferBudget>,
     aggregate_distinct: Option<AggregateDistinctBudget>,
     path_buffer: Option<PathBufferBudget>,
+    conditional_join_build: Option<ConditionalJoinBuildBudget>,
 }
 
 impl ResourceBudgets {
@@ -434,12 +484,25 @@ impl ResourceBudgets {
             group_buffer,
             aggregate_distinct,
             path_buffer: None,
+            conditional_join_build: None,
         }
     }
 
     pub(crate) fn with_path_buffer(mut self, budget: Option<PathBufferBudget>) -> Self {
         self.path_buffer = budget;
         self
+    }
+
+    pub(crate) fn with_conditional_join_build(
+        mut self,
+        budget: Option<ConditionalJoinBuildBudget>,
+    ) -> Self {
+        self.conditional_join_build = budget;
+        self
+    }
+
+    pub(crate) fn conditional_join_build(&self) -> Option<&ConditionalJoinBuildBudget> {
+        self.conditional_join_build.as_ref()
     }
 
     pub(crate) fn path_buffer(&self) -> Option<&PathBufferBudget> {
@@ -465,6 +528,7 @@ impl ResourceBudgets {
             && self.group_buffer.is_none()
             && self.aggregate_distinct.is_none()
             && self.path_buffer.is_none()
+            && self.conditional_join_build.is_none()
     }
 
     pub(crate) fn group_buffer(&self) -> Option<&GroupBufferBudget> {
@@ -492,6 +556,9 @@ impl ResourceBudgets {
             budget.check()?;
         }
         if let Some(budget) = &self.path_buffer {
+            budget.check()?;
+        }
+        if let Some(budget) = &self.conditional_join_build {
             budget.check()?;
         }
         Ok(())
@@ -526,6 +593,41 @@ pub(crate) fn budgeted_iter<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conditional_budget_is_typed_shared_and_checked_after_existing_budgets() {
+        let conditional = ConditionalJoinBuildBudget::new(1);
+        let clone = conditional.clone();
+        let only =
+            ResourceBudgets::default().with_conditional_join_build(Some(conditional.clone()));
+        conditional.charge().unwrap();
+        assert_eq!(clone.charged_rows(), 1);
+        assert!(clone.charge().is_err());
+        assert!(matches!(
+            only.check(),
+            Err(QueryEvaluationError::ResourceLimitExceeded {
+                resource: QueryResource::ConditionalJoinBuildRows,
+                phase: QueryResourcePhase::JoinBuild,
+                limit: 1,
+            })
+        ));
+        let path = PathBufferBudget::new(0);
+        assert!(path.charge().is_err());
+        let budgets = ResourceBudgets::default()
+            .with_path_buffer(Some(path))
+            .with_conditional_join_build(Some(conditional));
+        assert!(matches!(
+            budgets.check(),
+            Err(QueryEvaluationError::ResourceLimitExceeded {
+                resource: QueryResource::PathBufferRows,
+                ..
+            })
+        ));
+        assert_eq!(
+            QueryResource::ConditionalJoinBuildRows.to_string(),
+            "conditional_join_build_rows"
+        );
+    }
 
     #[test]
     fn path_budget_is_typed_shared_and_checked_after_existing_budgets() {

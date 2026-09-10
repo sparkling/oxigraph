@@ -1757,12 +1757,25 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         stat_children.push(right_stats);
         let left = left?;
         let right = right?;
+        let budget = self.budgets.conditional_join_build().cloned();
 
         match algorithm {
             MinusAlgorithm::HashBuildRightProbeLeft { keys } => {
                 if keys.is_empty() {
                     Ok(Rc::new(move |from| {
-                        let right = match right(from.clone()).collect::<Result<Vec<_>, _>>() {
+                        let right = match if let Some(budget) = &budget {
+                            let mut rows = Vec::new();
+                            right(from.clone())
+                                .try_for_each(|row| {
+                                    let row = row?;
+                                    budget.charge()?;
+                                    rows.push(row);
+                                    Ok(())
+                                })
+                                .map(|()| rows)
+                        } else {
+                            right(from.clone()).collect::<Result<Vec<_>, _>>()
+                        } {
                             Ok(right) => right,
                             Err(error) => return Box::new(once(Err(error))),
                         };
@@ -1786,7 +1799,19 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                         .collect::<Vec<_>>();
                     Ok(Rc::new(move |from| {
                         let mut right_values = InternalTupleSet::new(keys.clone());
-                        if let Err(error) = right_values.extend(right(from.clone())) {
+                        let error = if let Some(budget) = &budget {
+                            right(from.clone())
+                                .try_for_each(|row| {
+                                    let row = row?;
+                                    budget.charge()?;
+                                    right_values.insert(row);
+                                    Ok(())
+                                })
+                                .err()
+                        } else {
+                            right_values.extend(right(from.clone())).err()
+                        };
+                        if let Some(error) = error {
                             return Box::new(once(Err(error)));
                         }
                         if right_values.is_empty() {
@@ -1827,6 +1852,7 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             encoded_variables,
             stat_children,
         )?;
+        let budget = self.budgets.conditional_join_build().cloned();
 
         match algorithm {
             LeftJoinAlgorithm::HashBuildRightProbeLeft { keys } => {
@@ -1837,7 +1863,19 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                     .collect::<Vec<_>>();
                 Ok(Rc::new(move |from| {
                     let mut right_values = InternalTupleSet::new(keys.clone());
-                    if let Err(error) = right_values.extend(right(from.clone())) {
+                    let error = if let Some(budget) = &budget {
+                        right(from.clone())
+                            .try_for_each(|row| {
+                                let row = row?;
+                                budget.charge()?;
+                                right_values.insert(row);
+                                Ok(())
+                            })
+                            .err()
+                    } else {
+                        right_values.extend(right(from.clone())).err()
+                    };
+                    if let Some(error) = error {
                         return Box::new(once(Err(error)));
                     }
                     if right_values.is_empty() {

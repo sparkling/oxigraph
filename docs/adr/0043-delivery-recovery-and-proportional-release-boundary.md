@@ -514,6 +514,15 @@ native test/release checks. A separate Sol Medium slow-query diagnostic worker
 returned partial measurements then a content-review error; only recovered,
 attributable results were retained, with no retry through another model.
 
+The priority-scheduling slice (`7f6fb59e`) and subsequent conditional-join
+budget slice reused native Terra Medium for bounded implementation. Parent
+review supplied CLI integration and strengthened the new budget tests with
+actual keyed-plan assertions, independent source-consumption observations and
+prepared-clone sharing checks. Deterministic tools ran the native matrices and
+release build; no Max/Ultra worker was dispatched for these routine slices.
+This records accepted work and review corrections, not comparative model
+latency, billing savings or a complete census of the parent conversation.
+
 These are starting policies, not a measured cross-model ranking. Record the
 actual model/effort, accepted result, rework, and elapsed time when observed.
 Do not fabricate monetary savings from API prices or Git history. Model-router

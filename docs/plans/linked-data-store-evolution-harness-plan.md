@@ -27,7 +27,10 @@
   final-lease observations now expose native budget charges and exhaustion
   separately from admission or execution outcomes. Opt-in four-level class
   priorities now bound newer-request bypasses while preserving eligible FIFO
-  within each level, reload snapshots and the operator reserve. Full workload
+  within each level, reload snapshots and the operator reserve. An independent
+  OPTIONAL/MINUS build-row cap now charges right-hand destination rows before
+  insertion and shares request/update rollback and final-lease observations.
+  The inner-join-only counter and physical plans remain unchanged. Full workload
   governance acceptance remains open.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
@@ -1351,7 +1354,12 @@ and discard idle identities. Anonymous callers share one allowance and the
 operator reserve is unchanged. Native isolation, reload, cleanup and persistent
 HTTP journeys verify caps, not reserved service shares. Opt-in class priorities
 add a bounded newer-request bypass allowance, with protected eligible levels,
-FIFO peers and retained aging through reload; omission preserves FIFO. Broader
+FIFO peers and retained aging through reload; omission preserves FIFO.
+Independent OPTIONAL/MINUS right-hand build rows now have a shared cumulative
+cap, including duplicate, nested and repeated builds. Native early-refusal,
+failed-stream, multi-operation owned rollback, reload and restart tests cover
+the slice. Final-lease observations add one fixed resource/phase pair (56
+resource samples); inner-join semantics and physical plans are unchanged. Broader
 operator budgets, weighted service shares, broader resource telemetry and full
 ADR-0027 acceptance remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no

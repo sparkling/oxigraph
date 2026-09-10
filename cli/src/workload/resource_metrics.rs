@@ -5,7 +5,7 @@
 use super::AdmissionPool;
 use std::fmt::{self, Write};
 
-/// One of the six fixed native evaluator budget handles.
+/// One of the seven fixed native evaluator budget handles.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResourceOperator {
     InnerJoinBuildRows,
@@ -14,17 +14,19 @@ pub enum ResourceOperator {
     GroupBufferRows,
     AggregateDistinctRows,
     PathBufferRows,
+    ConditionalJoinBuildRows,
 }
 
 impl ResourceOperator {
     /// Complete bounded operator vocabulary.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::InnerJoinBuildRows,
         Self::SortBufferRows,
         Self::DistinctBufferRows,
         Self::GroupBufferRows,
         Self::AggregateDistinctRows,
         Self::PathBufferRows,
+        Self::ConditionalJoinBuildRows,
     ];
 
     pub const fn resource(self) -> &'static str {
@@ -35,6 +37,7 @@ impl ResourceOperator {
             Self::GroupBufferRows => "group_buffer_rows",
             Self::AggregateDistinctRows => "aggregate_distinct_rows",
             Self::PathBufferRows => "path_buffer_rows",
+            Self::ConditionalJoinBuildRows => "conditional_join_build_rows",
         }
     }
 
@@ -46,6 +49,7 @@ impl ResourceOperator {
             Self::GroupBufferRows => "group_buffer",
             Self::AggregateDistinctRows => "aggregate_distinct",
             Self::PathBufferRows => "path_buffer",
+            Self::ConditionalJoinBuildRows => "join_build",
         }
     }
 }
@@ -54,15 +58,15 @@ impl ResourceOperator {
 /// workload-lease release. All arithmetic saturates.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ResourceUsageMetrics {
-    observations: [[u64; 6]; 2],
-    charged_rows: [[u64; 6]; 2],
-    exhausted: [[u64; 6]; 2],
-    charged_rows_max: [[u64; 6]; 2],
+    observations: [[u64; ResourceOperator::ALL.len()]; 2],
+    charged_rows: [[u64; ResourceOperator::ALL.len()]; 2],
+    exhausted: [[u64; ResourceOperator::ALL.len()]; 2],
+    charged_rows_max: [[u64; ResourceOperator::ALL.len()]; 2],
 }
 
 impl ResourceUsageMetrics {
     /// Exact number of Prometheus samples written by [`Self::write_prometheus`].
-    pub const SAMPLES: usize = 4 * 2 * 6;
+    pub const SAMPLES: usize = 4 * 2 * ResourceOperator::ALL.len();
 
     pub const fn observations(&self, pool: AdmissionPool, operator: ResourceOperator) -> u64 {
         self.observations[pool as usize][operator as usize]

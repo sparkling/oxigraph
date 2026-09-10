@@ -123,7 +123,8 @@ fn reload_policy(
         "max_result_bytes":1002, "max_inner_join_build_rows":1003,
         "max_sort_buffer_rows":1004, "max_distinct_buffer_rows":1005,
         "max_group_buffer_rows":1006, "max_aggregate_distinct_rows":1007,
-        "max_path_buffer_rows":1008, "retry_after_seconds":7,
+        "max_path_buffer_rows":1008, "max_conditional_join_build_rows":1009,
+        "retry_after_seconds":7,
         "classes":classes
     })
 }
@@ -354,6 +355,12 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
             == Some(1007)
     );
     ensure!(active.path_buffer_budget().map(PathBufferBudget::limit) == Some(1008));
+    ensure!(
+        active
+            .conditional_join_build_budget()
+            .map(ConditionalJoinBuildBudget::limit)
+            == Some(1009)
+    );
     let queued_controller = controller.clone();
     let (sender, receiver) = std::sync::mpsc::channel();
     let waiter = thread::spawn(move || {
@@ -384,6 +391,7 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
     lower["max_group_buffer_rows"] = json!(0);
     lower["max_aggregate_distinct_rows"] = json!(0);
     lower["max_path_buffer_rows"] = json!(0);
+    lower["max_conditional_join_build_rows"] = json!(0);
     lower["retry_after_seconds"] = json!(9);
     write_workload(&path, &lower)?;
     ensure!(controller.reload(&access)? == 2);
@@ -449,6 +457,12 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
     ensure!(queued.path_buffer_budget().map(PathBufferBudget::limit) == Some(1008));
     ensure!(
         queued
+            .conditional_join_build_budget()
+            .map(ConditionalJoinBuildBudget::limit)
+            == Some(1009)
+    );
+    ensure!(
+        queued
             .aggregate_distinct_budget()
             .map(AggregateDistinctBudget::limit)
             == Some(1007)
@@ -476,6 +490,11 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
     ensure!(v2.distinct_buffer_budget().map(DistinctBufferBudget::limit) == Some(0));
     ensure!(v2.group_buffer_budget().map(GroupBufferBudget::limit) == Some(0));
     ensure!(v2.path_buffer_budget().map(PathBufferBudget::limit) == Some(0));
+    ensure!(
+        v2.conditional_join_build_budget()
+            .map(ConditionalJoinBuildBudget::limit)
+            == Some(0)
+    );
     ensure!(
         v2.aggregate_distinct_budget()
             .map(AggregateDistinctBudget::limit)
@@ -1690,6 +1709,10 @@ fn resource_observation_wires_each_configured_native_budget() -> Result<()> {
             ResourceOperator::PathBufferRows,
             "SELECT ?o WHERE { <urn:a> <urn:p>* ?o }",
         ),
+        (
+            ResourceOperator::ConditionalJoinBuildRows,
+            "SELECT * WHERE { VALUES ?x { 1 } OPTIONAL { VALUES ?y { 2 3 } } }",
+        ),
     ];
     for (operator, query) in cases {
         let mut policy = controller(1, 0, 1, 0)?.0.policy.clone();
@@ -1699,6 +1722,7 @@ fn resource_observation_wires_each_configured_native_budget() -> Result<()> {
         policy.max_group_buffer_rows = Some(2);
         policy.max_aggregate_distinct_rows = Some(2);
         policy.max_path_buffer_rows = Some(2);
+        policy.max_conditional_join_build_rows = Some(2);
         let controller = AdmissionController::new(policy)?;
         let lease = acquire(&controller, "default")?;
         let mut evaluator = oxigraph::sparql::SparqlEvaluator::new().without_optimizations();
@@ -1727,6 +1751,11 @@ fn resource_observation_wires_each_configured_native_budget() -> Result<()> {
             ResourceOperator::PathBufferRows => {
                 evaluator =
                     evaluator.with_path_buffer_budget(lease.path_buffer_budget().unwrap().clone())
+            }
+            ResourceOperator::ConditionalJoinBuildRows => {
+                evaluator = evaluator.with_conditional_join_build_budget(
+                    lease.conditional_join_build_budget().unwrap().clone(),
+                )
             }
         }
         let oxigraph::sparql::QueryResults::Solutions(rows) = evaluator
@@ -1933,6 +1962,93 @@ fn group_budget_policy_parses_zero_and_coexists_with_the_other_caps() -> Result<
         }))?)
         .is_err()
     );
+    Ok(())
+}
+
+#[test]
+fn conditional_join_budget_is_fresh_shared_and_observed_at_final_lease_drop() -> Result<()> {
+    let mut policy = controller(1, 0, 1, 0)?.0.policy.clone();
+    let unconfigured = acquire(&AdmissionController::new(policy.clone())?, "default")?;
+    ensure!(unconfigured.conditional_join_build_budget().is_none());
+    drop(unconfigured);
+    policy.max_conditional_join_build_rows = Some(2);
+    let controller = AdmissionController::new(policy)?;
+    let first = acquire(&controller, "default")?;
+    ensure!(first.inner_join_build_budget().is_none());
+    let clone = first.clone();
+    let retained = first.conditional_join_build_budget().unwrap().clone();
+    let store = oxigraph::store::Store::new()?;
+    let evaluator = oxigraph::sparql::SparqlEvaluator::new()
+        .without_optimizations()
+        .with_conditional_join_build_budget(retained.clone());
+    let query = "ASK { VALUES ?x { 1 } OPTIONAL { VALUES ?y { 2 3 } } }";
+    evaluator
+        .clone()
+        .parse_query(query)?
+        .on_store(&store)
+        .execute()?;
+    ensure!(retained.charged_rows() == 2 && retained.check().is_ok());
+    ensure!(
+        clone
+            .conditional_join_build_budget()
+            .unwrap()
+            .charged_rows()
+            == 2
+    );
+    ensure!(
+        evaluator
+            .parse_query(query)?
+            .on_store(&store)
+            .execute()
+            .is_err()
+    );
+    ensure!(retained.check().is_err());
+    drop(first);
+    let operator = ResourceOperator::ConditionalJoinBuildRows;
+    ensure!(
+        controller
+            .resource_metrics()?
+            .observations(AdmissionPool::Data, operator)
+            == 0
+    );
+    drop(clone);
+    let metrics = controller.resource_metrics()?;
+    ensure!(metrics.observations(AdmissionPool::Data, operator) == 1);
+    ensure!(metrics.charged_rows(AdmissionPool::Data, operator) == 2);
+    ensure!(metrics.exhausted(AdmissionPool::Data, operator) == 1);
+    ensure!(metrics.charged_rows_max(AdmissionPool::Data, operator) == 2);
+    let second = acquire(&controller, "default")?;
+    ensure!(
+        second
+            .conditional_join_build_budget()
+            .unwrap()
+            .charged_rows()
+            == 0
+    );
+    ensure!(retained.charged_rows() == 2 && retained.check().is_err());
+    Ok(())
+}
+
+#[test]
+fn conditional_join_budget_policy_accepts_zero_and_is_independent_of_inner_join() -> Result<()> {
+    let mut json = reload_policy(1, 1, 0, 1, 0, &[("default", 1, 0)]);
+    json["max_conditional_join_build_rows"] = json!(0);
+    let policy = WorkloadPolicy::from_json(&serde_json::to_vec(&json)?)?;
+    let lease = acquire(&AdmissionController::new(policy)?, "default")?;
+    ensure!(lease.conditional_join_build_budget().unwrap().limit() == 0);
+    ensure!(lease.inner_join_build_budget().unwrap().limit() == 1003);
+    ensure!(lease.path_buffer_budget().unwrap().limit() == 1008);
+    for invalid in [
+        json!(-1),
+        json!(0.5),
+        json!("2"),
+        json!(true),
+        json!([]),
+        json!({}),
+    ] {
+        json["max_conditional_join_build_rows"] = invalid;
+        ensure!(WorkloadPolicy::from_json(&serde_json::to_vec(&json)?).is_err());
+    }
     Ok(())
 }
 
