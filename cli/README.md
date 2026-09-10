@@ -970,6 +970,54 @@ The format is deliberately separate from current-schema `backup --with-receipt`,
 Legacy restoration and shadow upgrade are not implemented by these commands.
 See [ADR-0028](../docs/adr/0028-safe-storage-schema-upgrades.md#native-legacy-physical-backup-slice-2026-09-10).
 
+## Offline inactive upgrade construction (fork)
+
+Build this fork's CLI, stop all writers and keep the original store, completed
+legacy backup and separate workspace exclusively controlled. Preparation needs
+a fresh destination. The source must already have a regular native `LOCK`;
+none of these commands calls ordinary store open on the original.
+
+```sh
+oxigraph backup-legacy --location ./legacy-data --destination ./legacy-backup-new
+oxigraph prepare-upgrade --source ./legacy-data --backup ./legacy-backup-new \
+  --destination ./upgrade-work-new
+oxigraph verify-upgrade-preparation --location ./upgrade-work-new
+oxigraph transform-upgrade --source ./legacy-data --backup ./legacy-backup-new \
+  --location ./upgrade-work-new
+oxigraph verify-upgrade-transformation --source ./legacy-data \
+  --backup ./legacy-backup-new --location ./upgrade-work-new
+```
+
+Preparation copies the verified legacy bytes into an inactive workspace.
+Transformation applies the supported version-0/1 migration edges to that copy,
+then compares quads, named-graph inventory and namespaces with independently
+derived legacy state. The original source and completed backup stay unchanged.
+Legacy RDF-star input requires a build with `rdf-12`; a build without
+it refuses transformation before changing the preparation.
+
+The preparation verifier checks the embedded legacy receipt, files, native
+metadata, journal and guard. It does not recheck the external original/backup
+paths. The transformation verifier takes both paths and verifies exact ancestry
+as well as transformed logical state and output files. After transformation,
+use the transformation verifier: the earlier preparation record describes
+the old bytes and is no longer a valid current preparation observation.
+
+All four commands accept positive `--max-files`, `--max-bytes` and
+`--timeout-ms` options. Transformation and its verifier also accept
+`--max-entries` and `--max-projection-bytes`. Omitting an option preserves
+the underlying API default. Bounds and deadlines are cooperative; projection
+limits do not bound total process or native RocksDB memory.
+
+Success output distinguishes each operation and reports content identities,
+not permission to activate. The workspace remains guarded and inactive.
+Do not remove the guard or serve `workspace/store`. Interrupted construction
+requires a fresh preparation; an error after a final completion marker is
+indeterminate and must be resolved using the corresponding verifier.
+
+These commands do not implement resume, a sealed `UpgradeReceipt`,
+activation/cutover or the full old/new-binary and crash qualification matrix.
+See [ADR-0028](../docs/adr/0028-safe-storage-schema-upgrades.md#offline-inactive-upgrade-cli-2026-09-10).
+
 ## Using a Docker image
 
 ### Display the help menu

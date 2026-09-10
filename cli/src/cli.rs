@@ -191,6 +191,113 @@ pub enum Command {
         #[arg(long, value_hint = ValueHint::DirPath)]
         source: Option<PathBuf>,
     },
+    /// Prepare a fresh, inactive upgrade workspace from an exact legacy backup ancestry
+    ///
+    /// Source, backup, and destination must be offline, stable, exclusively
+    /// controlled, and pairwise disjoint. This command does not transform,
+    /// resume, activate, or produce a final UpgradeReceipt.
+    PrepareUpgrade {
+        /// Original offline version-0 or version-1 store
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        source: PathBuf,
+        /// Completed immutable legacy physical-backup package
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        backup: PathBuf,
+        /// Fresh inactive workspace directory; existing paths are rejected
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        destination: PathBuf,
+        /// Maximum native files; omit to retain the API default of 100000
+        #[arg(long)]
+        max_files: Option<std::num::NonZeroUsize>,
+        /// Maximum aggregate native-file bytes; omit to retain the unbounded API default
+        #[arg(long)]
+        max_bytes: Option<std::num::NonZeroU64>,
+        /// Cooperative whole-operation timeout in milliseconds; omit for no deadline
+        #[arg(long)]
+        timeout_ms: Option<std::num::NonZeroU64>,
+    },
+    /// Verify the embedded receipt of an offline inactive upgrade preparation
+    ///
+    /// The workspace must be stable and exclusively controlled. This check does
+    /// not receive the external source or backup, so external ancestry is not
+    /// checked. It does not transform, resume, activate, or produce a final
+    /// UpgradeReceipt.
+    VerifyUpgradePreparation {
+        /// Existing inactive preparation workspace
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        location: PathBuf,
+        /// Maximum native files; omit to retain the API default of 100000
+        #[arg(long)]
+        max_files: Option<std::num::NonZeroUsize>,
+        /// Maximum aggregate native-file bytes; omit to retain the unbounded API default
+        #[arg(long)]
+        max_bytes: Option<std::num::NonZeroU64>,
+        /// Cooperative whole-operation timeout in milliseconds; omit for no deadline
+        #[arg(long)]
+        timeout_ms: Option<std::num::NonZeroU64>,
+    },
+    /// Transform a prepared workspace into a verified but inactive current-format copy
+    ///
+    /// Source, backup, and workspace must be offline, stable, exclusively
+    /// controlled, and pairwise disjoint. This command does not resume, activate,
+    /// or produce a final UpgradeReceipt.
+    TransformUpgrade {
+        /// Original offline legacy store used for exact ancestry and logical projection
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        source: PathBuf,
+        /// Completed immutable legacy physical-backup package
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        backup: PathBuf,
+        /// Existing inactive preparation workspace
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        location: PathBuf,
+        /// Maximum native files; omit to retain the API default of 100000
+        #[arg(long)]
+        max_files: Option<std::num::NonZeroUsize>,
+        /// Maximum aggregate bytes, including the inactive guard after transformation; omit for the API default
+        #[arg(long)]
+        max_bytes: Option<std::num::NonZeroU64>,
+        /// Cooperative whole-operation timeout in milliseconds; omit for no deadline
+        #[arg(long)]
+        timeout_ms: Option<std::num::NonZeroU64>,
+        /// Maximum retained entries per logical projection; omit for the API default of 1000000
+        #[arg(long)]
+        max_entries: Option<std::num::NonZeroUsize>,
+        /// Maximum retained bytes per logical projection; omit for the API default of 268435456
+        #[arg(long)]
+        max_projection_bytes: Option<std::num::NonZeroU64>,
+    },
+    /// Independently verify an offline transformed workspace and its exact ancestry
+    ///
+    /// Source, backup, and workspace must be offline, stable, exclusively
+    /// controlled, and pairwise disjoint. This command does not resume, activate,
+    /// or produce a final UpgradeReceipt.
+    VerifyUpgradeTransformation {
+        /// Original offline legacy store used for exact ancestry and logical projection
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        source: PathBuf,
+        /// Completed immutable legacy physical-backup package
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        backup: PathBuf,
+        /// Existing inactive transformed workspace
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        location: PathBuf,
+        /// Maximum native files; omit to retain the API default of 100000
+        #[arg(long)]
+        max_files: Option<std::num::NonZeroUsize>,
+        /// Maximum aggregate bytes, including the inactive guard; omit for the API default
+        #[arg(long)]
+        max_bytes: Option<std::num::NonZeroU64>,
+        /// Cooperative whole-operation timeout in milliseconds; omit for no deadline
+        #[arg(long)]
+        timeout_ms: Option<std::num::NonZeroU64>,
+        /// Maximum retained entries per logical projection; omit for the API default of 1000000
+        #[arg(long)]
+        max_entries: Option<std::num::NonZeroUsize>,
+        /// Maximum retained bytes per logical projection; omit for the API default of 268435456
+        #[arg(long)]
+        max_projection_bytes: Option<std::num::NonZeroU64>,
+    },
     /// Restore a completed backup into a fresh root; serve its store/ subdirectory
     Restore {
         /// Immutable receipt-bearing backup package

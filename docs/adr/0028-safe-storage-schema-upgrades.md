@@ -6,10 +6,10 @@
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
-  shadow-copy preparation and explicit inactive transformation APIs implemented;
-  ordinary writable open still
-  performs known version-0/1 migrations in place. Full compatibility rejection,
-  schema envelopes and shadow upgrades remain open
+  shadow-copy preparation and explicit inactive transformation APIs/CLI implemented.
+  Ordinary writable open still performs known version-0/1 migrations in place.
+  Full compatibility rejection, schema envelopes, resumable upgrades and
+  explicit activation remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
@@ -253,10 +253,10 @@ Rechecks and overlapping feature lanes are not additional product behavior.
 Fixtures were copied to temporary directories. Exact workflow evidence was read
 back through Ruflo MCP before handoff.
 
-This closes inactive physical preparation only. Explicit transformation, logical
-and topology comparison, verified resume, sealed upgrade receipts, activation,
-old/new-binary and crash qualification remain open. Known in-place migrations
-remain until their explicit replacement is ready; this ADR remains Proposed.
+This closes inactive physical preparation only. The next section adds explicit
+transformation and logical/topology comparison; verified resume, sealed upgrade
+receipts, activation and old/new-binary/crash qualification remain open. Known
+in-place migrations remain until their replacement is ready; this ADR remains Proposed.
 
 ## Native inactive transformation (2026-09-10)
 
@@ -307,9 +307,53 @@ currently as a storage/corruption error, not a frozen feature classifier.
 Unsupported legacy default-column metadata is refused rather than synthesized.
 Interrupted work requires fresh preparation; post-completion errors remain
 indeterminate and require verification. Resume, a sealed exact-build
-`UpgradeReceipt`, activation/cutover, older-binary/crash qualification and a
-transformation CLI remain open. Ordinary known in-place migration is retained;
-this ADR remains Proposed and full G4.3 is not complete.
+`UpgradeReceipt`, activation/cutover and older-binary/crash qualification remain
+open. The CLI slice below exposes these APIs without adding those capabilities.
+Ordinary known in-place migration is retained; this ADR remains Proposed and
+full G4.3 is not complete.
+
+## Offline inactive upgrade CLI (2026-09-10)
+
+Four additive commands expose the existing Rust construction and verification
+APIs: `prepare-upgrade`, `verify-upgrade-preparation`, `transform-upgrade`
+and `verify-upgrade-transformation`. The operator keeps the original store,
+completed legacy backup and separate workspace offline, stable, exclusively
+controlled and disjoint; preparation requires a fresh destination. See the
+[complete operator journey](../../cli/README.md#offline-inactive-upgrade-construction-fork).
+
+Creation and verification have distinct success fields. Preparation creation
+reports exact external ancestry; preparation verification checks only its
+embedded receipt and workspace, explicitly reporting external ancestry as
+not checked. After transformation, the old preparation observation no longer
+matches the current bytes: use the transformation verifier with both original
+and backup paths. That verifier checks exact ancestry, output files and logical
+state. Output includes the appropriate content fingerprints and counts, with
+`active=false` and `upgrade_authorized=false`; hashes do not authorize use.
+
+All four commands accept positive `--max-files`, `--max-bytes` and
+`--timeout-ms` overrides. Transformation and its verifier also accept
+`--max-entries` and `--max-projection-bytes`. Omission retains API defaults;
+these are cooperative limits, not process-memory or native-disk quotas.
+Without `rdf-12`, legacy triple-term transformation is refused before changing
+the preparation. Validation/refusal errors return no success record.
+
+The ordinary workflow `4cf0ccbc-33f4-4473-b9f0-e30a5bf345a5` uses a native Sol
+High implementation proposal, root-only application and independent Sol Medium
+review. An earlier Terra attempt returned INCONCLUSIVE and was not applied;
+the escalation addressed that concrete incomplete proposal, not quota or an
+automatic model preference. Native lanes passed: new default CLI tests (5),
+no-default upgrade/backup/restore/inspection (14), and default existing-command
+regressions (8). The separate focused option-adapter test passed (1), asserting
+typed timeout values without wall-clock timing. These counts overlap across
+feature lanes and are not separate product deliveries. Exact workflow evidence
+is recorded in Ruflo
+`programme-task-evidence/workflow-4cf0ccbc-33f4-4473-b9f0-e30a5bf345a5`.
+
+This closes the bounded offline CLI journey only. No library, dependency or
+storage-format changes were made in this slice. The workspace remains guarded
+and cannot be served through ordinary open. Resume, a sealed exact-build
+`UpgradeReceipt`, activation/cutover/rollback and the frozen compatibility/crash
+matrix remain open. This ADR remains Proposed; full G4.3 is not complete.
 
 ## Staged implementation and evaluator gates
 

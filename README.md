@@ -465,8 +465,10 @@ see [the preparation contract and limits](docs/adr/0028-safe-storage-schema-upgr
 version-0/1 migration edges while preserving the original source and backup.
 `TransformedUpgrade::verify` checks ancestry, logical quads, named graphs,
 namespaces and exact output files. Native leases span transformation and final
-hashing; the result remains guarded and inactive. This is a bounded Rust API,
-not resume, a sealed `UpgradeReceipt`, activation or a transformation CLI.
+hashing; the result remains guarded and inactive. Four additive CLI commands now
+expose preparation, transformation and their distinct verification steps with
+explicit bounds; see [the offline operator journey](cli/README.md#offline-inactive-upgrade-construction-fork).
+These APIs and commands do not provide resume, a sealed `UpgradeReceipt` or activation.
 See [the transformation contract and limits](docs/adr/0028-safe-storage-schema-upgrades.md#native-inactive-transformation-2026-09-10).
 
 ## Upstream Oxigraph

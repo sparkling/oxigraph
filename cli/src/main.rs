@@ -66,6 +66,7 @@ mod server_access;
 mod service_description;
 #[cfg(test)]
 mod simple_query_tests;
+mod upgrade;
 #[cfg(test)]
 mod wire_http_tests;
 
@@ -292,6 +293,82 @@ pub fn main() -> anyhow::Result<()> {
                 ancestry
             )?;
             Ok(())
+        }
+        Command::PrepareUpgrade {
+            source,
+            backup,
+            destination,
+            max_files,
+            max_bytes,
+            timeout_ms,
+        } => {
+            let prepared = Store::prepare_upgrade(
+                source,
+                backup,
+                destination,
+                &upgrade::legacy_options(max_files, max_bytes, timeout_ms),
+            )?;
+            upgrade::print_preparation_created(prepared)
+        }
+        Command::VerifyUpgradePreparation {
+            location,
+            max_files,
+            max_bytes,
+            timeout_ms,
+        } => {
+            let prepared = oxigraph::store::PreparedUpgrade::verify(
+                location,
+                &upgrade::legacy_options(max_files, max_bytes, timeout_ms),
+            )?;
+            upgrade::print_preparation_verified(prepared)
+        }
+        Command::TransformUpgrade {
+            source,
+            backup,
+            location,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+        } => {
+            let transformed = Store::transform_prepared_upgrade(
+                source,
+                backup,
+                location,
+                &upgrade::transform_options(
+                    max_files,
+                    max_bytes,
+                    timeout_ms,
+                    max_entries,
+                    max_projection_bytes,
+                ),
+            )?;
+            upgrade::print_transformation_created(transformed)
+        }
+        Command::VerifyUpgradeTransformation {
+            source,
+            backup,
+            location,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+        } => {
+            let transformed = oxigraph::store::TransformedUpgrade::verify(
+                source,
+                backup,
+                location,
+                &upgrade::transform_options(
+                    max_files,
+                    max_bytes,
+                    timeout_ms,
+                    max_entries,
+                    max_projection_bytes,
+                ),
+            )?;
+            upgrade::print_transformation_verified(transformed)
         }
         Command::Restore {
             backup,
