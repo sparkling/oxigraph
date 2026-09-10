@@ -10,7 +10,8 @@
   deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and
   transactional paths. Opt-in encoded/decoded request-body, generated/emitted
   result-byte, native inner-join build-row, ORDER BY buffer-row, hash DISTINCT
-  retained-row and accumulator-group caps are implemented. Fixed-pool admission counts, occupancy and queue-wait metrics
+  retained-row, accumulator-group and aggregate-DISTINCT retained-key caps are
+  implemented. Fixed-pool admission counts, occupancy and queue-wait metrics
   are exported through the existing operator listener. File-backed policy
   reload is atomic and operator-usable with immutable per-attempt snapshots and
   startup transport ceilings. Observed active socket errors now cancel the
@@ -717,6 +718,50 @@ cover isolation, accounting cleanup, reload and the subsequent persistent
 write/query/rollback/restart journey. This is a native caps slice, not weighted
 fairness, reserved per-principal service, cross-process quotas, full G4.2
 acceptance or promotion. It adds no dependency or core-store identity model.
+
+### Native aggregate-DISTINCT key limit (2026-09-10)
+
+`AggregateDistinctBudget` is an independent shared cumulative handle exposed as
+`QueryResource::AggregateDistinctRows` in phase `AggregateDistinct`. The optional
+unsigned CLI policy field `max_aggregate_distinct_rows` creates one fresh handle
+per admission; zero is allowed and omission preserves the original behavior.
+Every new unique key or tuple actually retained by each native aggregate
+`DISTINCT` set is charged before cloning/insertion. Duplicates in one set do not
+recharge; another group, aggregate or set retaining the key does. The handle is
+shared across evaluator/prepared clones, nested execution and all operations of
+an owned update, with sticky typed failure and rollback behavior. Reload keeps the
+old per-attempt handle; independent admissions get fresh handles.
+
+The wrapper covers native generic DISTINCT handling for builtin and custom
+aggregates. `SAMPLE DISTINCT`, optimizer-eliminated paths and aggregates without
+a DISTINCT set create no such set and charge nothing. Expression-evaluation
+temporaries, key/row width, `GROUP_CONCAT` content, custom accumulator internals,
+CPU/allocator/RSS, inference and foreign `SERVICE` work are excluded. Existing
+group and ordinary-DISTINCT budgets remain independent with their prior
+exclusions; no existing cap is widened and no numeric production default,
+dependency, metric series or qualification/promotion claim is added. The typed
+fatal error follows the established pre-header empty 503 or failed-stream path.
+
+Native validation passes six focused evaluator tests covering the three set
+wrappers, zero/exact/over-limit, duplicate and multi-set charging, original
+no-budget behavior, nested/prepared sharing, custom accumulator retention and
+ASK/EXISTS/SERVICE-SILENT error propagation. The four-test store group-budget
+suite covers all owned update bindings, shared multi-operation exhaustion and
+rollback, including failure swallowed by a callback before commit. Existing
+join/sort/distinct budget suites also pass in default, no-default and RDF-1.2
+configurations. Full `spareval` default/all-feature and `oxigraph-testsuite`
+default/no-default suites pass.
+
+CLI default validation passes 56 library, 171 binary and 46 HTTP tests;
+no-default passes 56/147/40 with one existing ignored binary test. The HTTP
+fixtures verify old-admission/new-policy separation across a real in-flight
+reload in both serve modes, buffered empty-503 and failed-stream responses,
+owned rollback, and the persistent write/query/rollback/restart journey. The
+release executable passes the same 46 HTTP tests. Required query/update fuzz
+commands with `--sanitizer none -- -max_total_time=60` both exit zero (29,047 and
+23,534 cases). A saved 168-second query unit made the query run last 229 seconds;
+it is a separate performance finding, not a claimed time or memory bound. This
+slice does not close full G4.2 qualification or promotion.
 
 ### Remaining staged acceptance
 

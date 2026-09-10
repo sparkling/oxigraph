@@ -2356,9 +2356,11 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         Ok(match expression {
             AggregateExpression::CountSolutions { distinct } => {
                 if *distinct {
+                    let aggregate_distinct = self.budgets.aggregate_distinct().cloned();
                     Box::new(move || AccumulatorWrapper::CountDistinctTuple {
                         count: 0,
                         seen: FxHashSet::default(),
+                        aggregate_distinct: aggregate_distinct.clone(),
                     })
                 } else {
                     Box::new(move || AccumulatorWrapper::CountTuple { count: 0 })
@@ -2375,10 +2377,12 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                         self.internal_expression_evaluator(expr, encoded_variables, stat_children)?
                     {
                         return Ok(if *distinct {
+                            let aggregate_distinct = self.budgets.aggregate_distinct().cloned();
                             Box::new(move || AccumulatorWrapper::CountDistinctInternal {
                                 evaluator: Rc::clone(&evaluator),
                                 seen: FxHashSet::default(),
                                 count: 0,
+                                aggregate_distinct: aggregate_distinct.clone(),
                             })
                         } else {
                             Box::new(move || AccumulatorWrapper::CountInternal {
@@ -2390,10 +2394,12 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                     let evaluator =
                         self.expression_evaluator(expr, encoded_variables, stat_children)?;
                     if *distinct {
+                        let aggregate_distinct = self.budgets.aggregate_distinct().cloned();
                         Box::new(move || AccumulatorWrapper::DistinctExpression {
                             evaluator: Rc::clone(&evaluator),
                             seen: FxHashSet::default(),
                             accumulator: Some(Box::new(CountAccumulator::default())),
+                            aggregate_distinct: aggregate_distinct.clone(),
                         })
                     } else {
                         Box::new(move || AccumulatorWrapper::Expression {
@@ -2405,10 +2411,12 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                     let evaluator =
                         self.expression_evaluator(expr, encoded_variables, stat_children)?;
                     if *distinct {
+                        let aggregate_distinct = self.budgets.aggregate_distinct().cloned();
                         Box::new(move || AccumulatorWrapper::DistinctExpression {
                             evaluator: Rc::clone(&evaluator),
                             seen: FxHashSet::default(),
                             accumulator: Some(Box::new(SumAccumulator::default())),
+                            aggregate_distinct: aggregate_distinct.clone(),
                         })
                     } else {
                         Box::new(move || AccumulatorWrapper::Expression {
@@ -2420,10 +2428,12 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                     let evaluator =
                         self.expression_evaluator(expr, encoded_variables, stat_children)?;
                     if *distinct {
+                        let aggregate_distinct = self.budgets.aggregate_distinct().cloned();
                         Box::new(move || AccumulatorWrapper::DistinctExpression {
                             evaluator: Rc::clone(&evaluator),
                             seen: FxHashSet::default(),
                             accumulator: Some(Box::new(MinAccumulator::default())),
+                            aggregate_distinct: aggregate_distinct.clone(),
                         })
                     } else {
                         Box::new(move || AccumulatorWrapper::Expression {
@@ -2435,10 +2445,12 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                     let evaluator =
                         self.expression_evaluator(expr, encoded_variables, stat_children)?;
                     if *distinct {
+                        let aggregate_distinct = self.budgets.aggregate_distinct().cloned();
                         Box::new(move || AccumulatorWrapper::DistinctExpression {
                             evaluator: Rc::clone(&evaluator),
                             seen: FxHashSet::default(),
                             accumulator: Some(Box::new(MaxAccumulator::default())),
+                            aggregate_distinct: aggregate_distinct.clone(),
                         })
                     } else {
                         Box::new(move || AccumulatorWrapper::Expression {
@@ -2450,10 +2462,12 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                     let evaluator =
                         self.expression_evaluator(expr, encoded_variables, stat_children)?;
                     if *distinct {
+                        let aggregate_distinct = self.budgets.aggregate_distinct().cloned();
                         Box::new(move || AccumulatorWrapper::DistinctExpression {
                             evaluator: Rc::clone(&evaluator),
                             seen: FxHashSet::default(),
                             accumulator: Some(Box::new(AvgAccumulator::default())),
+                            aggregate_distinct: aggregate_distinct.clone(),
                         })
                     } else {
                         Box::new(move || AccumulatorWrapper::Expression {
@@ -2474,12 +2488,14 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                     let evaluator =
                         self.expression_evaluator(expr, encoded_variables, stat_children)?;
                     if *distinct {
+                        let aggregate_distinct = self.budgets.aggregate_distinct().cloned();
                         Box::new(move || AccumulatorWrapper::DistinctExpression {
                             evaluator: Rc::clone(&evaluator),
                             seen: FxHashSet::default(),
                             accumulator: Some(Box::new(GroupConcatAccumulator::new(Rc::clone(
                                 &separator,
                             )))),
+                            aggregate_distinct: aggregate_distinct.clone(),
                         })
                     } else {
                         Box::new(move || AccumulatorWrapper::Expression {
@@ -2494,10 +2510,12 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                         self.expression_evaluator(expr, encoded_variables, stat_children)?;
                     let function = Arc::clone(function);
                     if *distinct {
+                        let aggregate_distinct = self.budgets.aggregate_distinct().cloned();
                         Box::new(move || AccumulatorWrapper::DistinctExpression {
                             evaluator: Rc::clone(&evaluator),
                             seen: FxHashSet::default(),
                             accumulator: Some(Box::new(CustomAccumulator(function()))),
+                            aggregate_distinct: aggregate_distinct.clone(),
                         })
                     } else {
                         Box::new(move || AccumulatorWrapper::Expression {
@@ -2873,6 +2891,7 @@ enum AccumulatorWrapper<'a, T> {
     CountDistinctTuple {
         seen: FxHashSet<InternalTuple<T>>,
         count: u64,
+        aggregate_distinct: Option<crate::resources::AggregateDistinctBudget>,
     },
     CountInternal {
         evaluator: ExpressionEvaluator<'a, InternalTuple<T>, T, QueryEvaluationError>,
@@ -2882,6 +2901,7 @@ enum AccumulatorWrapper<'a, T> {
         seen: FxHashSet<T>,
         evaluator: ExpressionEvaluator<'a, InternalTuple<T>, T, QueryEvaluationError>,
         count: u64,
+        aggregate_distinct: Option<crate::resources::AggregateDistinctBudget>,
     },
     Sample {
         // TODO: add internal variant
@@ -2896,6 +2916,7 @@ enum AccumulatorWrapper<'a, T> {
         seen: FxHashSet<ExpressionTerm>,
         evaluator: ExpressionEvaluator<'a, InternalTuple<T>, ExpressionTerm, QueryEvaluationError>,
         accumulator: Option<Box<dyn Accumulator>>,
+        aggregate_distinct: Option<crate::resources::AggregateDistinctBudget>,
     },
 }
 
@@ -2905,8 +2926,18 @@ impl<T: Clone + Eq + Hash> AccumulatorWrapper<'_, T> {
             Self::CountTuple { count } => {
                 *count += 1;
             }
-            Self::CountDistinctTuple { seen, count } => {
-                if seen.insert(tuple.clone()) {
+            Self::CountDistinctTuple {
+                seen,
+                count,
+                aggregate_distinct,
+            } => {
+                if let Some(budget) = aggregate_distinct {
+                    if !seen.contains(tuple) {
+                        budget.charge()?;
+                        seen.insert(tuple.clone());
+                        *count += 1;
+                    }
+                } else if seen.insert(tuple.clone()) {
                     *count += 1;
                 }
             }
@@ -2919,11 +2950,18 @@ impl<T: Clone + Eq + Hash> AccumulatorWrapper<'_, T> {
                 seen,
                 evaluator,
                 count,
+                aggregate_distinct,
             } => {
                 let Some(value) = evaluator(tuple)? else {
                     return Ok(());
                 };
-                if seen.insert(value) {
+                if let Some(budget) = aggregate_distinct {
+                    if !seen.contains(&value) {
+                        budget.charge()?;
+                        seen.insert(value);
+                        *count += 1;
+                    }
+                } else if seen.insert(value) {
                     *count += 1;
                 }
             }
@@ -2953,6 +2991,7 @@ impl<T: Clone + Eq + Hash> AccumulatorWrapper<'_, T> {
                 seen,
                 evaluator,
                 accumulator,
+                aggregate_distinct,
             } => {
                 if accumulator.is_none() {
                     return Ok(()); // Already failed
@@ -2964,7 +3003,13 @@ impl<T: Clone + Eq + Hash> AccumulatorWrapper<'_, T> {
                 let Some(accumulator) = accumulator else {
                     return Ok(());
                 };
-                if seen.insert(value.clone()) {
+                if let Some(budget) = aggregate_distinct {
+                    if !seen.contains(&value) {
+                        budget.charge()?;
+                        seen.insert(value.clone());
+                        accumulator.accumulate(value);
+                    }
+                } else if seen.insert(value.clone()) {
                     accumulator.accumulate(value);
                 }
             }

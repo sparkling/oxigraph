@@ -209,7 +209,15 @@ row width and hashing CPU remain outside it. Independent
 construction and map insertion. Repeated keys do not recharge; global aggregates
 count one group even on runtime-empty input. Nested groups and update operations
 share the cap and rollback behavior. Per-group DISTINCT sets, GROUP_CONCAT
-contents, temporary keys and RSS are not bounded. With a workload policy,
+contents, temporary keys and RSS are not bounded. Independent
+`max_aggregate_distinct_rows` now caps unique keys or tuples retained by native
+aggregate DISTINCT sets before cloning/insertion, including builtin/custom
+aggregate wrappers. Duplicates in one set do not recharge; another set retaining
+the key does. Clones, nested/prepared execution and owned updates share the
+sticky counter. Omission preserves original behavior; existing group and
+ordinary DISTINCT counters remain independent. Expression temporaries, key/row
+width, GROUP_CONCAT contents, custom accumulator internals, CPU/allocator/RSS,
+inference and foreign SERVICE work remain outside this counter. With a workload policy,
 operator `/metrics` now exports active/queued pool gauges, terminal admission
 counts and queue-wait histograms: 60 fixed-label samples without request data.
 Admission is not execution success; lease release is not proof of rollback.

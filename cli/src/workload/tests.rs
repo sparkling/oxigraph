@@ -122,7 +122,7 @@ fn reload_policy(
         "request_body_limits":{"max_encoded_bytes":1000,"max_decoded_bytes":1001},
         "max_result_bytes":1002, "max_inner_join_build_rows":1003,
         "max_sort_buffer_rows":1004, "max_distinct_buffer_rows":1005,
-        "max_group_buffer_rows":1006, "retry_after_seconds":7,
+        "max_group_buffer_rows":1006, "max_aggregate_distinct_rows":1007, "retry_after_seconds":7,
         "classes":classes
     })
 }
@@ -337,6 +337,12 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
             == Some(1005)
     );
     ensure!(active.group_buffer_budget().map(GroupBufferBudget::limit) == Some(1006));
+    ensure!(
+        active
+            .aggregate_distinct_budget()
+            .map(AggregateDistinctBudget::limit)
+            == Some(1007)
+    );
     let queued_controller = controller.clone();
     let (sender, receiver) = std::sync::mpsc::channel();
     let waiter = thread::spawn(move || {
@@ -365,6 +371,7 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
     lower["max_sort_buffer_rows"] = json!(0);
     lower["max_distinct_buffer_rows"] = json!(0);
     lower["max_group_buffer_rows"] = json!(0);
+    lower["max_aggregate_distinct_rows"] = json!(0);
     lower["retry_after_seconds"] = json!(9);
     write_workload(&path, &lower)?;
     ensure!(controller.reload(&access)? == 2);
@@ -426,6 +433,12 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
             == Some(1005)
     );
     ensure!(queued.group_buffer_budget().map(GroupBufferBudget::limit) == Some(1006));
+    ensure!(
+        queued
+            .aggregate_distinct_budget()
+            .map(AggregateDistinctBudget::limit)
+            == Some(1007)
+    );
     ensure!(matches!(
         raw(&controller, "default"),
         Err(WorkloadError::Overloaded(AdmissionScope::Global))
@@ -442,6 +455,11 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
     ensure!(v2.sort_buffer_budget().map(SortBufferBudget::limit) == Some(0));
     ensure!(v2.distinct_buffer_budget().map(DistinctBufferBudget::limit) == Some(0));
     ensure!(v2.group_buffer_budget().map(GroupBufferBudget::limit) == Some(0));
+    ensure!(
+        v2.aggregate_distinct_budget()
+            .map(AggregateDistinctBudget::limit)
+            == Some(0)
+    );
     ensure!(v2.deadline().is_some_and(|deadline| {
         deadline.saturating_duration_since(Instant::now()) <= Duration::from_millis(100)
     }));
@@ -1405,6 +1423,67 @@ fn group_budget_policy_parses_zero_and_coexists_with_the_other_caps() -> Result<
             "max_active":1, "max_queued":0, "operator_max_active":1,
             "operator_max_queued":0, "queue_timeout_ms":2000, "retry_after_seconds":2,
             "max_group_buffer_rows":-1,
+            "classes":{"default":{"max_active":1,"max_queued":0}}
+        }))?)
+        .is_err()
+    );
+    Ok(())
+}
+
+#[test]
+fn aggregate_distinct_budget_getters_share_state_but_new_admissions_do_not() -> Result<()> {
+    let mut policy = controller(1, 0, 1, 0)?.0.policy.clone();
+    let unconfigured = acquire(&AdmissionController::new(policy.clone())?, "default")?;
+    ensure!(unconfigured.aggregate_distinct_budget().is_none());
+    drop(unconfigured);
+    policy.max_aggregate_distinct_rows = Some(2);
+    let controller = AdmissionController::new(policy)?;
+    let first = acquire(&controller, "default")?;
+    ensure!(first.inner_join_build_budget().is_none());
+    ensure!(first.sort_buffer_budget().is_none());
+    ensure!(first.distinct_buffer_budget().is_none());
+    ensure!(first.group_buffer_budget().is_none());
+    let retained = first.aggregate_distinct_budget().unwrap().clone();
+    let evaluator = oxigraph::sparql::SparqlEvaluator::new()
+        .without_optimizations()
+        .with_aggregate_distinct_budget(retained.clone());
+    let oxigraph::sparql::QueryResults::Solutions(rows) = evaluator
+        .parse_query("SELECT (COUNT(DISTINCT ?x) AS ?n) WHERE { VALUES ?x { 1 1 2 } }")?
+        .on_store(&oxigraph::store::Store::new()?)
+        .execute()?
+    else {
+        anyhow::bail!("solutions expected");
+    };
+    ensure!(rows.collect::<Result<Vec<_>, _>>()?.len() == 1);
+    ensure!(retained.charged_rows() == 2);
+    drop(first);
+    let second = acquire(&controller, "default")?;
+    ensure!(second.aggregate_distinct_budget().unwrap().charged_rows() == 0);
+    ensure!(retained.charged_rows() == 2);
+    Ok(())
+}
+
+#[test]
+fn aggregate_distinct_budget_policy_parses_zero_and_coexists_with_other_caps() -> Result<()> {
+    let policy = WorkloadPolicy::from_json(&serde_json::to_vec(&json!({
+        "format":"oxigraph-admission-v1", "policy_id":"test", "version":1,
+        "max_active":1, "max_queued":0, "operator_max_active":1,
+        "operator_max_queued":0, "queue_timeout_ms":2000, "retry_after_seconds":2,
+        "max_inner_join_build_rows":7, "max_sort_buffer_rows":5, "max_distinct_buffer_rows":3,
+        "max_group_buffer_rows":2, "max_aggregate_distinct_rows":0,
+        "classes":{"default":{"max_active":1,"max_queued":0}}
+    }))?)?;
+    ensure!(policy.max_aggregate_distinct_rows == Some(0));
+    let lease = acquire(&AdmissionController::new(policy)?, "default")?;
+    ensure!(lease.aggregate_distinct_budget().unwrap().limit() == 0);
+    ensure!(lease.group_buffer_budget().unwrap().limit() == 2);
+    ensure!(lease.distinct_buffer_budget().unwrap().limit() == 3);
+    ensure!(
+        WorkloadPolicy::from_json(&serde_json::to_vec(&json!({
+            "format":"oxigraph-admission-v1", "policy_id":"test", "version":1,
+            "max_active":1, "max_queued":0, "operator_max_active":1,
+            "operator_max_queued":0, "queue_timeout_ms":2000, "retry_after_seconds":2,
+            "max_aggregate_distinct_rows":-1,
             "classes":{"default":{"max_active":1,"max_queued":0}}
         }))?)
         .is_err()

@@ -27,8 +27,8 @@ pub use crate::feedback::{CardinalityFeedback, CardinalityFeedbackNode, Estimate
 pub use crate::model::{QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter};
 use crate::resources::ResourceBudgets;
 pub use crate::resources::{
-    DistinctBufferBudget, GroupBufferBudget, InnerJoinBuildBudget, QueryResource,
-    QueryResourcePhase, SortBufferBudget,
+    AggregateDistinctBudget, DistinctBufferBudget, GroupBufferBudget, InnerJoinBuildBudget,
+    QueryResource, QueryResourcePhase, SortBufferBudget,
 };
 use crate::service::ServiceHandlerRegistry;
 pub use crate::service::{DefaultServiceHandler, ServiceHandler};
@@ -93,6 +93,7 @@ pub struct QueryEvaluator {
     sort_buffer_budget: Option<SortBufferBudget>,
     distinct_buffer_budget: Option<DistinctBufferBudget>,
     group_buffer_budget: Option<GroupBufferBudget>,
+    aggregate_distinct_budget: Option<AggregateDistinctBudget>,
     version: SparqlVersion,
 }
 
@@ -124,6 +125,7 @@ impl QueryEvaluator {
             sort_buffer_budget: None,
             distinct_buffer_budget: None,
             group_buffer_budget: None,
+            aggregate_distinct_budget: None,
             version: SparqlVersion::current(),
         }
     }
@@ -659,12 +661,28 @@ impl QueryEvaluator {
         self.group_buffer_budget.as_ref()
     }
 
+    /// Attaches a shared cumulative native aggregate-`DISTINCT` retained-key
+    /// budget. Clones, nested groups and repeated executions share it,
+    /// including native DELETE/INSERT operations. It is independent of the
+    /// other operator budgets.
+    #[must_use]
+    pub fn with_aggregate_distinct_budget(mut self, budget: AggregateDistinctBudget) -> Self {
+        self.aggregate_distinct_budget = Some(budget);
+        self
+    }
+
+    /// Returns the explicitly attached aggregate-`DISTINCT` budget, if any.
+    pub fn aggregate_distinct_budget(&self) -> Option<&AggregateDistinctBudget> {
+        self.aggregate_distinct_budget.as_ref()
+    }
+
     fn resource_budgets(&self) -> ResourceBudgets {
         ResourceBudgets::new(
             self.inner_join_build_budget.clone(),
             self.sort_buffer_budget.clone(),
             self.distinct_buffer_budget.clone(),
             self.group_buffer_budget.clone(),
+            self.aggregate_distinct_budget.clone(),
         )
     }
 

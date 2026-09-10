@@ -19,7 +19,9 @@
   G4.2 now includes atomic file-backed workload-policy reload with immutable
   per-attempt snapshots and an explicit loopback operator grant, plus observed
   active socket-error cancellation through the existing request token and
-  optional per-principal active/queued data caps. Full workload governance
+  optional per-principal active/queued data caps. An independent aggregate-
+  DISTINCT retained-key cap adds cumulative shared accounting without widening
+  the older group or ordinary-DISTINCT budgets. Full workload governance
   acceptance remains open.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1

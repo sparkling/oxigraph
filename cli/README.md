@@ -488,6 +488,21 @@ need fresh handles and borrowed transactions remain caller-discard. Native
 grouping accumulates before emitting results, so ASK or LIMIT cannot bypass
 exhaustion merely by requesting fewer grouped results.
 
+Optional unsigned `max_aggregate_distinct_rows` independently caps unique keys or
+tuples retained by native aggregate `DISTINCT` sets. Zero is allowed; omission
+preserves the original path. Each new key charges before cloning/insertion;
+duplicates in one set do not recharge, but another set retaining it does. Builtin
+and custom aggregate wrappers share the cumulative handle across clones,
+nested/prepared execution and owned updates. `SAMPLE DISTINCT`, optimizer-
+eliminated paths and aggregates without a DISTINCT set charge nothing. Each
+admission gets a fresh handle, retained by old attempts across policy reload.
+Expression temporaries, key/row width, GROUP_CONCAT contents, custom accumulator
+internals, CPU/allocator/RSS, inference and foreign SERVICE work are excluded. Exhaustion
+has typed `AggregateDistinctRows`/`AggregateDistinct` failure: before headers,
+HTTP returns empty 503; after headers it fails the stream. Owned updates roll
+back, while borrowed transactions remain caller-discard. Group and ordinary
+DISTINCT budgets remain independent.
+
 Optional `request_timeout_ms` (positive milliseconds) starts one absolute
 monotonic deadline **before queueing**. It is not renewed on admission, body
 read, evaluation, writer acquisition or serialization. Omitting it retains

@@ -1434,12 +1434,13 @@ fn ensure_update_start_alive(
 /// Every shared cooperative row budget of one update request, captured so the
 /// final pre-commit check survives moving the evaluator into an operation loop.
 /// Precedence matches the evaluator: inner-join rows, then sort-buffer rows,
-/// then distinct-buffer rows, then group-buffer rows.
+/// then distinct-buffer rows, group-buffer rows, then aggregate-distinct keys.
 struct UpdateBudgets {
     inner_join_build: Option<spareval::InnerJoinBuildBudget>,
     sort_buffer: Option<spareval::SortBufferBudget>,
     distinct_buffer: Option<spareval::DistinctBufferBudget>,
     group_buffer: Option<spareval::GroupBufferBudget>,
+    aggregate_distinct: Option<spareval::AggregateDistinctBudget>,
 }
 
 impl UpdateBudgets {
@@ -1449,6 +1450,7 @@ impl UpdateBudgets {
             sort_buffer: evaluator.sort_buffer_budget().cloned(),
             distinct_buffer: evaluator.distinct_buffer_budget().cloned(),
             group_buffer: evaluator.group_buffer_budget().cloned(),
+            aggregate_distinct: evaluator.aggregate_distinct_budget().cloned(),
         }
     }
 
@@ -1463,6 +1465,9 @@ impl UpdateBudgets {
             budget.check()?;
         }
         if let Some(budget) = &self.group_buffer {
+            budget.check()?;
+        }
+        if let Some(budget) = &self.aggregate_distinct {
             budget.check()?;
         }
         Ok(())
@@ -1480,6 +1485,9 @@ fn ensure_update_budget(evaluator: &QueryEvaluator) -> Result<(), UpdateEvaluati
         budget.check()?;
     }
     if let Some(budget) = evaluator.group_buffer_budget() {
+        budget.check()?;
+    }
+    if let Some(budget) = evaluator.aggregate_distinct_budget() {
         budget.check()?;
     }
     Ok(())

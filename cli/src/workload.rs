@@ -16,8 +16,8 @@ use crate::access::{ListenerKind, RequestContext};
 use oxhttp::model::header::{CACHE_CONTROL, RETRY_AFTER};
 use oxhttp::model::{Body, Extensions, Response, StatusCode};
 use oxigraph::sparql::{
-    CancellationToken, DistinctBufferBudget, GroupBufferBudget, InnerJoinBuildBudget,
-    SortBufferBudget,
+    AggregateDistinctBudget, CancellationToken, DistinctBufferBudget, GroupBufferBudget,
+    InnerJoinBuildBudget, SortBufferBudget,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -99,6 +99,8 @@ pub struct WorkloadPolicy {
     max_distinct_buffer_rows: Option<u64>,
     #[serde(default)]
     max_group_buffer_rows: Option<u64>,
+    #[serde(default)]
+    max_aggregate_distinct_rows: Option<u64>,
     retry_after_seconds: u32,
     #[serde(default)]
     principal: Option<PrincipalLimits>,
@@ -931,6 +933,10 @@ impl AdmissionController {
                 .policy
                 .max_group_buffer_rows
                 .map(GroupBufferBudget::new),
+            aggregate_distinct_budget: entry
+                .policy
+                .max_aggregate_distinct_rows
+                .map(AggregateDistinctBudget::new),
         })))
     }
 
@@ -1008,6 +1014,7 @@ struct LeaseInner {
     sort_buffer_budget: Option<SortBufferBudget>,
     distinct_buffer_budget: Option<DistinctBufferBudget>,
     group_buffer_budget: Option<GroupBufferBudget>,
+    aggregate_distinct_budget: Option<AggregateDistinctBudget>,
 }
 impl WorkloadLease {
     /// One cumulative handle created at admission, shared by every native
@@ -1029,6 +1036,11 @@ impl WorkloadLease {
     /// by every native query/update evaluator in this request.
     pub fn group_buffer_budget(&self) -> Option<&GroupBufferBudget> {
         self.0.group_buffer_budget.as_ref()
+    }
+    /// One cumulative aggregate-`DISTINCT` retained-key handle created at
+    /// admission, shared by every native query/update evaluator in this request.
+    pub fn aggregate_distinct_budget(&self) -> Option<&AggregateDistinctBudget> {
+        self.0.aggregate_distinct_budget.as_ref()
     }
     /// Serialized/emitted result bytes; excludes HTTP framing and host memory.
     pub fn result_byte_limit(&self) -> Option<oxhttp::ResponseBodyLimit> {

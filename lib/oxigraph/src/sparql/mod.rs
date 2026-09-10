@@ -50,12 +50,12 @@ use crate::store::EvaluationOperation;
 use crate::store::evaluation_metrics::{EvaluationObservation, observe_query_result};
 use crate::store::{Store, Transaction};
 pub use spareval::{
-    AggregateFunctionAccumulator, BoundedJoinCostModel, BoundedJoinPlanning, CancellationReason,
-    CancellationToken, CardinalityFeedback, CardinalityFeedbackNode, DefaultServiceHandler,
-    DistinctBufferBudget, EstimateBasis, GroupBufferBudget, InnerJoinBuildBudget,
-    JoinPlanningReport, QueryDatasetSpecification, QueryEvaluationError, QueryExplanation,
-    QueryResource, QueryResourcePhase, QueryResults, QuerySolution, QuerySolutionIter,
-    QueryTripleIter, ServiceHandler, SortBufferBudget,
+    AggregateDistinctBudget, AggregateFunctionAccumulator, BoundedJoinCostModel,
+    BoundedJoinPlanning, CancellationReason, CancellationToken, CardinalityFeedback,
+    CardinalityFeedbackNode, DefaultServiceHandler, DistinctBufferBudget, EstimateBasis,
+    GroupBufferBudget, InnerJoinBuildBudget, JoinPlanningReport, QueryDatasetSpecification,
+    QueryEvaluationError, QueryExplanation, QueryResource, QueryResourcePhase, QueryResults,
+    QuerySolution, QuerySolutionIter, QueryTripleIter, ServiceHandler, SortBufferBudget,
 };
 use spareval::{QueryEvaluator, QueryableDataset};
 use spargebra::SparqlParser;
@@ -554,6 +554,14 @@ impl SparqlEvaluator {
     /// request. Per-group aggregate storage and other buffers are not bounded.
     pub fn with_group_buffer_budget(mut self, budget: GroupBufferBudget) -> Self {
         self.inner = self.inner.with_group_buffer_budget(budget);
+        self
+    }
+
+    /// Attaches a shared cumulative native aggregate-`DISTINCT` retained-key
+    /// budget. Clones and all operations of an update share it. Create a fresh
+    /// budget for each independent request.
+    pub fn with_aggregate_distinct_budget(mut self, budget: AggregateDistinctBudget) -> Self {
+        self.inner = self.inner.with_aggregate_distinct_budget(budget);
         self
     }
 
