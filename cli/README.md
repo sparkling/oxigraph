@@ -928,6 +928,11 @@ are explicitly `unknown`/`not-checked`. No RDF terms are emitted.
 Keep the directory unchanged during inspection. This is not a concurrent
 inspection lease or an upgrade command. Ordinary writable open still retains
 legacy in-place migration behavior; do not use it to probe unknown stores.
+Ordinary open now rejects unknown/newer markers and incomplete current layouts
+before writable database setup. Writable preflight retains the native RocksDB
+lock across inspection and open. A checkpoint without `LOCK` gains an empty
+native lock file even when rejected; existing data files are not changed by
+that refusal. Use `inspect` when no new file may be created.
 See [ADR-0028](../docs/adr/0028-safe-storage-schema-upgrades.md#native-metadata-inspection-slice-2026-09-10).
 
 ## Using a Docker image

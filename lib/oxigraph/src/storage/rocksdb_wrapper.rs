@@ -491,6 +491,60 @@ struct RwDbHandler {
     path: PathBuf,
     #[cfg(test)]
     transaction_outcome_fault_control: Mutex<TransactionOutcomeFaultControl>,
+    // Drop only after rocksdb_close and all options in the Drop implementation.
+    _open_lease: Option<OpenLease>,
+}
+
+struct OpenLease {
+    native: NonNull<oxrocksdb_preflight_lease_t>,
+    path: PathBuf,
+}
+
+impl OpenLease {
+    fn acquire(path: &Path) -> Result<Self, StorageError> {
+        // A fresh store or RocksDB checkpoint may create its LOCK. Never put
+        // one in an unrelated nonempty directory. Existing LOCK files must be
+        // regular, and all native inspection runs only after this lease.
+        std::fs::create_dir_all(path)?;
+        let path = path.canonicalize()?;
+        match std::fs::symlink_metadata(path.join("LOCK")) {
+            Ok(metadata) if metadata.is_file() => (),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                if std::fs::read_dir(&path)?.next().transpose()?.is_some() {
+                    match std::fs::symlink_metadata(path.join("CURRENT")) {
+                        Ok(metadata) if metadata.is_file() => (),
+                        Ok(_) => return Err(StorageError::SchemaUnknown),
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                            return Err(StorageError::SchemaUnknown);
+                        }
+                        Err(error) => return Err(error.into()),
+                    }
+                }
+            }
+            Ok(_) => return Err(StorageError::SchemaUnknown),
+            Err(error) => return Err(error.into()),
+        }
+        let c_path = path_to_cstring(&path)?;
+        let native = unsafe { ffi_result!(oxrocksdb_preflight_lease_create(c_path.as_ptr()))? };
+        let native = NonNull::new(native)
+            .ok_or_else(|| io::Error::other("RocksDB preflight returned no environment"))?;
+        Ok(Self { native, path })
+    }
+
+    fn is_fresh(&self) -> Result<bool, StorageError> {
+        for entry in std::fs::read_dir(&self.path)? {
+            if entry?.file_name() != "LOCK" {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+}
+
+impl Drop for OpenLease {
+    fn drop(&mut self) {
+        unsafe { oxrocksdb_preflight_lease_destroy(self.native.as_ptr()) };
+    }
 }
 
 #[cfg(test)]
@@ -903,9 +957,48 @@ impl Db {
         column_families: Vec<ColumnFamilyDefinition>,
         db_options: DbOptions,
     ) -> Result<Self, StorageError> {
+        Self::open_read_write_internal(path, column_families, db_options, None)
+    }
+
+    pub fn open_read_write_with_preflight(
+        path: &Path,
+        column_families: Vec<ColumnFamilyDefinition>,
+        db_options: DbOptions,
+        preflight: impl FnOnce(&Path, bool) -> Result<(), StorageError>,
+    ) -> Result<Self, StorageError> {
+        let lease = OpenLease::acquire(path)?;
+        preflight(&lease.path, lease.is_fresh()?)?;
+        let path = lease.path.clone();
+        Self::open_read_write_internal(&path, column_families, db_options, Some(lease))
+    }
+
+    fn open_read_write_internal(
+        path: &Path,
+        column_families: Vec<ColumnFamilyDefinition>,
+        db_options: DbOptions,
+        open_lease: Option<OpenLease>,
+    ) -> Result<Self, StorageError> {
         let c_path = path_to_cstring(path)?;
         unsafe {
-            let options = Self::db_options(db_options)?;
+            let mut options = Self::db_options(db_options)?;
+            if let Some(lease) = &open_lease {
+                let leased_options = rocksdb_options_create();
+                assert!(
+                    !leased_options.is_null(),
+                    "rocksdb_options_create returned null"
+                );
+                let result = ffi_result!(oxrocksdb_preflight_lease_options(
+                    lease.native.as_ptr(),
+                    options,
+                    leased_options,
+                ));
+                rocksdb_options_destroy(options);
+                if let Err(error) = result {
+                    rocksdb_options_destroy(leased_options);
+                    return Err(error.into());
+                }
+                options = leased_options;
+            }
             rocksdb_options_set_create_if_missing(options, 1);
             rocksdb_options_set_create_missing_column_families(options, 1);
             rocksdb_options_set_compression(options, rocksdb_lz4_compression.try_into().unwrap());
@@ -1029,15 +1122,19 @@ impl Db {
                     transaction_outcome_fault_control: Mutex::new(
                         TransactionOutcomeFaultControl::default(),
                     ),
+                    _open_lease: open_lease,
                 })),
             })
         }
     }
 
-    pub fn list_column_families(path: &Path) -> Result<Vec<String>, StorageError> {
+    pub fn list_column_families(
+        path: &Path,
+        db_options: DbOptions,
+    ) -> Result<Vec<String>, StorageError> {
         unsafe {
             let c_path = path_to_cstring(path)?;
-            let options = Self::db_options(DbOptions::default())?;
+            let options = Self::db_options(db_options)?;
             let mut len = 0;
             let mut error = ptr::null_mut();
             // The C API allocates a list even on error. Release both list and
@@ -1073,9 +1170,17 @@ impl Db {
         path: &Path,
         column_families: Vec<ColumnFamilyDefinition>,
     ) -> Result<Self, StorageError> {
+        Self::open_read_only_with_options(path, column_families, DbOptions::default())
+    }
+
+    pub fn open_read_only_with_options(
+        path: &Path,
+        column_families: Vec<ColumnFamilyDefinition>,
+        db_options: DbOptions,
+    ) -> Result<Self, StorageError> {
         unsafe {
             let c_path = path_to_cstring(path)?;
-            let options = Self::db_options(DbOptions::default())?;
+            let options = Self::db_options(db_options)?;
             let (column_family_names, c_column_family_names, cf_options) =
                 Self::column_families_names_and_options(column_families, options);
             let mut cf_handles: Vec<*mut rocksdb_column_family_handle_t> =

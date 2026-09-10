@@ -99,3 +99,21 @@ fn inspection_failure_does_not_create_a_database() -> Result {
     assert_eq!(std::fs::read_dir(directory.path())?.count(), 0);
     Ok(())
 }
+
+#[test]
+fn writable_cli_refuses_an_unknown_directory_without_initializing_it() -> Result {
+    let directory = assert_fs::TempDir::new()?;
+    std::fs::write(directory.path().join("operator-data"), b"keep this file")?;
+    let before = tree(directory.path())?;
+    let output = Command::cargo_bin("oxigraph")?
+        .args(["optimize", "--location"])
+        .arg(directory.path())
+        .assert()
+        .failure()
+        .get_output()
+        .stderr
+        .clone();
+    assert!(String::from_utf8(output)?.contains("unknown storage schema"));
+    assert_eq!(tree(directory.path())?, before);
+    Ok(())
+}

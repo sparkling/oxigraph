@@ -5,8 +5,9 @@
 - Updated: 2026-09-10
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI
-  implemented; ordinary open still performs legacy migrations in place.
-  Compatible-open rejection, schema envelopes and shadow upgrades remain open
+  and unknown/newer-layout preflight implemented; ordinary writable open still
+  performs known version-0/1 migrations in place. Full compatibility rejection,
+  schema envelopes and shadow upgrades remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
@@ -18,14 +19,14 @@
 
 ## Context
 
-RocksDB storage currently records an `oxversion` integer, recognizes storage
+RocksDB storage records an `oxversion` integer, recognizes storage
 version 2, and calls migration from ordinary setup. The legacy version-0 and
 version-1 paths mutate column families and then advance the version. Read-only
-open rejects a required migration, but read-write open has no separate
-inspection, preflight, backup receipt, resumable journal, failure-injection
-contract, or operator-controlled cutover. A missing version key is stamped as
-the latest version rather than being classified from independently validated
-metadata.
+open rejects a required migration, but read-write open had no separate
+inspection or preflight at programme entry, and still has no upgrade-bound
+backup receipt, resumable journal, failure-injection contract, or
+operator-controlled cutover. Before the native preflight below, a missing
+version key was stamped as latest rather than classified independently.
 
 That behavior was sufficient for bounded historical transitions, but it is
 not a safe programme for future primary state, namespaces, receipts, outbox
@@ -120,13 +121,13 @@ current version, sorted column-family names, and missing/unexpected names.
 state as `not-checked`, RDF-feature compatibility as `unknown`. A successful
 inspection is not permission to open, upgrade, cut over, or publish a store.
 
-This additive slice changes no persisted bytes or existing open behavior.
+Inspection itself changes no persisted bytes and does not call ordinary open.
 Callers must stop writers and keep the directory unchanged, as for ordinary
 read-only open. It is not a concurrent inspection lease, a legacy classifier,
 full logical validation, feature-envelope check, interrupted-upgrade detector,
-backup receipt, or safe-upgrade implementation. The typed rejection behavior
-in the decision above is still outstanding; do not use ordinary writable open
-to probe an unknown store.
+backup receipt, or safe-upgrade implementation. Full compatibility rejection,
+including known legacy versions, remains outstanding; the bounded native
+preflight below does not replace the decision's upgrade contract.
 
 Native constructed fixtures cover absent, empty, malformed, version-0,
 version-1, current and maximum-u64 markers; missing/extra column families;
@@ -136,6 +137,41 @@ checks metadata-only JSON and source preservation, followed by read-only reopen
 of quads, an empty named graph and a namespace. These tests establish this
 inspection slice, not the frozen legacy-classifier or upgrade-promotion matrix.
 The system RocksDB lane remains unverified on this host (`rocksdb.pc` is absent).
+
+## Native unknown/newer open preflight (2026-09-10)
+
+Ordinary opens now return typed `StorageError::SchemaUnknown` for missing or
+malformed markers and unrecognized column-family inventories, or
+`StorageError::SchemaTooNew { found, supported }` for newer markers. Current
+stores are not repaired by silently creating a missing family. Fresh stores
+remain creatable; the known version-0 missing-`graphs` transition and version-1
+migration are retained until an explicit shadow path can replace them without
+discarding their existing logical compatibility assertions.
+
+Writable open acquires RocksDB's native exclusive `LOCK` before inspection and
+hands the same held lock to database open. It is retained through the last
+database handle and released on failed preflight/open. The C++ `EnvWrapper`
+uses RocksDB's public object registry and synchronous option parser; it does
+not add a private `rocksdb_env_t`/options layout mirror or modify vendored code.
+Read-only open retains its offline/no-concurrent-writer contract and creates no
+lock. `inspect` remains unchanged and non-mutating.
+
+For rejected stores with an existing regular `LOCK`, source inventories,
+lengths and SHA-256 values remain unchanged. **A checkpoint without `LOCK`
+gains an empty native lock before inspection, retained even after refusal.**
+Deleting it on refusal could let concurrent openers lock different inodes.
+Nonempty directories without a regular `CURRENT` or `LOCK`, and symlink lock
+files, are refused without initialization. Directory replacement by an external actor is not covered;
+upgrade source/destination containment leases remain a separate gate.
+
+Native tests cover marker and inventory refusals, fresh write/rollback/restart,
+checkpoint reopen, failure cleanup, explicit descriptor options under a low
+process limit, and independent-process writer exclusion during preflight and
+after handle cloning. Existing backup/restore and legacy
+logical-result tests are retained. These are product regressions, not the
+frozen legacy classifier, full source-preserving upgrade matrix, RDF-feature
+envelope, system-RocksDB qualification or upgrade-promotion gate. This ADR
+remains Proposed; no persisted version or frozen expectation changes.
 
 ## Staged implementation and evaluator gates
 

@@ -1,10 +1,12 @@
 #include "c.h"
 
 #include <rocksdb/db.h>
+#include <rocksdb/env.h>
 #include <rocksdb/statistics.h>
 #include <rocksdb/metadata.h>
 #include <rocksdb/transaction_log.h>
 #include <rocksdb/utilities/checkpoint.h>
+#include <rocksdb/utilities/object_registry.h>
 #include <rocksdb/utilities/stackable_db.h>
 #include <rocksdb/utilities/write_batch_with_index.h>
 
@@ -12,6 +14,8 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <mutex>
+#include <utility>
 #include <vector>
 
 using ROCKSDB_NAMESPACE::ColumnFamilyHandle;
@@ -68,6 +72,84 @@ static void SaveError(char** errptr, const Status& source) {
   }
 }
 
+// Acquire BEFORE read-only inspection or any writable DB::Open logging. Native
+// POSIX locking also tracks same-process ownership: a separate fcntl/flock
+// implementation or an unlock/relock handoff would not preserve that contract.
+class PreflightLeaseEnv final : public ROCKSDB_NAMESPACE::EnvWrapper {
+ public:
+  explicit PreflightLeaseEnv(const std::string& directory)
+      : EnvWrapper(ROCKSDB_NAMESPACE::Env::Default()),
+        lock_path_(directory + "/LOCK") {}
+
+  Status Acquire() { return target()->LockFile(lock_path_, &held_); }
+
+  ~PreflightLeaseEnv() override {
+    if (held_ != nullptr) {
+      // No DB may outlive this Env. Also handles preflight rejection and a
+      // failed open which did not adopt/clean up the native lock.
+      target()->UnlockFile(held_).PermitUncheckedError();
+    }
+  }
+
+  const char* Name() const override { return "OxigraphPreflightLeaseEnv"; }
+
+  Status LockFile(const std::string& name,
+                  ROCKSDB_NAMESPACE::FileLock** lock) override {
+    if (name != lock_path_) return target()->LockFile(name, lock);
+    std::lock_guard<std::mutex> guard(mutex_);
+    if (adopted_ || held_ == nullptr) {
+      *lock = nullptr;
+      return Status::IOError("Oxigraph preflight lock already adopted");
+    }
+    *lock = held_;
+    adopted_ = true;
+    return Status::OK();
+  }
+
+  Status UnlockFile(ROCKSDB_NAMESPACE::FileLock* lock) override {
+    std::lock_guard<std::mutex> guard(mutex_);
+    if (lock == held_) held_ = nullptr;
+    return target()->UnlockFile(lock);
+  }
+
+ private:
+  const std::string lock_path_;
+  ROCKSDB_NAMESPACE::FileLock* held_ = nullptr;
+  bool adopted_ = false;
+  std::mutex mutex_;
+};
+
+struct oxrocksdb_preflight_lease_t {
+  std::unique_ptr<PreflightLeaseEnv> env;
+};
+
+// The C API does not expose an Env* wrapper constructor. Use the public Env
+// registry and synchronous option parser instead of mirroring rocksdb_env_t or
+// rocksdb_options_t's private layouts. The factory lends the pointer only on
+// this binding thread; ownership always stays in oxrocksdb_preflight_lease_t.
+struct PreflightBinding {
+  PreflightLeaseEnv* env;
+  bool used = false;
+};
+static thread_local PreflightBinding* preflight_binding = nullptr;
+
+static void RegisterPreflightEnv() {
+  static std::once_flag registered;
+  std::call_once(registered, [] {
+    ROCKSDB_NAMESPACE::ObjectLibrary::Default()->AddFactory<ROCKSDB_NAMESPACE::Env>(
+        "OxigraphPreflightLeaseEnv",
+        [](const std::string&, std::unique_ptr<ROCKSDB_NAMESPACE::Env>*,
+           std::string* error) -> ROCKSDB_NAMESPACE::Env* {
+          if (preflight_binding == nullptr) {
+            *error = "Oxigraph preflight Env requires a live lease binding";
+            return nullptr;
+          }
+          preflight_binding->used = true;
+          return preflight_binding->env;
+        });
+  });
+}
+
 // RocksDB 11.1.2 read-only recovery observes WAL writes, but its live-file
 // collector uses cur_wal_number_ == 0 and omits those WALs from checkpoints.
 // Keep the vendored engine unchanged. This scoped adapter supplies all live
@@ -118,6 +200,41 @@ class ReadOnlyCheckpointDB final : public ROCKSDB_NAMESPACE::StackableDB {
 };
 
 extern "C" {
+
+oxrocksdb_preflight_lease_t* oxrocksdb_preflight_lease_create(
+    const char* directory, char** errptr) {
+  auto env = std::make_unique<PreflightLeaseEnv>(directory);
+  const auto status = env->Acquire();
+  if (!status.ok()) {
+    SaveError(errptr, status);
+    return nullptr;
+  }
+  return new oxrocksdb_preflight_lease_t{std::move(env)};
+}
+
+void oxrocksdb_preflight_lease_options(oxrocksdb_preflight_lease_t* lease,
+                                      const rocksdb_options_t* base,
+                                      rocksdb_options_t* result, char** errptr) {
+  RegisterPreflightEnv();
+  if (preflight_binding != nullptr) {
+    SaveError(errptr, Status::InvalidArgument("nested Oxigraph preflight binding"));
+    return;
+  }
+  PreflightBinding binding{lease->env.get()};
+  struct ScopedBinding {
+    explicit ScopedBinding(PreflightBinding* value) { preflight_binding = value; }
+    ~ScopedBinding() { preflight_binding = nullptr; }
+  } scope(&binding);
+  rocksdb_get_options_from_string(base, "env=OxigraphPreflightLeaseEnv", result,
+                                   errptr);
+  if (*errptr == nullptr && !binding.used) {
+    SaveError(errptr, Status::NotSupported("RocksDB did not bind the preflight Env"));
+  }
+}
+
+void oxrocksdb_preflight_lease_destroy(oxrocksdb_preflight_lease_t* lease) {
+  delete lease;
+}
 
 void oxrocksdb_read_only_checkpoint(rocksdb_t* db, const char* directory,
                                   char** errptr) {

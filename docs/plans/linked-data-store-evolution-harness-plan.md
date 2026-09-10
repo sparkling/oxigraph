@@ -1279,10 +1279,13 @@ widens core RDF semantics implicitly.
 
 G4.3 now provides additive offline `Store::inspect` and the `inspect` CLI command
 for version markers and actual/missing/extra column families, without migration
-or source-file changes. Metadata inspection is not logical/RDF-feature
-compatibility, safe open, an upgrade receipt or cutover. Existing ordinary-open
-migrations, the future envelope/classifier and the shadow-upgrade failure matrix
-remain outstanding. See [ADR-0028's native scope](../adr/0028-safe-storage-schema-upgrades.md#native-metadata-inspection-slice-2026-09-10).
+or source-file changes. Ordinary open now rejects unknown/newer markers and
+incomplete current layouts before writable setup, with a native lock held across
+preflight and open. A checkpoint missing `LOCK` gains an empty one even on
+refusal. Known version-0/1 in-place migrations remain until a shadow replacement
+is ready. Full compatibility rejection, the envelope/classifier, verified
+legacy backup ancestry and shadow-upgrade failure matrix remain outstanding.
+See [ADR-0028's native scope and limits](../adr/0028-safe-storage-schema-upgrades.md#native-unknownnewer-open-preflight-2026-09-10).
 
 G4.1 native implementation is complete: the anonymous startup boundary requires explicit
 non-loopback consent before store open and binds the exact validated address

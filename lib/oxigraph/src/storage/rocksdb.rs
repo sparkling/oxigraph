@@ -52,6 +52,8 @@ const LATEST_STORAGE_VERSION: u64 = 2;
 
 #[cfg(test)]
 mod format_inspection_tests;
+#[cfg(test)]
+mod safe_open_tests;
 const ID2STR_CF: &str = "id2str";
 const SPOG_CF: &str = "spog";
 const POSG_CF: &str = "posg";
@@ -144,22 +146,63 @@ impl RocksDbStorage {
         path: &Path,
         options: RocksDbStorageOptions,
     ) -> Result<Self, StorageError> {
-        Self::setup(Db::open_read_write(
+        Self::setup(Db::open_read_write_with_preflight(
             path,
             Self::column_families(),
             options.into(),
+            |path, fresh| {
+                if !fresh {
+                    Self::preflight_existing(path, options.into())?;
+                }
+                Ok(())
+            },
         )?)
     }
 
+    fn preflight_existing(path: &Path, options: DbOptions) -> Result<(), StorageError> {
+        let info = Self::inspect_with_options(path, options)?;
+        let Some(version) = info.storage_version() else {
+            return Err(StorageError::SchemaUnknown);
+        };
+        if version > LATEST_STORAGE_VERSION {
+            return Err(StorageError::SchemaTooNew {
+                found: version,
+                supported: LATEST_STORAGE_VERSION,
+            });
+        }
+        // Retain only the known v0 graph-index migration until explicit shadow
+        // upgrades replace both legacy migrations. Current stores are never
+        // repaired by silently creating a missing family.
+        if !info.unexpected_column_families().is_empty()
+            || info
+                .missing_column_families()
+                .iter()
+                .any(|name| version != 0 || name != GRAPHS_CF)
+        {
+            return Err(StorageError::SchemaUnknown);
+        }
+        Ok(())
+    }
+
     pub fn open_read_only(path: &Path) -> Result<Self, StorageError> {
+        // Ordinary read-only opens retain their offline/no-writer contract.
+        // Classify physical metadata before setup attempts any version work.
+        Self::preflight_existing(path, DbOptions::default())?;
         Self::setup(Db::open_read_only(path, Self::column_families())?)
     }
 
     pub fn inspect(path: &Path) -> Result<crate::store::StoreFormatInfo, StorageError> {
-        let column_families = Db::list_column_families(path)?;
+        Self::inspect_with_options(path, DbOptions::default())
+    }
+
+    fn inspect_with_options(
+        path: &Path,
+        options: DbOptions,
+    ) -> Result<crate::store::StoreFormatInfo, StorageError> {
+        let column_families = Db::list_column_families(path, options)?;
         // Read only the default family so an absent/new primary family can be
         // reported. Never call setup, ensure_version, migrate, or namespaces.
-        let db = Db::open_read_only(path, Vec::new())?;
+        let db = Db::open_read_only_with_options(path, Vec::new(), options)?;
         let marker = db.get(&db.column_family(DEFAULT_CF)?, b"oxversion")?;
         let mut required: Vec<_> = Self::column_families().iter().map(|cf| cf.name).collect();
         required.push(DEFAULT_CF);

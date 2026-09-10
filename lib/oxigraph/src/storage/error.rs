@@ -13,6 +13,18 @@ pub enum StorageError {
     /// Error related to data corruption.
     #[error(transparent)]
     Corruption(#[from] CorruptionError),
+    /// An existing directory has an unrecognized marker or column-family layout.
+    /// Opening it does not initialize, repair, or migrate it.
+    #[error("unknown storage schema; inspect the offline store before opening it")]
+    SchemaUnknown,
+    /// The persisted storage version is newer than this binary supports.
+    #[error("storage schema {found} is newer than supported version {supported}")]
+    SchemaTooNew {
+        /// Version read from the store.
+        found: u64,
+        /// Highest storage version supported by this binary.
+        supported: u64,
+    },
     #[doc(hidden)]
     #[error("{0}")]
     Other(#[source] Box<dyn Error + Send + Sync + 'static>),
@@ -24,6 +36,9 @@ impl From<StorageError> for io::Error {
         match error {
             StorageError::Io(error) => error,
             StorageError::Corruption(error) => error.into(),
+            error @ (StorageError::SchemaUnknown | StorageError::SchemaTooNew { .. }) => {
+                Self::new(io::ErrorKind::InvalidData, error)
+            }
             StorageError::Other(error) => Self::other(error),
         }
     }

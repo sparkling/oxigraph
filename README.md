@@ -443,6 +443,10 @@ This fork also provides `Store::inspect` and `oxigraph inspect --location <path>
 for offline, non-migrating version-marker and column-family inspection. This is
 physical metadata, not logical/feature compatibility or upgrade approval; see
 [inspection usage and limits](cli/README.md#offline-storage-inspection-fork).
+Ordinary opens now reject unknown/newer markers and incomplete current layouts
+before writable database setup. Writable preflight holds the native store lock;
+checkpoints without one gain an empty `LOCK` even on refusal. Known version-0/1
+migrations still run in place, so full safe-upgrade support remains outstanding.
 
 ## Upstream Oxigraph
 
