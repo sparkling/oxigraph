@@ -435,6 +435,20 @@ after a commit never establishes rollback. The cap is not an evaluator-work,
 row-count or RSS bound: query state, serializer-private rows/terms, Graph Store
 snapshot/ETag preparation and allocator capacity remain outside it.
 
+Optional unsigned `max_result_rows` independently caps generated SPARQL and
+Graph Store records. Each SELECT solution (including duplicates), ASK boolean
+(true or false), query triple, Graph Store quad/triple or explicit dataset
+empty-graph marker counts once. Omission adds no cap; zero allows empty results
+and mutation acknowledgments, but not an ASK result. The exact cap succeeds;
+the next record fails before serialization. Buffered failure returns empty
+noncacheable 503; late failure terminates the stream without a successful EOF.
+Each response retains its admitted policy snapshot across reload and streaming
+buffer resets. Graph Store 304 generates no records; generated HEAD
+representations still count. Discovery/operator documents, update mutations,
+input/intermediate rows, graph snapshot/ETag preparation, bytes and RSS are not
+covered by this record counter. Existing byte and native operator caps remain
+independent; a response failure never establishes rollback of a committed write.
+
 Optional `max_inner_join_build_rows` is an unsigned cumulative cap on rows
 inserted into native Cartesian/hash **inner-join build tables**. For example,
 `"max_inner_join_build_rows": 100000` is an illustrative operator choice, not

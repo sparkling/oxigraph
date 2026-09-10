@@ -2921,6 +2921,300 @@ fn distinct_buffer_limit_applies_under_finite_rdf_materialization_then_persists(
 }
 
 #[test]
+fn result_row_limits_count_buffered_and_streamed_sparql_records() -> Result<()> {
+    for read_only in [false, true] {
+        let mut profile = workload(1, 1, 1000);
+        profile["max_result_rows"] = json!(2);
+        let running = start_with_workload(&config(), read_only, Some(&profile))?;
+        for (query, exact_query, accept) in [
+            (
+                "SELECT ?x WHERE { VALUES ?x { 1 1 1 } }",
+                "SELECT ?x WHERE { VALUES ?x { 1 1 } }",
+                "application/sparql-results+json; version=1.1",
+            ),
+            (
+                "CONSTRUCT { ?x <urn:p> <urn:o> } WHERE { VALUES ?x { <urn:a> <urn:b> <urn:c> } }",
+                "CONSTRUCT { ?x <urn:p> <urn:o> } WHERE { VALUES ?x { <urn:a> <urn:b> } }",
+                "application/n-triples; version=1.1",
+            ),
+        ] {
+            let headers = format!(
+                "{}Content-Type: application/sparql-query\r\nAccept: {accept}\r\n",
+                identity(READER, 1)?
+            );
+            let refused = request(running.public, "POST", "/query", &headers, query)?;
+            ensure!(
+                refused.status == 503
+                    && refused.body.is_empty()
+                    && refused.head.contains("cache-control: no-store")
+                    && !refused.head.contains("retry-after:"),
+                "{query}: {} {}",
+                refused.status,
+                refused.body
+            );
+            let exact = request(running.public, "POST", "/query", &headers, exact_query)?;
+            ensure!(exact.status == 200, "{} {}", exact.status, exact.body);
+            if accept.contains("json") {
+                ensure!(
+                    serde_json::from_str::<Value>(&exact.body)?["results"]["bindings"]
+                        .as_array()
+                        .context("bindings")?
+                        .len()
+                        == 2
+                );
+            } else {
+                ensure!(exact.body.lines().count() == 2, "{}", exact.body);
+            }
+        }
+        let stream_cases = [
+            (
+                "SELECT ?x WHERE { VALUES ?x { 1 1 1 } }",
+                "application/sparql-results+json",
+            ),
+            #[cfg(feature = "rdf-12")]
+            (
+                "CONSTRUCT { ?x <urn:p> <urn:o> } WHERE { VALUES ?x { <urn:a> <urn:b> <urn:c> } }",
+                "application/n-triples; version=1.2",
+            ),
+        ];
+        for (query, accept) in stream_cases {
+            let raw = raw_wire_bytes(running.public, format!(
+                "POST /query HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{}Content-Type: application/sparql-query\r\nAccept: {accept}\r\nContent-Length: {}\r\n\r\n{query}", identity(READER, 1)?, query.len()
+            ).as_bytes())?;
+            ensure!(
+                raw.starts_with("HTTP/1.1 200 ")
+                    && decode_wire(&raw).is_err()
+                    && !raw.ends_with("0\r\n\r\n")
+                    && !raw.contains("exceeded"),
+                "{raw}"
+            );
+        }
+        // Every refusal/failed stream releases the sole data slot. ASK is one
+        // result record, regardless of the work needed to compute its boolean.
+        ensure!(sparql(&running, READER, "/query", "ASK {}").map(|r| r.status)? == 200);
+    }
+    Ok(())
+}
+
+#[test]
+fn result_row_limits_zero_and_boolean_boundaries_preserve_empty_writes() -> Result<()> {
+    for limit in [0, 1] {
+        let mut profile = workload(1, 1, 1000);
+        profile["max_result_rows"] = json!(limit);
+        let running = start_with_workload(&config(), false, Some(&profile))?;
+        ensure!(
+            sparql(
+                &running,
+                WRITER,
+                "/update",
+                "INSERT DATA { <urn:row> <urn:p> <urn:o> }"
+            )?
+            .status
+                == 204
+        );
+        for query in ["ASK {}", "ASK { FILTER(false) }"] {
+            let response = sparql(&running, READER, "/query", query)?;
+            ensure!(response.status == if limit == 0 { 503 } else { 200 });
+            if limit == 0 {
+                ensure!(response.body.is_empty());
+            }
+        }
+        for (query, accept) in [
+            (
+                "SELECT ?x WHERE { FILTER(false) }",
+                "application/sparql-results+json; version=1.1",
+            ),
+            (
+                "CONSTRUCT { <urn:s> <urn:p> <urn:o> } WHERE { FILTER(false) }",
+                "application/n-triples; version=1.1",
+            ),
+        ] {
+            let response = request(
+                running.public,
+                "POST",
+                "/query",
+                &format!(
+                    "{}Content-Type: application/sparql-query\r\nAccept: {accept}\r\n",
+                    identity(READER, 1)?
+                ),
+                query,
+            )?;
+            ensure!(
+                response.status == 200,
+                "{} {}",
+                response.status,
+                response.body
+            );
+        }
+        ensure!(sparql(&running, READER, "/query", "not a query")?.status == 400);
+        ensure!(request(running.public, "GET", "/query", "", "")?.status == 401);
+        ensure!(
+            request(
+                running.admin,
+                "GET",
+                "/metrics",
+                &identity(OPERATOR, 1)?,
+                ""
+            )?
+            .status
+                == 200
+        );
+        // A row cap does not cover discovery or generated operator documents.
+        ensure!(request(running.public, "GET", "/query", &identity(READER, 1)?, "")?.status == 200);
+        drop(running.child);
+        let store = oxigraph::store::Store::open(running.directory.path().join("store"))?;
+        ensure!(store.contains(&oxigraph::model::Quad::new(
+            oxigraph::model::NamedNode::new("urn:row")?,
+            oxigraph::model::NamedNode::new("urn:p")?,
+            oxigraph::model::NamedNode::new("urn:o")?,
+            oxigraph::model::GraphName::DefaultGraph
+        ))?);
+    }
+    // Byte and row caps are independent: a one-record ASK can still exceed
+    // the generated-byte allowance, while an empty mutation acknowledgment fits.
+    let mut profile = workload(1, 1, 1000);
+    profile["max_result_rows"] = json!(1);
+    profile["max_result_bytes"] = json!(1);
+    let running = start_with_workload(&config(), false, Some(&profile))?;
+    let response = sparql(&running, READER, "/query", "ASK {}")?;
+    ensure!(response.status == 503 && response.body.is_empty());
+    ensure!(
+        sparql(
+            &running,
+            WRITER,
+            "/update",
+            "INSERT DATA { <urn:byte> <urn:p> <urn:o> }"
+        )?
+        .status
+            == 204
+    );
+    Ok(())
+}
+
+#[test]
+fn result_row_limits_graph_records_reload_and_restart() -> Result<()> {
+    let mut profile = workload(1, 1, 3000);
+    profile["max_result_rows"] = json!(3);
+    let running = start_with_workload(&workload_reload_config(), false, Some(&profile))?;
+    ensure!(sparql(&running, WRITER, "/update", "INSERT DATA { GRAPH <urn:rows> { <urn:a> <urn:p> <urn:o> . <urn:b> <urn:p> <urn:o> } }; CREATE GRAPH <urn:empty>")?.status == 204);
+    let dataset_headers = format!("{}Accept: application/trig\r\n", identity(WRITER, 1)?);
+    let dataset = request(running.public, "GET", "/store", &dataset_headers, "")?;
+    ensure!(
+        dataset.status == 200 && dataset.body.contains("urn:empty"),
+        "{} {}",
+        dataset.status,
+        dataset.body
+    );
+    let graph = request(
+        running.public,
+        "GET",
+        "/store?graph=urn:rows",
+        &identity(WRITER, 1)?,
+        "",
+    )?;
+    ensure!(graph.status == 200 && graph.body.lines().count() == 2);
+    let etag = graph
+        .head
+        .lines()
+        .find_map(|line| line.strip_prefix("etag: "))
+        .context("graph ETag")?;
+    let query = "SELECT ?x WHERE { VALUES ?x { 1 2 3 } }";
+    let mut admitted = TcpStream::connect(running.public)?;
+    admitted.set_read_timeout(Some(Duration::from_secs(3)))?;
+    write!(
+        admitted,
+        "POST /query HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nContent-Type: application/sparql-query\r\nAccept: application/sparql-results+json; version=1.1\r\nContent-Length: {}\r\nExpect: 100-continue\r\n{}\r\n",
+        running.public,
+        query.len(),
+        identity(READER, 1)?
+    )?;
+    ensure!(read_status_head(&mut admitted)? == 100);
+    for (version, limit) in [(2, 2), (3, 0), (4, 3)] {
+        profile["version"] = json!(version);
+        profile["max_result_rows"] = json!(limit);
+        write_policy(
+            running
+                .workload_policy
+                .as_deref()
+                .context("workload path")?,
+            &profile,
+        )?;
+        ensure!(
+            request(
+                running.admin,
+                "POST",
+                "/workload/policy/reload",
+                &identity(OPERATOR, 1)?,
+                ""
+            )?
+            .status
+                == 204
+        );
+        if version == 2 {
+            admitted.write_all(query.as_bytes())?;
+            let mut raw = String::new();
+            admitted.read_to_string(&mut raw)?;
+            let response = decode_wire(&raw)?;
+            ensure!(
+                response.status == 200
+                    && serde_json::from_str::<Value>(&response.body)?["results"]["bindings"]
+                        .as_array()
+                        .context("bindings")?
+                        .len()
+                        == 3
+            );
+        }
+        if version < 4 {
+            let refused = request(
+                running.public,
+                "POST",
+                "/query",
+                &format!(
+                    "{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json; version=1.1\r\n",
+                    identity(READER, 1)?
+                ),
+                query,
+            )?;
+            ensure!(refused.status == 503 && refused.body.is_empty());
+            // Two quads fit cap 2, but the explicit empty-graph record is third.
+            let dataset = request(running.public, "GET", "/store", &dataset_headers, "")?;
+            ensure!(dataset.status == 503 && dataset.body.is_empty());
+            let conditional = request(
+                running.public,
+                "GET",
+                "/store?graph=urn:rows",
+                &format!("{}If-None-Match: {etag}\r\n", identity(WRITER, 1)?),
+                "",
+            )?;
+            ensure!(
+                conditional.status == 304
+                    && conditional.body.is_empty()
+                    && !conditional.head.contains("content-length:")
+            );
+            let head = request(
+                running.public,
+                "HEAD",
+                "/store?graph=urn:rows",
+                &identity(WRITER, 1)?,
+                "",
+            )?;
+            ensure!(head.status == if limit == 0 { 503 } else { 200 });
+            let empty = request(
+                running.public,
+                "GET",
+                "/store?graph=urn:empty",
+                &identity(WRITER, 1)?,
+                "",
+            )?;
+            ensure!(empty.status == 200 && empty.body.is_empty());
+        }
+    }
+    // Reload restores a usable cap; the real journey keeps the same addresses
+    // and store and proves successful writes and failed-update rollback persist.
+    write_rollback_and_restart(running)
+}
+
+#[test]
 fn result_limits_buffered_streaming_conditional_and_persistent_journey() -> Result<()> {
     let mut profile = workload(1, 1, 1000);
     profile["max_result_bytes"] = json!(512);

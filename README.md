@@ -192,6 +192,10 @@ bytes and decoded bytes have separate explicit caps; this is not a hard memory
 bound. Optional result-byte limits now bound generated and transmitted entities:
 oversized buffered success becomes empty 503, while late serialization failures
 close as failed streams, never error text plus successful EOF. Optional
+`max_result_rows` independently limits generated SELECT solutions, ASK booleans
+and query/Graph Store RDF records, including explicit empty-graph markers.
+Exact/zero boundaries and reload snapshots preserve complete results or explicit
+failure; this is not an intermediate-row or memory bound. Optional
 `max_inner_join_build_rows` now caps cumulative native Cartesian/hash inner-join
 build rows across a request, including multi-operation updates. Exhaustion is
 typed and sticky, with owned-update rollback; streaming joins, other buffers,

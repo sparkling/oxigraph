@@ -1498,7 +1498,9 @@ fine-grained SPARQL filtering or general evaluator resource quotas.
 The native HTTP fixture now leases addresses across real same-port restarts,
 preventing reuse by parallel fixtures without retrying failed restarts. This
 release-check repair does not establish the historical conflicting socket's
-identity. The next product slice is the explicit result-row cap (ADR-0027).
+identity. The explicit result-row cap is now implemented (ADR-0027): generated
+SPARQL/Graph Store records, exact/zero limits, preserved reload snapshots and
+failed streams, independently of bytes and intermediate evaluator work.
 
 The programme now records the named decisions admitted by this user:
 

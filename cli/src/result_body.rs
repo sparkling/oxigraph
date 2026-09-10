@@ -1,10 +1,51 @@
-//! ADR-0027 result-generation counters. This bounds destination bytes, not
-//! serializer-private terms/rows, query state, or allocator/RSS overhead.
+//! ADR-0027 result-generation counters. These bound destination bytes and
+//! explicitly charged records, not query state or allocator/RSS overhead.
 use crate::HttpError;
 use oxhttp::model::{Body, Request, StatusCode};
 use oxhttp::{ResponseBodyLimit, ResponseBodyLimitExceeded, ResponseBodyPhase};
 use oxigraph_cli::workload::{WorkloadError, WorkloadLease};
 use std::io::{self, Write};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct ResultRowLimitExceeded {
+    limit: u64,
+}
+impl std::fmt::Display for ResultRowLimitExceeded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "generated result row limit {} exceeded", self.limit)
+    }
+}
+impl std::error::Error for ResultRowLimitExceeded {}
+
+/// One response's logical records, independent of serialized byte count. Move
+/// this counter with the streaming serializer; draining its buffer cannot reset it.
+pub(super) struct ResultRowBudget {
+    limit: Option<u64>,
+    produced: u64,
+}
+impl ResultRowBudget {
+    pub(super) fn new(request: &Request<Body>) -> Self {
+        Self {
+            limit: request
+                .extensions()
+                .get::<WorkloadLease>()
+                .and_then(WorkloadLease::result_row_limit),
+            produced: 0,
+        }
+    }
+
+    pub(super) fn charge(&mut self) -> io::Result<()> {
+        if let Some(limit) = self.limit {
+            if self.produced == limit {
+                // Saturate at the inclusive limit: subsequent charges remain
+                // failures, including at u64::MAX, without an overflow/reset.
+                return Err(io::Error::other(ResultRowLimitExceeded { limit }));
+            }
+            self.produced += 1;
+        }
+        Ok(())
+    }
+}
 
 pub(super) struct ResultBodyWriter<W> {
     inner: W,
@@ -80,6 +121,7 @@ impl<W: Write> std::fmt::Write for ResultBodyWriter<W> {
 /// Preserve resource failure before existing 406/500 semantic/error mappings.
 pub(super) fn http_error(error: io::Error, fallback: fn(io::Error) -> HttpError) -> HttpError {
     if matches!(error.get_ref(), Some(inner) if inner.is::<ResponseBodyLimitExceeded>()
+        || inner.is::<ResultRowLimitExceeded>()
         || matches!(inner.downcast_ref::<oxigraph::sparql::QueryEvaluationError>(),
             Some(oxigraph::sparql::QueryEvaluationError::ResourceLimitExceeded { .. })))
     {
@@ -101,6 +143,87 @@ mod tests {
     use super::*;
     use std::fmt::Write as _;
     use std::io::Read;
+
+    #[test]
+    fn row_limit_is_inclusive_sticky_unsigned_and_independent_of_bytes() {
+        for limit in [0, 1, 3, u64::MAX] {
+            let mut rows = ResultRowBudget {
+                limit: Some(limit),
+                produced: limit.saturating_sub(1),
+            };
+            if limit > 0 {
+                rows.charge().unwrap();
+            }
+            for _ in 0..2 {
+                let error = rows.charge().unwrap_err();
+                assert_eq!(
+                    error
+                        .get_ref()
+                        .unwrap()
+                        .downcast_ref::<ResultRowLimitExceeded>(),
+                    Some(&ResultRowLimitExceeded { limit })
+                );
+                assert_eq!(
+                    internal_error(error),
+                    (StatusCode::SERVICE_UNAVAILABLE, String::new())
+                );
+            }
+        }
+        let mut unlimited = ResultRowBudget {
+            limit: None,
+            produced: 0,
+        };
+        for _ in 0..8 {
+            unlimited.charge().unwrap();
+        }
+        assert_eq!(unlimited.produced, 0);
+    }
+
+    #[test]
+    fn row_limit_survives_stream_buffer_resets_and_never_becomes_clean_eof() {
+        for limit in [2, 3] {
+            let response = crate::ReadForWrite::build_response(
+                |writer| {
+                    Ok((
+                        writer,
+                        ResultRowBudget {
+                            limit: Some(limit),
+                            produced: 0,
+                        },
+                        0,
+                    ))
+                },
+                |(mut writer, mut rows, count)| {
+                    if count == 3 {
+                        return Ok(None);
+                    }
+                    rows.charge()?;
+                    writer.write_all(b"x")?;
+                    Ok(Some((writer, rows, count + 1)))
+                },
+                "text/plain",
+                &request(100),
+            )
+            .unwrap();
+            let mut body = response.into_body();
+            let mut bytes = Vec::new();
+            let result = body.read_to_end(&mut bytes);
+            if limit == 3 {
+                result.unwrap();
+                assert_eq!(bytes, b"xxx");
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .get_ref()
+                        .unwrap()
+                        .is::<ResultRowLimitExceeded>()
+                );
+                assert_eq!(bytes, b"xx");
+                assert!(body.read(&mut [0; 1]).is_err());
+            }
+        }
+    }
 
     fn writer(limit: u64) -> ResultBodyWriter<Vec<u8>> {
         ResultBodyWriter {

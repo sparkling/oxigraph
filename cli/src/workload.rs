@@ -105,6 +105,8 @@ pub struct WorkloadPolicy {
     #[serde(default)]
     max_result_bytes: Option<u64>,
     #[serde(default)]
+    max_result_rows: Option<u64>,
+    #[serde(default)]
     max_inner_join_build_rows: Option<u64>,
     #[serde(default)]
     max_sort_buffer_rows: Option<u64>,
@@ -1185,6 +1187,12 @@ impl WorkloadLease {
             .policy
             .max_result_bytes
             .map(oxhttp::ResponseBodyLimit)
+    }
+    /// Generated response records; excludes bytes, intermediate evaluator
+    /// rows and update mutations. The HTTP serialization boundary owns the
+    /// cumulative record accounting.
+    pub fn result_row_limit(&self) -> Option<u64> {
+        self.0.policy.max_result_rows
     }
     /// Immutable request-body bounds for the trusted HTTP admission hook.
     pub fn request_body_limits(&self) -> Option<oxhttp::RequestBodyLimits> {

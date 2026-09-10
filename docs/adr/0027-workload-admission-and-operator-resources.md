@@ -9,7 +9,7 @@
   and response-flush lifetime are implemented. Optional absolute request
   deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and
   transactional paths. Opt-in encoded/decoded request-body, generated/emitted
-  result-byte, native inner-join build-row, ORDER BY buffer-row, hash DISTINCT
+  result-byte/record, native inner-join build-row, ORDER BY buffer-row, hash DISTINCT
   retained-row, accumulator-group, aggregate-DISTINCT retained-key, native
   property-path buffer-entry and OPTIONAL/MINUS build-row caps are implemented.
   Fixed-pool admission counts, occupancy and queue-wait metrics, plus final-lease
@@ -998,6 +998,32 @@ The normal-concurrency HTTP suites pass: 48 no-default, 54 default and 54
 against the unchanged identified release executable. The three new focused
 regressions also pass. Delivery returns to the explicit result-row cap. This
 is release-check repair, not new product behavior or full G4.2 acceptance.
+
+### Native generated result-record limit (2026-09-10)
+
+Optional unsigned `max_result_rows` is read from the immutable admitted policy
+snapshot. A response-local counter travels with its streaming serializer and
+charges before each record is serialized: one SELECT solution (duplicates
+included), ASK boolean regardless of value, query triple, Graph Store quad or
+triple, or explicit dataset empty-graph marker. Omission adds no cap; zero
+permits empty results and mutation acknowledgments; the inclusive limit works
+through `u64::MAX` without overflow. Exhausted charges stay typed failures.
+
+`ResultRowLimitExceeded` maps to empty noncacheable 503 before successful
+headers; after headers the existing latched I/O path fails the stream without
+a terminating chunk. It does not turn a partial result into success. Graph
+Store 304 generates no records; generated HEAD representations still count.
+Byte limits remain independent. The counter excludes discovery/operator
+documents, request input, update mutations, intermediate evaluator rows,
+Graph Store snapshot/ETag preparation and memory/CPU. No native operator
+telemetry vocabulary, dependency, protocol-version default or qualification
+evidence changes; a response error is not proof of rollback after commit.
+
+Native tests cover typed exact/zero/maximum/sticky boundaries and buffer resets,
+strict schema and old queued/active reload snapshots, buffered/streamed SELECT
+and graph results, both ASK values, empty-graph records, 304/HEAD, independent
+byte refusal, fresh admission, and the persistent write/rollback/restart journey.
+This closes the generated-record slice, not full G4.2 resource acceptance.
 
 ### Remaining staged acceptance
 

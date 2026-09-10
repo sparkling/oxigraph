@@ -2,7 +2,7 @@
 
 use crate::cli::{Args, Command, EntailmentProfile};
 use crate::rdf_response::RdfResponseFormat;
-use crate::result_body::ResultBodyWriter;
+use crate::result_body::{ResultBodyWriter, ResultRowBudget};
 use crate::service_description::{EndpointKind, write_service_description};
 use anyhow::{Context, bail, ensure};
 use clap::Parser;
@@ -1869,6 +1869,7 @@ fn evaluate_sparql_query(
             .execute()
     }
     .map_err(query_evaluation_error)?;
+    let mut rows = ResultRowBudget::new(request);
     match results {
         QueryResults::Solutions(solutions) => {
             let selected = query_results_content_negotiation(request, true)?;
@@ -1880,6 +1881,7 @@ fn evaluate_sparql_query(
                     .map_err(result_body::internal_error)?;
                 for solution in solutions {
                     let solution = solution.map_err(query_evaluation_error)?;
+                    rows.charge().map_err(result_body::internal_error)?;
                     serializer.serialize(&solution).map_err(|error| {
                         result_body::http_error(error, query_results_not_acceptable)
                     })?;
@@ -1897,12 +1899,15 @@ fn evaluate_sparql_query(
                         serializer
                             .serialize_solutions_to_writer(w, solutions.variables().to_vec())?,
                         solutions,
+                        rows,
                     ))
                 },
-                |(mut serializer, mut solutions)| {
+                |(mut serializer, mut solutions, mut rows)| {
                     Ok(if let Some(solution) = solutions.next() {
-                        serializer.serialize(&solution.map_err(io::Error::other)?)?;
-                        Some((serializer, solutions))
+                        let solution = solution.map_err(io::Error::other)?;
+                        rows.charge()?;
+                        serializer.serialize(&solution)?;
+                        Some((serializer, solutions, rows))
                     } else {
                         serializer.finish()?;
                         None
@@ -1915,6 +1920,7 @@ fn evaluate_sparql_query(
         QueryResults::Boolean(result) => {
             let selected = query_results_content_negotiation(request, false)?;
             let mut body = ResultBodyWriter::new(Vec::new(), request);
+            rows.charge().map_err(result_body::internal_error)?;
             selected
                 .serializer()?
                 .serialize_boolean_to_writer(&mut body, result)
@@ -1937,6 +1943,7 @@ fn evaluate_sparql_query(
                     selected
                         .ensure_triple(&triple)
                         .map_err(rdf_response_not_acceptable)?;
+                    rows.charge().map_err(result_body::internal_error)?;
                     serializer
                         .serialize_triple(&triple)
                         .map_err(result_body::internal_error)?;
@@ -1952,13 +1959,14 @@ fn evaluate_sparql_query(
                     .map_err(internal_server_error);
             }
             ReadForWrite::build_response(
-                move |w| Ok((selected.serializer()?.for_writer(w), triples)),
-                move |(mut serializer, mut triples)| {
+                move |w| Ok((selected.serializer()?.for_writer(w), triples, rows)),
+                move |(mut serializer, mut triples, mut rows)| {
                     Ok(if let Some(t) = triples.next() {
                         let triple = t.map_err(io::Error::other)?;
                         selected.ensure_triple(&triple)?;
+                        rows.charge()?;
                         serializer.serialize_triple(&triple)?;
-                        Some((serializer, triples))
+                        Some((serializer, triples, rows))
                     } else {
                         serializer.finish()?;
                         None

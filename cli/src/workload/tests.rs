@@ -120,7 +120,7 @@ fn reload_policy(
         "operator_max_queued":operator_max_queued,
         "queue_timeout_ms":4000, "request_timeout_ms":5000,
         "request_body_limits":{"max_encoded_bytes":1000,"max_decoded_bytes":1001},
-        "max_result_bytes":1002, "max_inner_join_build_rows":1003,
+        "max_result_bytes":1002, "max_result_rows":1010, "max_inner_join_build_rows":1003,
         "max_sort_buffer_rows":1004, "max_distinct_buffer_rows":1005,
         "max_group_buffer_rows":1006, "max_aggregate_distinct_rows":1007,
         "max_path_buffer_rows":1008, "max_conditional_join_build_rows":1009,
@@ -385,6 +385,7 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
     lower["queue_timeout_ms"] = json!(50);
     lower["request_body_limits"] = json!({"max_encoded_bytes":0,"max_decoded_bytes":0});
     lower["max_result_bytes"] = json!(0);
+    lower["max_result_rows"] = json!(0);
     lower["max_inner_join_build_rows"] = json!(0);
     lower["max_sort_buffer_rows"] = json!(0);
     lower["max_distinct_buffer_rows"] = json!(0);
@@ -433,6 +434,7 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
     ensure!(queued.policy_version() == 1 && queued.policy_id() == "reload-test");
     ensure!(queued.deadline() == queued_request_deadline);
     ensure!(queued.result_byte_limit() == Some(oxhttp::ResponseBodyLimit(1002)));
+    ensure!(queued.result_row_limit() == Some(1010));
     ensure!(
         queued.request_body_limits()
             == Some(oxhttp::RequestBodyLimits {
@@ -481,6 +483,7 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
     let v2 = acquire(&controller, "default")?;
     ensure!(v2.policy_version() == 2);
     ensure!(v2.result_byte_limit() == Some(oxhttp::ResponseBodyLimit(0)));
+    ensure!(v2.result_row_limit() == Some(0));
     ensure!(
         v2.inner_join_build_budget()
             .map(InnerJoinBuildBudget::limit)
@@ -1568,6 +1571,11 @@ fn result_budget_is_optional_unsigned_and_bound_to_each_lease() -> Result<()> {
             .result_byte_limit()
             .is_none()
     );
+    ensure!(
+        acquire(&controller, "default")?
+            .result_row_limit()
+            .is_none()
+    );
     for limit in [0, 17, u64::MAX] {
         let mut policy = controller.0.policy.clone();
         policy.max_result_bytes = Some(limit);
@@ -1576,6 +1584,10 @@ fn result_budget_is_optional_unsigned_and_bound_to_each_lease() -> Result<()> {
             acquire(&controller, "default")?.result_byte_limit()
                 == Some(oxhttp::ResponseBodyLimit(limit))
         );
+        let mut policy = controller.0.policy.clone();
+        policy.max_result_rows = Some(limit);
+        let controller = AdmissionController::new(policy)?;
+        ensure!(acquire(&controller, "default")?.result_row_limit() == Some(limit));
     }
     for value in [json!(-1), json!(1.5), json!("1"), json!(true)] {
         let bytes = serde_json::to_vec(
@@ -1583,6 +1595,13 @@ fn result_budget_is_optional_unsigned_and_bound_to_each_lease() -> Result<()> {
             "max_active":1,"max_queued":0,"operator_max_active":1,"operator_max_queued":0,
             "queue_timeout_ms":1000,"retry_after_seconds":1,"classes":{"default":{"max_active":1,"max_queued":0}},
             "max_result_bytes":value}),
+        )?;
+        ensure!(WorkloadPolicy::from_json(&bytes).is_err());
+        let bytes = serde_json::to_vec(
+            &json!({"format":"oxigraph-admission-v1","policy_id":"test","version":1,
+            "max_active":1,"max_queued":0,"operator_max_active":1,"operator_max_queued":0,
+            "queue_timeout_ms":1000,"retry_after_seconds":1,"classes":{"default":{"max_active":1,"max_queued":0}},
+            "max_result_rows":value}),
         )?;
         ensure!(WorkloadPolicy::from_json(&bytes).is_err());
     }
