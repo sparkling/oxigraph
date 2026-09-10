@@ -226,8 +226,12 @@ workload token, including requests without a configured deadline. One combined
 deadline/transport monitor stops before capacity is released; running work keeps
 its lease and valid TCP write-half-closes are preserved. This is best-effort
 error observation, not detection of FIN-only or silent loss, nor rollback of an
-already committed write. Broader resource accounting, fairness and full G4.2
-acceptance remain open.
+already committed write. Optional per-principal active/queued caps now isolate
+data admission across authenticated subjects, sharing each subject's allowance
+across classes. Anonymous callers share one allowance; the operator reserve is
+unchanged. Counts include old-policy work and discard identities after drain.
+These are caps, not weighted fairness or guaranteed service shares. Broader
+resource accounting, scheduling and full G4.2 acceptance remain open.
 The planner also avoids materializing large accumulated path fan-outs when
 a smaller hash-build input is available. Native result/budget regressions and
 the original OOM-input replay verify this

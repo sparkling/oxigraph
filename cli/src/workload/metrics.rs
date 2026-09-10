@@ -46,6 +46,7 @@ impl From<ListenerKind> for AdmissionPool {
 pub enum AdmissionDisposition {
     Admitted,
     RefusedGlobal,
+    /// Class or per-principal refusal, aggregated without identity labels.
     RefusedClass,
     RefusedOperator,
     UnknownClass,
@@ -91,7 +92,9 @@ impl AdmissionDisposition {
         match result {
             Ok(_) => Self::Admitted,
             Err(WorkloadError::Overloaded(AdmissionScope::Global)) => Self::RefusedGlobal,
-            Err(WorkloadError::Overloaded(AdmissionScope::Class)) => Self::RefusedClass,
+            Err(WorkloadError::Overloaded(AdmissionScope::Class | AdmissionScope::Principal)) => {
+                Self::RefusedClass
+            }
             Err(WorkloadError::Overloaded(AdmissionScope::Operator)) => Self::RefusedOperator,
             Err(WorkloadError::UnknownClass) => Self::UnknownClass,
             Err(WorkloadError::Cancelled) => Self::Cancelled,
@@ -501,6 +504,10 @@ mod tests {
             ),
             (
                 WorkloadError::Overloaded(AdmissionScope::Class),
+                "refused_class",
+            ),
+            (
+                WorkloadError::Overloaded(AdmissionScope::Principal),
                 "refused_class",
             ),
             (

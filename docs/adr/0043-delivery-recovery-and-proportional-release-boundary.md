@@ -503,7 +503,11 @@ coordination alongside faster implementation, not an all-Ultra execution mix.
 It is not a complete subagent census or a measurement of time, cost or quality.
 Ruflo's model statistics reported 247 routing decisions (191 Sonnet, 56 Opus),
 not actual Codex executions; they cannot establish the native model mix.
-The next bounded per-principal admission slice selects Terra Medium.
+The per-principal admission slice used native Terra Medium for implementation
+and focused tests, followed by parent review and deterministic release checks.
+Review removed a queue allocation and strengthened expiry, unwind, schema and
+reload tests. Both CLI feature configurations and the exact release-binary
+HTTP suite pass. This is one accepted mixed-model slice, not a model ranking.
 
 These are starting policies, not a measured cross-model ranking. Record the
 actual model/effort, accepted result, rework, and elapsed time when observed.

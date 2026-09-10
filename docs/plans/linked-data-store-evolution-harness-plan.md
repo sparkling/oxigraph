@@ -18,8 +18,9 @@
   planning is implemented; frozen-corpus acceptance and promotion remain open.
   G4.2 now includes atomic file-backed workload-policy reload with immutable
   per-attempt snapshots and an explicit loopback operator grant, plus observed
-  active socket-error cancellation through the existing request token; full
-  workload governance acceptance remains open.
+  active socket-error cancellation through the existing request token and
+  optional per-principal active/queued data caps. Full workload governance
+  acceptance remains open.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
@@ -1336,8 +1337,13 @@ cover the coherent current access class set and stay within both startup
 transport envelopes. Invalid replacements preserve queues, capacity and metrics;
 independent access reload may still create an unknown class that admission
 denies closed. Default/no-default native controller and real HTTP tests verify
-this source slice. Broader operator budgets, fairness, resource-use telemetry
-and full ADR-0027 acceptance remain open.
+this source slice. Optional per-principal active/queued data caps now share
+each trusted subject's allowance across classes, count old-policy occupancy
+and discard idle identities. Anonymous callers share one allowance and the
+operator reserve is unchanged. Native isolation, reload, cleanup and persistent
+HTTP journeys verify caps, not reserved service shares. Broader operator budgets,
+weighted/priority scheduling, resource-use telemetry and full ADR-0027 acceptance
+remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no
 fine-grained SPARQL policy or general evaluator resource quotas are claimed.
 

@@ -14,7 +14,9 @@
   are exported through the existing operator listener. File-backed policy
   reload is atomic and operator-usable with immutable per-attempt snapshots and
   startup transport ceilings. Observed active socket errors now cancel the
-  existing workload token without releasing running work's capacity. Other
+  existing workload token without releasing running work's capacity. Optional
+  per-principal data admission caps share bounded live occupancy across classes
+  and preserve old-attempt reload snapshots and the separate operator pool. Other
   operator budgets, excluded deadline paths and full acceptance remain open.
   Observed queued socket errors release admission; FIN-only/silent loss uses timeouts
 - Programme task: `task-1787728711461-3isex6`
@@ -685,6 +687,36 @@ unwind/ownership and response-flush regressions preserve transport contracts.
 The CLI journey checks a cancelled update outcome, absent abandoned data after
 restart and successful subsequent write/query/rollback/restart. These are
 source-level product checks, not portable reset or full G4.2 qualification.
+
+### Native per-principal admission caps (2026-09-10)
+
+The optional top-level `principal: { max_active, max_queued }` object adds
+uniform per-principal data-pool caps. Both fields are explicit, active is
+positive, and neither exceeds its corresponding global cap. Absence retains
+global/class-only scheduling. ADR-0026's trusted `RequestContext` supplies the
+subject and authentication method; a domain-separated full SHA-256 digest is
+used only as a fixed-width process-local scheduling key. Anonymous contexts and
+public `acquire` calls share an anonymous key. Classes and policy versions are
+not part of identity, so changing class does not create another allowance.
+No identity, digest or user-selected value is exported in metrics.
+
+One locked occupancy map counts active and queued data requests, even when
+caps are absent. Entries disappear when both counts reach zero; retention is
+bounded by live occupancy, not historical distinct subjects. Queue removal,
+expiry, cancellation, ticket cleanup and final lease drop update those counts.
+Lease clones retain capacity until their last owner drops. Reload enabling or
+lowering caps counts all outstanding work, while old attempts keep their own
+eligibility snapshots. The separate operator pool never charges a principal.
+Eligible FIFO skips saturated principals as well as saturated classes.
+
+Principal queue refusal returns the existing empty 429 with attempt-specific
+Retry-After; global/operator refusal retains precedence and 503. Principal
+refusal aggregates under `refused_class` in the existing fixed telemetry
+vocabulary, keeping 60 samples. Native controller and authenticated HTTP tests
+cover isolation, accounting cleanup, reload and the subsequent persistent
+write/query/rollback/restart journey. This is a native caps slice, not weighted
+fairness, reserved per-principal service, cross-process quotas, full G4.2
+acceptance or promotion. It adds no dependency or core-store identity model.
 
 ### Remaining staged acceptance
 

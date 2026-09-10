@@ -1,6 +1,6 @@
 use super::*;
 use anyhow::{Result, ensure};
-use serde_json::json;
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Barrier;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -31,6 +31,62 @@ fn raw(controller: &AdmissionController, class: &str) -> Result<WorkloadLease, W
     controller.acquire(class, ListenerKind::Data, CancellationToken::new())
 }
 
+fn principal(index: u8) -> PrincipalKey {
+    PrincipalKey([index; 32])
+}
+
+fn raw_principal(
+    controller: &AdmissionController,
+    class: &str,
+    principal: PrincipalKey,
+) -> Result<WorkloadLease, WorkloadError> {
+    controller.acquire_with_abort(
+        class,
+        ListenerKind::Data,
+        principal,
+        CancellationToken::new(),
+        None,
+    )
+}
+
+fn principal_controller(active: usize, queued: usize) -> Result<AdmissionController> {
+    Ok(AdmissionController::new(WorkloadPolicy::from_json(
+        &serde_json::to_vec(&json!({
+            "format":"oxigraph-admission-v1", "policy_id":"principal-test", "version":1,
+            "max_active":active, "max_queued":queued, "operator_max_active":1,
+            "operator_max_queued":0, "queue_timeout_ms":2000, "retry_after_seconds":2,
+            "principal":{"max_active":1,"max_queued":1},
+            "classes":{"default":{"max_active":active,"max_queued":queued},
+                "second":{"max_active":active,"max_queued":queued}}
+        }))?,
+    )?)?)
+}
+
+fn principal_policy(
+    version: u64,
+    max_active: usize,
+    max_queued: usize,
+    principal: Option<(usize, usize)>,
+    queue_timeout_ms: u64,
+) -> Value {
+    let mut policy = reload_policy(
+        version,
+        max_active,
+        max_queued,
+        1,
+        0,
+        &[
+            ("default", max_active, max_queued),
+            ("second", max_active, max_queued),
+        ],
+    );
+    policy["queue_timeout_ms"] = json!(queue_timeout_ms);
+    if let Some((active, queued)) = principal {
+        policy["principal"] = json!({"max_active":active,"max_queued":queued});
+    }
+    policy
+}
+
 fn wait_queued(controller: &AdmissionController, count: usize) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(3);
     while controller.snapshot()?.queued != count {
@@ -47,7 +103,7 @@ fn reload_policy(
     operator_max_active: usize,
     operator_max_queued: usize,
     classes: &[(&str, usize, usize)],
-) -> serde_json::Value {
+) -> Value {
     let classes = classes
         .iter()
         .map(|(name, active, queued)| {
@@ -71,16 +127,14 @@ fn reload_policy(
     })
 }
 
-fn write_workload(path: &Path, policy: &serde_json::Value) -> Result<()> {
+fn write_workload(path: &Path, policy: &Value) -> Result<()> {
     let temporary = path.with_extension("next");
     std::fs::write(&temporary, serde_json::to_vec(policy)?)?;
     std::fs::rename(temporary, path)?;
     Ok(())
 }
 
-fn file_controller(
-    policy: &serde_json::Value,
-) -> Result<(assert_fs::TempDir, PathBuf, AdmissionController)> {
+fn file_controller(policy: &Value) -> Result<(assert_fs::TempDir, PathBuf, AdmissionController)> {
     let directory = assert_fs::TempDir::new()?;
     let path = directory.path().join("workload.json");
     write_workload(&path, policy)?;
@@ -421,6 +475,229 @@ fn lower_active_cap_counts_old_occupancy_without_retroactive_release() -> Result
 }
 
 #[test]
+fn principal_caps_refuse_one_principal_while_another_proceeds() -> Result<()> {
+    let controller = principal_controller(2, 2)?;
+    let first = raw_principal(&controller, "default", principal(1))?;
+    let queued_controller = controller.clone();
+    let waiter = thread::spawn(move || raw_principal(&queued_controller, "default", principal(1)));
+    wait_queued(&controller, 1)?;
+    ensure!(matches!(
+        raw_principal(&controller, "default", principal(1)),
+        Err(WorkloadError::Overloaded(AdmissionScope::Principal))
+    ));
+    let other = raw_principal(&controller, "default", principal(2))?;
+    ensure!(controller.snapshot()?.active == 2);
+    drop(first);
+    drop(other);
+    drop(waiter.join().unwrap()?);
+    ensure!(controller.0.state.lock().unwrap().principals.is_empty());
+    Ok(())
+}
+
+#[test]
+fn principal_queue_cancellation_clone_and_operator_reserve_drain_accounting() -> Result<()> {
+    let controller = principal_controller(3, 3)?;
+    let held = raw_principal(&controller, "default", principal(1))?;
+    let held_clone = held.clone();
+    drop(held);
+    ensure!(controller.0.state.lock().unwrap().principals.len() == 1);
+    let queued_controller = controller.clone();
+    let cancelled = CancellationToken::new();
+    let queued_cancelled = cancelled.clone();
+    let waiter = thread::spawn(move || {
+        queued_controller.acquire_with_abort(
+            "default",
+            ListenerKind::Data,
+            principal(1),
+            queued_cancelled,
+            None,
+        )
+    });
+    wait_queued(&controller, 1)?;
+    ensure!(matches!(
+        raw_principal(&controller, "default", principal(1)),
+        Err(WorkloadError::Overloaded(AdmissionScope::Principal))
+    ));
+    let operator =
+        controller.acquire("default", ListenerKind::Operator, CancellationToken::new())?;
+    cancelled.cancel();
+    ensure!(matches!(
+        waiter.join().unwrap(),
+        Err(WorkloadError::Cancelled)
+    ));
+    drop(operator);
+    drop(held_clone);
+    ensure!(controller.0.state.lock().unwrap().principals.is_empty());
+    Ok(())
+}
+
+#[test]
+fn principal_keys_separate_anonymous_and_authentication_methods() -> Result<()> {
+    use crate::access::{AuthenticationMethod, RequestPrincipal};
+
+    let trusted =
+        RequestPrincipal::authenticated("same-subject".into(), AuthenticationMethod::TrustedProxy)?;
+    let custom =
+        RequestPrincipal::authenticated("same-subject".into(), AuthenticationMethod::Custom)?;
+    ensure!(PrincipalKey::from_principal(&trusted) != PrincipalKey::from_principal(&custom));
+    ensure!(PrincipalKey::from_principal(&trusted) != PrincipalKey::ANONYMOUS);
+    ensure!(
+        PrincipalKey::from_principal(&RequestPrincipal::anonymous()) == PrincipalKey::ANONYMOUS
+    );
+    Ok(())
+}
+
+#[test]
+fn principal_policy_rejects_invalid_or_incomplete_caps() -> Result<()> {
+    for limits in [
+        json!({"max_active":0,"max_queued":1}),
+        json!({"max_active":3,"max_queued":1}),
+        json!({"max_active":1,"max_queued":3}),
+        json!({"max_active":1}),
+        json!({"max_queued":1}),
+        json!({"max_active":1,"max_queued":1,"unknown":true}),
+        json!({"max_active":-1,"max_queued":1}),
+    ] {
+        let mut policy = principal_policy(1, 2, 2, None, 2000);
+        policy["principal"] = limits;
+        ensure!(WorkloadPolicy::from_json(&serde_json::to_vec(&policy)?).is_err());
+    }
+    let no_queue = principal_policy(1, 2, 2, Some((1, 0)), 2000);
+    WorkloadPolicy::from_json(&serde_json::to_vec(&no_queue)?)?;
+    Ok(())
+}
+
+#[test]
+fn principal_cap_spans_classes_and_queue_expiry_or_unwind_drains_key() -> Result<()> {
+    let policy = principal_policy(1, 2, 2, Some((1, 1)), 2000);
+    let controller =
+        AdmissionController::new(WorkloadPolicy::from_json(&serde_json::to_vec(&policy)?)?)?;
+    let held = raw_principal(&controller, "default", principal(1))?;
+    {
+        // Drive the actual queue functions at the exact expiry boundary,
+        // without racing a short wall-clock timeout against another thread.
+        let mut state = controller.0.state.lock().unwrap();
+        let policy = Arc::clone(&state.policy);
+        let entry = AdmissionController::entry(
+            &mut state,
+            "second",
+            ListenerKind::Data,
+            principal(1),
+            CancellationToken::new(),
+            Instant::now(),
+            policy,
+        )?;
+        let deadline = entry.deadline;
+        AdmissionController::enqueue(&mut state, entry);
+        ensure!(AdmissionController::first_eligible(&state, false).is_none());
+        AdmissionController::purge(&mut state, deadline - Duration::from_nanos(1));
+        ensure!(state.queue.len() == 1);
+        ensure!(state.principals[&principal(1)].queued == 1);
+        AdmissionController::purge(&mut state, deadline);
+        ensure!(state.queue.is_empty());
+        ensure!(state.principals[&principal(1)].active == 1);
+        ensure!(state.principals[&principal(1)].queued == 0);
+    }
+    let last_owner = held.clone();
+    drop(held);
+    ensure!(controller.0.state.lock().unwrap().principals.len() == 1);
+    ensure!(
+        std::panic::catch_unwind(move || {
+            let _lease = last_owner;
+            panic!("test active-lease unwind");
+        })
+        .is_err()
+    );
+    ensure!(controller.0.state.lock().unwrap().principals.is_empty());
+
+    let id = {
+        let mut state = controller.0.state.lock().unwrap();
+        let policy = Arc::clone(&state.policy);
+        let entry = AdmissionController::entry(
+            &mut state,
+            "second",
+            ListenerKind::Data,
+            principal(2),
+            CancellationToken::new(),
+            Instant::now(),
+            policy,
+        )?;
+        let id = entry.id;
+        AdmissionController::enqueue(&mut state, entry);
+        id
+    };
+    let ticket = QueueTicket {
+        controller: controller.clone(),
+        id,
+    };
+    ensure!(
+        std::panic::catch_unwind(move || {
+            let _ticket = ticket;
+            panic!("test queued-ticket unwind");
+        })
+        .is_err()
+    );
+    ensure!(controller.snapshot()?.queued == 0);
+    ensure!(controller.0.state.lock().unwrap().principals.is_empty());
+    Ok(())
+}
+
+#[test]
+fn enabling_principal_caps_counts_old_active_and_queued_occupancy() -> Result<()> {
+    let initial = reload_policy(1, 3, 3, 1, 0, &[("default", 1, 2), ("second", 2, 2)]);
+    let (_directory, path, controller) = file_controller(&initial)?;
+    let access = crate::access::AccessController::anonymous(false);
+    let held = raw_principal(&controller, "default", principal(1))?;
+    let queued_controller = controller.clone();
+    let waiter = thread::spawn(move || raw_principal(&queued_controller, "default", principal(1)));
+    wait_queued(&controller, 1)?;
+    let mut next = reload_policy(2, 3, 3, 1, 0, &[("default", 1, 2), ("second", 2, 2)]);
+    next["principal"] = json!({"max_active":1,"max_queued":0});
+    write_workload(&path, &next)?;
+    controller.reload(&access)?;
+    ensure!(matches!(
+        raw_principal(&controller, "default", principal(1)),
+        Err(WorkloadError::Overloaded(AdmissionScope::Principal))
+    ));
+    ensure!(matches!(
+        raw_principal(&controller, "second", principal(1)),
+        Err(WorkloadError::Overloaded(AdmissionScope::Principal))
+    ));
+    let other = raw_principal(&controller, "second", principal(2))?;
+    drop(other);
+    drop(held);
+    let old = waiter.join().unwrap()?;
+    ensure!(old.policy_version() == 1);
+    drop(old);
+    ensure!(controller.0.state.lock().unwrap().principals.is_empty());
+    Ok(())
+}
+
+#[test]
+fn principal_cap_reload_disable_and_reduce_count_old_work_prospectively() -> Result<()> {
+    let initial = principal_policy(1, 3, 3, Some((1, 0)), 4000);
+    let (_directory, path, controller) = file_controller(&initial)?;
+    let access = crate::access::AccessController::anonymous(false);
+    let old = raw_principal(&controller, "default", principal(1))?;
+    let disabled = principal_policy(2, 3, 3, None, 4000);
+    write_workload(&path, &disabled)?;
+    controller.reload(&access)?;
+    let no_cap = raw_principal(&controller, "second", principal(1))?;
+    ensure!(no_cap.policy_version() == 2);
+    let reduced = principal_policy(3, 3, 3, Some((1, 0)), 4000);
+    write_workload(&path, &reduced)?;
+    controller.reload(&access)?;
+    ensure!(matches!(
+        raw_principal(&controller, "second", principal(1)),
+        Err(WorkloadError::Overloaded(AdmissionScope::Principal))
+    ));
+    drop(old);
+    drop(no_cap);
+    ensure!(controller.0.state.lock().unwrap().principals.is_empty());
+    Ok(())
+}
+
+#[test]
 fn removed_class_queues_drain_and_obsolete_counts_stay_bounded() -> Result<()> {
     let initial = reload_policy(1, 2, 2, 1, 0, &[("default", 1, 1), ("old", 1, 1)]);
     let (_directory, path, controller) = file_controller(&initial)?;
@@ -575,6 +852,7 @@ fn socket_reset_releases_only_queued_capacity_before_timeout() -> Result<()> {
                     .acquire_with_abort(
                         "default",
                         listener_kind,
+                        PrincipalKey::ANONYMOUS,
                         CancellationToken::new(),
                         head.extensions_ref()
                             .unwrap()
@@ -710,6 +988,7 @@ fn deterministic_fifo_eligible_class_and_expiry_boundary() -> Result<()> {
         &mut state,
         "default",
         ListenerKind::Data,
+        PrincipalKey::ANONYMOUS,
         CancellationToken::new(),
         now,
         policy,
@@ -719,12 +998,14 @@ fn deterministic_fifo_eligible_class_and_expiry_boundary() -> Result<()> {
         &mut state,
         "second",
         ListenerKind::Data,
+        PrincipalKey::ANONYMOUS,
         CancellationToken::new(),
         now,
         policy,
     )?;
     let (first, second, deadline) = (waiting.id, following.id, waiting.deadline);
-    state.queue.extend([waiting, following]);
+    AdmissionController::enqueue(&mut state, waiting);
+    AdmissionController::enqueue(&mut state, following);
     ensure!(AdmissionController::first_eligible(&state, false) == Some(second));
     state.active = 0;
     state.classes.insert("default".into(), 0);
@@ -1145,6 +1426,7 @@ fn expired_tokens_fail_before_fast_admission_and_final_activation() -> Result<()
         &mut state,
         "default",
         ListenerKind::Data,
+        PrincipalKey::ANONYMOUS,
         CancellationToken::new(),
         Instant::now(),
         policy,

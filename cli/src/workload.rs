@@ -20,6 +20,7 @@ use oxigraph::sparql::{
     SortBufferBudget,
 };
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::io::Read;
@@ -39,6 +40,15 @@ const CANCELLATION_POLL: Duration = Duration::from_millis(10);
 pub struct ClassLimits {
     pub max_active: usize,
     pub max_queued: usize,
+}
+
+/// Optional data-pool caps for one authenticated principal. The absent form
+/// deliberately preserves the original global/class-only policy.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PrincipalLimits {
+    max_active: usize,
+    max_queued: usize,
 }
 
 /// Transfer-decoded entity bytes before and after content decompression.
@@ -63,7 +73,7 @@ impl From<RequestBodyBudget> for oxhttp::RequestBodyLimits {
 /// No capacity defaults: the operator supplies every limit. This version only
 /// promises admission limits, optional cooperative request deadlines and entity
 /// byte/inner-join build-row/sort-buffer/distinct-buffer/group-buffer row limits,
-/// not per-principal fairness.
+/// not general per-principal fairness.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkloadPolicy {
@@ -90,6 +100,8 @@ pub struct WorkloadPolicy {
     #[serde(default)]
     max_group_buffer_rows: Option<u64>,
     retry_after_seconds: u32,
+    #[serde(default)]
+    principal: Option<PrincipalLimits>,
     classes: BTreeMap<String, ClassLimits>,
 }
 
@@ -164,6 +176,11 @@ impl WorkloadPolicy {
                 .checked_add(Duration::from_millis(self.queue_timeout_ms))
                 .is_none()
             || !(1..=300).contains(&self.retry_after_seconds)
+            || self.principal.as_ref().is_some_and(|limits| {
+                limits.max_active == 0
+                    || limits.max_active > self.max_active
+                    || limits.max_queued > self.max_queued
+            })
             || self.classes.is_empty()
             || self.classes.len() > 16
             || !self.classes.contains_key("default")
@@ -184,6 +201,7 @@ impl WorkloadPolicy {
 pub enum AdmissionScope {
     Global,
     Class,
+    Principal,
     Operator,
 }
 
@@ -228,6 +246,7 @@ struct State {
     active: usize,
     operator_active: usize,
     classes: BTreeMap<String, usize>,
+    principals: BTreeMap<PrincipalKey, PrincipalOccupancy>,
     queue: VecDeque<Entry>,
     next_id: u64,
 }
@@ -238,6 +257,7 @@ impl State {
             active: 0,
             operator_active: 0,
             classes: BTreeMap::new(),
+            principals: BTreeMap::new(),
             queue: VecDeque::new(),
             next_id: 0,
         }
@@ -247,9 +267,40 @@ struct Entry {
     id: u64,
     class: String,
     operator: bool,
+    principal: Option<PrincipalKey>,
     deadline: Instant,
     cancellation: CancellationToken,
     policy: Arc<WorkloadPolicy>,
+}
+
+/// Opaque, fixed-width scheduling identity. It is derived only from the
+/// trusted access context and never rendered, logged or exported.
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+struct PrincipalKey([u8; 32]);
+
+impl PrincipalKey {
+    const ANONYMOUS: Self = Self([0; 32]);
+
+    fn from_context(context: &RequestContext) -> Self {
+        Self::from_principal(context.principal())
+    }
+
+    fn from_principal(principal: &crate::access::RequestPrincipal) -> Self {
+        let Some(subject) = principal.subject() else {
+            return Self::ANONYMOUS;
+        };
+        let mut hash = Sha256::new();
+        hash.update(b"oxigraph-workload-authenticated-principal-v1");
+        hash.update([principal.method() as u8]);
+        hash.update(subject.as_bytes());
+        Self(hash.finalize().into())
+    }
+}
+
+#[derive(Default)]
+struct PrincipalOccupancy {
+    active: usize,
+    queued: usize,
 }
 struct Inner {
     // Immutable startup envelope. Live policy values are in `State::policy`.
@@ -473,25 +524,28 @@ impl AdmissionController {
     }
 
     /// Queue cancellation is checked at least every 10ms of scheduled execution.
-    /// Caller-provided classes/listener kinds are trusted server inputs, never
-    /// values copied directly from HTTP headers. No body/storage/egress access.
+    /// Embedders that use this public API share the anonymous principal cap;
+    /// only [`Self::admit`] derives an authenticated key from a trusted access
+    /// context. Caller-provided classes/listener kinds are trusted server inputs,
+    /// never values copied directly from HTTP headers. No body/storage/egress access.
     pub fn acquire(
         &self,
         class: &str,
         listener: ListenerKind,
         cancellation: CancellationToken,
     ) -> Result<WorkloadLease, WorkloadError> {
-        self.acquire_with_abort(class, listener, cancellation, None)
+        self.acquire_with_abort(class, listener, PrincipalKey::ANONYMOUS, cancellation, None)
     }
 
     fn acquire_with_abort(
         &self,
         class: &str,
         listener: ListenerKind,
+        principal: PrincipalKey,
         cancellation: CancellationToken,
         abort: Option<&oxhttp::AdmissionAbort>,
     ) -> Result<WorkloadLease, WorkloadError> {
-        self.acquire_with_abort_snapshot(class, listener, cancellation, abort)
+        self.acquire_with_abort_snapshot(class, listener, principal, cancellation, abort)
             .0
     }
 
@@ -499,6 +553,7 @@ impl AdmissionController {
         &self,
         class: &str,
         listener: ListenerKind,
+        principal: PrincipalKey,
         cancellation: CancellationToken,
         abort: Option<&oxhttp::AdmissionAbort>,
     ) -> (
@@ -510,6 +565,7 @@ impl AdmissionController {
         let result = self.try_acquire(
             class,
             listener,
+            principal,
             cancellation,
             abort,
             &mut queue_wait,
@@ -525,6 +581,7 @@ impl AdmissionController {
         &self,
         class: &str,
         listener: ListenerKind,
+        principal: PrincipalKey,
         cancellation: CancellationToken,
         abort: Option<&oxhttp::AdmissionAbort>,
         queue_wait: &mut Option<Duration>,
@@ -545,7 +602,15 @@ impl AdmissionController {
         if abort.is_some_and(oxhttp::AdmissionAbort::is_aborted) {
             cancellation.cancel();
         }
-        let entry = Self::entry(&mut state, class, listener, cancellation, now, policy)?;
+        let entry = Self::entry(
+            &mut state,
+            class,
+            listener,
+            principal,
+            cancellation,
+            now,
+            policy,
+        )?;
         Self::purge(&mut state, Instant::now());
         if Self::available(&state, &entry) && Self::first_eligible(&state, entry.operator).is_none()
         {
@@ -558,7 +623,7 @@ impl AdmissionController {
         let id = entry.id;
         let deadline = entry.deadline;
         let cancellation = entry.cancellation.clone();
-        state.queue.push_back(entry);
+        Self::enqueue(&mut state, entry);
         let enqueued = Instant::now();
         *queue_wait = Some(Duration::ZERO);
         // Declare after the mutex guard, but release the guard before leaving:
@@ -610,6 +675,7 @@ impl AdmissionController {
                     .queue
                     .remove(index)
                     .ok_or(WorkloadError::Unavailable)?;
+                Self::release_queued(&mut state.principals, &entry);
                 if abort.is_some_and(oxhttp::AdmissionAbort::is_aborted) {
                     cancellation.cancel();
                 }
@@ -667,6 +733,7 @@ impl AdmissionController {
             Some(access) => self.acquire_with_abort_snapshot(
                 &access.grant().workload_class,
                 listener,
+                PrincipalKey::from_context(access),
                 CancellationToken::new(),
                 abort,
             ),
@@ -710,7 +777,10 @@ impl AdmissionController {
     }
 
     fn denial_with_policy(error: WorkloadError, policy: &WorkloadPolicy) -> Response<Body> {
-        let class = error == WorkloadError::Overloaded(AdmissionScope::Class);
+        let class = matches!(
+            error,
+            WorkloadError::Overloaded(AdmissionScope::Class | AdmissionScope::Principal)
+        );
         let mut response = Response::builder()
             .status(if class {
                 StatusCode::TOO_MANY_REQUESTS
@@ -728,6 +798,7 @@ impl AdmissionController {
         state: &mut State,
         class: &str,
         listener: ListenerKind,
+        principal: PrincipalKey,
         cancellation: CancellationToken,
         now: Instant,
         policy: Arc<WorkloadPolicy>,
@@ -747,6 +818,7 @@ impl AdmissionController {
             id,
             class: class.into(),
             operator: listener == ListenerKind::Operator,
+            principal: (listener == ListenerKind::Data).then_some(principal),
             deadline: now
                 .checked_add(Duration::from_millis(policy.queue_timeout_ms))
                 .ok_or(WorkloadError::InvalidPolicy)?,
@@ -762,6 +834,13 @@ impl AdmissionController {
             state.active < entry.policy.max_active
                 && state.classes.get(&entry.class).copied().unwrap_or(0)
                     < entry.policy.classes[&entry.class].max_active
+                && entry.policy.principal.as_ref().is_none_or(|limits| {
+                    state
+                        .principals
+                        .get(&entry.principal.expect("data entry has principal"))
+                        .map_or(0, |occupancy| occupancy.active)
+                        < limits.max_active
+                })
         }
     }
 
@@ -774,9 +853,16 @@ impl AdmissionController {
     }
 
     fn purge(state: &mut State, now: Instant) {
-        state
-            .queue
-            .retain(|entry| now < entry.deadline && !entry.cancellation.is_cancelled());
+        let State {
+            queue, principals, ..
+        } = state;
+        queue.retain(|entry| {
+            let retain = now < entry.deadline && !entry.cancellation.is_cancelled();
+            if !retain {
+                Self::release_queued(principals, entry);
+            }
+            retain
+        });
     }
 
     fn check_queue_capacity(state: &State, entry: &Entry) -> Result<(), WorkloadError> {
@@ -793,6 +879,14 @@ impl AdmissionController {
             >= entry.policy.classes[&entry.class].max_queued
         {
             Some(AdmissionScope::Class)
+        } else if entry.policy.principal.as_ref().is_some_and(|limits| {
+            state
+                .principals
+                .get(&entry.principal.expect("data entry has principal"))
+                .map_or(0, |occupancy| occupancy.queued)
+                >= limits.max_queued
+        }) {
+            Some(AdmissionScope::Principal)
         } else {
             None
         };
@@ -811,11 +905,17 @@ impl AdmissionController {
         } else {
             state.active += 1;
             *state.classes.entry(entry.class.clone()).or_default() += 1;
+            state
+                .principals
+                .entry(entry.principal.expect("data entry has principal"))
+                .or_default()
+                .active += 1;
         }
         Ok(WorkloadLease(Arc::new(LeaseInner {
             controller: self.clone(),
             class: entry.class.clone(),
             operator: entry.operator,
+            principal: entry.principal,
             cancellation: entry.cancellation.clone(),
             policy: Arc::clone(&entry.policy),
             inner_join_build_budget: entry
@@ -833,6 +933,43 @@ impl AdmissionController {
                 .map(GroupBufferBudget::new),
         })))
     }
+
+    fn enqueue(state: &mut State, entry: Entry) {
+        if let Some(principal) = entry.principal {
+            state.principals.entry(principal).or_default().queued += 1;
+        }
+        state.queue.push_back(entry);
+    }
+
+    fn release_queued(principals: &mut BTreeMap<PrincipalKey, PrincipalOccupancy>, entry: &Entry) {
+        if let Some(principal) = entry.principal {
+            let remove = if let Some(occupancy) = principals.get_mut(&principal) {
+                occupancy.queued -= 1;
+                occupancy.active == 0 && occupancy.queued == 0
+            } else {
+                false
+            };
+            if remove {
+                principals.remove(&principal);
+            }
+        }
+    }
+
+    fn release_active(
+        principals: &mut BTreeMap<PrincipalKey, PrincipalOccupancy>,
+        principal: PrincipalKey,
+    ) {
+        let remove = {
+            let occupancy = principals
+                .get_mut(&principal)
+                .expect("active principal occupancy exists");
+            occupancy.active -= 1;
+            occupancy.active == 0 && occupancy.queued == 0
+        };
+        if remove {
+            principals.remove(&principal);
+        }
+    }
 }
 
 struct QueueTicket {
@@ -848,7 +985,10 @@ impl Drop for QueueTicket {
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        state.queue.retain(|entry| entry.id != self.id);
+        if let Some(index) = state.queue.iter().position(|entry| entry.id == self.id) {
+            let entry = state.queue.remove(index).expect("queued entry exists");
+            AdmissionController::release_queued(&mut state.principals, &entry);
+        }
         self.controller.0.changed.notify_all();
     }
 }
@@ -861,6 +1001,7 @@ struct LeaseInner {
     controller: AdmissionController,
     class: String,
     operator: bool,
+    principal: Option<PrincipalKey>,
     cancellation: CancellationToken,
     policy: Arc<WorkloadPolicy>,
     inner_join_build_budget: Option<InnerJoinBuildBudget>,
@@ -947,6 +1088,10 @@ impl Drop for LeaseInner {
             if remove {
                 state.classes.remove(&self.class);
             }
+            AdmissionController::release_active(
+                &mut state.principals,
+                self.principal.expect("data lease has principal"),
+            );
         }
         self.controller.0.changed.notify_all();
     }

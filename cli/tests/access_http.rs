@@ -2995,6 +2995,53 @@ fn workload_overload_precedes_expect_body_and_work_but_not_auth() -> Result<()> 
 }
 
 #[test]
+fn workload_principal_caps_isolate_authenticated_subjects_and_preserve_restart_journey()
+-> Result<()> {
+    let mut profile = workload(1, 1, 30_000);
+    profile["max_active"] = json!(2);
+    profile["classes"]["default"]["max_active"] = json!(2);
+    profile["principal"] = json!({"max_active":1,"max_queued":0});
+    let running = start_with_workload(&config(), false, Some(&profile))?;
+    let occupied = occupy_admission(&running)?;
+    let same_principal = wire(
+        running.public,
+        &format!(
+            "POST /update HTTP/1.1\r\nHost: localhost\r\n{}Expect: 100-continue\r\nContent-Length: invalid\r\n\r\n",
+            identity(WRITER, 1)?
+        ),
+    )?;
+    ensure!(
+        same_principal.status == 429
+            && same_principal.body.is_empty()
+            && same_principal
+                .head
+                .to_ascii_lowercase()
+                .contains("retry-after: 2"),
+        "same-principal cap did not refuse: {} {}",
+        same_principal.status,
+        same_principal.body
+    );
+    ensure!(
+        sparql(&running, READER, "/query", "ASK {}")?.status == 200,
+        "another authenticated principal was blocked by a same-principal cap"
+    );
+    ensure!(request(running.admin, "GET", "/health", "", "")?.status == 200);
+    drop(occupied);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if sparql(&running, WRITER, "/query", "ASK {}")?.status == 200 {
+            break;
+        }
+        ensure!(
+            Instant::now() < deadline,
+            "same-principal capacity did not release"
+        );
+        thread::yield_now();
+    }
+    write_rollback_and_restart(running)
+}
+
+#[test]
 fn workload_queue_times_out_before_continue_and_remains_usable() -> Result<()> {
     let running = start_with_workload(&config(), false, Some(&workload(1, 1, 40)))?;
     let occupied = occupy_admission(&running)?;

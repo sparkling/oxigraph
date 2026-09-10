@@ -263,12 +263,33 @@ apply only to data requests. Requests cannot claim this reserve via headers.
 Enable `--admin-bind` to make that reserve reachable. Authentication and
 authorization run first when `--access-policy` is configured.
 
+Optional `principal` adds data-pool limits for each authenticated subject
+(illustrative values, constrained by the corresponding global limits):
+
+```json
+"principal": { "max_active": 1, "max_queued": 2 }
+```
+
+Both fields are required; active must be positive and queued may be zero.
+Omitting the object preserves global/class-only scheduling. The trusted access
+context supplies the subject and authentication method, not caller-selected
+headers or class names. Each principal shares its allowance across classes;
+anonymous requests and public Rust `AdmissionController::acquire` calls share
+one anonymous allowance. `admit`/`admit_request` use the trusted access context.
+The operator pool is exempt. Only opaque, fixed-width keys for live active or
+queued work are retained; idle entries are removed. Occupancy is tracked even
+when caps are absent, so enabling them on reload counts existing work. As with
+other limits, old attempts retain their snapshots; lowering or removing caps
+affects new attempts. These caps do not promise weighted fairness, a reserved
+share for each principal, or cross-process quotas.
+
 Admission precedes `100 Continue`, body decoding and RDF work. All requests
 have one priority. Among eligible requests the queue is FIFO, skipping classes
-already at their active limit. A full global queue (checked first) or operator
-queue returns empty noncacheable 503; a full class queue returns 429 with the
-configured `Retry-After`. Queue expiry returns 503. No rejected request opens a
-dataset transaction or starts evaluation/egress. Capacity remains held through
+or principals already at their active limit. A full global queue (checked first)
+or operator queue returns empty noncacheable 503; a full class or principal
+queue returns 429 with the configured `Retry-After`. Queue expiry returns 503.
+No rejected request opens a dataset transaction or starts evaluation/egress.
+Capacity remains held through
 body processing, response serialization **and socket flush**, releasing on
 success, observed I/O failure or Rust unwind. A slow client still holds its
 slot until its work ends; without a request deadline, admission limits do not
@@ -546,7 +567,7 @@ The legacy nontransactional bulk path remains outside this rollback guarantee.
 
 Still pending: deadline support for the explicitly excluded paths above,
 finer parser/evaluator work counters,
-per-principal/priority scheduling, resource-use metrics and
+weighted/priority scheduling, resource-use metrics and
 operational qualification. Cooperative admission is not a hard RSS/CPU/fd/disk
 guarantee; use external process/container controls. This stage does not complete
 G4.2 or promote the Proposed ADR.
@@ -652,6 +673,8 @@ With `--workload-policy`, five additional families observe admission:
   acquisition results and the queued subset. Fixed dispositions distinguish
   admission, global/class/operator refusal, unknown class, cancellation,
   request timeout, queue timeout and unavailability.
+  Principal-cap refusals aggregate under existing `refused_class`; no principal
+  labels or additional series are exported (still 60 admission samples).
 - `oxigraph_admission_queue_wait_seconds`: cumulative wait histograms for each
   pool, with the same microsecond resolution and fixed buckets as transaction
   telemetry. Only attempts that entered the queue contribute, from enqueue to
