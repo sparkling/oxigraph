@@ -1283,8 +1283,12 @@ or source-file changes. Ordinary open now rejects unknown/newer markers and
 incomplete current layouts before writable setup, with a native lock held across
 preflight and open. A checkpoint missing `LOCK` gains an empty one even on
 refusal. Known version-0/1 in-place migrations remain until a shadow replacement
-is ready. Full compatibility rejection, the envelope/classifier, verified
-legacy backup ancestry and shadow-upgrade failure matrix remain outstanding.
+is ready. `Store::backup_legacy` and the separate `LegacyBackupReceipt` now
+provide source-preserving version-0/1 physical copies and exact package/source
+ancestry verification. Native interruption, cancellation and lock-release tests
+pass alongside existing backup/restore and feature lanes; these are not upgrade
+qualification. Full compatibility rejection, the envelope/classifier, resumable
+shadow transformation and its cutover/failure matrix remain outstanding.
 See [ADR-0028's native scope and limits](../adr/0028-safe-storage-schema-upgrades.md#native-unknownnewer-open-preflight-2026-09-10).
 
 G4.1 native implementation is complete: the anonymous startup boundary requires explicit

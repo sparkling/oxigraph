@@ -495,12 +495,26 @@ struct RwDbHandler {
     _open_lease: Option<OpenLease>,
 }
 
-struct OpenLease {
+pub(super) struct OpenLease {
     native: NonNull<oxrocksdb_preflight_lease_t>,
     path: PathBuf,
 }
 
 impl OpenLease {
+    /// Offline physical operations may lock only a pre-existing regular LOCK.
+    /// The caller owns directory stability; this never initializes a source.
+    pub(super) fn acquire_existing(path: &Path) -> Result<Self, StorageError> {
+        let path = path.canonicalize()?;
+        if !std::fs::symlink_metadata(path.join("LOCK"))?.is_file() {
+            return Err(StorageError::SchemaUnknown);
+        }
+        let c_path = path_to_cstring(&path)?;
+        let native = unsafe { ffi_result!(oxrocksdb_preflight_lease_create(c_path.as_ptr()))? };
+        let native = NonNull::new(native)
+            .ok_or_else(|| io::Error::other("RocksDB preflight returned no environment"))?;
+        Ok(Self { native, path })
+    }
+
     fn acquire(path: &Path) -> Result<Self, StorageError> {
         // A fresh store or RocksDB checkpoint may create its LOCK. Never put
         // one in an unrelated nonempty directory. Existing LOCK files must be

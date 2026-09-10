@@ -58,6 +58,8 @@ mod derived_generation;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod format;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+mod legacy_backup;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod restore;
 #[cfg(all(not(target_family = "wasm"), feature = "spatial-index"))]
 mod spatial_index;
@@ -100,6 +102,8 @@ pub use evaluation_metrics::{
 };
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 pub use format::{StoreFormatInfo, StoreVersionStatus};
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+pub use legacy_backup::{LegacyBackupOptions, LegacyBackupReceipt};
 pub use namespace::{
     Namespace, NamespacePrefix, NamespacePrefixParseError, WritableNamespaceRegistry,
 };

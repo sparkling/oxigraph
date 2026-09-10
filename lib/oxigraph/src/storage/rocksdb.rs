@@ -16,8 +16,8 @@ use crate::storage::numeric_encoder::{
     Decoder, EncodedQuad, EncodedTerm, StrHash, StrHashHasher, StrLookup, insert_term,
 };
 use crate::storage::rocksdb_wrapper::{
-    ColumnFamily, ColumnFamilyDefinition, Db, DbOptions, Iter, ReadableTransaction, Reader,
-    Transaction,
+    ColumnFamily, ColumnFamilyDefinition, Db, DbOptions, Iter, OpenLease, ReadableTransaction,
+    Reader, Transaction,
 };
 use crate::storage::{DEFAULT_BULK_LOAD_BATCH_SIZE, map_thread_result};
 use crate::storage::{
@@ -49,6 +49,65 @@ use std::{io, thread};
 
 const BATCH_SIZE: usize = 100_000;
 const LATEST_STORAGE_VERSION: u64 = 2;
+
+/// Raw offline physical observations, not logical classification or upgrade admission.
+/// Field drop order closes the read-only database before releasing the native lease.
+pub(crate) struct LegacyStoreSnapshot {
+    _db: Db,
+    _lease: OpenLease,
+    pub version: u64,
+    pub database_id: Vec<u8>,
+    pub sequence: u64,
+    pub column_families: Vec<String>,
+}
+
+impl LegacyStoreSnapshot {
+    pub(crate) fn open(path: &Path, options: super::StorageOptions) -> Result<Self, StorageError> {
+        let lease = OpenLease::acquire_existing(path)?;
+        let options = DbOptions {
+            max_open_files: options.max_open_files,
+            fd_reserve: options.fd_reserve,
+        };
+        let mut column_families = Db::list_column_families(path, options)?;
+        column_families.sort_unstable();
+        let db = Db::open_read_only_with_options(path, Vec::new(), options)?;
+        let marker = db.get(&db.column_family(DEFAULT_CF)?, b"oxversion")?;
+        let mut required: Vec<_> = RocksDbStorage::column_families()
+            .iter()
+            .map(|cf| cf.name)
+            .collect();
+        required.push(DEFAULT_CF);
+        let format = crate::store::StoreFormatInfo::new(
+            marker.as_deref(),
+            LATEST_STORAGE_VERSION,
+            column_families.clone(),
+            required,
+        );
+        let version = format
+            .storage_version()
+            .ok_or(StorageError::SchemaUnknown)?;
+        if !format.unexpected_column_families().is_empty()
+            || !match version {
+                0 => format.missing_column_families() == [GRAPHS_CF],
+                1 => format.missing_column_families().is_empty(),
+                _ => false,
+            }
+        {
+            return Err(StorageError::Other(
+                "legacy physical backup requires a supported version-0/1 layout".into(),
+            ));
+        }
+        let (database_id, sequence) = db.backup_identity()?;
+        Ok(Self {
+            _db: db,
+            _lease: lease,
+            version,
+            database_id,
+            sequence,
+            column_families,
+        })
+    }
+}
 
 #[cfg(test)]
 mod format_inspection_tests;

@@ -274,6 +274,9 @@ pub struct BackupFile {
     sha256: [u8; 32],
 }
 impl BackupFile {
+    pub(super) fn new(path: String, size: u64, sha256: [u8; 32]) -> Self {
+        Self { path, size, sha256 }
+    }
     pub fn path(&self) -> &str {
         &self.path
     }
@@ -725,7 +728,7 @@ pub(super) fn open_regular(path: &Path) -> Result<File, BackupError> {
     }
     Ok(file)
 }
-fn hash_file(
+pub(super) fn hash_file(
     path: &Path,
     control: &TransactionStartControl,
     started: Instant,

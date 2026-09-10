@@ -4,8 +4,9 @@
 - **Date**: 2026-08-25
 - Updated: 2026-09-10
 - Deciders: Oxigraph parity programme
-- Implementation status: native offline physical-metadata inspection API/CLI
-  and unknown/newer-layout preflight implemented; ordinary writable open still
+- Implementation status: native offline physical-metadata inspection API/CLI,
+  unknown/newer-layout preflight and version-0/1 physical-backup API implemented;
+  ordinary writable open still
   performs known version-0/1 migrations in place. Full compatibility rejection,
   schema envelopes and shadow upgrades remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
@@ -172,6 +173,38 @@ logical-result tests are retained. These are product regressions, not the
 frozen legacy classifier, full source-preserving upgrade matrix, RDF-feature
 envelope, system-RocksDB qualification or upgrade-promotion gate. This ADR
 remains Proposed; no persisted version or frozen expectation changes.
+
+## Native legacy physical-backup slice (2026-09-10)
+
+`Store::backup_legacy` copies an offline version-0/1 store into a fresh package
+without calling ordinary open, setup or migration. `LegacyBackupReceipt::verify`
+checks the complete package; `verify_ancestry` additionally checks every source
+file against the receipt, not just an equal database identity or sequence.
+The receipt binds physical version, native database identity, sequence, column
+families, file names, lengths and SHA-256 hashes. Its separate format does not
+weaken ADR-0022's current-schema `BackupReceipt` or claim logical compatibility.
+
+The source needs an existing regular native `LOCK`; no missing source lock is
+created. The held native lease spans observation, copying and revalidation.
+Callers must stop writers and keep source/destination paths exclusively controlled.
+Only bounded, regular, flat native files are admitted; paths must be disjoint.
+The complete marker is written last after file/directory synchronization. An
+earlier failure leaves an unverifiable package; a failure after the marker is
+`CompletionIndeterminate`, resolvable by independent verification. Unix directory
+synchronization is required. Keep completed packages immutable.
+
+The ordinary delivery workflow `9c05a6f6-e51a-43bf-b281-83a69aff137c` used a real
+Terra Medium implementation worker, root-only application and independent Sol
+Medium acceptance. Native checks passed: legacy integration (4), internal
+failure/cancellation/lease tests (4), current backup/restore (18), RDF-1.2
+legacy/current backup/restore (22), and no-default-features store tests (12).
+Feature-lane overlaps are not additional product behavior. Test fixtures were
+copied to temporary directories; their committed bytes were not changed.
+
+This closes the bounded legacy physical-copy and exact-ancestry API gap, not
+G4.3. It is not the frozen legacy classifier, feature envelope, resumable shadow
+upgrade, cutover/crash matrix, logical comparison, system-RocksDB qualification
+or upgrade authorization. Those gates and the known in-place migrations remain.
 
 ## Staged implementation and evaluator gates
 
