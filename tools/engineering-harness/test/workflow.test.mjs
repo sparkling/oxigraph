@@ -213,3 +213,13 @@ test("host input error is contained even when readline forwards it", () => {
     `, directory], { timeout: 2000, stdio: "pipe" });
   } finally { rmSync(directory, { recursive: true }); }
 });
+
+
+test("product workflow admits only the reviewed native lock adapter", () => {
+  const check = { completionCheck: "valid native check", argv: ["cargo", "test", "--locked", "-p", "oxigraph"] };
+  assert.doesNotThrow(() => validateWorkflow({ ...spec, scope: "product", paths: ["oxrocksdb-sys/api/c.cc"], checks: [check] }));
+  for (const path of [
+    "oxrocksdb-sys/api/c.h", "oxrocksdb-sys/api/other.cc", "oxrocksdb-sys/vendor/rocksdb.cc",
+    "oxrocksdb-sys/api/../api/c.cc", "/oxrocksdb-sys/api/c.cc", "lib/../oxrocksdb-sys/api/c.cc",
+  ]) assert.throws(() => validateWorkflow({ ...spec, scope: "product", paths: [path], checks: [check] }));
+});

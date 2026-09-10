@@ -12,7 +12,7 @@ const bytesDigest = (value) => createHash("sha256").update(value).digest("hex");
 const equal = (a, b) => digest(a) === digest(b);
 const text = (value) => typeof value === "string" && value.trim().length > 0;
 const ordinaryHarnessPath = (path) => /^(?:tools\/engineering-harness\/(?:src\/(?:delivery|workflow|workflow-host)\.mjs|bin\/oxigraph-delivery\.mjs|test\/(?:delivery|workflow)\.test\.mjs))$/.test(path);
-const productPath = (path) => /^(?:lib|cli|testsuite)\/[a-zA-Z0-9_./-]+\.(?:rs|rq|ru|ttl|trig|nt|nq|json)$/.test(path);
+const productPath = (path) => path === "oxrocksdb-sys/api/c.cc" || /^(?:lib|cli|testsuite)\/[a-zA-Z0-9_./-]+\.(?:rs|rq|ru|ttl|trig|nt|nq|json)$/.test(path);
 function ownKeys(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
       Object.keys(value).some((key) => !keys.includes(key))) throw new Error(`Invalid ${label}`);
