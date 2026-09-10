@@ -1373,6 +1373,11 @@ identity. The explicit result-row cap is now implemented (ADR-0027): generated
 SPARQL/Graph Store records, exact/zero limits, preserved reload snapshots and
 failed streams, independently of bytes and intermediate evaluator work.
 
+Admitted embedded SERVICE/LOAD deadline acceptance now also passes: native
+timeout errors preserve 408, partial streams fail, and owned LOAD rollback
+survives reopen. Ordinary remote errors/SILENT behavior and both serve modes'
+deny-all policy remain unchanged. Full G4.2 operational acceptance stays open.
+
 ## Evaluator DAG
 
 The harness delegates rather than duplicates.

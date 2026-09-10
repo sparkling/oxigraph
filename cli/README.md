@@ -596,6 +596,14 @@ usable. The transport closes both directions at expiry, so clients must also
 handle a closed connection or incomplete response, not expect a final status.
 An expired partial stream never receives a successful chunk terminator.
 
+Native query/update deadline and cancellation errors also map to empty,
+noncacheable 408 before headers, rather than internal 500. An endpoint's own
+remote timeout remains an ordinary execution error (500 when unsuppressed);
+`SILENT` cannot suppress the enclosing request deadline. Native handler tests
+exercise an explicitly supplied loopback-allowed evaluator, including partial
+SERVICE reads and LOAD rollback/reopen. They do not enable server egress:
+both serve modes retain their deny-all evaluator.
+
 The shared token distinguishes timeout from explicit cancellation. Simple
 queries, built-in SERVICE/LOAD (including SILENT), owned SPARQL updates and
 transactional Graph Store writes observe it. A final pre-commit checkpoint

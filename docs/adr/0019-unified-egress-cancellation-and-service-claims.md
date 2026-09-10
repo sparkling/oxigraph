@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-09-09
+- Updated: 2026-09-10
 - Deciders: Oxigraph parity programme
 - Implementation status: G1.5's unified-egress, G1.5b's owned-update
   cancellation, and G1.5c's negotiated backend-admission profiles are
@@ -74,6 +74,13 @@ timeouts retain their prior semantics. Owned writes still check before commit,
 never infer rollback after a commit attempt, and metrics distinguish timeout
 from explicit cancellation. New native tests supplement, and do not refresh or
 promote, the pinned G1.5-G1.6 qualification evidence below.
+
+The 2026-09-10 native handler acceptance additionally supplies a real admitted
+lease to explicitly allowed loopback SERVICE/LOAD. Whole-request expiry now
+preserves HTTP 408 instead of being misclassified as internal 500; ordinary
+remote timeouts retain their SILENT behavior. Partial SERVICE reads fail, and
+owned LOAD rolls back triples and empty graphs across reopen. Both serve modes
+remain deny-all; this is not positive server-egress qualification.
 
 The accepted bounded G1.5-G1.6 implementation profile proves:
 

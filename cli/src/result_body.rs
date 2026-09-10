@@ -127,7 +127,10 @@ pub(super) fn http_error(error: io::Error, fallback: fn(io::Error) -> HttpError)
     {
         (StatusCode::SERVICE_UNAVAILABLE, String::new())
     } else if error.kind() == io::ErrorKind::TimedOut
-        || matches!(error.get_ref(), Some(inner) if inner.is::<WorkloadError>())
+        || matches!(error.get_ref(), Some(inner) if inner.is::<WorkloadError>()
+            || matches!(inner.downcast_ref::<oxigraph::sparql::QueryEvaluationError>(),
+                Some(oxigraph::sparql::QueryEvaluationError::TimedOut
+                    | oxigraph::sparql::QueryEvaluationError::Cancelled)))
     {
         (StatusCode::REQUEST_TIMEOUT, String::new())
     } else {
@@ -143,6 +146,27 @@ mod tests {
     use super::*;
     use std::fmt::Write as _;
     use std::io::Read;
+
+    #[test]
+    fn wrapped_request_control_errors_keep_timeout_mapping() {
+        use oxigraph::sparql::QueryEvaluationError;
+        for error in [
+            QueryEvaluationError::TimedOut,
+            QueryEvaluationError::Cancelled,
+        ] {
+            assert_eq!(
+                internal_error(io::Error::other(error)),
+                (StatusCode::REQUEST_TIMEOUT, String::new())
+            );
+        }
+        assert_eq!(
+            internal_error(io::Error::other(QueryEvaluationError::Service(Box::new(
+                io::Error::new(io::ErrorKind::TimedOut, "remote timeout"),
+            ))))
+            .0,
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
 
     #[test]
     fn row_limit_is_inclusive_sticky_unsigned_and_independent_of_bytes() {

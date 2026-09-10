@@ -2094,16 +2094,10 @@ fn evaluate_sparql_update(
             using.set_available_named_graphs(named_graph_uris.clone());
         }
     }
-    prepared.on_store(store).execute().map_err(|error| {
-        if matches!(
-            error,
-            oxigraph::sparql::UpdateEvaluationError::ResourceLimitExceeded { .. }
-        ) {
-            (StatusCode::SERVICE_UNAVAILABLE, String::new())
-        } else {
-            internal_server_error(error)
-        }
-    })?;
+    prepared
+        .on_store(store)
+        .execute()
+        .map_err(update_evaluation_error)?;
     Response::builder()
         .status(StatusCode::NO_CONTENT)
         .body(Body::empty())
@@ -2111,13 +2105,28 @@ fn evaluate_sparql_update(
 }
 
 fn query_evaluation_error(error: oxigraph::sparql::QueryEvaluationError) -> HttpError {
-    if matches!(
-        error,
-        oxigraph::sparql::QueryEvaluationError::ResourceLimitExceeded { .. }
-    ) {
-        (StatusCode::SERVICE_UNAVAILABLE, String::new())
-    } else {
-        internal_server_error(error)
+    use oxigraph::sparql::QueryEvaluationError;
+    match error {
+        QueryEvaluationError::TimedOut | QueryEvaluationError::Cancelled => {
+            (StatusCode::REQUEST_TIMEOUT, String::new())
+        }
+        QueryEvaluationError::ResourceLimitExceeded { .. } => {
+            (StatusCode::SERVICE_UNAVAILABLE, String::new())
+        }
+        error => internal_server_error(error),
+    }
+}
+
+fn update_evaluation_error(error: oxigraph::sparql::UpdateEvaluationError) -> HttpError {
+    use oxigraph::sparql::UpdateEvaluationError;
+    match error {
+        UpdateEvaluationError::TimedOut | UpdateEvaluationError::Cancelled => {
+            (StatusCode::REQUEST_TIMEOUT, String::new())
+        }
+        UpdateEvaluationError::ResourceLimitExceeded { .. } => {
+            (StatusCode::SERVICE_UNAVAILABLE, String::new())
+        }
+        error => internal_server_error(error),
     }
 }
 
@@ -3398,6 +3407,39 @@ mod tests {
     use std::fs::remove_dir_all;
     use std::io::read_to_string;
     use url::Url;
+
+    #[test]
+    fn evaluation_request_control_errors_are_empty_noncacheable_408() -> Result<()> {
+        use oxigraph::sparql::{QueryEvaluationError, UpdateEvaluationError};
+        for (status, message) in [
+            query_evaluation_error(QueryEvaluationError::TimedOut),
+            query_evaluation_error(QueryEvaluationError::Cancelled),
+            update_evaluation_error(UpdateEvaluationError::TimedOut),
+            update_evaluation_error(UpdateEvaluationError::Cancelled),
+        ] {
+            assert_eq!(status, StatusCode::REQUEST_TIMEOUT);
+            assert!(message.is_empty());
+            let mut response = error(status, message);
+            assert_eq!(response.headers()["cache-control"], "no-store");
+            assert_eq!(io::copy(response.body_mut(), &mut io::sink())?, 0);
+        }
+        // A remote timeout is not an enclosing request deadline. Preserve the
+        // ordinary execution-error mapping instead of matching error text or
+        // recursively classifying an endpoint's own timeout as this request's.
+        for (status, _) in [
+            query_evaluation_error(QueryEvaluationError::Service(Box::new(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "remote timeout",
+            )))),
+            update_evaluation_error(UpdateEvaluationError::Service(Box::new(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "remote timeout",
+            )))),
+        ] {
+            assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        }
+        Ok(())
+    }
 
     fn cli_command() -> Command {
         let mut command = Command::new(env!("CARGO"));

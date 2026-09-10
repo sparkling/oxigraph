@@ -1,6 +1,12 @@
 #![expect(clippy::panic_in_result_fn)]
 
 use super::*;
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use assert_fs::TempDir;
 use oxhttp::model::header::CONTENT_TYPE;
 use oxhttp::model::{Body, Method, Request, Response, StatusCode};
 #[cfg(feature = "rdf-12")]
@@ -11,8 +17,26 @@ use oxigraph::model::{GraphName, NamedOrBlankNode, Quad, Term};
     feature = "rustls-native",
     feature = "rustls-webpki"
 ))]
-use oxigraph::sparql::EgressPolicy;
+use oxigraph::sparql::{CancellationToken, EgressPolicy};
 use oxigraph::store::Store;
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use oxigraph_cli::access::ListenerKind;
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use oxigraph_cli::workload::{AdmissionController, WorkloadError, WorkloadLease, WorkloadPolicy};
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use serde_json::json;
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::io;
@@ -27,6 +51,12 @@ const BASIC_FEDERATED_QUERY_IRI: &str =
 const INPUT_FORMAT_IRI: &str = "http://www.w3.org/ns/sparql-service-description#inputFormat";
 const REMOTE_GRAPH_BODY: &[u8] = b"<urn:remote:s> <urn:remote:p> <urn:remote:o> .\n";
 const SERVICE_RESULTS_BODY: &[u8] = br#"{"head":{"vars":["s","p","o"]},"results":{"bindings":[]}}"#;
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+const INCOMPLETE_SERVICE_RESULTS_BODY: &[u8] = br#"{"head":{"vars":["s"]},"results":{"bindings":["#;
 
 fn graph(kind: EndpointKind, entailment: QueryEntailment) -> Vec<Triple> {
     let evaluator = SparqlEvaluator::new();
@@ -131,6 +161,55 @@ fn policy_with(origin_ip: Ipv4Addr, allowed_ip: Ipv4Addr) -> EgressPolicy {
         .allow_ip(IpAddr::V4(allowed_ip))
 }
 
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+fn allowed_loopback_policy(
+    origin: &str,
+    timeout: Duration,
+) -> Result<EgressPolicy, Box<dyn Error>> {
+    Ok(EgressPolicy::deny_all()
+        .allow_origin(origin)?
+        .allow_ip(IpAddr::V4(Ipv4Addr::LOCALHOST))
+        // The ordinary remote timeout is deliberately much longer than the
+        // workload deadline. A deadline result below therefore cannot be this
+        // policy timeout (and SERVICE SILENT must not suppress it).
+        .with_timeout(timeout))
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+fn deadline_controller() -> Result<AdmissionController, Box<dyn Error>> {
+    let policy = WorkloadPolicy::from_json(&serde_json::to_vec(&json!({
+        "format": "oxigraph-admission-v1",
+        "policy_id": "embedded-egress-deadline",
+        "version": 1,
+        "max_active": 1,
+        "max_queued": 0,
+        "operator_max_active": 1,
+        "operator_max_queued": 0,
+        "queue_timeout_ms": 1000,
+        "request_timeout_ms": 250,
+        "retry_after_seconds": 1,
+        "classes": {"default": {"max_active": 1, "max_queued": 0}}
+    }))?)?;
+    Ok(AdmissionController::new(policy)?)
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+fn deadline_lease(controller: &AdmissionController) -> Result<WorkloadLease, Box<dyn Error>> {
+    Ok(controller.acquire("default", ListenerKind::Data, CancellationToken::new())?)
+}
+
 struct LoopbackHttpProbe {
     iri: String,
     stop: Sender<()>,
@@ -177,6 +256,98 @@ impl Drop for LoopbackHttpProbe {
         if self.stop.send(()).is_err() {
             // The responder has already completed after observing a connection.
         }
+        if self.handle.is_some() {
+            drop(self.join());
+        }
+    }
+}
+
+/// A responder which has received a complete request but holds its response
+/// open until the test explicitly releases it. This makes the workload
+/// deadline, rather than a fixture sleep or the ordinary egress timeout, the
+/// only way the client can finish first.
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+struct DelayedLoopbackHttpProbe {
+    iri: String,
+    origin: String,
+    accepted: Receiver<()>,
+    release: Sender<()>,
+    handle: Option<JoinHandle<io::Result<usize>>>,
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+impl DelayedLoopbackHttpProbe {
+    fn spawn(path: &str, content_type: &'static str, body: &'static [u8]) -> io::Result<Self> {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+        listener.set_nonblocking(true)?;
+        let origin = format!("http://{}", listener.local_addr()?);
+        let iri = format!("{origin}{path}");
+        let (accepted_sender, accepted) = mpsc::channel();
+        let (release, release_receiver) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            serve_delayed_http_or_stop(
+                listener,
+                &accepted_sender,
+                &release_receiver,
+                content_type,
+                body,
+            )
+        });
+        Ok(Self {
+            iri,
+            origin,
+            accepted,
+            release,
+            handle: Some(handle),
+        })
+    }
+
+    fn iri(&self) -> &str {
+        &self.iri
+    }
+
+    fn origin(&self) -> &str {
+        &self.origin
+    }
+
+    fn wait_for_request(&self) -> io::Result<()> {
+        self.accepted
+            .recv_timeout(Duration::from_secs(2))
+            .map_err(|error| io::Error::new(io::ErrorKind::TimedOut, error))
+    }
+
+    fn finish(mut self) -> io::Result<usize> {
+        if self.release.send(()).is_err() {
+            // The client may already have closed after its deadline.
+        }
+        self.join()
+    }
+
+    fn join(&mut self) -> io::Result<usize> {
+        self.handle
+            .take()
+            .ok_or_else(|| io::Error::other("delayed loopback probe was already joined"))?
+            .join()
+            .map_err(|_| io::Error::other("delayed loopback probe thread panicked"))?
+    }
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+impl Drop for DelayedLoopbackHttpProbe {
+    fn drop(&mut self) {
+        let _ = self.release.send(());
         if self.handle.is_some() {
             drop(self.join());
         }
@@ -236,6 +407,68 @@ fn serve_http_response(stream: &mut TcpStream, content_type: &str, body: &[u8]) 
     stream.shutdown(Shutdown::Write)
 }
 
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+fn serve_delayed_http_or_stop(
+    listener: TcpListener,
+    accepted: &Sender<()>,
+    release: &Receiver<()>,
+    content_type: &str,
+    body: &[u8],
+) -> io::Result<usize> {
+    loop {
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+                stream.set_write_timeout(Some(Duration::from_secs(2)))?;
+                let mut request = Vec::new();
+                while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+                    let mut buffer = [0; 1024];
+                    let read = stream.read(&mut buffer)?;
+                    if read == 0 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "loopback request ended before its headers",
+                        ));
+                    }
+                    request.extend_from_slice(&buffer[..read]);
+                    if request.len() > 64 * 1024 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "loopback request headers are too large",
+                        ));
+                    }
+                }
+                accepted
+                    .send(())
+                    .map_err(|_| io::Error::other("test stopped before request acceptance"))?;
+                // Offer a partial response and keep its framing incomplete.
+                // No query requiring its end may successfully finish.
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len() + 1
+                )?;
+                stream.write_all(body)?;
+                stream.flush()?;
+                let _ = release.recv_timeout(Duration::from_secs(5));
+                stream.shutdown(Shutdown::Write)?;
+                return Ok(1);
+            }
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                if release.try_recv().is_ok() {
+                    return Ok(0);
+                }
+            }
+            Err(error) => return Err(error),
+        }
+        thread::yield_now();
+    }
+}
+
 fn service_request(
     store: &Store,
     evaluator: &SparqlEvaluator,
@@ -288,6 +521,118 @@ fn load_request(
         QueryEntailment::Simple,
         None,
     )
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+fn service_request_with_lease(
+    store: &Store,
+    evaluator: &SparqlEvaluator,
+    service_iri: &str,
+    silent: bool,
+    lease: Option<WorkloadLease>,
+) -> Result<Response<Body>, crate::HttpError> {
+    let silent = if silent { "SILENT " } else { "" };
+    let query = format!("ASK WHERE {{ SERVICE {silent}<{service_iri}> {{ ?s ?p ?o }} }}");
+    let mut request = Request::builder()
+        .method(Method::POST)
+        .uri("http://localhost/query")
+        .header(CONTENT_TYPE, "application/sparql-query")
+        .header("Accept", "application/sparql-results+json")
+        .body(Body::from(query))
+        .expect("the timed SERVICE request is valid");
+    if let Some(lease) = lease {
+        request.extensions_mut().insert(lease);
+    }
+    crate::handle_request(
+        &mut request,
+        store,
+        evaluator,
+        false,
+        false,
+        QueryEntailment::Simple,
+        None,
+    )
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+fn load_request_with_lease(
+    store: &Store,
+    evaluator: &SparqlEvaluator,
+    source_iri: &str,
+    loaded_graph: &NamedNode,
+    silent: bool,
+    lease: WorkloadLease,
+) -> Result<Response<Body>, crate::HttpError> {
+    let silent = if silent { "SILENT " } else { "" };
+    let update = format!(
+        "CREATE GRAPH <urn:test:empty>; \
+         INSERT DATA {{ <urn:local:s> <urn:local:p> <urn:local:o> }}; \
+         LOAD {silent}<{source_iri}> INTO GRAPH {loaded_graph}"
+    );
+    let mut request = Request::builder()
+        .method(Method::POST)
+        .uri("http://localhost/update")
+        .header(CONTENT_TYPE, "application/sparql-update")
+        .body(Body::from(update))
+        .expect("the timed LOAD request is valid");
+    request.extensions_mut().insert(lease);
+    crate::handle_request(
+        &mut request,
+        store,
+        evaluator,
+        false,
+        false,
+        QueryEntailment::Simple,
+        None,
+    )
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+fn local_request_with_lease(
+    store: &Store,
+    lease: WorkloadLease,
+) -> Result<Response<Body>, crate::HttpError> {
+    let mut request = Request::builder()
+        .method(Method::POST)
+        .uri("http://localhost/query")
+        .header(CONTENT_TYPE, "application/sparql-query")
+        .header("Accept", "application/sparql-results+json")
+        .body(Body::from("ASK {}"))
+        .expect("the local request is valid");
+    request.extensions_mut().insert(lease);
+    crate::handle_request(
+        &mut request,
+        store,
+        &SparqlEvaluator::new(),
+        false,
+        false,
+        QueryEntailment::Simple,
+        None,
+    )
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+fn assert_request_timed_out(result: Result<(), crate::HttpError>) {
+    match result {
+        Err((status, _)) => assert_eq!(status, StatusCode::REQUEST_TIMEOUT),
+        Ok(()) => panic!("the incomplete loopback response unexpectedly succeeded"),
+    }
 }
 
 fn response_body(
@@ -622,6 +967,294 @@ fn server_endpoints_use_the_shared_deny_all_evaluator() -> Result<(), Box<dyn Er
         (0, 0, 0, false),
         "the server must deny SERVICE and LOAD before connecting and roll back the complete update"
     );
+    Ok(())
+}
+
+/// This deliberately injects an allowed evaluator into the native handler test
+/// seam. It does not alter the server's deny-all evaluator or claim that
+/// `oxigraph serve` permits loopback egress.
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+#[test]
+fn admitted_lease_deadline_stops_builtin_service_even_when_silent() -> Result<(), Box<dyn Error>> {
+    for silent in [false, true] {
+        let controller = deadline_controller()?;
+        let probe = DelayedLoopbackHttpProbe::spawn(
+            "/service",
+            "application/sparql-results+json",
+            INCOMPLETE_SERVICE_RESULTS_BODY,
+        )?;
+        let evaluator = SparqlEvaluator::new().with_egress_policy(allowed_loopback_policy(
+            probe.origin(),
+            Duration::from_secs(5),
+        )?);
+        let store = Store::new()?;
+        let lease = deadline_lease(&controller)?;
+        let (sender, receiver) = mpsc::channel();
+        let worker_store = store.clone();
+        let worker_evaluator = evaluator.clone();
+        let worker_iri = probe.iri().to_owned();
+        let worker_lease = lease.clone();
+        let worker = thread::spawn(move || {
+            let result = service_request_with_lease(
+                &worker_store,
+                &worker_evaluator,
+                &worker_iri,
+                silent,
+                Some(worker_lease),
+            )
+            .map(|response| drop(response));
+            sender
+                .send(result)
+                .expect("deadline result receiver remains live");
+        });
+
+        // The remote endpoint received the attributed request before the
+        // lease—not policy denial—ended it.
+        probe.wait_for_request()?;
+        let result = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .map_err(|error| io::Error::new(io::ErrorKind::TimedOut, error))?;
+        assert_request_timed_out(result);
+        assert_eq!(probe.finish()?, 1, "failure preceded fixture release");
+        worker.join().expect("timed SERVICE worker did not panic");
+        assert!(matches!(lease.check(), Err(WorkloadError::RequestTimedOut)));
+        assert!(matches!(
+            controller.acquire("default", ListenerKind::Data, CancellationToken::new()),
+            Err(WorkloadError::Overloaded(_))
+        ));
+
+        // The request, response, and worker-owned lease clone are all gone;
+        // capacity is reusable for a fresh local handler request.
+        drop(lease);
+        let fresh = deadline_lease(&controller)?;
+        let mut response = local_request_with_lease(&store, fresh.clone())
+            .map_err(|(status, message)| io::Error::other(format!("{status}: {message}")))?;
+        assert_eq!(response.status(), StatusCode::OK);
+        io::copy(response.body_mut(), &mut io::sink())?;
+        drop(response);
+        drop(fresh);
+    }
+    Ok(())
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+#[test]
+fn admitted_lease_deadline_fails_partial_service_stream_without_clean_eof()
+-> Result<(), Box<dyn Error>> {
+    let controller = deadline_controller()?;
+    let probe = DelayedLoopbackHttpProbe::spawn(
+        "/stream",
+        "application/sparql-results+json",
+        br#"{"head":{"vars":["s"]},"results":{"bindings":[{"s":{"type":"uri","value":"urn:streamed"}},"#,
+    )?;
+    let evaluator = SparqlEvaluator::new().with_egress_policy(allowed_loopback_policy(
+        probe.origin(),
+        Duration::from_secs(5),
+    )?);
+    let store = Store::new()?;
+    let lease = deadline_lease(&controller)?;
+    let worker_lease = lease.clone();
+    let iri = probe.iri().to_owned();
+    let (sender, receiver) = mpsc::channel();
+    let worker = thread::spawn(move || {
+        let mut request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/query")
+            .header(CONTENT_TYPE, "application/sparql-query")
+            // Unversioned JSON is the streaming route; explicit 1.1 requires
+            // whole-result term preflight before successful headers.
+            .header("Accept", "application/sparql-results+json")
+            .body(Body::from(format!(
+                // SILENT must stage its whole result before it can decide to
+                // suppress an ordinary remote error; use streaming SERVICE here.
+                "SELECT ?s WHERE {{ SERVICE <{iri}> {{ ?s ?p ?o }} }}"
+            )))
+            .expect("stream request is valid");
+        request.extensions_mut().insert(worker_lease);
+        let result = crate::handle_request(
+            &mut request,
+            &store,
+            &evaluator,
+            false,
+            false,
+            QueryEntailment::Simple,
+            None,
+        )
+        .map(|mut response| {
+            let mut partial = Vec::new();
+            let error = response
+                .body_mut()
+                .read_to_end(&mut partial)
+                .expect_err("the remote deadline must fail the partial result");
+            assert!(
+                response.body_mut().read(&mut [0]).is_err(),
+                "error must stay latched"
+            );
+            (response.status(), partial, error.to_string())
+        });
+        sender
+            .send(result)
+            .expect("stream result receiver remains live");
+    });
+    probe.wait_for_request()?;
+    let (status, partial, error) = receiver
+        .recv_timeout(Duration::from_secs(2))?
+        .map_err(|(status, message)| io::Error::other(format!("{status}: {message}")))?;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "headers preceded the stream failure"
+    );
+    assert!(
+        String::from_utf8(partial)?.contains("urn:streamed"),
+        "a real remote row must reach the output before failure: {error}"
+    );
+    assert!(matches!(lease.check(), Err(WorkloadError::RequestTimedOut)));
+    assert_eq!(probe.finish()?, 1, "failure preceded fixture release");
+    worker.join().expect("stream worker did not panic");
+    drop(lease);
+    drop(deadline_lease(&controller)?);
+    Ok(())
+}
+
+/// Like the SERVICE case above, this is an embedded-handler deadline test with
+/// explicit loopback authority only. It proves that an owned update rolls back
+/// both prior triples and empty graph creation on an incomplete remote LOAD.
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+#[test]
+fn admitted_lease_deadline_rolls_back_builtin_load_even_when_silent() -> Result<(), Box<dyn Error>>
+{
+    for silent in [false, true] {
+        let controller = deadline_controller()?;
+        let probe = DelayedLoopbackHttpProbe::spawn(
+            "/load.nt",
+            "application/n-triples",
+            REMOTE_GRAPH_BODY,
+        )?;
+        let evaluator = SparqlEvaluator::new().with_egress_policy(allowed_loopback_policy(
+            probe.origin(),
+            Duration::from_secs(5),
+        )?);
+        let directory = TempDir::new()?;
+        let store = Store::open(directory.path())?;
+        let loaded_graph = NamedNode::new_unchecked("urn:test:timed-load");
+        let lease = deadline_lease(&controller)?;
+        let (sender, receiver) = mpsc::channel();
+        let worker_store = store.clone();
+        let worker_evaluator = evaluator.clone();
+        let worker_iri = probe.iri().to_owned();
+        let worker_graph = loaded_graph.clone();
+        let worker_lease = lease.clone();
+        let worker = thread::spawn(move || {
+            let result = load_request_with_lease(
+                &worker_store,
+                &worker_evaluator,
+                &worker_iri,
+                &worker_graph,
+                silent,
+                worker_lease,
+            )
+            .map(|response| drop(response));
+            sender
+                .send(result)
+                .expect("deadline result receiver remains live");
+        });
+
+        probe.wait_for_request()?;
+        let result = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .map_err(|error| io::Error::new(io::ErrorKind::TimedOut, error))?;
+        assert_request_timed_out(result);
+        assert_eq!(probe.finish()?, 1, "failure preceded fixture release");
+        worker.join().expect("timed LOAD worker did not panic");
+
+        assert!(store.is_empty()?);
+        assert!(!store.contains_named_graph(&loaded_graph.clone().into())?);
+        assert!(!store.contains_named_graph(&NamedNode::new("urn:test:empty")?.into())?);
+        assert!(matches!(lease.check(), Err(WorkloadError::RequestTimedOut)));
+        assert!(matches!(
+            controller.acquire("default", ListenerKind::Data, CancellationToken::new()),
+            Err(WorkloadError::Overloaded(_))
+        ));
+        drop(lease);
+        drop(store);
+        let reopened = Store::open(directory.path())?;
+        assert!(reopened.is_empty()?);
+        assert!(!reopened.contains_named_graph(&loaded_graph.clone().into())?);
+        assert!(!reopened.contains_named_graph(&NamedNode::new("urn:test:empty")?.into())?);
+        drop(reopened);
+
+        let fresh = deadline_lease(&controller)?;
+        let local_store = Store::new()?;
+        let mut response = local_request_with_lease(&local_store, fresh.clone())
+            .map_err(|(status, message)| io::Error::other(format!("{status}: {message}")))?;
+        assert_eq!(response.status(), StatusCode::OK);
+        io::copy(response.body_mut(), &mut io::sink())?;
+        drop(response);
+        drop(fresh);
+    }
+    Ok(())
+}
+
+/// A policy timeout is still an ordinary remote failure. Unlike the enclosing
+/// workload deadline, SERVICE SILENT suppresses it and the handler succeeds.
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+#[test]
+fn service_silent_suppresses_ordinary_remote_timeout_without_a_lease() -> Result<(), Box<dyn Error>>
+{
+    let probe = DelayedLoopbackHttpProbe::spawn(
+        "/ordinary-timeout",
+        "application/sparql-results+json",
+        INCOMPLETE_SERVICE_RESULTS_BODY,
+    )?;
+    let evaluator = SparqlEvaluator::new().with_egress_policy(allowed_loopback_policy(
+        probe.origin(),
+        Duration::from_millis(50),
+    )?);
+    let store = Store::new()?;
+    let (sender, receiver) = mpsc::channel();
+    let worker_store = store.clone();
+    let worker_evaluator = evaluator.clone();
+    let worker_iri = probe.iri().to_owned();
+    let worker = thread::spawn(move || {
+        let result =
+            service_request_with_lease(&worker_store, &worker_evaluator, &worker_iri, true, None)
+                .map(|mut response| {
+                    let status = response.status();
+                    io::copy(response.body_mut(), &mut io::sink())
+                        .expect("ordinary SILENT response body is readable");
+                    status
+                });
+        sender
+            .send(result)
+            .expect("ordinary timeout result receiver remains live");
+    });
+    probe.wait_for_request()?;
+    let result = receiver
+        .recv_timeout(Duration::from_secs(2))
+        .map_err(|error| io::Error::new(io::ErrorKind::TimedOut, error))?
+        .map_err(|(status, message)| io::Error::other(format!("{status}: {message}")))?;
+    assert_eq!(result, StatusCode::OK);
+    assert_eq!(probe.finish()?, 1);
+    worker
+        .join()
+        .expect("ordinary timeout worker did not panic");
     Ok(())
 }
 

@@ -178,7 +178,11 @@ matrices and measured absence of work under denial. G4.2 now provides opt-in
 admission, queue expiry, a reserved operator pool and response-lifetime leases.
 Optional absolute request deadlines now span the queue, body I/O, Simple query
 evaluation, transactional writes and response streaming, with typed timeout and
-pre-commit rollback checks. Finite RDF, RDFS and bounded OWL materialization share cancellation
+pre-commit rollback checks. Native evaluation timeout/cancellation now preserves
+the documented 408 response before headers; ordinary remote errors remain 500.
+Embedded loopback SERVICE/LOAD tests verify deadlines, failed streams and
+rollback/reopen without enabling egress in either serve mode.
+Finite RDF, RDFS and bounded OWL materialization share cancellation
 and the absolute request deadline across snapshot copying, FROM construction,
 inference and query reads. RDFS and OWL also check internal copies, sparse scans,
 consistency/output assembly and memory estimation. Controlled copies preserve

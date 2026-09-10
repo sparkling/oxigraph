@@ -1025,6 +1025,31 @@ and graph results, both ASK values, empty-graph records, 304/HEAD, independent
 byte refusal, fresh admission, and the persistent write/rollback/restart journey.
 This closes the generated-record slice, not full G4.2 resource acceptance.
 
+### Admitted egress deadlines and HTTP error classification (2026-09-10)
+
+Native handler regressions exposed a mapping defect: built-in SERVICE/LOAD
+observed the admitted lease deadline, but top-level query/update `TimedOut`
+and `Cancelled` became internal 500 responses. They now return empty,
+noncacheable 408 before headers, consistently with existing request checkpoints.
+Wrapped query control errors preserve the same mapping during result setup.
+Ordinary remote failures, including a SERVICE-wrapped remote timeout, remain
+500 when unsuppressed; resource exhaustion remains 503. No transaction,
+evaluation, egress policy, dependency or advertised capability changes.
+
+Controlled loopback responses remain held past the 250 ms lease deadline,
+with a separate five-second remote timeout. Native tests cover SERVICE/LOAD
+with and without SILENT, a real row followed by failed streaming and sticky
+read error, owned LOAD rollback of triples and empty graphs across reopen,
+capacity retained until the last lease drops, and a fresh local request.
+An ordinary remote-timeout SILENT control still succeeds. These tests inject
+an explicitly allowed evaluator at the existing native handler seam; both
+actual serve modes remain deny-all. This closes a native acceptance slice,
+not the frozen operational/performance gates or all G4.2 requirements.
+
+Default native validation passes 71 library, 179 binary and 57 HTTP tests.
+No-default passes 71 library, 151 binary and 51 HTTP tests, with one existing
+dependency-qualified binary test ignored. No protected evidence is refreshed.
+
 ### Remaining staged acceptance
 
 1. **Admission:** deterministic-clock tests prove FIFO/fairness, queue bounds,
