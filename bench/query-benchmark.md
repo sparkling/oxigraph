@@ -859,3 +859,42 @@ offer/vendor associations preserves identical payloads, NDVs and V4 plans,
 but changes the exact join from one row to zero. New statistics or a planning
 strategy would need a specific contract and evidence; another profile is not
 automatically justified by this failure.
+
+## Smallest-first search diagnostic
+
+On 2026-09-10, current source `803bae855398ca849a09ebca3bbdee9630f085e9`
+reproduces all ten prior BSBM work counts and 960/960 oracle comparisons.
+The separate opt-in
+[`with_smallest_leaf_first()` search restriction](../docs/adr/0023-statistics-and-bounded-join-planning.md#explicit-smallest-first-search-restriction-2026-09-10)
+retains the cost formulas and ordinary all-start search. It must be selected
+explicitly; it can exclude better plans and does not estimate join overlap.
+
+Build with `cargo build --locked --release -p oxigraph --features statistics --example query_benchmark`.
+Use the existing complete BSBM manifest/query inventory and 30 repetitions with
+`--mode shared_statistics_greedy,shared_statistics_bounded_correlated_v3,shared_statistics_bounded_domain_v4,shared_statistics_bounded_domain_v4_smallest_first`.
+The new mode is excluded from default selection, requires admitted distinct
+statistics, and emits `smallest_leaf_first: true` alongside the unchanged V4
+cost identity. Old modes emit false. Input hashes and the bag oracle are unchanged.
+
+The four-mode CPU-8 check preserves **1,280/1,280** comparisons: 1,240 samples
+(including 40 warm-ups) and 40 independent feedback executions. Q7 reads
+83 quad rows with constrained V4 versus 223 with ordinary V4, 83 with V3 and
+84 with greedy. Q8 retains V4's 77 rather than V3's 93; the other eight retain
+their V4 counts in the table above. Q1/Q4 remain 8/111 versus greedy's 6/81.
+Elapsed time is 3.00 s and process peak RSS is 115,556 KiB; these are observations
+for this workload, not allocator bounds or a frozen throughput/tail pass.
+No WatDiv/LDBC candidate or default promotion is inferred.
+
+Local source-baseline binary SHA-256:
+`94d4267b9a2243fb28d6725d94dee8addb82fe3aac8dd900ba5f328ea53b0b4a`;
+constrained-candidate binary:
+`d659ebbbcffa547ad49b8c38be4233161d0b0e95a2ca2738a04d4068c6e6d10e`.
+Raw files under `/tmp/oxigraph-g32-q7-current-sIAAfkKh` remain separate:
+`bsbm.jsonl` SHA-256
+`0d2eb2edae68f5e38129e30612a824b1fab2b1f23b3a8f1d0deebf484bd0d201`;
+`bsbm.time` `09a69f4a1e1a8d0deb3aa2deee1e78b4d25b43c624be52d9b658a88f5fa51a73`;
+`smallest-first.jsonl`
+`6941e311f642ad2374c0a900554426411955c8d26202689a5f49c65a6da1f2a0`;
+`smallest-first.time`
+`70c859d9c3ffa8cb0b2f063e586c638990b62173e3cfa19c6734a49dd89436b2`.
+Historical raw data and pinned acceptance inputs are not replaced or published.

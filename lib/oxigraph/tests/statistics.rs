@@ -252,6 +252,97 @@ fn equal_marginal_statistics_do_not_imply_equal_join_overlap() -> Result {
 }
 
 #[test]
+fn smallest_start_preserves_optional_offer_results() -> Result {
+    // Both overlap cases are semantic/identity coverage. This synthetic data
+    // is not the pinned BSBM work regression; the optimizer's Counts fixture
+    // independently discriminates the constrained and unrestricted searches.
+    let link = |s: &str, p: &str, o: &str| -> Result<_> {
+        Ok(Quad::new(
+            NamedNode::new(format!("urn:{s}"))?,
+            NamedNode::new(format!("urn:{p}"))?,
+            NamedNode::new(format!("urn:{o}"))?,
+            GraphName::DefaultGraph,
+        ))
+    };
+    let query = "PREFIX : <urn:> SELECT * {
+        :P :label ?label OPTIONAL {
+            ?offer :product :P; :price ?price; :vendor ?vendor;
+                   :publisher ?vendor; :validTo ?date .
+            ?vendor :label ?vendorLabel; :country :DE . FILTER(?date > 1)
+        }
+    }";
+    for overlap in [false, true] {
+        let mut data = vec![quad("P", "label", "product", GraphName::DefaultGraph)];
+        for i in 0..40 {
+            data.push(link(
+                &format!("v{i}"),
+                "country",
+                if i < 5 { "DE" } else { "US" },
+            )?);
+            data.push(quad(
+                &format!("v{i}"),
+                "label",
+                "vendor",
+                GraphName::DefaultGraph,
+            ));
+        }
+        for i in 0..2000 {
+            let offer = format!("o{i}");
+            let vendor = if i < 29 && !overlap {
+                5 + i % 35
+            } else {
+                i % 40
+            };
+            data.push(link(&offer, "product", if i < 29 { "P" } else { "Other" })?);
+            data.push(link(&offer, "vendor", &format!("v{vendor}"))?);
+            data.push(link(&offer, "publisher", &format!("v{vendor}"))?);
+            for p in ["price", "validTo"] {
+                data.push(Quad::new(
+                    NamedNode::new(format!("urn:{offer}"))?,
+                    NamedNode::new(format!("urn:{p}"))?,
+                    Literal::from(2),
+                    GraphName::DefaultGraph,
+                ));
+            }
+        }
+        let fixture = Fixture::new(data)?;
+        let shared = Arc::new(fixture.read_distinct()?);
+        let expected = solution_bag(
+            SparqlEvaluator::new()
+                .without_optimizations()
+                .parse_query(query)?
+                .on_store(&fixture.store)
+                .execute()?,
+        )?;
+        assert_eq!(
+            expected.values().sum::<usize>(),
+            if overlap { 5 } else { 1 }
+        );
+        for options in [
+            BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::CorrelatedV3),
+            BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::DomainAwareV4),
+            BoundedJoinPlanning::default()
+                .with_cost_model(BoundedJoinCostModel::DomainAwareV4)
+                .with_smallest_leaf_first(),
+        ] {
+            let (result, explanation) = SparqlEvaluator::new()
+                .with_bounded_join_planning(options)
+                .parse_query(query)?
+                .on_statistics_snapshot(
+                    capture(&fixture.store)?,
+                    Arc::clone(&shared),
+                    TransactionStartControl::new(),
+                )?
+                .compute_statistics()
+                .explain()?;
+            assert_eq!(solution_bag(result?)?, expected);
+            assert_eq!(explanation.join_planning().bounded, Some(options));
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn statistics_queries_preserve_solution_bags_across_operators_and_fallbacks() -> Result {
     let fixture = Fixture::new(
         (0..12)
@@ -291,6 +382,11 @@ fn statistics_queries_preserve_solution_bags_across_operators_and_fallbacks() ->
             ),
             Some(
                 BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::DomainAwareV4),
+            ),
+            Some(
+                BoundedJoinPlanning::default()
+                    .with_cost_model(BoundedJoinCostModel::DomainAwareV4)
+                    .with_smallest_leaf_first(),
             ),
         ];
         for (index, options) in [&fixture.index, &missing]
@@ -402,6 +498,11 @@ fn every_planner_preserves_results_with_stale_or_corrupt_statistics() -> Result 
                     BoundedJoinPlanning::default()
                         .with_cost_model(BoundedJoinCostModel::DomainAwareV4),
                 ),
+                SparqlEvaluator::new().with_bounded_join_planning(
+                    BoundedJoinPlanning::default()
+                        .with_cost_model(BoundedJoinCostModel::DomainAwareV4)
+                        .with_smallest_leaf_first(),
+                ),
             ] {
                 // Owned observations are still valid for their exact source
                 // despite later file corruption, but never for a newer source.
@@ -471,18 +572,21 @@ fn retained_statistics_produce_deterministic_dp_and_fallback_plans() -> Result {
                 .on_store(&fixture.store)
                 .execute()?,
         )?;
-        for model in [
+        for options in [
             BoundedJoinCostModel::IndependentV1,
             BoundedJoinCostModel::ConditionalV2,
             BoundedJoinCostModel::CorrelatedV3,
             BoundedJoinCostModel::DomainAwareV4,
-        ] {
+        ]
+        .into_iter()
+        .flat_map(|model| {
+            let options = BoundedJoinPlanning::default().with_cost_model(model);
+            [options, options.with_smallest_leaf_first()]
+        }) {
             let mut first = None;
             for _ in 0..8 {
                 let bound = SparqlEvaluator::new()
-                    .with_bounded_join_planning(
-                        BoundedJoinPlanning::default().with_cost_model(model),
-                    )
+                    .with_bounded_join_planning(options)
                     .parse_query(&query)?
                     .on_statistics_snapshot(
                         capture(&fixture.store)?,
@@ -496,7 +600,17 @@ fn retained_statistics_produce_deterministic_dp_and_fallback_plans() -> Result {
                 let (result, explanation) = bound.explain()?;
                 assert_eq!(solution_bag(result?)?, expected);
                 let report = explanation.join_planning();
-                assert_eq!(report.dp_states, if leaf_count == 8 { 255 } else { 0 });
+                assert_eq!(report.bounded, Some(options));
+                assert_eq!(
+                    report.dp_states,
+                    if leaf_count == 9 {
+                        0
+                    } else if options.smallest_leaf_first() {
+                        128
+                    } else {
+                        255
+                    }
+                );
                 assert_eq!(report.greedy_components, usize::from(leaf_count == 9));
                 let mut serialized = Vec::new();
                 explanation.write_in_json(&mut serialized)?;

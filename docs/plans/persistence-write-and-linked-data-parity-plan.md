@@ -1252,10 +1252,13 @@ statistics run then preserved 384/384 WatDiv observations but failed performance
 [source-derived NDV/V4 candidate](../adr/0023-statistics-and-bounded-join-planning.md#optional-source-derived-domains-and-cost-model-v4-2026-09-08)
 targets join-domain estimation, preserving old profiles and persisted evidence.
 Its first BSBM comparison preserves 960/960 observations but regresses Q7
-from V3's 83 to 223 quad rows, despite Q8 improving. Next diagnose that exact
-optional-offer ordering before the large WatDiv rerun, then finish baseline-first
-numerical/resource/tail acceptance. No gate is relaxed or extra manual pre-run
-approval prerequisite introduced.
+from V3's 83 to 223 quad rows, despite Q8 improving. Current-source reproduction
+confirms that gap. The separate explicit
+[smallest-first search option](../adr/0023-statistics-and-bounded-join-planning.md#explicit-smallest-first-search-restriction-2026-09-10)
+now reduces Q7 to 83 while retaining Q8's 77 and the other V4 work counts;
+all 1,280 four-mode observations match the oracle. Q1/Q4 and the scoped
+WatDiv/LDBC resource/tail gates remain open. This is not an overlap estimator,
+default promotion, relaxed gate or extra manual pre-run approval prerequisite.
 
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.

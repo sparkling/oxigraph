@@ -899,7 +899,7 @@ impl Optimizer {
                                 &to_reorder_types,
                                 input_types,
                                 estimator,
-                                options.cost_model(),
+                                options,
                                 report,
                             ) {
                                 for id in ids {

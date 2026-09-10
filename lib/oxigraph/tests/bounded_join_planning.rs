@@ -137,7 +137,10 @@ fn bounded_queries_preserve_multisets_and_scopes() -> Result {
                 .unwrap()
                 .with_cost_model(BoundedJoinCostModel::DomainAwareV4),
             BoundedJoinPlanning::default().with_cost_model(BoundedJoinCostModel::DomainAwareV4),
-        ] {
+        ]
+        .into_iter()
+        .flat_map(|options| [options, options.with_smallest_leaf_first()])
+        {
             let (results, explanation) = SparqlEvaluator::new()
                 .with_bounded_join_planning(options)
                 .parse_query(query)?

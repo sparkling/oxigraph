@@ -1205,9 +1205,13 @@ statistics run then preserved 384/384 WatDiv observations but failed performance
 targets the missing join-domain estimates; old profiles/defaults and persisted
 evidence remain unchanged. Its first BSBM comparison preserves 960/960
 observations but regresses Q7 from V3's 83 to 223 quad rows, despite Q8 improving.
-Next diagnose that optional-offer ordering before the large WatDiv rerun, then
-finish baseline-first frozen numerical/resource/tail acceptance, not unspecified
-corpus expansion, relaxed gates, manual pre-run approval or another harness phase.
+Current-source reproduction confirms it. The separate explicit
+[smallest-first search option](../adr/0023-statistics-and-bounded-join-planning.md#explicit-smallest-first-search-restriction-2026-09-10)
+now reduces Q7 to 83 while retaining Q8's 77 and the other V4 work counts;
+all 1,280 four-mode observations match the oracle. Q1/Q4 and the scoped
+WatDiv/LDBC resource/tail gates remain open. This is not an overlap estimator,
+default promotion, corpus expansion, relaxed gate, manual pre-run approval or
+another harness phase.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 

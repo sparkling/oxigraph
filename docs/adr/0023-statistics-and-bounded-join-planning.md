@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-09-09
+- Updated: 2026-09-10
 - Deciders: Oxigraph parity programme
 - Implementation status: G3.1 native physical statistics, dataset-scoped cost
   integration and query-local feedback implemented below; G3.2 opt-in native
@@ -662,6 +662,42 @@ are one versus zero. This proves that these summaries lack the cross-predicate
 overlap needed to distinguish the cases; it is not a violated V4 formula or
 permission to tune another cost multiplier. Both executions match their
 optimization-disabled oracles.
+
+### Explicit smallest-first search restriction (2026-09-10)
+
+`BoundedJoinPlanning::with_smallest_leaf_first()` explicitly restricts each
+eligible DP component to the initial leaf with the minimum existing estimated
+row count, breaking ties by source ordinal. Remaining joins retain the selected
+cost model. All subset row/domain hints, conditional caps, algebra eligibility,
+eight-leaf ceiling and out-of-bound greedy fallback remain unchanged. Only
+physical singleton seeds and consequently reachable states/candidates change.
+The option defaults to false in both constructors; V1–V4 formulas and existing
+all-start plans/search counts are preserved. `smallest_leaf_first()` and the existing
+`JoinPlanningReport.bounded` expose the exact search configuration.
+
+This is a conservative search restriction, not an inferred overlap statistic
+or a V5 cost formula. It avoids a broad initial scan when join estimates are
+misleading, but can exclude a genuinely better plan. The existing three-leaf
+fixture demonstrates that unrestricted DP can choose a useful pair that this
+restriction cannot start with. No default or automatic per-query selection is
+promoted.
+
+The current-source BSBM baseline reproduces Q7's 223-row V4 plan. With this
+explicit option, the same ten pinned queries preserve all 1,280 oracle
+comparisons across greedy, V3, V4 and constrained V4. Q7 reads 83 rather than
+223 quad rows; Q8 retains 77, and the other eight retain their V4 work counts.
+Q1/Q4 still read 8/111 versus greedy's 6/81. This closes the observed Q7
+candidate gap, not full G3.2 corpus/resource/tail acceptance or promotion.
+[Reproduction and artifact identities](../../bench/query-benchmark.md#smallest-first-search-diagnostic)
+retain the unconstrained measurements separately.
+
+Native tests cover opt-in identity, source-order ties, zero/max hints,
+unchanged old-profile expectations, deterministic eight-leaf search and
+nine-leaf fallback, unsupported boundaries, result multisets and current,
+missing, stale/corrupt and retained statistics. A separate synthetic OPTIONAL
+fixture checks both present and absent offer/vendor overlap; it is semantic
+coverage, not a reproduction of the BSBM work regression. No persisted
+statistics, manifest, numerical gate or protected evidence is changed.
 
 ## Consequences
 

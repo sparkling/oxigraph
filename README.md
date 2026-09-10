@@ -151,6 +151,11 @@ Its native Q8-shaped regression preserves six results while scanning only the
 selected 14-row range. The diagnostic supports single-mode process workloads;
 full corpus acceptance and all ordinary defaults remain unchanged.
 
+`BoundedJoinPlanning::with_smallest_leaf_first()` optionally starts bounded
+search at the smallest estimated leaf, preserving the selected cost model and
+ordinary defaults. It reduces the recorded V4 Q7 scan from 223 to 83 quad rows,
+but can miss better plans; see the [contract and measured limitations](docs/adr/0023-statistics-and-bounded-join-planning.md#explicit-smallest-first-search-restriction-2026-09-10).
+
 Build this fork rather than an upstream package to obtain these changes:
 
 ```sh

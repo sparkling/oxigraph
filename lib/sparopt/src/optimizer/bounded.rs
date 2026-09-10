@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 pub struct BoundedJoinPlanning {
     max_dp_leaves: u8,
     cost_model: BoundedJoinCostModel,
+    smallest_leaf_first: bool,
 }
 /// Versioned opt-in cost rules. Neither profile promotes the ordinary planner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -46,6 +47,7 @@ impl BoundedJoinPlanning {
             Some(Self {
                 max_dp_leaves,
                 cost_model: BoundedJoinCostModel::IndependentV1,
+                smallest_leaf_first: false,
             })
         } else {
             None
@@ -62,12 +64,27 @@ impl BoundedJoinPlanning {
         self.cost_model = model;
         self
     }
+    /// Whether bounded search starts only at the smallest estimated leaf.
+    pub const fn smallest_leaf_first(self) -> bool {
+        self.smallest_leaf_first
+    }
+    /// Restricts each eligible component's initial scan to the smallest
+    /// estimated leaf, breaking ties by source ordinal. Cost formulas and
+    /// out-of-bound greedy fallback are unchanged. This conservative search
+    /// restriction can avoid a broad first scan under unknown join overlap,
+    /// but can also miss a better plan. It is not enabled by default.
+    #[must_use]
+    pub const fn with_smallest_leaf_first(mut self) -> Self {
+        self.smallest_leaf_first = true;
+        self
+    }
 }
 impl Default for BoundedJoinPlanning {
     fn default() -> Self {
         Self {
             max_dp_leaves: Self::MAX_DP_LEAVES,
             cost_model: BoundedJoinCostModel::IndependentV1,
+            smallest_leaf_first: false,
         }
     }
 }
@@ -150,7 +167,7 @@ pub(super) fn plan(
     leaf_types: &[VariableTypes],
     input: &VariableTypes,
     estimator: Option<&dyn CardinalityEstimator>,
-    cost_model: BoundedJoinCostModel,
+    options: BoundedJoinPlanning,
     report: &mut JoinPlanningReport,
 ) -> Option<QueryExpression> {
     // Defensive bound before any exponential allocation/shift.
@@ -158,6 +175,7 @@ pub(super) fn plan(
         return None;
     }
     let count = 1_usize << ids.len();
+    let cost_model = options.cost_model();
     let sizes: Vec<_> = ids
         .iter()
         .map(|&id| estimate_query_expression_size(&leaves[id], input, estimator))
@@ -289,7 +307,15 @@ pub(super) fn plan(
         }
     }
     let mut states: Vec<Option<State>> = vec![None; count];
+    let first = if options.smallest_leaf_first() {
+        Some((0..ids.len()).min_by_key(|&i| (sizes[i], ids[i]))?)
+    } else {
+        None
+    };
     for (i, &id) in ids.iter().enumerate() {
+        if first.is_some_and(|first| first != i) {
+            continue;
+        }
         states[1 << i] = Some(State {
             expression: leaves[id].clone(),
             work: u128::from(sizes[i]),
@@ -718,6 +744,25 @@ mod tests {
         assert_eq!(report.dp_components, 1);
     }
     #[test]
+    fn smallest_leaf_start_is_explicit_and_changes_search_not_costs() {
+        let input = parse("SELECT * { ?a <urn:pa> ?z . ?x <urn:pb> ?z . ?x <urn:pc> ?z }");
+        let default = BoundedJoinPlanning::default();
+        assert!(!default.smallest_leaf_first());
+        assert!(!BoundedJoinPlanning::new(8).unwrap().smallest_leaf_first());
+        let options = default.with_smallest_leaf_first();
+        assert!(options.smallest_leaf_first());
+        assert_eq!(options.cost_model(), default.cost_model());
+        let (plan, report) = Optimizer::optimize_query_expression_with_join_planning(
+            input,
+            Some(&Counts),
+            Some(options),
+        );
+        assert_eq!(leaf_order(&plan)[0], "<urn:pa>");
+        assert_eq!(report.bounded, Some(options));
+        assert_eq!(report.dp_states, 4);
+    }
+
+    #[test]
     fn bounded_search_selects_a_pair_greedy_cannot_start_with() {
         let input = parse("SELECT * WHERE { ?a <urn:pa> ?z . ?x <urn:pb> ?z . ?x <urn:pc> ?z }");
         let greedy = Optimizer::optimize_query_expression_with_cardinality_estimator(
@@ -777,13 +822,17 @@ mod tests {
 
     #[test]
     fn eight_leaf_bound_and_nine_leaf_fallback_are_deterministic() {
-        for model in [
+        for options in [
             BoundedJoinCostModel::IndependentV1,
             BoundedJoinCostModel::ConditionalV2,
             BoundedJoinCostModel::CorrelatedV3,
             BoundedJoinCostModel::DomainAwareV4,
-        ] {
+        ]
+        .into_iter()
+        .flat_map(|model| {
             let options = BoundedJoinPlanning::default().with_cost_model(model);
+            [options, options.with_smallest_leaf_first()]
+        }) {
             for n in [8, 9] {
                 let body = (0..n)
                     .map(|i| format!("?s <urn:p{i}> ?o{i} ."))
@@ -825,35 +874,50 @@ mod tests {
     fn bound_is_per_connected_component_and_keeps_duplicate_leaves() {
         let input =
             parse("SELECT * { ?s <urn:p> ?o . ?s <urn:p> ?o . ?a <urn:q> ?b . ?a <urn:r> ?c }");
-        let (plan, report) = Optimizer::optimize_query_expression_with_join_planning(
-            input,
-            Some(&Counts),
-            Some(BoundedJoinPlanning::new(2).unwrap()),
-        );
-        assert_eq!(report.dp_components, 2);
-        assert_eq!(
-            leaf_order(&plan)
-                .iter()
-                .filter(|p| p.as_str() == "<urn:p>")
-                .count(),
-            2
-        );
+        for options in [
+            BoundedJoinPlanning::new(2).unwrap(),
+            BoundedJoinPlanning::new(2)
+                .unwrap()
+                .with_smallest_leaf_first(),
+        ] {
+            let (plan, report) = Optimizer::optimize_query_expression_with_join_planning(
+                input.clone(),
+                Some(&Counts),
+                Some(options),
+            );
+            assert_eq!(report.dp_components, 2);
+            assert_eq!(
+                leaf_order(&plan)
+                    .iter()
+                    .filter(|p| p.as_str() == "<urn:p>")
+                    .count(),
+                2
+            );
+        }
         assert!(BoundedJoinPlanning::new(0).is_none());
         assert!(BoundedJoinPlanning::new(9).is_none());
         assert!(BoundedJoinPlanning::new(255).is_none());
     }
     #[test]
     fn unsupported_join_group_keeps_the_exact_greedy_plan() {
-        for query in [
+        for (query, options) in [
             "SELECT * { ?s <urn:p> ?o . ?o <urn:q>* ?x }",
             "SELECT * { ?s <urn:p> ?o . SERVICE SILENT <urn:remote> { ?s <urn:q> ?v } }",
             "SELECT * { GRAPH <urn:a> { ?s <urn:p> ?o } GRAPH <urn:b> { ?s <urn:q> ?v } }",
-        ] {
+        ]
+        .into_iter()
+        .flat_map(|query| {
+            [
+                BoundedJoinPlanning::default(),
+                BoundedJoinPlanning::default().with_smallest_leaf_first(),
+            ]
+            .map(|options| (query, options))
+        }) {
             let input = parse(query);
             let (bounded, report) = Optimizer::optimize_query_expression_with_join_planning(
                 input.clone(),
                 Some(&Counts),
-                Some(BoundedJoinPlanning::default()),
+                Some(options),
             );
             assert_eq!(report.dp_components, 0);
             assert_eq!(
@@ -881,13 +945,17 @@ mod tests {
             }
         }
         let input = parse("SELECT * { ?s <urn:p> ?o . ?s <urn:q> ?o . ?s <urn:r> ?x }");
-        for model in [
+        for options in [
             BoundedJoinCostModel::IndependentV1,
             BoundedJoinCostModel::ConditionalV2,
             BoundedJoinCostModel::CorrelatedV3,
             BoundedJoinCostModel::DomainAwareV4,
-        ] {
+        ]
+        .into_iter()
+        .flat_map(|model| {
             let options = BoundedJoinPlanning::default().with_cost_model(model);
+            [options, options.with_smallest_leaf_first()]
+        }) {
             for hint in [0, 1, u64::MAX] {
                 let (plan, report) = Optimizer::optimize_query_expression_with_join_planning(
                     input.clone(),
@@ -896,6 +964,9 @@ mod tests {
                 );
                 assert_eq!(leaf_order(&plan).len(), 3);
                 assert_eq!(report.dp_components, 1);
+                if options.smallest_leaf_first() {
+                    assert_eq!(leaf_order(&plan)[0], "<urn:p>", "source-order tie");
+                }
                 let (again, again_report) = Optimizer::optimize_query_expression_with_join_planning(
                     input.clone(),
                     Some(&Fixed(hint)),

@@ -21,7 +21,7 @@ use std::time::Instant;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 const DEFAULT_MODE_COUNT: usize = 10;
-const MODE_NAMES: [&str; 11] = [
+const MODE_NAMES: [&str; 12] = [
     "greedy",
     "bounded",
     "statistics_greedy",
@@ -33,6 +33,7 @@ const MODE_NAMES: [&str; 11] = [
     "bounded_correlated_v3",
     "shared_statistics_bounded_correlated_v3",
     "shared_statistics_bounded_domain_v4",
+    "shared_statistics_bounded_domain_v4_smallest_first",
 ];
 
 // Keep selection outside the measured path. Explicit names prevent a typo from
@@ -47,7 +48,23 @@ struct Options {
 }
 
 fn uses_statistics(mode: usize) -> bool {
-    (2..=5).contains(&mode) || mode == 7 || mode == 9 || mode == 10
+    matches!(mode, 2..=5 | 7 | 9 | 10 | 11)
+}
+
+fn planning(mode: usize) -> Option<BoundedJoinPlanning> {
+    let model = match mode {
+        1 | 3 | 5 => BoundedJoinCostModel::IndependentV1,
+        6 | 7 => BoundedJoinCostModel::ConditionalV2,
+        8 | 9 => BoundedJoinCostModel::CorrelatedV3,
+        10 | 11 => BoundedJoinCostModel::DomainAwareV4,
+        _ => return None,
+    };
+    let options = BoundedJoinPlanning::default().with_cost_model(model);
+    Some(if mode == 11 {
+        options.with_smallest_leaf_first()
+    } else {
+        options
+    })
 }
 
 fn selection(mut args: &[String]) -> Result<(Options, &[String])> {
@@ -357,7 +374,7 @@ fn main() -> Result {
         statistics_build_activate_seconds = Some(started.elapsed().as_secs_f64());
         let started = Instant::now();
         let view = index.strict(&source, &limits)?;
-        let shared = Arc::new(if modes.contains(&10) {
+        let shared = Arc::new(if modes.iter().any(|mode| matches!(mode, 10 | 11)) {
             provider.read_with_distinct_estimates(
                 &view,
                 &limits.input,
@@ -423,18 +440,8 @@ fn main() -> Result {
                 let mode_name = MODE_NAMES[mode];
                 let started = Instant::now();
                 let mut evaluator = SparqlEvaluator::new();
-                if mode % 2 == 1 || mode >= 6 {
-                    evaluator = evaluator.with_bounded_join_planning(
-                        BoundedJoinPlanning::default().with_cost_model(if mode == 10 {
-                            BoundedJoinCostModel::DomainAwareV4
-                        } else if mode >= 8 {
-                            BoundedJoinCostModel::CorrelatedV3
-                        } else if mode >= 6 {
-                            BoundedJoinCostModel::ConditionalV2
-                        } else {
-                            BoundedJoinCostModel::IndependentV1
-                        }),
-                    );
+                if let Some(options) = planning(mode) {
+                    evaluator = evaluator.with_bounded_join_planning(options);
                 }
                 let prepared = prepare(evaluator, query, union_default_graph)?;
                 let prepare_seconds = started.elapsed().as_secs_f64();
@@ -457,7 +464,8 @@ fn main() -> Result {
                         if bound.context().availability != StatisticsAvailability::Current {
                             return Err("statistics admission was not current".into());
                         }
-                        if mode == 10 && bound.distinct_estimation_profile().is_none() {
+                        if matches!(mode, 10 | 11) && bound.distinct_estimation_profile().is_none()
+                        {
                             return Err("distinct statistics admission missing".into());
                         }
                         let admission = admission_started.elapsed().as_secs_f64();
@@ -500,6 +508,7 @@ fn main() -> Result {
                     "kind": if instrumented { "feedback" } else { "sample" }, "query_sha256": query_sha256,
                     "mode": mode_name, "round": round, "warmup": round == 0,
                     "cost_model": search.bounded.map(|options| options.cost_model().id()),
+                    "smallest_leaf_first": search.bounded.is_some_and(BoundedJoinPlanning::smallest_leaf_first),
                     "rows": actual.rows.len(), "equivalent": true,
                     "prepare_seconds": prepare_seconds, "admission_seconds": admission_seconds,
                     "explain_seconds": explain_seconds, "planning_seconds": observations.planning_seconds,
@@ -588,6 +597,10 @@ mod tests {
             let (options, queries) = selection(&selected)?;
             assert_eq!(options.modes, [expected]);
             assert_eq!(queries, &selected[2..]);
+            assert_eq!(
+                planning(expected).is_some_and(BoundedJoinPlanning::smallest_leaf_first),
+                expected == 11,
+            );
         }
         for invalid in [
             vec![],
