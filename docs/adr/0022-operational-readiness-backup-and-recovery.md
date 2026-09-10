@@ -510,6 +510,12 @@ not actual lost-change RPO or full-service RTO. Over-age preflight rejects befor
 destination creation; over-duration returns measured observations without a
 completion marker. Successful receipts bind the exact baseline fingerprint.
 
+The 2026-09-10 preflight correction checks that fingerprint before applying the
+baseline's reference time. A different, later backup returns `BackupMismatch`,
+not a timing-dependent `InvalidReference`, before destination creation. The
+new native regression preserves both packages and the existing age/duration
+limits; no receipt encoding, frozen baseline or historical expectation changes.
+
 The CLI fixture measured 22 ms restoration and a 98–117 ms checkpoint-age
 interval against an explicitly frozen 60,000 ms/60,000 ms **test-only** baseline;
 the unconfigured run measured 23 ms. These are one local drill's observations,

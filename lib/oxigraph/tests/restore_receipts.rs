@@ -523,3 +523,43 @@ fn frozen_local_baselines_report_measurements_and_reject_artifact_age_or_duratio
     ));
     Ok(())
 }
+
+#[test]
+fn mismatched_backup_is_rejected_before_applying_another_artifacts_reference() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let source = Store::open(directory.path().join("source"))?;
+    let original =
+        source.backup_with_receipt(directory.path().join("original"), &BackupOptions::default())?;
+    let reference = original.source_end().time();
+    let baseline = RecoveryBaseline::new(
+        &original,
+        reference,
+        Duration::from_secs(3600),
+        Duration::from_secs(60),
+    )?;
+    // Make the new artifact later than this valid, original-artifact baseline.
+    std::thread::sleep(Duration::from_millis(2));
+    source.insert(quad(7))?;
+    let other_path = directory.path().join("other");
+    let other = source.backup_with_receipt(&other_path, &BackupOptions::default())?;
+    assert!(other.source_start().time().as_unix_millis() > reference.as_unix_millis());
+    let destination = directory.path().join("restore");
+    let result = Store::restore_backup(
+        &other_path,
+        &destination,
+        &RestoreOptions {
+            baseline: Some(baseline),
+            ..RestoreOptions::default()
+        },
+    );
+    assert!(
+        matches!(result, Err(RestoreError::BackupMismatch)),
+        "wrong rejection: {result:?}"
+    );
+    assert!(!destination.exists());
+    assert_eq!(
+        BackupReceipt::verify(other_path, &TransactionStartControl::new())?,
+        other
+    );
+    Ok(())
+}

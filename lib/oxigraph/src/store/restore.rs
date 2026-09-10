@@ -427,9 +427,12 @@ fn restore_inner(
         .baseline
         .as_ref()
         .map_or(started, RecoveryBaseline::reference);
-    point_age(&backup, reference)?;
     if let Some(baseline) = &options.baseline {
+        // The reference belongs to one exact artifact. Reject a different
+        // backup before interpreting its timestamps against that reference.
         baseline.check_point(&backup)?;
+    } else {
+        point_age(&backup, reference)?;
     }
     let (registry, expected) = read_inventory(backup.contributor_inventory())?;
     if registry.declarations() != options.contributors.declarations() {
