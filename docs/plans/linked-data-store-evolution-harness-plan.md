@@ -175,10 +175,11 @@ task, and any future candidate requires a new explicitly scoped task.
 Native Codex Astra support includes all six efforts, including `max` and
 `ultra`. Commit `7d89e7bc` corrects the adapter's stale capability list and
 enables native parallel delegation for Ultra. ADR-0043 supplies the current
-role policy: Astra High/Xhigh for consequential judgment; Sol High/Opus for
-difficult implementation; Terra Medium/Sonnet for routine slices; Max for a
-hard single problem; Ultra for independent parallel subtasks; Luna/Haiku for
-narrow language work. User-selected efforts override older planning-helper
+role policy: Sol Low/Medium for routine coordination; Terra Medium/Sonnet for
+routine slices; Luna Low/Haiku for narrow language work; Sol High/Opus for a
+difficult implementation; Astra High for consequential judgment. Higher efforts,
+including Max/Ultra, require a bounded demonstrated need or owner selection;
+parallel subtasks use mixed faster workers by default. User-selected efforts override older planning-helper
 recommendations. Keep one Git writer, native subscription transport, and
 unchanged historical Sol contracts. Do not require router training, model
 benchmarks, new receipt formats, or old qualification-task readiness before
@@ -1364,6 +1365,11 @@ operator budgets, weighted service shares, broader resource telemetry and full
 ADR-0027 acceptance remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no
 fine-grained SPARQL policy or general evaluator resource quotas are claimed.
+
+The native HTTP fixture now leases addresses across real same-port restarts,
+preventing reuse by parallel fixtures without retrying failed restarts. This
+release-check repair does not establish the historical conflicting socket's
+identity. The next product slice is the explicit result-row cap (ADR-0027).
 
 ## Evaluator DAG
 

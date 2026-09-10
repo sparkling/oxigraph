@@ -1495,6 +1495,11 @@ Separate ADR-0026 frozen promotion and
 future facade compatibility remain open; native delivery does not claim
 fine-grained SPARQL filtering or general evaluator resource quotas.
 
+The native HTTP fixture now leases addresses across real same-port restarts,
+preventing reuse by parallel fixtures without retrying failed restarts. This
+release-check repair does not establish the historical conflicting socket's
+identity. The next product slice is the explicit result-row cap (ADR-0027).
+
 The programme now records the named decisions admitted by this user:
 
 - ADR-0026: service identity and authorization;

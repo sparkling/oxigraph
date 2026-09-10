@@ -523,6 +523,11 @@ release build; no Max/Ultra worker was dispatched for these routine slices.
 This records accepted work and review corrections, not comparative model
 latency, billing savings or a complete census of the parent conversation.
 
+The following native restart-fixture repair used Terra Medium for independent
+read-only review and deterministic Rust tests, with the parent as sole writer.
+It adds no model-routing infrastructure and returns to product work after the
+normal-concurrency gate; historical bind failures are not erased by a passing run.
+
 These are starting policies, not a measured cross-model ranking. Record the
 actual model/effort, accepted result, rework, and elapsed time when observed.
 Do not fabricate monetary savings from API prices or Git history. Model-router

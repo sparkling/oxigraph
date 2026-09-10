@@ -979,6 +979,26 @@ without a fresh mutation phase; update seed `881983062` completes 23,688 runs
 in 61 seconds with mutations. No full-workspace lint or qualification pass
 is claimed.
 
+### Native restart fixture address ownership (2026-09-10)
+
+The HTTP fixture now retains process-local port leases across the released
+reservation/startup gap and each real child restart. Other fixtures cannot
+claim a leased address; dropping a rejected claim cannot release its owner.
+Child cleanup precedes lease release. Deterministic claim/release, parallel
+write/rollback/restart and deliberately occupied restart-address tests preserve
+the existing assertions, startup barrier and fatal restart failures. No product
+socket behavior, dependencies or test-concurrency settings change.
+
+Two lightweight tracing runs passed the original 45 tests without reproducing
+the earlier bind failure; heavier socket tracing instead caused timeouts and
+an OS resource error, without `AddrInUse`. The historical conflicting owner
+therefore remains unidentified. Leases exclude intra-fixture reuse, not other
+processes or kernel-assigned client ports; this is not a universal bind guarantee.
+The normal-concurrency HTTP suites pass: 48 no-default, 54 default and 54
+against the unchanged identified release executable. The three new focused
+regressions also pass. Delivery returns to the explicit result-row cap. This
+is release-check repair, not new product behavior or full G4.2 acceptance.
+
 ### Remaining staged acceptance
 
 1. **Admission:** deterministic-clock tests prove FIFO/fairness, queue bounds,

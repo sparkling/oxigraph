@@ -4,17 +4,57 @@
 )]
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Barrier, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const READER: &str = "private-reader-subject";
 const WRITER: &str = "private-writer-subject";
 const OPERATOR: &str = "private-operator-subject";
+
+// A kernel reservation must be released before the CLI can bind. Retain logical
+// ownership through that gap and every restart so another fixture cannot select
+// this address while its child is down. This does not reserve against unrelated
+// processes or automatically assigned client ports: their bind errors stay fatal.
+static LEASED_PORTS: Mutex<BTreeSet<SocketAddr>> = Mutex::new(BTreeSet::new());
+
+struct PortLease(SocketAddr);
+impl PortLease {
+    fn claim(address: SocketAddr) -> Option<Self> {
+        LEASED_PORTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(address)
+            .then(|| Self(address))
+    }
+
+    fn reserve() -> std::io::Result<(Self, TcpListener)> {
+        for _ in 0..128 {
+            let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+            if let Some(lease) = Self::claim(listener.local_addr()?) {
+                return Ok((lease, listener));
+            }
+        }
+        Err(std::io::Error::new(
+            ErrorKind::AddrInUse,
+            "no unleased HTTP fixture address after 128 reservations",
+        ))
+    }
+}
+impl Drop for PortLease {
+    fn drop(&mut self) {
+        LEASED_PORTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.0);
+    }
+}
 
 struct ChildGuard(Child);
 impl Drop for ChildGuard {
@@ -25,6 +65,8 @@ impl Drop for ChildGuard {
 }
 struct Running {
     child: ChildGuard,
+    // Fields drop in declaration order: reap the child before returning its ports.
+    _ports: Option<[PortLease; 2]>,
     command: Command,
     public: SocketAddr,
     admin: SocketAddr,
@@ -173,8 +215,8 @@ fn try_start_with_workload_entailment(
     }
     let policy_path = directory.path().join("access.json");
     write_policy(&policy_path, policy)?;
-    let public = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
-    let admin = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+    let (public_lease, public) = PortLease::reserve()?;
+    let (admin_lease, admin) = PortLease::reserve()?;
     let public_address = public.local_addr()?;
     let admin_address = admin.local_addr()?;
     let mut command = Command::new(binary());
@@ -214,6 +256,7 @@ fn try_start_with_workload_entailment(
     drop(admin);
     let mut running = Running {
         child: ChildGuard(command.spawn()?),
+        _ports: Some([public_lease, admin_lease]),
         command,
         public: public_address,
         admin: admin_address,
@@ -310,6 +353,7 @@ fn startup_failure_reports_exit_status_and_cli_diagnostic() -> Result<()> {
         .stderr(std::fs::File::create(directory.path().join("stderr.log"))?);
     let mut running = Running {
         child: ChildGuard(command.spawn()?),
+        _ports: None,
         command,
         public: (Ipv4Addr::LOCALHOST, 0).into(),
         admin: (Ipv4Addr::LOCALHOST, 0).into(),
@@ -342,6 +386,54 @@ fn workload_write_rollback_and_restart_journey() -> Result<()> {
         false,
         Some(&workload(2, 2, 500)),
     )?)
+}
+
+#[test]
+fn fixture_port_lease_retains_ownership_without_a_listener() -> Result<()> {
+    // Port zero is never returned by reserve(), so other tests cannot use this
+    // registry-only key. Force the competing allocator's exact claim, instead
+    // of relying on random port-zero selection to reproduce the race.
+    let address = (Ipv4Addr::LOCALHOST, 0).into();
+    let lease = PortLease::claim(address).context("first fixture claim")?;
+    ensure!(PortLease::claim(address).is_none());
+    ensure!(PortLease::claim(address).is_none());
+    drop(lease);
+    let _reclaimed = PortLease::claim(address).context("released fixture claim")?;
+    Ok(())
+}
+
+#[test]
+fn fixture_port_leases_preserve_parallel_real_restart_journeys() -> Result<()> {
+    let first = start(&config(), false)?;
+    let second = start(&config(), false)?;
+    ensure!(first.public != second.public && first.admin != second.admin);
+    let barrier = Barrier::new(2);
+    thread::scope(|scope| {
+        let first = scope.spawn(|| {
+            barrier.wait();
+            write_rollback_and_restart(first)
+        });
+        let second = scope.spawn(|| {
+            barrier.wait();
+            write_rollback_and_restart(second)
+        });
+        first.join().expect("first restart worker panicked")?;
+        second.join().expect("second restart worker panicked")?;
+        Ok(())
+    })
+}
+
+#[test]
+fn fixture_port_lease_does_not_hide_a_real_restart_bind_failure() -> Result<()> {
+    let mut running = start(&config(), false)?;
+    running.child.0.kill()?;
+    running.child.0.wait()?;
+    let _conflicting_listener = TcpListener::bind(running.public)?;
+    running.child = ChildGuard(running.command.spawn()?);
+    let error = wait_ready(&mut running).unwrap_err().to_string();
+    ensure!(error.contains("CLI exited before startup"), "{error}");
+    ensure!(!running.child.0.wait()?.success());
+    Ok(())
 }
 
 fn write_rollback_and_restart(mut running: Running) -> Result<()> {
