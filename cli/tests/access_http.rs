@@ -3705,6 +3705,50 @@ fn occupy_admission(running: &Running) -> Result<TcpStream> {
     Ok(stream)
 }
 
+fn occupy_query_admission(running: &Running) -> Result<TcpStream> {
+    let mut stream = pending_priority_query(running, READER)?;
+    ensure!(
+        read_status_head(&mut stream)? == 100,
+        "query was not admitted"
+    );
+    Ok(stream)
+}
+
+fn pending_admission_update(running: &Running, marker: &str) -> Result<(TcpStream, String)> {
+    let update = format!("INSERT DATA {{ <{marker}> <urn:p> <urn:o> }}");
+    let mut stream = TcpStream::connect(running.public)?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(3)))?;
+    write!(
+        stream,
+        "POST /update HTTP/1.1\r\nHost: localhost\r\n{}Content-Type: application/sparql-update\r\nExpect: 100-continue\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        identity(WRITER, 1)?,
+        update.len(),
+    )?;
+    Ok((stream, update))
+}
+
+fn finish_admission_update(stream: &mut TcpStream, update: &str) -> Result<()> {
+    ensure!(
+        read_status_head(stream)? == 100,
+        "queued update was not admitted"
+    );
+    finish_admitted_update(stream, update)
+}
+
+fn finish_admitted_update(stream: &mut TcpStream, update: &str) -> Result<()> {
+    stream.write_all(update.as_bytes())?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response)?;
+    let response = decode_wire(&response)?;
+    ensure!(
+        response.status == 204,
+        "queued update status {}",
+        response.status
+    );
+    Ok(())
+}
+
 fn pending_priority_query(running: &Running, subject: &str) -> Result<TcpStream> {
     let mut stream = TcpStream::connect(running.public)?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
@@ -3735,6 +3779,22 @@ fn wait_data_queue(running: &Running, expected: u64) -> Result<()> {
             return Ok(());
         }
         ensure!(Instant::now() < deadline, "queue {queued} != {expected}");
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn wait_data_occupancy(running: &Running, active: u64, queued: u64) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let actual_active = metric_counter(running, "oxigraph_admission_active{pool=\"data\"}")?;
+        let actual_queued = metric_counter(running, "oxigraph_admission_queued{pool=\"data\"}")?;
+        if (actual_active, actual_queued) == (active, queued) {
+            return Ok(());
+        }
+        ensure!(
+            Instant::now() < deadline,
+            "data occupancy ({actual_active}, {actual_queued}) != ({active}, {queued})"
+        );
         thread::sleep(Duration::from_millis(10));
     }
 }
@@ -3864,6 +3924,179 @@ fn workload_overload_precedes_expect_body_and_work_but_not_auth() -> Result<()> 
             work_counters(&running)? != before,
             "positive work not observed"
         );
+    }
+    Ok(())
+}
+
+/// A bounded native acceptance check, not an operational-performance
+/// qualification: it exercises real CLI admission at three small capacities
+/// and proves that the operator reserve remains separate from saturated data.
+#[test]
+fn workload_real_cli_saturation_preserves_operator_reserve_and_recovers() -> Result<()> {
+    for capacity in [1_usize, 4, 16] {
+        for read_only in [false, true] {
+            let mut profile = workload(capacity, capacity, 30_000);
+            profile["max_active"] = json!(capacity);
+            profile["classes"]["default"]["max_active"] = json!(capacity);
+            let mut running = start_with_workload(&config(), read_only, Some(&profile))?;
+            let before = work_counters(&running)?;
+
+            let mut held = Vec::with_capacity(capacity);
+            for _ in 0..capacity {
+                held.push(occupy_query_admission(&running)?);
+            }
+
+            let marker = format!("urn:capacity-{capacity}");
+            let mut queued_writes = Vec::new();
+            let mut queued_queries = Vec::new();
+            for index in 0..capacity {
+                if read_only {
+                    queued_queries.push(pending_priority_query(&running, READER)?);
+                } else {
+                    queued_writes.push(pending_admission_update(
+                        &running,
+                        &format!("{marker}-{index}"),
+                    )?);
+                }
+                wait_data_queue(&running, (index + 1) as u64)?;
+            }
+
+            // `/metrics` is itself an operator admission. Its snapshot must see
+            // the exact saturated data occupancy while retaining its own slot.
+            let snapshot = scrape(&running, "GET")?;
+            ensure!(snapshot.status == 200, "operator metrics unavailable");
+            ensure!(
+                admission_sample(&snapshot.body, "oxigraph_admission_active", "pool=\"data\"")?
+                    == capacity as u64
+                    && admission_sample(
+                        &snapshot.body,
+                        "oxigraph_admission_queued",
+                        "pool=\"data\""
+                    )? == capacity as u64
+                    && admission_sample(
+                        &snapshot.body,
+                        "oxigraph_admission_active",
+                        "pool=\"operator\""
+                    )? == 1
+                    && admission_sample(
+                        &snapshot.body,
+                        "oxigraph_admission_queued",
+                        "pool=\"operator\""
+                    )? == 0,
+                "unexpected saturated occupancy"
+            );
+
+            let refused = wire(
+                running.public,
+                &format!(
+                    "POST /query HTTP/1.1\r\nHost: localhost\r\n{}Expect: 100-continue\r\nContent-Length: invalid\r\n\r\n",
+                    identity(READER, 1)?
+                ),
+            )?;
+            ensure!(
+                refused.status == 503 && refused.body.is_empty(),
+                "authorized saturated request parsed or entered work: {} {}",
+                refused.status,
+                refused.body
+            );
+            let unauthorized = wire(
+                running.public,
+                "POST /query HTTP/1.1\r\nHost: localhost\r\nExpect: 100-continue\r\nContent-Length: invalid\r\n\r\n",
+            )?;
+            ensure!(
+                unauthorized.status == 401,
+                "saturation bypassed authentication"
+            );
+            ensure!(request(running.admin, "GET", "/health", "", "")?.status == 200);
+            ensure!(
+                request(running.admin, "GET", "/ready", &identity(OPERATOR, 1)?, "")?.status == 200
+            );
+            ensure!(scrape(&running, "GET")?.status == 200);
+            ensure!(
+                work_counters(&running)? == before,
+                "held, queued, or refused requests entered RDF work"
+            );
+
+            // Releasing exactly one held request must admit exactly the oldest
+            // queued request. The new request refills the data slot, leaving
+            // the remaining held requests independently resident.
+            drop(held.remove(0));
+            if read_only {
+                ensure!(read_status_head(&mut queued_queries[0])? == 100);
+            } else {
+                let (stream, _) = &mut queued_writes[0];
+                ensure!(
+                    read_status_head(stream)? == 100,
+                    "queued update was not admitted"
+                );
+            }
+            wait_data_queue(&running, capacity as u64 - 1)?;
+            wait_data_occupancy(&running, capacity as u64, capacity as u64 - 1)?;
+            if read_only {
+                finish_priority_query(&mut queued_queries[0])?;
+            } else {
+                let (stream, update) = &mut queued_writes[0];
+                finish_admitted_update(stream, update)?;
+            }
+
+            if read_only {
+                for stream in queued_queries.iter_mut().skip(1) {
+                    ensure!(
+                        read_status_head(stream)? == 100,
+                        "queued query was not admitted"
+                    );
+                    finish_priority_query(stream)?;
+                }
+            } else {
+                for (stream, update) in queued_writes.iter_mut().skip(1) {
+                    finish_admission_update(stream, update)?;
+                }
+            }
+            wait_data_queue(&running, 0)?;
+            wait_data_occupancy(&running, capacity as u64 - 1, 0)?;
+            drop(held);
+            wait_data_occupancy(&running, 0, 0)?;
+
+            if read_only {
+                // The same real saturation path is exercised above, but no
+                // writer behavior is inferred for `serve-read-only`.
+                ensure!(
+                    sparql(&running, READER, "/query", "ASK {}").is_ok_and(|r| r.status == 200)
+                );
+            } else {
+                let response = sparql(
+                    &running,
+                    READER,
+                    "/query",
+                    &format!("ASK {{ <{marker}-0> <urn:p> <urn:o> }}"),
+                )?;
+                ensure!(
+                    response.status == 200
+                        && serde_json::from_str::<Value>(&response.body)?["boolean"] == true,
+                    "queued writer did not persist its exact marker"
+                );
+                ensure!(
+                    work_counters(&running)? != before,
+                    "queued writer did no work"
+                );
+                running.child.0.kill()?;
+                running.child.0.wait()?;
+                running.child = ChildGuard(running.command.spawn()?);
+                wait_ready(&mut running)?;
+                let response = sparql(
+                    &running,
+                    READER,
+                    "/query",
+                    &format!("ASK {{ <{marker}-0> <urn:p> <urn:o> }}"),
+                )?;
+                ensure!(
+                    response.status == 200
+                        && serde_json::from_str::<Value>(&response.body)?["boolean"] == true,
+                    "queued marker was absent after restart"
+                );
+                write_rollback_and_restart(running)?;
+            }
+        }
     }
     Ok(())
 }

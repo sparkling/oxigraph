@@ -1378,6 +1378,12 @@ timeout errors preserve 408, partial streams fail, and owned LOAD rollback
 survives reopen. Ordinary remote errors/SILENT behavior and both serve modes'
 deny-all policy remain unchanged. Full G4.2 operational acceptance stays open.
 
+Native 1/4/16 saturation acceptance now covers both real serve modes: exact
+active/queued bounds, operator reserve, auth/body/work ordering, slot handoff
+and queue drain. Writable mode also verifies queued writes across restart and
+the rollback journey. Default/no-default HTTP suites and the optimized CLI
+pass. This test-only slice does not freeze operational thresholds or close G4.2.
+
 ## Evaluator DAG
 
 The harness delegates rather than duplicates.

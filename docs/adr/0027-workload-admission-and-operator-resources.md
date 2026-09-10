@@ -1050,6 +1050,28 @@ Default native validation passes 71 library, 179 binary and 57 HTTP tests.
 No-default passes 71 library, 151 binary and 51 HTTP tests, with one existing
 dependency-qualified binary test ignored. No protected evidence is refreshed.
 
+### Native 1/4/16 saturation acceptance (2026-09-10)
+
+`workload_real_cli_saturation_preserves_operator_reserve_and_recovers` exercises
+real `serve` and `serve-read-only` processes at data capacities 1, 4 and 16.
+At each capacity it holds that many admitted requests before their bodies,
+fills the bounded queue, and observes exact data occupancy with the separate
+operator slot still available to metrics, readiness and health. Authorized
+overload returns empty 503 before malformed body metadata is parsed;
+unauthenticated work still returns 401. Measured RDF work remains unchanged.
+
+Dropping one held connection admits the oldest queued request. The fixture
+checks the refilled slot before supplying that request's body, then drains the
+queue and remaining holders to zero occupancy. Writable mode completes queued
+updates, verifies their marker after restart, and runs the existing
+write/query/rollback/restart journey. Read-only mode makes no writer claim.
+
+Normal-concurrency native HTTP validation passes 58 default and 52 no-default
+tests; all 58 also pass against the identified optimized CLI executable. This
+test-only slice adds native admission/recovery coverage, not application
+behavior, a new budget, frozen throughput/latency/memory thresholds or an
+independent operational qualification. The staged G4.2 gates below remain open.
+
 ### Remaining staged acceptance
 
 1. **Admission:** deterministic-clock tests prove FIFO/fairness, queue bounds,
