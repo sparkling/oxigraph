@@ -412,8 +412,19 @@ milestones or the frozen crash/promotion matrix. An extra parallel regression
 exposed pre-existing in-place fixture mutation in `tests/store.rs`; its failed
 result is retained at `target/engineering-delivery/run-EUXUkM`. Exact fixture
 restoration and a serial unchanged-source recovery run (16 tests,
-`run-s1kxL7`) passed. Isolating those compatibility fixtures is the immediate
-follow-up, not a recovery-algorithm rebaseline.
+`run-s1kxL7`) passed.
+
+The follow-up workflow `78415cd1-a36e-4acd-8bf1-93381dc69503` now isolates both
+compatibility fixtures on private temporary copies. It preserves every logical
+assertion, feature/platform guard and two-pass reopen check, and removes the
+shared-directory delete/restore helper. Default/RDF-1.2/no-default store lanes
+passed (28/29/12); concurrently launched upgrade-unit/store commands also passed
+(16/17/28/29), with stable source and both fixture inventories byte-identical to
+Git. Command intervals overlapped; simultaneous migration phases and a speedup
+were not established. Sol High proposed the one-file correction, Astra High
+independently accepted it, and Ruflo read back the exact workflow evidence.
+This closes the observed test-isolation defect without changing fixtures,
+product semantics or a recovery baseline; the earlier failed run is retained.
 
 This is additive: old `PreparedUpgrade`/`TransformedUpgrade` formats and
 validators are unchanged. Their old interrupted workspaces do not become

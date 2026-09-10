@@ -1553,8 +1553,10 @@ backup/checkpoints and explicit completed-edge reuse. Old interrupted
 preparation/transformation workspaces do not become resumable.
 Full compatibility rejection, the envelope/classifier, recovery CLI exposure,
 a sealed `UpgradeReceipt` and the cutover/crash/older-binary matrix remain open.
-A parallel regression also exposed existing compatibility tests mutating shared
-fixtures; isolating those tests on temporary copies is the immediate follow-up.
+Compatibility tests now migrate private temporary copies, preserving their
+original assertions and committed fixture bytes. Default/RDF-1.2/no-default
+store lanes and concurrent upgrade/store commands pass; the earlier shared-
+fixture failure remains recorded. Recovery CLI exposure is the next product slice.
 See [ADR-0028's recovery scope and limits](../adr/0028-safe-storage-schema-upgrades.md#verified-restartable-inactive-upgrades-2026-09-11).
 
 The programme now records the named decisions admitted by this user:

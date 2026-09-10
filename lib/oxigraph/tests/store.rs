@@ -13,32 +13,11 @@ use std::error::Error;
 use std::fs::remove_dir_all;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::fs::{File, create_dir_all, read_dir, remove_dir};
-#[cfg(all(
-    target_os = "linux",
-    target_pointer_width = "64",
-    target_endian = "little",
-    feature = "rocksdb"
-))]
-use std::fs::{read, write};
-#[cfg(all(
-    target_os = "linux",
-    target_pointer_width = "64",
-    target_endian = "little",
-    feature = "rocksdb"
-))]
-use std::io;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::io::Write;
 use std::iter::empty;
 #[cfg(all(target_os = "linux", feature = "rocksdb"))]
 use std::iter::once;
-#[cfg(all(
-    target_os = "linux",
-    target_pointer_width = "64",
-    target_endian = "little",
-    feature = "rocksdb"
-))]
-use std::path::PathBuf;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use tempfile::TempDir;
 
@@ -551,6 +530,21 @@ fn test_backup_on_in_memory() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    feature = "rocksdb"
+))]
+fn copy_backward_compatibility_fixture(path: &str) -> Result<TempDir, Box<dyn Error>> {
+    let copy = TempDir::new()?;
+    for entry in read_dir(path)? {
+        let entry = entry?;
+        std::fs::copy(entry.path(), copy.path().join(entry.file_name()))?;
+    }
+    Ok(copy)
+}
+
 #[test]
 #[cfg(all(
     target_os = "linux",
@@ -559,10 +553,10 @@ fn test_backup_on_in_memory() -> Result<(), Box<dyn Error>> {
     feature = "rocksdb"
 ))]
 fn test_backward_compatibility() -> Result<(), Box<dyn Error>> {
+    let fixture = copy_backward_compatibility_fixture("tests/rocksdb_bc_data")?;
     // We run twice to check if data is properly saved and closed
-    let _reset = DirSaver::new("tests/rocksdb_bc_data")?;
     for _ in 0..2 {
-        let store = Store::open("tests/rocksdb_bc_data")?;
+        let store = Store::open(&fixture)?;
         for q in quads(GraphName::DefaultGraph) {
             assert!(store.contains(&q)?);
         }
@@ -589,15 +583,15 @@ fn test_backward_compatibility() -> Result<(), Box<dyn Error>> {
     feature = "rdf-12"
 ))]
 fn test_rdf_star_backward_compatibility() -> Result<(), Box<dyn Error>> {
+    let fixture = copy_backward_compatibility_fixture("tests/rocksdb_bc_rdf_star_data")?;
     // We run twice to check if data is properly saved and closed
-    let _reset = DirSaver::new("tests/rocksdb_bc_rdf_star_data")?;
     let s = NamedNode::new_unchecked("http://example.com/s");
     let p = NamedNode::new_unchecked("http://example.com/p");
     let o = NamedNode::new_unchecked("http://example.com/o");
     let g = NamedNode::new_unchecked("http://example.com/g");
     let bnode = BlankNode::new_unchecked("f2fef82410957224105241225fd0a648");
     for _ in 0..2 {
-        let store = Store::open("tests/rocksdb_bc_rdf_star_data")?;
+        let store = Store::open(&fixture)?;
         assert!(store.contains(&Quad::new(s.clone(), p.clone(), o.clone(), g.clone()))?);
         assert!(store.contains(&Quad::new(
             s.clone(),
@@ -716,52 +710,4 @@ fn test_read_your_own_write_transaction() -> Result<(), Box<dyn Error>> {
     assert_eq!(transaction.iter().collect::<Result<Vec<_>, _>>()?, [quad]);
 
     Ok(())
-}
-
-#[cfg(all(
-    target_os = "linux",
-    target_pointer_width = "64",
-    target_endian = "little",
-    feature = "rocksdb"
-))]
-struct DirSaver {
-    path: PathBuf,
-    elements: Vec<(PathBuf, Vec<u8>)>,
-}
-
-#[cfg(all(
-    target_os = "linux",
-    target_pointer_width = "64",
-    target_endian = "little",
-    feature = "rocksdb"
-))]
-impl DirSaver {
-    fn new(path: &str) -> io::Result<Self> {
-        Ok(Self {
-            path: path.into(),
-            elements: read_dir(path)?
-                .map(|item| {
-                    let path = item?.path();
-                    let content = read(&path)?;
-                    Ok((path, content))
-                })
-                .collect::<io::Result<Vec<_>>>()?,
-        })
-    }
-}
-
-#[cfg(all(
-    target_os = "linux",
-    target_pointer_width = "64",
-    target_endian = "little",
-    feature = "rocksdb"
-))]
-impl Drop for DirSaver {
-    fn drop(&mut self) {
-        remove_dir_all(&self.path).unwrap();
-        create_dir_all(&self.path).unwrap();
-        for (path, content) in &self.elements {
-            write(path, content).unwrap();
-        }
-    }
 }
