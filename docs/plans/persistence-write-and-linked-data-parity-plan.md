@@ -1260,6 +1260,11 @@ all 1,280 four-mode observations match the oracle. Q1/Q4 and the scoped
 WatDiv/LDBC resource/tail gates remain open. This is not an overlap estimator,
 default promotion, relaxed gate or extra manual pre-run approval prerequisite.
 
+Q4 attribution confirms valid results with deferred selective membership probes,
+not a demonstrated violation of the recorded cost rules. Optional optimizer
+tuning is paused while G4.3 delivers offline inspection; this does not close or
+remove G3.2's remaining performance gate.
+
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.
 - Instrument estimated/actual rows and q-error. Use bounded dynamic programming
@@ -1515,6 +1520,13 @@ active/queued bounds, operator reserve, auth/body/work ordering, slot handoff
 and queue drain. Writable mode also verifies queued writes across restart and
 the rollback journey. Default/no-default HTTP suites and the optimized CLI
 pass. This test-only slice does not freeze operational thresholds or close G4.2.
+
+G4.3 now provides additive offline `Store::inspect` and the `inspect` CLI command
+for version markers and actual/missing/extra column families, without migration
+or source-file changes. Metadata inspection is not logical/RDF-feature
+compatibility, safe open, an upgrade receipt or cutover. Existing ordinary-open
+migrations, the future envelope/classifier and the shadow-upgrade failure matrix
+remain outstanding. See [ADR-0028's native scope](../adr/0028-safe-storage-schema-upgrades.md#native-metadata-inspection-slice-2026-09-10).
 
 The programme now records the named decisions admitted by this user:
 

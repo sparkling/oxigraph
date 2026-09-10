@@ -910,6 +910,26 @@ after adapters run. Native restore currently requires Unix directory sync,
 exclusively owned destinations, and cooperative cancellation around native I/O.
 These are local recovery checks, not production recovery qualification.
 
+## Offline storage inspection (fork)
+
+Stop all writers, then inspect this fork's stored metadata without creating or
+migrating the database:
+
+```sh
+oxigraph inspect --location ./data
+```
+
+The JSON report identifies the stored version marker and the actual, missing
+and unexpected column families. Exit success means inspection completed, not
+that the store is compatible or ready. A `current` marker does not prove valid
+RDF, feature compatibility, or absence of an interrupted upgrade; these checks
+are explicitly `unknown`/`not-checked`. No RDF terms are emitted.
+
+Keep the directory unchanged during inspection. This is not a concurrent
+inspection lease or an upgrade command. Ordinary writable open still retains
+legacy in-place migration behavior; do not use it to probe unknown stores.
+See [ADR-0028](../docs/adr/0028-safe-storage-schema-upgrades.md#native-metadata-inspection-slice-2026-09-10).
+
 ## Using a Docker image
 
 ### Display the help menu

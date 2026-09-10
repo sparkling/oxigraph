@@ -49,6 +49,9 @@ use std::{io, thread};
 
 const BATCH_SIZE: usize = 100_000;
 const LATEST_STORAGE_VERSION: u64 = 2;
+
+#[cfg(test)]
+mod format_inspection_tests;
 const ID2STR_CF: &str = "id2str";
 const SPOG_CF: &str = "spog";
 const POSG_CF: &str = "posg";
@@ -150,6 +153,22 @@ impl RocksDbStorage {
 
     pub fn open_read_only(path: &Path) -> Result<Self, StorageError> {
         Self::setup(Db::open_read_only(path, Self::column_families())?)
+    }
+
+    pub fn inspect(path: &Path) -> Result<crate::store::StoreFormatInfo, StorageError> {
+        let column_families = Db::list_column_families(path)?;
+        // Read only the default family so an absent/new primary family can be
+        // reported. Never call setup, ensure_version, migrate, or namespaces.
+        let db = Db::open_read_only(path, Vec::new())?;
+        let marker = db.get(&db.column_family(DEFAULT_CF)?, b"oxversion")?;
+        let mut required: Vec<_> = Self::column_families().iter().map(|cf| cf.name).collect();
+        required.push(DEFAULT_CF);
+        Ok(crate::store::StoreFormatInfo::new(
+            marker.as_deref(),
+            LATEST_STORAGE_VERSION,
+            column_families,
+            required,
+        ))
     }
 
     fn column_families() -> Vec<ColumnFamilyDefinition> {

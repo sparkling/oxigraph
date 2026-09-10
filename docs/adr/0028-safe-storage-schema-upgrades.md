@@ -2,10 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-08-25
+- Updated: 2026-09-10
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; the current RocksDB opener performs
-  legacy migrations in place and has no upgrade receipt
+- Implementation status: native offline physical-metadata inspection API/CLI
+  implemented; ordinary open still performs legacy migrations in place.
+  Compatible-open rejection, schema envelopes and shadow upgrades remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
@@ -101,6 +102,40 @@ CLI, which is an intentional safety break with a migration note. Applications
 that need only logical portability continue to use a dataset dump/load; that
 path must preserve ADR-0014 topology through a capable format or explicit
 manifest.
+
+## Native metadata inspection slice (2026-09-10)
+
+`Store::inspect(path)` and `oxigraph inspect --location <path>` now inspect an
+existing offline RocksDB store without calling ordinary setup, migration, or
+namespace decoding. The native read-only handle opens only the default column
+family, while a separate RocksDB manifest listing observes the actual inventory.
+Both current and incomplete/extended inventories are inspectable. Neither a
+missing path nor a missing marker is created or stamped.
+
+`StoreFormatInfo` reports the marker's optional byte length and parsed big-endian
+value, its `Missing`/`Malformed`/`Older`/`Current`/`Newer` relation to this binary's
+current version, sorted column-family names, and missing/unexpected names.
+`Current` describes **only the marker**. CLI JSON uses the explicit
+`oxigraph.store-inspection.v1` format and reports logical validity and upgrade
+state as `not-checked`, RDF-feature compatibility as `unknown`. A successful
+inspection is not permission to open, upgrade, cut over, or publish a store.
+
+This additive slice changes no persisted bytes or existing open behavior.
+Callers must stop writers and keep the directory unchanged, as for ordinary
+read-only open. It is not a concurrent inspection lease, a legacy classifier,
+full logical validation, feature-envelope check, interrupted-upgrade detector,
+backup receipt, or safe-upgrade implementation. The typed rejection behavior
+in the decision above is still outstanding; do not use ordinary writable open
+to probe an unknown store.
+
+Native constructed fixtures cover absent, empty, malformed, version-0,
+version-1, current and maximum-u64 markers; missing/extra column families;
+nonexistent/empty paths; and a nonwritable offline directory. Repeated inspection
+compares every source file's bytes before and after. A separate CLI process
+checks metadata-only JSON and source preservation, followed by read-only reopen
+of quads, an empty named graph and a namespace. These tests establish this
+inspection slice, not the frozen legacy-classifier or upgrade-promotion matrix.
+The system RocksDB lane remains unverified on this host (`rocksdb.pc` is absent).
 
 ## Staged implementation and evaluator gates
 

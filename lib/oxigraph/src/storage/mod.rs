@@ -369,6 +369,11 @@ impl Storage {
         })
     }
 
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    pub fn inspect(path: &Path) -> Result<crate::store::StoreFormatInfo, StorageError> {
+        RocksDbStorage::inspect(path)
+    }
+
     pub fn snapshot(&self) -> StorageReader<'static> {
         StorageReader {
             kind: match &self.kind {

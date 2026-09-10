@@ -36,7 +36,7 @@ use std::borrow::Borrow;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::error::Error;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
@@ -1031,6 +1031,41 @@ impl Db {
                     ),
                 })),
             })
+        }
+    }
+
+    pub fn list_column_families(path: &Path) -> Result<Vec<String>, StorageError> {
+        unsafe {
+            let c_path = path_to_cstring(path)?;
+            let options = Self::db_options(DbOptions::default())?;
+            let mut len = 0;
+            let mut error = ptr::null_mut();
+            // The C API allocates a list even on error. Release both list and
+            // options on every path, including invalid UTF-8 metadata names.
+            let names =
+                rocksdb_list_column_families(options, c_path.as_ptr(), &mut len, &mut error);
+            rocksdb_options_destroy(options);
+            let result = if !error.is_null() {
+                Err(ErrorStatus(CString::from_raw(error)).into())
+            } else if names.is_null() || len == 0 {
+                Err(CorruptionError::msg("missing RocksDB column-family inventory").into())
+            } else {
+                slice::from_raw_parts(names, len)
+                    .iter()
+                    .map(|name| {
+                        CStr::from_ptr(*name)
+                            .to_str()
+                            .map(str::to_owned)
+                            .map_err(|_| {
+                                CorruptionError::msg("invalid RocksDB column-family name").into()
+                            })
+                    })
+                    .collect()
+            };
+            if !names.is_null() {
+                rocksdb_list_column_families_destroy(names, len);
+            }
+            result
         }
     }
 

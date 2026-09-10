@@ -56,6 +56,8 @@ mod derived;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod derived_generation;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+mod format;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod restore;
 #[cfg(all(not(target_family = "wasm"), feature = "spatial-index"))]
 mod spatial_index;
@@ -96,6 +98,8 @@ pub use derived_generation::{
 pub use evaluation_metrics::{
     EvaluationDurationHistogram, EvaluationMetrics, EvaluationOperation, EvaluationOutcome,
 };
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+pub use format::{StoreFormatInfo, StoreVersionStatus};
 pub use namespace::{
     Namespace, NamespacePrefix, NamespacePrefixParseError, WritableNamespaceRegistry,
 };

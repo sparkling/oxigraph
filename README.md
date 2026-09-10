@@ -439,6 +439,11 @@ and [ADR-0022](docs/adr/0022-operational-readiness-backup-and-recovery.md).
 cargo run --locked -p oxigraph --example operational_readiness
 ```
 
+This fork also provides `Store::inspect` and `oxigraph inspect --location <path>`
+for offline, non-migrating version-marker and column-family inspection. This is
+physical metadata, not logical/feature compatibility or upgrade approval; see
+[inspection usage and limits](cli/README.md#offline-storage-inspection-fork).
+
 ## Upstream Oxigraph
 
 Oxigraph is both a graph database and a [RDF](https://www.w3.org/TR/rdf11-primer/) and [SPARQL](https://www.w3.org/TR/sparql11-overview/) toolkit.

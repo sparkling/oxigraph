@@ -199,6 +199,34 @@ pub fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Command::Inspect { location } => {
+            use oxigraph::store::StoreVersionStatus;
+            let info = Store::inspect(location)?;
+            let status = match info.version_status() {
+                StoreVersionStatus::Missing => "missing",
+                StoreVersionStatus::Malformed => "malformed",
+                StoreVersionStatus::Older => "older",
+                StoreVersionStatus::Current => "current",
+                StoreVersionStatus::Newer => "newer",
+                _ => "unknown",
+            };
+            let output = serde_json::json!({
+                "format": "oxigraph.store-inspection.v1",
+                "inspection": "physical-metadata-only",
+                "version_status": status,
+                "storage_version": info.storage_version(),
+                "current_storage_version": info.current_storage_version(),
+                "version_marker_bytes": info.version_marker_bytes(),
+                "column_families": info.column_families(),
+                "missing_column_families": info.missing_column_families(),
+                "unexpected_column_families": info.unexpected_column_families(),
+                "logical_validity": "not-checked",
+                "rdf_feature_compatibility": "unknown",
+                "upgrade_state": "not-checked",
+            });
+            writeln!(stdout().lock(), "{output}")?;
+            Ok(())
+        }
         Command::VerifyBackup { location } => {
             let receipt = oxigraph::store::BackupReceipt::verify(
                 location,

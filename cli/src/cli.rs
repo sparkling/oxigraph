@@ -150,6 +150,15 @@ pub enum Command {
         #[arg(long)]
         with_receipt: bool,
     },
+    /// Inspect offline storage metadata without creating or migrating a store
+    ///
+    /// Stop all writers first. JSON output is an observation, not logical,
+    /// feature-compatibility, readiness, or upgrade approval.
+    Inspect {
+        /// Existing offline store directory
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
+        location: PathBuf,
+    },
     /// Verify a completed backup package without opening or changing its database
     VerifyBackup {
         /// Directory containing the backup completion manifest

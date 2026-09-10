@@ -1212,6 +1212,10 @@ all 1,280 four-mode observations match the oracle. Q1/Q4 and the scoped
 WatDiv/LDBC resource/tail gates remain open. This is not an overlap estimator,
 default promotion, corpus expansion, relaxed gate, manual pre-run approval or
 another harness phase.
+Q4 attribution confirms valid results with deferred selective membership probes,
+not a demonstrated violation of the recorded cost rules. Optional optimizer
+tuning is paused while G4.3 delivers offline inspection; G3.2's remaining
+performance gate stays open and in scope.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 
@@ -1272,6 +1276,13 @@ widens core RDF semantics implicitly.
 | G4.6 Multi-repository lifecycle                | G2.7, G4.1-G4.3                        |          XL | Create/open/close/delete/backup/restore operations are authorized, resource-isolated, receipt-bound, and safe under concurrent administration                           |
 | G4.7 Incremental entailment projections        | G2.3c, G2.7                            |          XL | Insert/delete/clear/drop truth maintenance differentially matches full recomputation; unsupported recursion/deletion shapes rebuild or fail typed                       |
 | G4.8 Analytical and WCOJ research path         | G3.2; G4.2 for server/`Auto` promotion | Research/XL | A separate optional executor beats frozen cyclic workloads within resource ceilings while matching the ordinary evaluator exactly and preserving its fallback           |
+
+G4.3 now provides additive offline `Store::inspect` and the `inspect` CLI command
+for version markers and actual/missing/extra column families, without migration
+or source-file changes. Metadata inspection is not logical/RDF-feature
+compatibility, safe open, an upgrade receipt or cutover. Existing ordinary-open
+migrations, the future envelope/classifier and the shadow-upgrade failure matrix
+remain outstanding. See [ADR-0028's native scope](../adr/0028-safe-storage-schema-upgrades.md#native-metadata-inspection-slice-2026-09-10).
 
 G4.1 native implementation is complete: the anonymous startup boundary requires explicit
 non-loopback consent before store open and binds the exact validated address
