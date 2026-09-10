@@ -10,6 +10,13 @@
   harness work, but they do not gate R1 or ordinary product implementation.
   This repository now uses one writer directly on `main`; read-only parallel
   reviewers do not receive feature branches or worktrees.
+- 2026-09-10 delivery amendment: all ordinary programme builds/tests use
+  `tools/engineering-harness/bin/oxigraph-delivery.mjs` and the native
+  coordinator's live Ruflo MCP lifecycle, as defined in ADR-0043 §10. This
+  additive lane reuses Agentic-QE process supervision and explicit model-role
+  planning. It is not the frozen HarnessKernel candidate/qualification lane;
+  it does not change its registry, receipts, activation gates, or definition
+  of done. The owner's review hold takes precedence over scheduled continuation.
 - Implementation status: the separate `tools/engineering-harness` runtime,
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
   one-session sandbox, repair/review lifecycle, application receipts, canonical

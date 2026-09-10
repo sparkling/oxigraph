@@ -8,6 +8,74 @@ The package requests current upstream `latest` dist-tags. Its committed npm
 lock binds exact registry tarballs and SHA-512 integrity, and `.npmrc` disables
 lifecycle scripts. Runtime publication and OpenRouter transport are forbidden.
 
+## Ordinary delivery: use for every programme build and test
+
+The mandatory everyday entry point is
+`node tools/engineering-harness/bin/oxigraph-delivery.mjs`, run from the
+canonical repository root. It uses the existing Agentic-QE native process
+runner; it does not start the frozen G1 candidate runner or semantic qualifier.
+No new dependency or product runtime requirement is introduced.
+
+```sh
+node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task <live-ruflo-task-id> --check "Store integration tests pass" -- cargo test --locked -p oxigraph --test store
+node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task <live-ruflo-task-id> --check "CLI builds and Cargo identifies its artifact" --artifact target/release/oxigraph -- cargo build --locked --release -p oxigraph-cli
+node tools/engineering-harness/bin/oxigraph-delivery.mjs route --task <live-ruflo-task-id> --role implement --check "observable native completion check"
+```
+
+The native coordinator owns this small lifecycle:
+
+1. Retrieve the live task and programme control through structured Ruflo MCP;
+   honor an owner-review hold before any product work. Define one completion check.
+2. Use `route` for each model-assisted subtask. It emits explicit native Codex
+   arguments, not a dispatched worker. Use the native agent tools to execute;
+   link the actual native ID/model/effort to Ruflo through MCP. Keep one writer.
+3. Run **all** programme build/test commands through `run`, including repairs
+   and reviewer-requested checks. Cargo build/check/clippy/test and the explicit
+   ordinary Node test inventory are admitted. Unregistered commands require a
+   small reviewed adapter and tests before use, not a direct-shell bypass.
+4. Inspect `target/engineering-delivery/run-*/result.json` and logs. It records
+   the task ID, completion-check plan/hash, literal argv, Node/native versions,
+   HEAD, tracked diff and
+   untracked-file hashes, before/after source identity, actual exit and test
+   summaries. A selected build artifact requires a matching Cargo
+   `compiler-artifact` event and records exact bytes, SHA-256 and Cargo's
+   cached/fresh indicator.
+   Nonzero exits, timeouts, output overflow, source drift, and missing/zero
+   test observations fail; a cached Cargo build is not called a fresh rebuild.
+5. Review the actual result, update the live Ruflo task and concise evidence
+   memory, and read back that exact value. Only then hand off the verified slice.
+
+The CLI deliberately has no Ruflo CLI/database fallback and no model transport.
+Its successful status is `command-passed`, never completed delivery. Task
+attribution stays explicitly coordinator-supplied and unverified in the local
+observation; the MCP readback is separate, performed by the native coordinator.
+Its task ID is coordinator-supplied, **not independently MCP-verified**; the
+coordinator must perform step 1 and step 5. An observation is not a signed
+qualification receipt, completed product task, or publication authorization.
+Source stability detects changes at the boundaries; it is not a filesystem
+sandbox or hostile-concurrency guarantee. Shell access is not globally
+intercepted: this is the required programme execution path, not an OS-wide ban.
+Legacy build instructions remain recipes to pass through this entry point.
+
+Model roles are executable policy in `src/delivery.mjs`: no model for build/test;
+Terra/Medium for bounded implementation, Luna/Low for documentation, Sol/Medium
+for routine review, Sol/High for a named difficult problem, and Astra/High for
+consequential decisions. An explicit supported model/effort override needs its
+reason and completion check; Max/Ultra also require `--selection owner` or
+`--selection unresolved` for that bounded exception. This does not switch the
+owner's active model.
+Native Claude alternatives remain allowed by ADR-0043 when specifically
+selected and available; this Codex dispatch planner does not claim to launch
+or probe them. Ruflo's Claude-only model-outcome enum cannot truthfully record
+Codex outcomes: store the actual native model and result in repository memory,
+without training under a false model name or claiming measured savings.
+
+Focused self-checks (use the supported Node executable, then Node 20):
+
+```sh
+node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task <live-ruflo-task-id> --check "Delivery harness contracts pass" -- node --test --test-reporter=tap tools/engineering-harness/test/delivery.test.mjs
+```
+
 ## GPT-6 Astra routing
 
 Schema-v2 contracts may select native Codex model `gpt-6-astra` with exactly

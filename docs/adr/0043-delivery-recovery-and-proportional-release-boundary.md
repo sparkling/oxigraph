@@ -535,6 +535,56 @@ training, new receipt formats, and benchmarking remain optional future work.
 The native Astra Ultra compatibility correction is `7d89e7bc`; historical Sol
 contracts and qualification evidence are not rewritten.
 
+### 10. Make the ordinary delivery harness the actual execution path
+
+The 2026-09-10 usage review found that ordinary product changes were using
+native agents and direct Cargo commands while the engineering registry still
+covered historical G1 candidates only. Ruflo task rows and an installed harness
+were not evidence that current builds used it. The owner requested repair
+before further product work, mandatory harness use for all building, and a
+stop for owner review when that repair is ready.
+
+Use the additive `tools/engineering-harness/bin/oxigraph-delivery.mjs` entry
+point for every ordinary programme build/test, including focused checks,
+repair iterations and release builds. It admits literal native Cargo commands
+and an explicit ordinary Node test inventory, reusing the existing Agentic-QE
+process runner, output limits and native summary checks. It adds no dependency.
+An unsupported command needs a reviewed adapter before execution; do not
+silently bypass the harness or route through the frozen qualification runner.
+
+The native coordinator retrieves live Ruflo task/control state, defines the
+completion check, selects explicit model/effort arguments with `route`, and
+dispatches real native workers when useful. It binds their actual native IDs
+and results through MCP. `route` itself is only a plan; neither a queued worker
+nor a Ruflo task/agent status establishes execution. The owner's selected
+conversation is unchanged. The routine defaults and explicit override rule
+implement §9; no provider invocation or model-usage budget is added to builds.
+
+Each `run` records literal commands, task ID, source HEAD and dirty-input
+hashes, tool versions, output hashes/logs, process result and observed tests in
+ignored `target/engineering-delivery/`. It rejects nonzero exits, timeouts,
+output overflow, missing/zero test summaries and before/after source drift.
+Build artifact selection requires a matching Cargo compiler-artifact event
+and binds the observed path/bytes/hash to the selected binary/profile; cached
+builds are not described as fresh rebuilds. The successful local status is
+`command-passed`, never completed delivery. These are
+ordinary local observations, not protected receipts, semantic qualification,
+host containment or publication authority. Boundary source checks do not
+prove absence of transient concurrent edits. The coordinator verifies live
+MCP task identity and writes/readbacks the actual outcome; the CLI does not
+pretend to synchronize MCP itself or authenticate a supplied task ID.
+
+This fixes the current execution gap without changing any frozen G1 registry,
+expected result, receipt validator, protected runtime or semantic qualifier.
+It does not activate Dream Machine, G1.7, containment successors, Router
+training, or another calibration programme. A shell outside the entry point
+remains technically possible but violates the programme's build workflow.
+
+An explicit owner-review hold must stop both normal and scheduled product
+continuation. Finish and present the harness repair; do not resume G4.3 or the
+main build until the owner approves. Keep the timer available for review but
+make it respect the hold, rather than silently disabling the programme.
+
 ## Implemented R1 evidence
 
 The `eb0f0cc2` source state passed:

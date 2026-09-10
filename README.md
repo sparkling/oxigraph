@@ -510,6 +510,15 @@ hashes, while Darwin qualification additionally hashes its installed package
 tree before and after each reviewed run.
 
 `tools/metaharness` remains the semantic qualification adapter.
+For current programme development, every build/test uses the
+[ordinary delivery entry point](tools/engineering-harness/README.md#ordinary-delivery-use-for-every-programme-build-and-test)
+with a live Ruflo task and observable completion check. It runs the native
+tools, records actual source/command/results, and applies the explicit faster
+worker policy in [ADR-0043 §10](docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md#10-make-the-ordinary-delivery-harness-the-actual-execution-path).
+This is development tooling, not a Node dependency of the Rust application.
+The owner requested a review stop after this harness repair; scheduled work
+must not resume the main build until that hold is explicitly lifted.
+
 `tools/engineering-harness` is now the separate local-only G1-G3 application
 control plane accepted by ADR-0017. It consumes frozen evaluator commits,
 reconstructs candidates in disposable Git workspaces, runs one
