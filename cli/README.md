@@ -283,8 +283,8 @@ other limits, old attempts retain their snapshots; lowering or removing caps
 affects new attempts. These caps do not promise weighted fairness, a reserved
 share for each principal, or cross-process quotas.
 
-Admission precedes `100 Continue`, body decoding and RDF work. All requests
-have one priority. Among eligible requests the queue is FIFO, skipping classes
+Admission precedes `100 Continue`, body decoding and RDF work. By default,
+all requests have one priority. Among eligible requests the queue is FIFO, skipping classes
 or principals already at their active limit. A full global queue (checked first)
 or operator queue returns empty noncacheable 503; a full class or principal
 queue returns 429 with the configured `Retry-After`. Queue expiry returns 503.
@@ -297,6 +297,40 @@ shorten the existing transport timeout.
 HTTP admission renders overload advice from the immutable policy snapshot for
 that attempt. A standalone `AdmissionController::denial(error)` call instead
 uses the controller's current policy because it has no attempt snapshot.
+
+Optional `priority_scheduling` changes only data-pool queue selection:
+
+```json
+"priority_scheduling": {
+  "max_bypass": 2,
+  "class_priorities": { "default": 0, "interactive": 3 }
+}
+```
+
+This example requires both classes in `classes`; its bypass allowance is an
+illustration, not a production default. The map must cover exactly every
+configured class. Priorities are integers 0–3 (higher first), and `max_bypass`
+is an explicit unsigned 32-bit count. Unknown fields/classes, missing classes
+and out-of-range numbers are rejected. The caller cannot choose a priority:
+the existing trusted access class and workload policy determine it.
+
+Within a priority, the oldest currently eligible request stays first. Normally
+the highest eligible priority wins. A successful admission of a newer data
+request increments each older eligible queued request's bypass count, up to
+its captured allowance. At that allowance, its entire eligible priority level
+is protected: the oldest eligible head among protected levels wins. Protecting
+the level also lets an older same-priority request that has just become
+eligible proceed first without defeating the waiting request's protection.
+Once protected, no newer request can pass while that request remains eligible;
+older eligible requests may still precede it. Selection polls, refusals, failed
+activation, blocked requests and operator admissions do not advance the count.
+
+Each entry retains its priority, allowance and accumulated count across reload,
+including enabling/disabling the option. Omission and zero allowance preserve
+eligible FIFO. The operator reserve keeps its original FIFO scheduling.
+The scheduler uses four fixed priority heads and the existing bounded queue;
+it does not preempt running work, promise a wall-clock wait bound, reserve a
+service share or change class/principal capacities, deadlines or RDF behavior.
 
 Sources must resolve to regular files (including symlinks to regular files)
 and are bounded to 64 KiB and 16 classes, with
@@ -600,7 +634,7 @@ The legacy nontransactional bulk path remains outside this rollback guarantee.
 
 Still pending: deadline support for the explicitly excluded paths above,
 finer parser/evaluator work counters,
-weighted/priority scheduling, broader resource-use metrics and
+weighted service shares, broader resource-use metrics and
 operational qualification. Cooperative admission is not a hard RSS/CPU/fd/disk
 guarantee; use external process/container controls. This stage does not complete
 G4.2 or promote the Proposed ADR.

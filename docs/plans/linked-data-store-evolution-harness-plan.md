@@ -25,7 +25,9 @@
   closure worklists now have a separate cumulative entry cap, shared across
   query/update execution with sticky failure and owned rollback. Fixed-label
   final-lease observations now expose native budget charges and exhaustion
-  separately from admission or execution outcomes. Full workload
+  separately from admission or execution outcomes. Opt-in four-level class
+  priorities now bound newer-request bypasses while preserving eligible FIFO
+  within each level, reload snapshots and the operator reserve. Full workload
   governance acceptance remains open.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
@@ -1347,9 +1349,11 @@ this source slice. Optional per-principal active/queued data caps now share
 each trusted subject's allowance across classes, count old-policy occupancy
 and discard idle identities. Anonymous callers share one allowance and the
 operator reserve is unchanged. Native isolation, reload, cleanup and persistent
-HTTP journeys verify caps, not reserved service shares. Broader operator budgets,
-weighted/priority scheduling, broader resource telemetry and full ADR-0027 acceptance
-remain open.
+HTTP journeys verify caps, not reserved service shares. Opt-in class priorities
+add a bounded newer-request bypass allowance, with protected eligible levels,
+FIFO peers and retained aging through reload; omission preserves FIFO. Broader
+operator budgets, weighted service shares, broader resource telemetry and full
+ADR-0027 acceptance remain open.
 Separate frozen promotion and future G4.4 compatibility remain open; no
 fine-grained SPARQL policy or general evaluator resource quotas are claimed.
 

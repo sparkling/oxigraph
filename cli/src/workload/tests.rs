@@ -128,6 +128,15 @@ fn reload_policy(
     })
 }
 
+fn priority_policy(max_bypass: u32, default: u8, second: u8) -> Value {
+    let mut policy = reload_policy(1, 2, 4, 1, 1, &[("default", 2, 4), ("second", 2, 4)]);
+    policy["priority_scheduling"] = json!({
+        "max_bypass": max_bypass,
+        "class_priorities": {"default": default, "second": second}
+    });
+    policy
+}
+
 fn write_workload(path: &Path, policy: &Value) -> Result<()> {
     let temporary = path.with_extension("next");
     std::fs::write(&temporary, serde_json::to_vec(policy)?)?;
@@ -1051,6 +1060,350 @@ fn deterministic_fifo_eligible_class_and_expiry_boundary() -> Result<()> {
     ensure!(state.queue.len() == 2);
     AdmissionController::purge(&mut state, deadline);
     ensure!(state.queue.is_empty());
+    Ok(())
+}
+
+#[test]
+fn priority_schema_is_strict_and_absence_or_zero_is_fifo() -> Result<()> {
+    let valid = priority_policy(0, 0, 3);
+    ensure!(WorkloadPolicy::from_json(&serde_json::to_vec(&valid)?).is_ok());
+    for mutation in [
+        json!({"max_bypass": 1, "class_priorities": {"default": 0}}),
+        json!({"max_bypass": 1, "class_priorities": {"default": 0, "second": 4}}),
+        json!({"max_bypass": 1, "class_priorities": {"default": 0, "second": 3, "other": 1}}),
+        json!({"max_bypass": -1, "class_priorities": {"default": 0, "second": 3}}),
+        json!({"max_bypass": 4294967296_u64, "class_priorities": {"default": 0, "second": 3}}),
+        json!({"max_bypass": 1, "class_priorities": {"default": 0, "second": -1}}),
+        json!({"class_priorities": {"default": 0, "second": 3}}),
+        json!({"max_bypass": 1}),
+        json!({"max_bypass": 1, "class_priorities": {"default": 0, "second": 3}, "unknown": true}),
+    ] {
+        let mut policy = valid.clone();
+        policy["priority_scheduling"] = mutation;
+        ensure!(WorkloadPolicy::from_json(&serde_json::to_vec(&policy)?).is_err());
+    }
+
+    let controller =
+        AdmissionController::new(WorkloadPolicy::from_json(&serde_json::to_vec(&valid)?)?)?;
+    let mut state = State::new(Arc::new(controller.0.policy.clone()));
+    let now = Instant::now();
+    for class in ["default", "second"] {
+        let policy = Arc::clone(&state.policy);
+        let entry = AdmissionController::entry(
+            &mut state,
+            class,
+            ListenerKind::Data,
+            PrincipalKey::ANONYMOUS,
+            CancellationToken::new(),
+            now,
+            policy,
+        )?;
+        AdmissionController::enqueue(&mut state, entry);
+    }
+    // A zero bypass limit makes every eligible level protected, so the oldest
+    // eligible queue entry wins just as it did before priority scheduling.
+    ensure!(AdmissionController::first_eligible(&state, false) == Some(0));
+    Ok(())
+}
+
+#[test]
+fn priority_selects_highest_then_ages_and_protects_fifo_head() -> Result<()> {
+    let policy = WorkloadPolicy::from_json(&serde_json::to_vec(&priority_policy(2, 1, 3))?)?;
+    let controller = AdmissionController::new(policy)?;
+    let mut state = State::new(Arc::new(controller.0.policy.clone()));
+    let now = Instant::now();
+    for class in ["default", "default", "second"] {
+        let policy = Arc::clone(&state.policy);
+        let entry = AdmissionController::entry(
+            &mut state,
+            class,
+            ListenerKind::Data,
+            PrincipalKey::ANONYMOUS,
+            CancellationToken::new(),
+            now,
+            policy,
+        )?;
+        AdmissionController::enqueue(&mut state, entry);
+    }
+    ensure!(AdmissionController::first_eligible(&state, false) == Some(2));
+    AdmissionController::age_older_eligible(&mut state, 2);
+    ensure!(state.queue[0].bypasses == 1 && state.queue[1].bypasses == 1);
+    AdmissionController::age_older_eligible(&mut state, 3);
+    ensure!(state.queue[0].bypasses == 2 && state.queue[1].bypasses == 2);
+    // Once protected, the oldest priority-one entry wins over a newer level-3
+    // entry, and equal-priority entries stay FIFO.
+    let policy = Arc::clone(&state.policy);
+    let newer = AdmissionController::entry(
+        &mut state,
+        "second",
+        ListenerKind::Data,
+        PrincipalKey::ANONYMOUS,
+        CancellationToken::new(),
+        now,
+        policy,
+    )?;
+    AdmissionController::enqueue(&mut state, newer);
+    ensure!(AdmissionController::first_eligible(&state, false) == Some(0));
+    Ok(())
+}
+
+#[test]
+fn protected_later_entry_protects_newly_eligible_same_level_head() -> Result<()> {
+    let mut policy = priority_policy(2, 1, 3);
+    policy["principal"] = json!({"max_active": 1, "max_queued": 4});
+    let controller =
+        AdmissionController::new(WorkloadPolicy::from_json(&serde_json::to_vec(&policy)?)?)?;
+    let mut state = State::new(Arc::new(controller.0.policy.clone()));
+    let now = Instant::now();
+    let blocked = principal(1);
+    state.principals.insert(
+        blocked,
+        PrincipalOccupancy {
+            active: 1,
+            queued: 0,
+        },
+    );
+    for owner in [blocked, principal(2)] {
+        let policy = Arc::clone(&state.policy);
+        let entry = AdmissionController::entry(
+            &mut state,
+            "default",
+            ListenerKind::Data,
+            owner,
+            CancellationToken::new(),
+            now,
+            policy,
+        )?;
+        AdmissionController::enqueue(&mut state, entry);
+    }
+    let policy = Arc::clone(&state.policy);
+    let high = AdmissionController::entry(
+        &mut state,
+        "second",
+        ListenerKind::Data,
+        principal(3),
+        CancellationToken::new(),
+        now,
+        policy,
+    )?;
+    AdmissionController::enqueue(&mut state, high);
+    state.queue[1].bypasses = 2;
+    ensure!(AdmissionController::first_eligible(&state, false) == Some(1));
+    state.principals.get_mut(&blocked).unwrap().active = 0;
+    // The now-eligible older head inherits its level's protection from entry 1.
+    ensure!(AdmissionController::first_eligible(&state, false) == Some(0));
+    Ok(())
+}
+
+#[test]
+fn failed_activation_does_not_age_and_entries_keep_priority_snapshots() -> Result<()> {
+    let old = Arc::new(WorkloadPolicy::from_json(&serde_json::to_vec(
+        &priority_policy(2, 0, 3),
+    )?)?);
+    let controller = AdmissionController::new((*old).clone())?;
+    let mut state = State::new(Arc::clone(&old));
+    let now = Instant::now();
+    let old_policy = Arc::clone(&state.policy);
+    let older = AdmissionController::entry(
+        &mut state,
+        "default",
+        ListenerKind::Data,
+        PrincipalKey::ANONYMOUS,
+        CancellationToken::new(),
+        now,
+        old_policy,
+    )?;
+    AdmissionController::enqueue(&mut state, older);
+    let old_policy = Arc::clone(&state.policy);
+    let cancelled = AdmissionController::entry(
+        &mut state,
+        "second",
+        ListenerKind::Data,
+        PrincipalKey::ANONYMOUS,
+        CancellationToken::new(),
+        now,
+        old_policy,
+    )?;
+    cancelled.cancellation.cancel();
+    ensure!(matches!(
+        controller.activate(&mut state, &cancelled),
+        Err(WorkloadError::Cancelled)
+    ));
+    ensure!(state.queue[0].bypasses == 0);
+
+    let new = Arc::new(WorkloadPolicy::from_json(&serde_json::to_vec(
+        &priority_policy(1, 3, 0),
+    )?)?);
+    state.policy = Arc::clone(&new);
+    let new_policy = Arc::clone(&state.policy);
+    let newer = AdmissionController::entry(
+        &mut state,
+        "default",
+        ListenerKind::Data,
+        PrincipalKey::ANONYMOUS,
+        CancellationToken::new(),
+        now,
+        new_policy,
+    )?;
+    ensure!(state.queue[0].priority == 0 && state.queue[0].bypass_limit == 2);
+    ensure!(newer.priority == 3 && newer.bypass_limit == 1);
+    Ok(())
+}
+
+#[test]
+fn successful_data_activation_ages_only_eligible_data_entries() -> Result<()> {
+    let policy = WorkloadPolicy::from_json(&serde_json::to_vec(&priority_policy(2, 0, 3))?)?;
+    let controller = AdmissionController::new(policy)?;
+    let mut state = controller.lock()?;
+    let now = Instant::now();
+    for class in ["default", "second"] {
+        let policy = Arc::clone(&state.policy);
+        let entry = AdmissionController::entry(
+            &mut state,
+            class,
+            ListenerKind::Data,
+            PrincipalKey::ANONYMOUS,
+            CancellationToken::new(),
+            now,
+            policy,
+        )?;
+        AdmissionController::enqueue(&mut state, entry);
+    }
+    let selected = state.queue.remove(1).unwrap();
+    AdmissionController::release_queued(&mut state.principals, &selected);
+    let data_lease = controller.activate(&mut state, &selected)?;
+    ensure!(state.queue[0].bypasses == 1);
+
+    let policy = Arc::clone(&state.policy);
+    let operator = AdmissionController::entry(
+        &mut state,
+        "second",
+        ListenerKind::Operator,
+        PrincipalKey::ANONYMOUS,
+        CancellationToken::new(),
+        now,
+        policy,
+    )?;
+    let operator_lease = controller.activate(&mut state, &operator)?;
+    ensure!(state.queue[0].bypasses == 1);
+    state.queue[0].cancellation.cancel();
+    AdmissionController::purge(&mut state, Instant::now());
+    drop(state);
+    drop((data_lease, operator_lease));
+    ensure!(controller.snapshot()? == AdmissionSnapshot::default());
+    Ok(())
+}
+
+#[test]
+fn blocked_class_and_principal_entries_do_not_age() -> Result<()> {
+    let mut policy = priority_policy(2, 0, 3);
+    policy["principal"] = json!({"max_active": 1, "max_queued": 4});
+    let controller =
+        AdmissionController::new(WorkloadPolicy::from_json(&serde_json::to_vec(&policy)?)?)?;
+    let mut state = State::new(Arc::new(controller.0.policy.clone()));
+    let now = Instant::now();
+    let blocked = principal(7);
+    state.classes.insert("default".into(), 2);
+    state.principals.insert(
+        blocked,
+        PrincipalOccupancy {
+            active: 1,
+            queued: 0,
+        },
+    );
+    for (class, owner) in [("default", blocked), ("second", principal(8))] {
+        let policy = Arc::clone(&state.policy);
+        let entry = AdmissionController::entry(
+            &mut state,
+            class,
+            ListenerKind::Data,
+            owner,
+            CancellationToken::new(),
+            now,
+            policy,
+        )?;
+        AdmissionController::enqueue(&mut state, entry);
+    }
+    AdmissionController::age_older_eligible(&mut state, 1);
+    ensure!(state.queue[0].bypasses == 0);
+    // Check each constraint independently, so one cannot mask a missing other.
+    state.classes.remove("default");
+    AdmissionController::age_older_eligible(&mut state, 1);
+    ensure!(state.queue[0].bypasses == 0, "principal cap was ignored");
+    state.classes.insert("default".into(), 2);
+    state.principals.get_mut(&blocked).unwrap().active = 0;
+    AdmissionController::age_older_eligible(&mut state, 1);
+    ensure!(state.queue[0].bypasses == 0, "class cap was ignored");
+    state.classes.remove("default");
+    AdmissionController::age_older_eligible(&mut state, 1);
+    ensure!(state.queue[0].bypasses == 1, "eligible entry did not age");
+    Ok(())
+}
+
+#[test]
+fn reload_enable_disable_keeps_queued_priority_snapshot() -> Result<()> {
+    let initial = reload_policy(1, 2, 4, 1, 1, &[("default", 2, 4), ("second", 2, 4)]);
+    let (_directory, path, controller) = file_controller(&initial)?;
+    let access = crate::access::AccessController::anonymous(false);
+    {
+        let mut state = controller.lock()?;
+        let policy = Arc::clone(&state.policy);
+        let old_fifo = AdmissionController::entry(
+            &mut state,
+            "default",
+            ListenerKind::Data,
+            PrincipalKey::ANONYMOUS,
+            CancellationToken::new(),
+            Instant::now(),
+            policy,
+        )?;
+        AdmissionController::enqueue(&mut state, old_fifo);
+    }
+    let mut enabled = priority_policy(2, 0, 3);
+    enabled["policy_id"] = json!("reload-test");
+    enabled["version"] = json!(2);
+    write_workload(&path, &enabled)?;
+    ensure!(controller.reload(&access)? == 2);
+    {
+        let mut state = controller.lock()?;
+        let policy = Arc::clone(&state.policy);
+        let entry = AdmissionController::entry(
+            &mut state,
+            "second",
+            ListenerKind::Data,
+            PrincipalKey::ANONYMOUS,
+            CancellationToken::new(),
+            Instant::now(),
+            policy,
+        )?;
+        AdmissionController::enqueue(&mut state, entry);
+        state.queue[1].bypasses = 1;
+        ensure!(state.queue[0].priority == 0 && state.queue[0].bypass_limit == 0);
+        ensure!(AdmissionController::first_eligible(&state, false) == Some(0));
+    }
+    let disabled = reload_policy(3, 2, 4, 1, 1, &[("default", 2, 4), ("second", 2, 4)]);
+    write_workload(&path, &disabled)?;
+    ensure!(controller.reload(&access)? == 3);
+    let mut state = controller.lock()?;
+    ensure!(state.queue[1].priority == 3);
+    ensure!(state.queue[1].bypass_limit == 2 && state.queue[1].bypasses == 1);
+    let policy = Arc::clone(&state.policy);
+    let new_fifo = AdmissionController::entry(
+        &mut state,
+        "second",
+        ListenerKind::Data,
+        PrincipalKey::ANONYMOUS,
+        CancellationToken::new(),
+        Instant::now(),
+        policy,
+    )?;
+    ensure!(new_fifo.priority == 0 && new_fifo.bypass_limit == 0);
+    AdmissionController::enqueue(&mut state, new_fifo);
+    for entry in &state.queue {
+        entry.cancellation.cancel();
+    }
+    AdmissionController::purge(&mut state, Instant::now());
+    ensure!(state.queue.is_empty() && state.principals.is_empty());
     Ok(())
 }
 

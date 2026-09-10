@@ -19,7 +19,9 @@
   startup transport ceilings. Observed active socket errors now cancel the
   existing workload token without releasing running work's capacity. Optional
   per-principal data admission caps share bounded live occupancy across classes
-  and preserve old-attempt reload snapshots and the separate operator pool. Other
+  and preserve old-attempt reload snapshots and the separate operator pool.
+  Optional bounded class priorities now limit newer-request bypasses while
+  preserving eligible FIFO within a level and the operator reserve. Other
   operator budgets, excluded deadline paths and full acceptance remain open.
   Observed queued socket errors release admission; FIN-only/silent loss uses timeouts
 - Programme task: `task-1787728711461-3isex6`
@@ -868,6 +870,59 @@ unchanged before/after. `cargo doc --locked -p oxigraph-cli --lib --no-deps`
 passes with the pre-existing private admission-module link warning. No
 evaluator source, dependency lock, protected evidence or production defaults
 change in this observation-only slice.
+
+### Native bounded priority scheduling (2026-09-10)
+
+The optional `priority_scheduling` object adds an explicit unsigned 32-bit
+`max_bypass` and a `class_priorities` map covering exactly the workload policy's
+classes, with integer levels 0–3. Higher levels normally proceed first. Unknown
+fields/classes, missing classes and out-of-range numbers fail policy validation.
+No field is added to the public `ClassLimits` capacity shape. Priority is chosen
+by the existing trusted access class and operator policy, never caller input.
+
+Each queued entry captures its level and allowance with the immutable policy
+snapshot, plus a bounded count initially zero. Selection considers only entries
+eligible under their own global/class/principal limits. Four fixed heads retain
+the oldest eligible entry per level. If any eligible entry reaches its captured
+bypass allowance, its whole level is protected; the oldest eligible head across
+protected levels wins. Otherwise the highest eligible level wins. An already
+protected oldest eligible entry takes the legacy FIFO fast path.
+
+Protection propagates within a level so an older formerly blocked request may
+resume first without defeating protection of a later eligible request. A
+protected request's level head is never newer than it, so selection cannot
+choose a newer request ahead of it while it remains eligible. Older eligible
+requests can still precede it. This preserves FIFO among eligible peers and
+bounds successful newer bypasses; it is not a time or resource-service-share
+guarantee, preemption, or cross-process fairness.
+
+Only a successful newer data admission advances older eligible queued counts,
+after its final cancellation check and before active occupancy changes. Counts
+saturate at each captured allowance. Selection polls, refusals, failed
+activation, ineligible entries and operator admissions do not age requests.
+The operator pool retains its existing eligible FIFO selection and reserve.
+Omitting the option or choosing zero preserves eligible FIFO. Existing queued
+entries retain priorities, allowances and aging across enable/disable/reload;
+new attempts use the new policy. There is no queue reorder, capacity reset,
+new allocation proportional to priority history, dependency or numeric
+production capacity default. The existing bounded queue and four fixed heads
+are sufficient. Deadlines, overload mappings, request/transaction/resource
+budgets and response-lifetime ownership remain unchanged. Full G4.2 acceptance
+and frozen operational/promotion evidence remain open.
+
+Validation: focused native tests cover strict schema, successful versus failed
+activation, independent class/principal blocking, protected-level inheritance,
+real policy enable/disable and retained aging, and normal cleanup. The HTTP
+fixture observes actual enqueue gauges before releasing withheld bodies; both
+serve modes verify original FIFO, zero-allowance FIFO and exactly two newer
+high-priority admissions before the older request proceeds. Writable cases
+also complete the existing write/query/rollback/restart journey. This fixture
+fails against the preceding release (`13da8f61`, policy unsupported) and passes
+against the new implementation. The full locked CLI matrix passes with default
+features (69 library / 171 binary / 49 HTTP) and no defaults (69 / 147 / 43,
+plus one existing dependency-qualified binary test ignored). The rebuilt
+release executable passes all 49 HTTP cases with its SHA-256 unchanged
+before/after. No frozen qualification or performance result is inferred.
 
 ### Remaining staged acceptance
 

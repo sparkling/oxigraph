@@ -249,7 +249,13 @@ already committed write. Optional per-principal active/queued caps now isolate
 data admission across authenticated subjects, sharing each subject's allowance
 across classes. Anonymous callers share one allowance; the operator reserve is
 unchanged. Counts include old-policy work and discard identities after drain.
-These are caps, not weighted fairness or guaranteed service shares. Broader
+These are caps, not weighted fairness or guaranteed service shares. Workload
+policies may now enable four bounded priority levels with an explicit
+newer-admission bypass allowance. Eligible requests stay FIFO within a level;
+reaching the allowance protects the level against further newer bypasses.
+Queued priorities and aging survive reload, and the operator reserve stays
+FIFO. Omission preserves original scheduling. This is not running-work
+preemption, a wall-clock guarantee or weighted service shares. Broader
 resource accounting, scheduling and full G4.2 acceptance remain open.
 The planner also avoids materializing large accumulated path fan-outs when
 a smaller hash-build input is available. Native result/budget regressions and

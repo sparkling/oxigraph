@@ -3165,6 +3165,98 @@ fn occupy_admission(running: &Running) -> Result<TcpStream> {
     Ok(stream)
 }
 
+fn pending_priority_query(running: &Running, subject: &str) -> Result<TcpStream> {
+    let mut stream = TcpStream::connect(running.public)?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(3)))?;
+    write!(
+        stream,
+        "POST /query HTTP/1.1\r\nHost: localhost\r\n{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json\r\nExpect: 100-continue\r\nContent-Length: 6\r\nConnection: close\r\n\r\n",
+        identity(subject, 1)?
+    )?;
+    Ok(stream)
+}
+
+fn finish_priority_query(stream: &mut TcpStream) -> Result<()> {
+    stream.write_all(b"ASK {}")?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response)?;
+    let response = decode_wire(&response)?;
+    ensure!(response.status == 200, "query status {}", response.status);
+    ensure!(serde_json::from_str::<Value>(&response.body)?["boolean"] == true);
+    Ok(())
+}
+
+fn wait_data_queue(running: &Running, expected: u64) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let queued = metric_counter(running, "oxigraph_admission_queued{pool=\"data\"}")?;
+        if queued == expected {
+            return Ok(());
+        }
+        ensure!(Instant::now() < deadline, "queue {queued} != {expected}");
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn workload_priority_bounds_newer_bypasses_and_preserves_fifo_and_restart() -> Result<()> {
+    for read_only in [false, true] {
+        for max_bypass in [None, Some(0), Some(2)] {
+            let mut access = config();
+            access["workload_classes"] = json!(["default", "interactive"]);
+            for rule in access["rules"].as_array_mut().context("rules missing")? {
+                if rule["subject"] == READER {
+                    rule["workload_class"] = json!("interactive");
+                }
+            }
+            let mut profile = workload(4, 4, 10_000);
+            profile["classes"]["interactive"] = json!({"max_active":1,"max_queued":4});
+            if let Some(limit) = max_bypass {
+                profile["priority_scheduling"] = json!({
+                    "max_bypass":limit,
+                    "class_priorities":{"default":0,"interactive":3}
+                });
+            }
+            let running = start_with_workload(&access, read_only, Some(&profile))?;
+            let before = work_counters(&running)?;
+            let mut held = pending_priority_query(&running, WRITER)?;
+            ensure!(read_status_head(&mut held)? == 100);
+            let mut pending = Vec::new();
+            for subject in [WRITER, READER, READER, READER] {
+                pending.push(pending_priority_query(&running, subject)?);
+                // Observe enqueue order on the live controller, not a sleep or
+                // connection-order assumption. The operator reserve stays usable.
+                wait_data_queue(&running, pending.len() as u64)?;
+            }
+            ensure!(
+                work_counters(&running)? == before,
+                "pre-body work entered evaluation"
+            );
+            finish_priority_query(&mut held)?;
+            let order = if max_bypass == Some(2) {
+                [1, 2, 0, 3]
+            } else {
+                [0, 1, 2, 3]
+            };
+            for index in order {
+                // A wrong winner holds the sole slot with its body withheld,
+                // so this exact expected admission fails rather than racing.
+                ensure!(
+                    read_status_head(&mut pending[index])? == 100,
+                    "unexpected admission: read_only={read_only}, max_bypass={max_bypass:?}, index={index}"
+                );
+                finish_priority_query(&mut pending[index])?;
+            }
+            wait_data_queue(&running, 0)?;
+            if !read_only {
+                write_rollback_and_restart(running)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn workload_overload_precedes_expect_body_and_work_but_not_auth() -> Result<()> {
     for (queued, class_queued, expected) in [(0, 0, 503), (1, 0, 429)] {

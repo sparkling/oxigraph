@@ -4,9 +4,10 @@
 //!
 //! Profiles are explicit and immutable per admission attempt. File-backed
 //! controllers may atomically reload after an authorized local/operator decision.
-//! All requests have one priority; eligible requests are FIFO, skipping a
-//! saturated class so it cannot block another class. Operator capacity is a
-//! separate pool.
+//! Without optional priority scheduling, eligible requests are FIFO, skipping
+//! a saturated class so it cannot block another class. Data-pool priority
+//! levels remain bounded and FIFO within each level; operator capacity is a
+//! separate FIFO pool.
 //!
 //! Admission telemetry ([`metrics`]) is process-local and observational only:
 //! every returned `acquire` result is counted exactly once, queue waits are the
@@ -51,6 +52,16 @@ pub struct ClassLimits {
 struct PrincipalLimits {
     max_active: usize,
     max_queued: usize,
+}
+
+/// Optional bounded data-pool scheduling policy. It is deliberately separate
+/// from `ClassLimits`: class capacity and class priority are independent
+/// controls, and omitting this object preserves the original FIFO scheduler.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PriorityScheduling {
+    max_bypass: u32,
+    class_priorities: BTreeMap<String, u8>,
 }
 
 /// Transfer-decoded entity bytes before and after content decompression.
@@ -108,6 +119,8 @@ pub struct WorkloadPolicy {
     retry_after_seconds: u32,
     #[serde(default)]
     principal: Option<PrincipalLimits>,
+    #[serde(default)]
+    priority_scheduling: Option<PriorityScheduling>,
     classes: BTreeMap<String, ClassLimits>,
 }
 
@@ -196,6 +209,13 @@ impl WorkloadPolicy {
                     || limits.max_active > self.max_active
                     || limits.max_queued > self.max_queued
             })
+            || self.priority_scheduling.as_ref().is_some_and(|priority| {
+                priority.class_priorities.len() != self.classes.len()
+                    || priority
+                        .class_priorities
+                        .iter()
+                        .any(|(class, value)| *value > 3 || !self.classes.contains_key(class))
+            })
         {
             return Err(WorkloadError::InvalidPolicy);
         }
@@ -277,6 +297,11 @@ struct Entry {
     deadline: Instant,
     cancellation: CancellationToken,
     policy: Arc<WorkloadPolicy>,
+    // Immutable per-attempt scheduling snapshot. Operator entries always use
+    // zeroes and remain FIFO regardless of a data-pool policy reload.
+    priority: u8,
+    bypass_limit: u32,
+    bypasses: u32,
 }
 
 /// Opaque, fixed-width scheduling identity. It is derived only from the
@@ -834,6 +859,15 @@ impl AdmissionController {
         }
         let id = state.next_id;
         state.next_id = id.checked_add(1).ok_or(WorkloadError::Unavailable)?;
+        let (priority, bypass_limit) = if listener == ListenerKind::Data {
+            policy
+                .priority_scheduling
+                .as_ref()
+                .map(|scheduling| (scheduling.class_priorities[class], scheduling.max_bypass))
+                .unwrap_or((0, 0))
+        } else {
+            (0, 0)
+        };
         Ok(Entry {
             id,
             class: class.into(),
@@ -844,6 +878,9 @@ impl AdmissionController {
                 .ok_or(WorkloadError::InvalidPolicy)?,
             cancellation,
             policy,
+            priority,
+            bypass_limit,
+            bypasses: 0,
         })
     }
 
@@ -865,11 +902,53 @@ impl AdmissionController {
     }
 
     fn first_eligible(state: &State, operator: bool) -> Option<u64> {
-        state
-            .queue
-            .iter()
-            .find(|entry| entry.operator == operator && Self::available(state, entry))
-            .map(|entry| entry.id)
+        if operator {
+            return state
+                .queue
+                .iter()
+                .find(|entry| entry.operator && Self::available(state, entry))
+                .map(|entry| entry.id);
+        }
+
+        // This bounded, allocation-free scan stores the first eligible entry
+        // of each priority and separately remembers whether any eligible
+        // entry in that level has aged to its own immutable limit. The latter
+        // intentionally protects the older head of the same level, preserving
+        // FIFO while allowing a newly eligible head to inherit its level's
+        // accumulated protection.
+        let mut heads: [Option<u64>; 4] = [None; 4];
+        let mut protected = [false; 4];
+        for entry in &state.queue {
+            if entry.operator || !Self::available(state, entry) {
+                continue;
+            }
+            // The first eligible data entry is also the oldest eligible head
+            // overall. If it is protected, no protected level can have an
+            // older head, which preserves the legacy FIFO fast path when
+            // scheduling is omitted (all entries have a zero limit).
+            if heads.iter().all(Option::is_none) && entry.bypasses >= entry.bypass_limit {
+                return Some(entry.id);
+            }
+            let level = usize::from(entry.priority);
+            if heads[level].is_none() {
+                heads[level] = Some(entry.id);
+            }
+            protected[level] |= entry.bypasses >= entry.bypass_limit;
+        }
+        let mut selected = None;
+        for level in 0..4 {
+            if protected[level] {
+                if let Some(id) = heads[level] {
+                    if selected.is_none_or(|oldest| id < oldest) {
+                        selected = Some(id);
+                    }
+                }
+            }
+        }
+        if selected.is_some() {
+            return selected;
+        }
+        (0..4).rev().find_map(|level| heads[level])
     }
 
     fn purge(state: &mut State, now: Instant) {
@@ -920,6 +999,9 @@ impl AdmissionController {
                 oxigraph::sparql::CancellationReason::Cancelled => WorkloadError::Cancelled,
             });
         }
+        if !entry.operator {
+            Self::age_older_eligible(state, entry.id);
+        }
         if entry.operator {
             state.operator_active += 1;
         } else {
@@ -957,6 +1039,25 @@ impl AdmissionController {
                 .map(AggregateDistinctBudget::new),
             path_buffer_budget: entry.policy.max_path_buffer_rows.map(PathBufferBudget::new),
         })))
+    }
+
+    /// Record only successful newer data-pool admissions, after the selected
+    /// entry has passed its final cancellation check and before occupancy is
+    /// changed. Availability is therefore evaluated at the scheduling point.
+    fn age_older_eligible(state: &mut State, admitted_id: u64) {
+        for index in 0..state.queue.len() {
+            let eligible = {
+                let entry = &state.queue[index];
+                !entry.operator
+                    && entry.id < admitted_id
+                    && entry.bypasses < entry.bypass_limit
+                    && Self::available(state, entry)
+            };
+            if eligible {
+                let entry = &mut state.queue[index];
+                entry.bypasses = entry.bypasses.saturating_add(1).min(entry.bypass_limit);
+            }
+        }
     }
 
     fn enqueue(state: &mut State, entry: Entry) {
