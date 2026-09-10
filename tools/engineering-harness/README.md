@@ -11,10 +11,112 @@ lifecycle scripts. Runtime publication and OpenRouter transport are forbidden.
 ## Ordinary delivery: use for every programme build and test
 
 The mandatory everyday entry point is
-`node tools/engineering-harness/bin/oxigraph-delivery.mjs`, run from the
-canonical repository root. It uses the existing Agentic-QE native process
-runner; it does not start the frozen G1 candidate runner or semantic qualifier.
-No new dependency or product runtime requirement is introduced.
+`node tools/engineering-harness/bin/oxigraph-delivery.mjs`, run from canonical
+`main`. Use `workflow --spec FILE.json` for a bounded implementation/repair
+task. Its controller connects the steps below; the active native Codex host
+executes its tool requests. This is not a replacement coding agent platform.
+
+MetaHarness kernel stages invoke native implementation and review workers.
+The existing `run` subcommand supervises deterministic build/test commands
+using the shared Agentic-QE process helper. Neither path starts the frozen G1
+candidate runner or semantic qualifier. No new dependency or product runtime
+requirement is introduced.
+
+### Integrated task workflow
+
+```sh
+node tools/engineering-harness/bin/oxigraph-delivery.mjs workflow --spec target/engineering-delivery/task-spec.json
+```
+
+The task specification is ordinary local input, not an authority token. For
+example, replace the task ID, goal and check with the current approved task:
+
+```json
+{
+  "schema": 1,
+  "taskId": "task-REPLACE-WITH-LIVE-ID",
+  "scope": "harness",
+  "goal": "Repair the declared host adapter defect",
+  "completionCheck": "The regression passes and independent review accepts the exact repair",
+  "paths": ["tools/engineering-harness/src/workflow-host.mjs"],
+  "checks": [{
+    "completionCheck": "Host and delivery regression tests pass",
+    "argv": ["node", "--test", "--test-reporter=tap", "tools/engineering-harness/test/workflow.test.mjs", "tools/engineering-harness/test/delivery.test.mjs"]
+  }]
+}
+```
+
+The controller orders the work:
+
+1. Live MCP task/control read and owner-hold check.
+2. Native read-only implementation proposal, then root-only application of the
+   exact file contents; other preexisting changes must remain untouched.
+3. Deterministic checks through `run`. A failure stops later checks/review and
+   feeds the failure identity and local log paths into repair.
+4. Independent native review of the resulting files and actual checks. A
+   rejection feeds findings into repair, followed by new checks and review.
+5. Live MCP evidence store and exact readback. Only then does the controller
+   return `ready-for-owner-review`. Root owns scoped commits, live task
+   completion and any separately authorized publication.
+
+The host bridge emits a short JSON line with a `request-N.json` path. Read that
+exact request and execute its action using real tools:
+
+| Action | Native host responsibility | Returned `result` |
+| --- | --- | --- |
+| `mcp-read` | Live Ruflo `task_status` and control `memory_retrieve` | `{ "task": <actual task>, "control": <actual control value> }` |
+| `native-worker` | Dispatch the requested model/effort through native agent tools; link actual identity through MCP; no worker writes or tests | Structured native result described below |
+| `root-apply` | Root applies the exact proposed contents using `apply_patch` | `{ "writer": "root", "applied": true }`, only after checking application |
+| `mcp-handoff` | Store the requested evidence through Ruflo MCP, retrieve it and inspect equality | `{ "value": <actual retrieved value> }`, never an echoed substitute |
+
+Return one JSON line to stdin containing the request's unchanged `schema`,
+`runId`, `requestId`, `taskId`, `specSha256`, `sourceSha256`, plus `result`.
+Do not copy `action` or `payload` into the response. A native result contains
+`status: "completed"`, actual `client`, `workerId`, `model`, `effort`, `summary`,
+`verdict` (`ACCEPT`, `REJECT` or `INCONCLUSIVE`), `findings` and `changes`.
+Implementation changes are `{path, content}` full UTF-8 files; review changes
+must be `[]`, and its worker ID must differ from every implementing worker.
+For unavailability return `status: "unavailable"` with exact client, requested
+model/effort and `error`; the controller stops without substituting a model.
+
+Keep the host process attached while answering requests. Pipes are preferred;
+a dedicated PTY must disable echo and canonical line buffering before launch
+because full-file JSON responses exceed terminal line limits. EOF, malformed
+responses, stream failures or a 30-minute pending host action stop the run.
+This is a tool-turnaround timeout, not a subscription usage budget.
+
+Optional `implement` and `review` objects accept `model`, `effort`, `reason`
+and `selection` under the policy below. Scope `product` requires the active
+delivery task and no owner hold; scope `harness` requires the active harness
+task and admits only ordinary Node checks. Editable paths are explicit and
+restricted by `validateWorkflow`; protected state is not in either inventory.
+Unsupported files/commands require a reviewed adapter, not a bypass.
+
+Output lives in ignored `target/engineering-delivery/workflow-*/`: exact host
+requests, completed stage/check events and a final result or failure. These
+records do not implement crash-resume. A fresh controller requires fresh
+source/control observations; it must not reuse old responses as a new run.
+An unchanged repeated source/failure stops for integrator judgment. No-op
+proposals cannot complete the task. Raw command output stays local; workers
+receive bounded feedback with evidence identities and inspectable log paths.
+
+**Demonstrated boundary (2026-09-10):** a real Terra Medium worker proposed the
+host input-stream repair, root applied it, `run-WszUBB` passed 27 tests, a
+distinct Terra Medium worker accepted it, and live MCP read back the exact
+evidence. Workflow `225a84f0-3269-4246-8782-938b2fd5cfaa` is recorded under
+`programme-task-evidence/workflow-225a84f0-3269-4246-8782-938b2fd5cfaa` and
+`target/engineering-delivery/workflow-6K0Pix/`. Earlier failing attempts remain
+intact. Repair-feedback and rejection paths also have deterministic fixtures;
+those test doubles are not claimed as additional native executions.
+
+The controller enforces transition and source checks, but trusts inspected
+host-supplied native identities and MCP values. A receipt is not independent
+authentication. One writer and boundary comparisons are not a filesystem
+sandbox or protection against transient concurrent edits. There is no
+unattended host dispatcher, automatic commit/push, product qualification or
+durable crash recovery. Harness evolution is separate and remains inactive.
+
+### Deterministic command runner
 
 ```sh
 node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task <live-ruflo-task-id> --check "Store integration tests pass" -- cargo test --locked -p oxigraph --test store
@@ -22,7 +124,8 @@ node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task <live-ruflo-
 node tools/engineering-harness/bin/oxigraph-delivery.mjs route --task <live-ruflo-task-id> --role implement --check "observable native completion check"
 ```
 
-The native coordinator owns this small lifecycle:
+For standalone diagnostic/build invocations, the native coordinator owns this
+lifecycle. Within `workflow`, the controller requests these transitions:
 
 1. Retrieve the live task and programme control through structured Ruflo MCP;
    honor an owner-review hold before any product work. Define one completion check.
@@ -45,7 +148,7 @@ The native coordinator owns this small lifecycle:
 5. Review the actual result, update the live Ruflo task and concise evidence
    memory, and read back that exact value. Only then hand off the verified slice.
 
-The CLI deliberately has no Ruflo CLI/database fallback and no model transport.
+The `run` subcommand has no Ruflo CLI/database fallback and no model transport.
 Its successful status is `command-passed`, never completed delivery. Task
 attribution stays explicitly coordinator-supplied and unverified in the local
 observation; the MCP readback is separate, performed by the native coordinator.
@@ -73,7 +176,7 @@ without training under a false model name or claiming measured savings.
 Focused self-checks (use the supported Node executable, then Node 20):
 
 ```sh
-node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task <live-ruflo-task-id> --check "Delivery harness contracts pass" -- node --test --test-reporter=tap tools/engineering-harness/test/delivery.test.mjs
+node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task <live-ruflo-task-id> --check "Delivery workflow, routing and process contracts pass" -- node --test --test-reporter=tap tools/engineering-harness/test/workflow.test.mjs tools/engineering-harness/test/delivery.test.mjs tools/engineering-harness/test/astra-routing.test.mjs tools/agentic-qe/process-runner.test.mjs
 ```
 
 ## GPT-6 Astra routing

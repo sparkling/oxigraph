@@ -1,10 +1,17 @@
 #!/usr/bin/env node
 import { routeDelivery, runDelivery } from "../src/delivery.mjs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { repository } from "../src/delivery.mjs";
+import { runWorkflow } from "../src/workflow.mjs";
+import { stdioHost } from "../src/workflow-host.mjs";
+import { ensureDirectoryInsideRepository } from "../../agentic-qe/path-policy.mjs";
 
 const help = `Ordinary Oxigraph delivery (ADR-0043)
   run --task ID --check "observable completion" [--timeout-ms N] [--artifact target/release/oxigraph] -- cargo test --locked -p oxigraph --test store
   run --task ID --check "harness contracts pass" -- node --test --test-reporter=tap tools/engineering-harness/test/delivery.test.mjs
   route --task ID --role implement --check "observable completion" [--model MODEL --effort EFFORT --reason REASON --selection owner|unresolved]
+  workflow --spec FILE.json  (JSON-line bridge to the active native coding host)
 Use live Ruflo MCP before dispatch and after execution. Route is a plan, not a model invocation.
 No shell, publication, provider execution, qualification, or G1.7 commands are admitted.
 `;
@@ -17,7 +24,8 @@ try {
     const options = split < 0 ? args : args.slice(0, split);
     const values = {};
     const allowed = action === "run" ? ["--task", "--check", "--timeout-ms", "--artifact"] :
-      action === "route" ? ["--task", "--role", "--check", "--model", "--effort", "--reason", "--selection"] : [];
+      action === "route" ? ["--task", "--role", "--check", "--model", "--effort", "--reason", "--selection"] :
+      action === "workflow" ? ["--spec"] : [];
     for (let i = 0; i < options.length; i += 2) {
       if (!allowed.includes(options[i]) || Object.hasOwn(values, options[i]) || !options[i + 1]) {
         throw new Error("Unknown, duplicate or incomplete delivery option");
@@ -37,7 +45,22 @@ try {
       process.stdout.write(JSON.stringify(routeDelivery({ taskId: values["--task"], role: values["--role"],
         completionCheck: values["--check"], model: values["--model"], effort: values["--effort"],
         reason: values["--reason"], selection: values["--selection"] }), null, 2) + "\n");
-    } else { throw new Error("Expected run with literal argv or route with role and completion check"); }
+    } else if (action === "workflow" && split < 0 && values["--spec"]) {
+      const spec = JSON.parse(readFileSync(values["--spec"], "utf8"));
+      const directory = mkdtempSync(join(ensureDirectoryInsideRepository(join(repository, "target", "engineering-delivery")), "workflow-"));
+      const bridge = stdioHost(directory);
+      let eventId = 0;
+      try {
+        const result = await runWorkflow(spec, bridge.request, {
+          event: (event) => writeFileSync(join(directory, `event-${++eventId}.json`), JSON.stringify(event, null, 2) + "\n", { flag: "wx" }),
+        });
+        writeFileSync(join(directory, "result.json"), JSON.stringify(result, null, 2) + "\n", { flag: "wx" });
+        process.stdout.write(JSON.stringify({ status: result.status, directory, taskId: result.taskId }) + "\n");
+      } catch (error) {
+        writeFileSync(join(directory, "failure.json"), JSON.stringify({ status: "incomplete", error: error.message, eventCount: eventId }) + "\n", { flag: "wx" });
+        throw error;
+      } finally { bridge.close(); }
+    } else { throw new Error("Expected run with literal argv, route, or workflow --spec FILE.json"); }
   }
 } catch (error) {
   process.stderr.write(`${error.message}\n`);

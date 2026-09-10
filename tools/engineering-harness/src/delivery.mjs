@@ -69,6 +69,7 @@ const cargoValues = new Set([
 ]);
 const nodeTests = new Set([
   "tools/engineering-harness/test/delivery.test.mjs",
+  "tools/engineering-harness/test/workflow.test.mjs",
   "tools/engineering-harness/test/astra-routing.test.mjs",
   "tools/engineering-harness/test/cli.test.mjs",
   "tools/engineering-harness/test/task-profile.test.mjs",
@@ -187,7 +188,7 @@ export function deliveryStatus(before, after, result, failure) {
   return { sourceStable, status: !failure && sourceStable && result?.passed ? "command-passed" : "failed" };
 }
 
-export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1800000, artifact }) {
+export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1800000, artifact, quiet = false }) {
   if (!/^task-[a-zA-Z0-9-]+$/.test(taskId ?? "")) throw new Error("A live Ruflo task ID is required");
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 7200000) {
     throw new Error("Timeout must be between 1ms and 2h (local process bound, not a model budget)");
@@ -228,6 +229,7 @@ export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1
   try {
     result = await execute(command.program, command.args, {
       cwd: repository, timeoutMs, captureOutputBytes: 16 * 1024 * 1024,
+      quiet, announce: !quiet,
     });
   } catch (error) {
     failure = error.message;

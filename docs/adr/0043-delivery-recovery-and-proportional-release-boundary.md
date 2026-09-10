@@ -574,8 +574,54 @@ prove absence of transient concurrent edits. The coordinator verifies live
 MCP task identity and writes/readbacks the actual outcome; the CLI does not
 pretend to synchronize MCP itself or authenticate a supplied task ID.
 
-This fixes the current execution gap without changing any frozen G1 registry,
-expected result, receipt validator, protected runtime or semantic qualifier.
+That command wrapper fixed command supervision, but did not itself connect
+implementation, repair and independent review. Calling it a complete build
+workflow overstated the integration. The owner's subsequent repair request
+adds the bounded ordinary `workflow --spec FILE.json` controller:
+
+1. A schema-checked task declares exact editable source paths, observable
+   completion checks and explicit native implementation/review routes.
+2. The controller requests live task/control reads through the coding host,
+   including before edits, checks, review and handoff. A product review hold
+   stops execution; a separately active harness-only task may still proceed.
+3. A real HarnessKernel stage invokes the native host's read-only worker and
+   verifies its structured result. Only root applies the exact proposed file
+   contents. Source changes outside the declared paths, mismatched responses
+   or stale check evidence stop the workflow.
+4. Existing `run` supervision executes each declared check without model calls.
+   A failed prerequisite stops later checks/review and supplies bounded failure
+   evidence and inspectable logs to repair. Rejected independent reviews feed
+   their findings to repair, followed by fresh checks and review. An unchanged
+   repeated failure stops for integrator judgment, not a model-usage ceiling.
+5. A distinct native reviewer inspects the actual candidate and check results.
+   The host stores the accepted evidence using Ruflo MCP and returns the exact
+   retrieved value. Success is `ready-for-owner-review`; root still owns scoped
+   commits, completion of the live task and any separately authorized handoff.
+
+This is native-host integration, not another autonomous agent platform.
+The stdio host bridge issues typed requests; it does not fabricate MCP results,
+launch a model provider or grant a worker write authority. Native identities
+and MCP values remain host-supplied and inspected, not independently
+authenticated by this controller. Kernel receipts validate individual stage
+records, not semantic acceptance, durable crash recovery or publication.
+The outer controller deliberately handles prerequisite failure and repair
+feedback rather than assuming the upstream kernel supplies them. No automatic
+host restart, unattended agent dispatcher or Git publisher is claimed.
+
+The bounded acceptance demonstration repairs a real host-stream error through
+a native Terra Medium proposal, root application, 27 passing Node tests,
+independent Terra Medium acceptance and exact live MCP readback. The workflow
+is `225a84f0-3269-4246-8782-938b2fd5cfaa`; local evidence is
+`target/engineering-delivery/workflow-6K0Pix/`, and repository memory is
+`programme-task-evidence/workflow-225a84f0-3269-4246-8782-938b2fd5cfaa`.
+Its earlier failed attempt is retained, not rewritten. Deterministic controller
+fixtures separately exercise repair feedback, stale evidence, review holds,
+independence, stream failures and unavailable-model reporting; test doubles
+are not counted as native worker execution. A follow-up corrects the Node
+count projection (the real run's full result already recorded 27 passes).
+
+This additive integration changes no frozen G1 registry, expected result,
+receipt validator, protected runtime or semantic qualifier.
 It does not activate Dream Machine, G1.7, containment successors, Router
 training, or another calibration programme. A shell outside the entry point
 remains technically possible but violates the programme's build workflow.
