@@ -1144,6 +1144,58 @@ fn workload_reload_changes_new_real_limits_but_keeps_admitted_snapshot() -> Resu
 }
 
 #[test]
+fn path_buffer_reload_keeps_admitted_handle_and_applies_to_new_requests() -> Result<()> {
+    let query = "ASK { <urn:a> <urn:p>* ?o }";
+    for read_only in [false, true] {
+        let mut v1 = workload(1, 1, 3000);
+        v1["max_path_buffer_rows"] = json!(2);
+        let running = start_with_workload(&workload_reload_config(), read_only, Some(&v1))?;
+        ensure!(sparql(&running, READER, "/query", query)?.status == 200);
+        let mut admitted = TcpStream::connect(running.public)?;
+        admitted.set_read_timeout(Some(Duration::from_secs(3)))?;
+        write!(
+            admitted,
+            "POST /query HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nContent-Type: application/sparql-query\r\nAccept: application/sparql-results+json\r\nContent-Length: {}\r\nExpect: 100-continue\r\n{}\r\n",
+            running.public,
+            query.len(),
+            identity(READER, 1)?,
+        )?;
+        ensure!(read_status_head(&mut admitted)? == 100);
+        let mut v2 = v1.clone();
+        v2["version"] = json!(2);
+        v2["max_path_buffer_rows"] = json!(1);
+        write_policy(
+            running
+                .workload_policy
+                .as_deref()
+                .context("workload path missing")?,
+            &v2,
+        )?;
+        ensure!(
+            request(
+                running.admin,
+                "POST",
+                "/workload/policy/reload",
+                &identity(OPERATOR, 1)?,
+                ""
+            )?
+            .status
+                == 204
+        );
+        // Admission captured v1 before the body was sent. Both the seed set
+        // and worklist entry still fit after v2 is installed.
+        admitted.write_all(query.as_bytes())?;
+        let mut response = String::new();
+        admitted.read_to_string(&mut response)?;
+        let response = decode_wire(&response)?;
+        ensure!(response.status == 200 && response.body.contains("true"));
+        let refused = sparql(&running, READER, "/query", query)?;
+        ensure!(refused.status == 503 && refused.body.is_empty());
+    }
+    Ok(())
+}
+
+#[test]
 fn aggregate_distinct_reload_keeps_admitted_handle_and_applies_to_new_requests() -> Result<()> {
     let query = "ASK { { SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { VALUES ?p { 1 2 } } } }";
     for read_only in [false, true] {
@@ -1966,6 +2018,69 @@ fn sort_buffer_limit_applies_under_finite_rdf_materialization_then_persists() ->
 const GROUP_ROWS: &str = "SELECT ?p (COUNT(*) AS ?n) WHERE { ?s <urn:p> ?p } GROUP BY ?p";
 
 const AGGREGATE_DISTINCT_ROWS: &str = "SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { ?s <urn:p> ?p }";
+
+#[test]
+fn path_buffer_limits_refuse_buffered_output_fail_streams_and_roll_back_updates() -> Result<()> {
+    let mut profile = workload(1, 1, 1000);
+    profile["max_path_buffer_rows"] = json!(3);
+    let running = start_with_workload(&config(), false, Some(&profile))?;
+    ensure!(
+        sparql(
+            &running,
+            WRITER,
+            "/update",
+            "INSERT DATA { <urn:a> <urn:p> <urn:b> }"
+        )?
+        .status
+            == 204
+    );
+    let query = "SELECT ?o WHERE { <urn:a> <urn:p>* ?o }";
+    let buffered = request(
+        running.public,
+        "POST",
+        "/query",
+        &format!(
+            "{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json; version=1.1\r\n",
+            identity(READER, 1)?
+        ),
+        query,
+    )?;
+    ensure!(
+        buffered.status == 503
+            && buffered.body.is_empty()
+            && buffered.head.contains("cache-control: no-store"),
+        "{} {}",
+        buffered.status,
+        buffered.body
+    );
+    let raw = raw_wire_bytes(running.public, format!(
+        "POST /query HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json\r\nContent-Length: {}\r\n\r\n{query}",
+        identity(READER, 1)?, query.len()
+    ).as_bytes())?;
+    ensure!(raw.starts_with("HTTP/1.1 200 "), "{raw}");
+    ensure!(
+        decode_wire(&raw).is_err() && !raw.ends_with("0\r\n\r\n") && !raw.contains("exceeded"),
+        "{raw}"
+    );
+    // Each closure alone fits (two entries); the second operation exhausts
+    // the shared request handle, including writes staged before either path.
+    let update = "INSERT DATA { <urn:marker> <urn:start> true };
+        INSERT { <urn:marker> <urn:first> ?o } WHERE { <urn:x> <urn:q>* ?o };
+        INSERT { <urn:marker> <urn:second> ?o } WHERE { <urn:x> <urn:q>* ?o };
+        INSERT DATA { <urn:marker> <urn:end> true }";
+    let refused = sparql(&running, WRITER, "/update", update)?;
+    ensure!(refused.status == 503 && refused.body.is_empty());
+    ensure!(
+        sparql(&running, READER, "/query", "ASK { <urn:marker> ?p ?o }")?
+            .body
+            .contains("false")
+    );
+    // Fresh admissions have fresh counters; ordinary writes/queries consume none.
+    for _ in 0..2 {
+        ensure!(sparql(&running, READER, "/query", "ASK { <urn:x> <urn:q>* ?o }")?.status == 200);
+    }
+    write_rollback_and_restart(running)
+}
 
 #[test]
 fn aggregate_distinct_limits_refuse_buffered_output_fail_streams_and_roll_back_updates()

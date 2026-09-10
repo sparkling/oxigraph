@@ -10,8 +10,9 @@
   deadlines now cover native Simple/finite-RDF/finite-RDFS/bounded-OWL queries and
   transactional paths. Opt-in encoded/decoded request-body, generated/emitted
   result-byte, native inner-join build-row, ORDER BY buffer-row, hash DISTINCT
-  retained-row, accumulator-group and aggregate-DISTINCT retained-key caps are
-  implemented. Fixed-pool admission counts, occupancy and queue-wait metrics
+  retained-row, accumulator-group, aggregate-DISTINCT retained-key and native
+  property-path buffer-entry caps are implemented. Fixed-pool admission counts,
+  occupancy and queue-wait metrics
   are exported through the existing operator listener. File-backed policy
   reload is atomic and operator-usable with immutable per-attempt snapshots and
   startup transport ceilings. Observed active socket errors now cancel the
@@ -762,6 +763,56 @@ commands with `--sanitizer none -- -max_total_time=60` both exit zero (29,047 an
 23,534 cases). A saved 168-second query unit made the query run last 229 seconds;
 it is a separate performance finding, not a claimed time or memory bound. This
 slice does not close full G4.2 qualification or promotion.
+
+### Native property-path buffer-entry limit (2026-09-10)
+
+`PathBufferBudget` adds an independent cumulative handle, exposed as
+`QueryResource::PathBufferRows` in phase `PathBuffer`. The unsigned optional
+`max_path_buffer_rows` CLI field creates a fresh handle per admission; zero
+is valid and omission keeps the original uninstrumented code paths.
+
+Each insertion into a native path deduplication/visited set or closure worklist
+charges before retention or retained-key cloning. A state in both collections
+counts twice. Initial worklist duplicates count separately to preserve traversal
+behavior; same-set duplicates do not recharge. Bounded collectors ignore source
+size hints. Forward, reverse, open and closed closure paths share the handle,
+as do repeated/nested paths, prepared/evaluator clones and all operations of an
+owned update. Counts depend on the executed physical plan; an eliminated
+buffer, streaming sequence or bufferless probe charges nothing.
+
+Exhaustion is sticky and fatal across ASK, EXISTS and SERVICE SILENT. The
+existing boundary returns empty 503 before headers or fails an already-started
+stream without a success terminator. Owned updates check before commit and roll
+back; caller-owned transactions still require caller discard. Reload retains
+old-attempt handles and independent admissions start fresh. Existing counters
+and their failure precedence are unchanged.
+
+This is not a term-width, source/expression-temporary, scan, hashing, allocator
+capacity, CPU, RSS, inference or foreign-SERVICE bound. It neither changes path
+semantics nor repairs the separate unoptimized slow ASK finding. Bounded
+diagnostics on that saved input returned false quickly in the four optimized
+Store modes and timed out cooperatively at five seconds in both unoptimized
+Dataset and Store controls; exact slow-operator attribution is unproved. That
+optional performance finding is not a release hold.
+
+Focused native tests cover exact/over/zero limits, all path directions and
+closure forms, duplicate set and seed-worklist behavior, clone/read probes,
+inflated size hints, independent counters, prepared sharing and fatal error
+propagation. Store tests cover all six owned update bindings, cumulative
+multi-operation rollback and callback-triggered failure before commit. CLI
+tests cover unsigned policy validation, fresh leases, real in-flight reload in
+both serve modes, buffered refusal, failed streams and persistent
+write/query/rollback/restart. These additive tests do not refresh pinned
+qualification evidence or close full G4.2 acceptance or promotion.
+
+Validation also passes full `spareval` default/all-feature and conformance
+default/no-default suites, plus the five store-budget suites in default,
+no-default and RDF-1.2 configurations. CLI default passes 58 library, 171 binary
+and 48 HTTP tests; no-default passes 58/147/42 with one existing ignored binary
+test. The identified release binary passes all 48 HTTP tests. Both required
+query/update fuzz commands exit zero: 14,200 cases in 215 seconds and 24,113 in
+61 seconds. The preserved 171-second query input consumed the query run during
+corpus initialization; no fresh query mutation phase or speedup is claimed.
 
 ### Remaining staged acceptance
 

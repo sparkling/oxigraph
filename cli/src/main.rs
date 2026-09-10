@@ -2136,6 +2136,9 @@ fn with_lease_budgets(mut evaluator: SparqlEvaluator, request: &Request<Body>) -
         if let Some(budget) = lease.aggregate_distinct_budget() {
             evaluator = evaluator.with_aggregate_distinct_budget(budget.clone());
         }
+        if let Some(budget) = lease.path_buffer_budget() {
+            evaluator = evaluator.with_path_buffer_budget(budget.clone());
+        }
     }
     evaluator
 }

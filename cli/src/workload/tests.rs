@@ -122,7 +122,8 @@ fn reload_policy(
         "request_body_limits":{"max_encoded_bytes":1000,"max_decoded_bytes":1001},
         "max_result_bytes":1002, "max_inner_join_build_rows":1003,
         "max_sort_buffer_rows":1004, "max_distinct_buffer_rows":1005,
-        "max_group_buffer_rows":1006, "max_aggregate_distinct_rows":1007, "retry_after_seconds":7,
+        "max_group_buffer_rows":1006, "max_aggregate_distinct_rows":1007,
+        "max_path_buffer_rows":1008, "retry_after_seconds":7,
         "classes":classes
     })
 }
@@ -343,6 +344,7 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
             .map(AggregateDistinctBudget::limit)
             == Some(1007)
     );
+    ensure!(active.path_buffer_budget().map(PathBufferBudget::limit) == Some(1008));
     let queued_controller = controller.clone();
     let (sender, receiver) = std::sync::mpsc::channel();
     let waiter = thread::spawn(move || {
@@ -372,6 +374,7 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
     lower["max_distinct_buffer_rows"] = json!(0);
     lower["max_group_buffer_rows"] = json!(0);
     lower["max_aggregate_distinct_rows"] = json!(0);
+    lower["max_path_buffer_rows"] = json!(0);
     lower["retry_after_seconds"] = json!(9);
     write_workload(&path, &lower)?;
     ensure!(controller.reload(&access)? == 2);
@@ -433,6 +436,7 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
             == Some(1005)
     );
     ensure!(queued.group_buffer_budget().map(GroupBufferBudget::limit) == Some(1006));
+    ensure!(queued.path_buffer_budget().map(PathBufferBudget::limit) == Some(1008));
     ensure!(
         queued
             .aggregate_distinct_budget()
@@ -455,6 +459,7 @@ fn active_and_queued_attempts_keep_v1_snapshot_across_lower_v2() -> Result<()> {
     ensure!(v2.sort_buffer_budget().map(SortBufferBudget::limit) == Some(0));
     ensure!(v2.distinct_buffer_budget().map(DistinctBufferBudget::limit) == Some(0));
     ensure!(v2.group_buffer_budget().map(GroupBufferBudget::limit) == Some(0));
+    ensure!(v2.path_buffer_budget().map(PathBufferBudget::limit) == Some(0));
     ensure!(
         v2.aggregate_distinct_budget()
             .map(AggregateDistinctBudget::limit)
@@ -1427,6 +1432,56 @@ fn group_budget_policy_parses_zero_and_coexists_with_the_other_caps() -> Result<
         }))?)
         .is_err()
     );
+    Ok(())
+}
+
+#[test]
+fn path_buffer_budget_is_fresh_per_admission_and_shared_by_lease_clones() -> Result<()> {
+    let mut policy = controller(1, 0, 1, 0)?.0.policy.clone();
+    let unconfigured = acquire(&AdmissionController::new(policy.clone())?, "default")?;
+    ensure!(unconfigured.path_buffer_budget().is_none());
+    drop(unconfigured);
+    policy.max_path_buffer_rows = Some(2);
+    let controller = AdmissionController::new(policy)?;
+    let first = acquire(&controller, "default")?;
+    let clone = first.clone();
+    let retained = first.path_buffer_budget().unwrap().clone();
+    let store = oxigraph::store::Store::new()?;
+    let oxigraph::sparql::QueryResults::Solutions(rows) = oxigraph::sparql::SparqlEvaluator::new()
+        .without_optimizations()
+        .with_path_buffer_budget(retained.clone())
+        .parse_query("SELECT ?o WHERE { <urn:a> <urn:p>* ?o }")?
+        .on_store(&store)
+        .execute()?
+    else {
+        anyhow::bail!("solutions expected");
+    };
+    ensure!(rows.collect::<Result<Vec<_>, _>>()?.len() == 1);
+    ensure!(retained.charged_rows() == 2);
+    ensure!(clone.path_buffer_budget().unwrap().charged_rows() == 2);
+    drop((first, clone));
+    let second = acquire(&controller, "default")?;
+    ensure!(second.path_buffer_budget().unwrap().charged_rows() == 0);
+    ensure!(retained.charged_rows() == 2);
+    Ok(())
+}
+
+#[test]
+fn path_buffer_budget_policy_accepts_zero_and_rejects_invalid_unsigned_limits() -> Result<()> {
+    let mut json = reload_policy(1, 1, 0, 1, 0, &[("default", 1, 0)]);
+    json["max_path_buffer_rows"] = json!(0);
+    let policy = WorkloadPolicy::from_json(&serde_json::to_vec(&json)?)?;
+    let lease = acquire(&AdmissionController::new(policy)?, "default")?;
+    ensure!(lease.path_buffer_budget().unwrap().limit() == 0);
+    ensure!(lease.aggregate_distinct_budget().unwrap().limit() == 1007);
+    ensure!(lease.group_buffer_budget().unwrap().limit() == 1006);
+    ensure!(lease.distinct_buffer_budget().unwrap().limit() == 1005);
+    ensure!(lease.sort_buffer_budget().unwrap().limit() == 1004);
+    ensure!(lease.inner_join_build_budget().unwrap().limit() == 1003);
+    for invalid in [json!(-1), json!(0.5), json!("2")] {
+        json["max_path_buffer_rows"] = invalid;
+        ensure!(WorkloadPolicy::from_json(&serde_json::to_vec(&json)?).is_err());
+    }
     Ok(())
 }
 

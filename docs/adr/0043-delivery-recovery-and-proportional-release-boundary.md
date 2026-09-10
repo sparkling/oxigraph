@@ -508,6 +508,11 @@ and focused tests, followed by parent review and deterministic release checks.
 Review removed a queue allocation and strengthened expiry, unwind, schema and
 reload tests. Both CLI feature configurations and the exact release-binary
 HTTP suite pass. This is one accepted mixed-model slice, not a model ranking.
+The subsequent aggregate-DISTINCT slice (`5a732fb6`) likewise used Terra Medium
+for implementation and Luna Low for documentation, with parent review and
+native test/release checks. A separate Sol Medium slow-query diagnostic worker
+returned partial measurements then a content-review error; only recovered,
+attributable results were retained, with no retry through another model.
 
 These are starting policies, not a measured cross-model ranking. Record the
 actual model/effort, accepted result, rework, and elapsed time when observed.

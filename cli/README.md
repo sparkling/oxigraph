@@ -503,6 +503,24 @@ HTTP returns empty 503; after headers it fails the stream. Owned updates roll
 back, while borrowed transactions remain caller-discard. Group and ordinary
 DISTINCT budgets remain independent.
 
+Optional unsigned `max_path_buffer_rows` independently caps cumulative entries
+inserted into native property-path deduplication/visited sets and closure
+worklists. Embedded callers attach `PathBufferBudget` with
+`SparqlEvaluator::with_path_buffer_budget`. Every actual collection insertion
+charges before retention or retained-key cloning: a state in both the visited
+set and worklist counts twice. Duplicate initial worklist entries count;
+duplicates within one set do not. Zero allows bufferless paths only; omission
+preserves the original code paths. Optimizer-eliminated buffers charge nothing,
+so counts are physical-plan dependent, not counts of output rows.
+
+Clones, repeated/nested paths, prepared executions and all owned-update
+operations share the sticky handle. New admissions get fresh handles; policy
+reload preserves old attempts. `PathBufferRows` / `PathBuffer` exhaustion uses
+the same empty 503, failed-stream and owned-update rollback behavior; borrowed
+transactions remain caller-discard. Term width, source/expression temporaries,
+streaming sequences/probes, scans, hashing, allocator capacity, other operator
+buffers, inference, foreign SERVICE work, CPU and RSS are not bounded by it.
+
 Optional `request_timeout_ms` (positive milliseconds) starts one absolute
 monotonic deadline **before queueing**. It is not renewed on admission, body
 read, evaluation, writer acquisition or serialization. Omitting it retains

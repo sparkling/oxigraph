@@ -53,9 +53,10 @@ pub use spareval::{
     AggregateDistinctBudget, AggregateFunctionAccumulator, BoundedJoinCostModel,
     BoundedJoinPlanning, CancellationReason, CancellationToken, CardinalityFeedback,
     CardinalityFeedbackNode, DefaultServiceHandler, DistinctBufferBudget, EstimateBasis,
-    GroupBufferBudget, InnerJoinBuildBudget, JoinPlanningReport, QueryDatasetSpecification,
-    QueryEvaluationError, QueryExplanation, QueryResource, QueryResourcePhase, QueryResults,
-    QuerySolution, QuerySolutionIter, QueryTripleIter, ServiceHandler, SortBufferBudget,
+    GroupBufferBudget, InnerJoinBuildBudget, JoinPlanningReport, PathBufferBudget,
+    QueryDatasetSpecification, QueryEvaluationError, QueryExplanation, QueryResource,
+    QueryResourcePhase, QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter,
+    ServiceHandler, SortBufferBudget,
 };
 use spareval::{QueryEvaluator, QueryableDataset};
 use spargebra::SparqlParser;
@@ -562,6 +563,14 @@ impl SparqlEvaluator {
     /// budget for each independent request.
     pub fn with_aggregate_distinct_budget(mut self, budget: AggregateDistinctBudget) -> Self {
         self.inner = self.inner.with_aggregate_distinct_budget(budget);
+        self
+    }
+
+    /// Attaches a shared cumulative native property-path buffer-entry budget.
+    /// Clones and all operations of an update share it. Create a fresh budget
+    /// for each independent request.
+    pub fn with_path_buffer_budget(mut self, budget: PathBufferBudget) -> Self {
+        self.inner = self.inner.with_path_buffer_budget(budget);
         self
     }
 

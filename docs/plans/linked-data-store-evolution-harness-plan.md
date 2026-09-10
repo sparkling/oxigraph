@@ -21,8 +21,10 @@
   active socket-error cancellation through the existing request token and
   optional per-principal active/queued data caps. An independent aggregate-
   DISTINCT retained-key cap adds cumulative shared accounting without widening
-  the older group or ordinary-DISTINCT budgets. Full workload governance
-  acceptance remains open.
+  the older group or ordinary-DISTINCT budgets. Native property-path sets and
+  closure worklists now have a separate cumulative entry cap, shared across
+  query/update execution with sticky failure and owned rollback. Full workload
+  governance acceptance remains open.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24

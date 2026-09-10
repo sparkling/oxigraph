@@ -217,7 +217,14 @@ the key does. Clones, nested/prepared execution and owned updates share the
 sticky counter. Omission preserves original behavior; existing group and
 ordinary DISTINCT counters remain independent. Expression temporaries, key/row
 width, GROUP_CONCAT contents, custom accumulator internals, CPU/allocator/RSS,
-inference and foreign SERVICE work remain outside this counter. With a workload policy,
+inference and foreign SERVICE work remain outside this counter. Independent
+`max_path_buffer_rows` caps cumulative insertions into native property-path
+deduplication/visited sets and closure worklists. Set/worklist copies count
+separately, including duplicate seed worklist entries; same-set duplicates are
+free. Clones, nested/prepared execution and owned updates share the sticky
+counter, with the same rollback and failed-stream behavior. This is an entry
+count, not a bound on term width, streaming paths, scans, CPU or RSS. With a
+workload policy,
 operator `/metrics` now exports active/queued pool gauges, terminal admission
 counts and queue-wait histograms: 60 fixed-label samples without request data.
 Admission is not execution success; lease release is not proof of rollback.

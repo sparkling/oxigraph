@@ -28,7 +28,7 @@ pub use crate::model::{QueryResults, QuerySolution, QuerySolutionIter, QueryTrip
 use crate::resources::ResourceBudgets;
 pub use crate::resources::{
     AggregateDistinctBudget, DistinctBufferBudget, GroupBufferBudget, InnerJoinBuildBudget,
-    QueryResource, QueryResourcePhase, SortBufferBudget,
+    PathBufferBudget, QueryResource, QueryResourcePhase, SortBufferBudget,
 };
 use crate::service::ServiceHandlerRegistry;
 pub use crate::service::{DefaultServiceHandler, ServiceHandler};
@@ -94,6 +94,7 @@ pub struct QueryEvaluator {
     distinct_buffer_budget: Option<DistinctBufferBudget>,
     group_buffer_budget: Option<GroupBufferBudget>,
     aggregate_distinct_budget: Option<AggregateDistinctBudget>,
+    path_buffer_budget: Option<PathBufferBudget>,
     version: SparqlVersion,
 }
 
@@ -126,6 +127,7 @@ impl QueryEvaluator {
             distinct_buffer_budget: None,
             group_buffer_budget: None,
             aggregate_distinct_budget: None,
+            path_buffer_budget: None,
             version: SparqlVersion::current(),
         }
     }
@@ -676,6 +678,21 @@ impl QueryEvaluator {
         self.aggregate_distinct_budget.as_ref()
     }
 
+    /// Attaches a shared cumulative native property-path buffer-entry budget.
+    /// Clones, nested/prepared executions and native update operations share
+    /// it. Set and worklist entries count separately; other budgets remain
+    /// independent. Use a fresh handle for an independent request.
+    #[must_use]
+    pub fn with_path_buffer_budget(mut self, budget: PathBufferBudget) -> Self {
+        self.path_buffer_budget = Some(budget);
+        self
+    }
+
+    /// Returns the explicitly attached property-path buffer budget, if any.
+    pub fn path_buffer_budget(&self) -> Option<&PathBufferBudget> {
+        self.path_buffer_budget.as_ref()
+    }
+
     fn resource_budgets(&self) -> ResourceBudgets {
         ResourceBudgets::new(
             self.inner_join_build_budget.clone(),
@@ -684,6 +701,7 @@ impl QueryEvaluator {
             self.group_buffer_budget.clone(),
             self.aggregate_distinct_budget.clone(),
         )
+        .with_path_buffer(self.path_buffer_budget.clone())
     }
 
     fn simple_evaluator<'a, D: QueryableDataset<'a>>(

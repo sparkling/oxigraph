@@ -21,6 +21,8 @@ pub enum QueryResource {
     GroupBufferRows,
     /// Unique keys retained by native aggregate `DISTINCT` accumulators.
     AggregateDistinctRows,
+    /// Entries retained in native property-path sets and worklists.
+    PathBufferRows,
 }
 
 impl fmt::Display for QueryResource {
@@ -31,6 +33,7 @@ impl fmt::Display for QueryResource {
             Self::DistinctBufferRows => f.write_str("distinct_buffer_rows"),
             Self::GroupBufferRows => f.write_str("group_buffer_rows"),
             Self::AggregateDistinctRows => f.write_str("aggregate_distinct_rows"),
+            Self::PathBufferRows => f.write_str("path_buffer_rows"),
         }
     }
 }
@@ -44,6 +47,7 @@ pub enum QueryResourcePhase {
     DistinctBuffer,
     GroupBuffer,
     AggregateDistinct,
+    PathBuffer,
 }
 
 impl fmt::Display for QueryResourcePhase {
@@ -54,6 +58,7 @@ impl fmt::Display for QueryResourcePhase {
             Self::DistinctBuffer => f.write_str("distinct_buffer"),
             Self::GroupBuffer => f.write_str("group_buffer"),
             Self::AggregateDistinct => f.write_str("aggregate_distinct"),
+            Self::PathBuffer => f.write_str("path_buffer"),
         }
     }
 }
@@ -355,9 +360,55 @@ impl AggregateDistinctBudget {
     }
 }
 
+/// An explicit, shared, cumulative native property-path buffer-entry budget.
+///
+/// Every insertion into a path-owned deduplication/visited set or closure
+/// worklist is charged before retention. A key retained in both a visited set
+/// and a worklist counts twice. Initial worklist duplicates count separately;
+/// duplicates in a set do not. Clones, repeated/nested paths and prepared
+/// executions share the counter and sticky failure. Use a fresh handle for an
+/// independent request. Omitting the handle preserves the original path.
+///
+/// This does not bound term width, source-iterator/expression temporaries,
+/// scans, streaming path sequences, hashing, allocator capacity, other
+/// operator buffers, inference, foreign SERVICE work, process memory or CPU.
+#[derive(Debug, Clone)]
+pub struct PathBufferBudget(Arc<RowBudgetState>);
+
+impl PathBufferBudget {
+    #[must_use]
+    pub fn new(limit: u64) -> Self {
+        Self(RowBudgetState::new(
+            QueryResource::PathBufferRows,
+            QueryResourcePhase::PathBuffer,
+            limit,
+        ))
+    }
+
+    #[must_use]
+    pub fn limit(&self) -> u64 {
+        self.0.limit
+    }
+
+    /// Cumulative successful entry charges, never above the limit.
+    #[must_use]
+    pub fn charged_rows(&self) -> u64 {
+        self.0.charged_rows()
+    }
+
+    /// Checks the sticky failure without consuming or resetting a charge.
+    pub fn check(&self) -> Result<(), QueryEvaluationError> {
+        self.0.check()
+    }
+
+    pub(crate) fn charge(&self) -> Result<(), QueryEvaluationError> {
+        self.0.charge()
+    }
+}
+
 /// Every optional cooperative budget one evaluator carries. Checks keep the
 /// existing precedence: inner-join, sort, distinct, group, then aggregate
-/// distinct failures.
+/// distinct failures, followed by property-path buffer failures.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ResourceBudgets {
     inner_join_build: Option<InnerJoinBuildBudget>,
@@ -365,6 +416,7 @@ pub(crate) struct ResourceBudgets {
     distinct_buffer: Option<DistinctBufferBudget>,
     group_buffer: Option<GroupBufferBudget>,
     aggregate_distinct: Option<AggregateDistinctBudget>,
+    path_buffer: Option<PathBufferBudget>,
 }
 
 impl ResourceBudgets {
@@ -381,7 +433,17 @@ impl ResourceBudgets {
             distinct_buffer,
             group_buffer,
             aggregate_distinct,
+            path_buffer: None,
         }
+    }
+
+    pub(crate) fn with_path_buffer(mut self, budget: Option<PathBufferBudget>) -> Self {
+        self.path_buffer = budget;
+        self
+    }
+
+    pub(crate) fn path_buffer(&self) -> Option<&PathBufferBudget> {
+        self.path_buffer.as_ref()
     }
 
     pub(crate) fn inner_join_build(&self) -> Option<&InnerJoinBuildBudget> {
@@ -402,6 +464,7 @@ impl ResourceBudgets {
             && self.distinct_buffer.is_none()
             && self.group_buffer.is_none()
             && self.aggregate_distinct.is_none()
+            && self.path_buffer.is_none()
     }
 
     pub(crate) fn group_buffer(&self) -> Option<&GroupBufferBudget> {
@@ -426,6 +489,9 @@ impl ResourceBudgets {
             budget.check()?;
         }
         if let Some(budget) = &self.aggregate_distinct {
+            budget.check()?;
+        }
+        if let Some(budget) = &self.path_buffer {
             budget.check()?;
         }
         Ok(())
@@ -460,6 +526,47 @@ pub(crate) fn budgeted_iter<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn path_budget_is_typed_shared_and_checked_after_existing_budgets() {
+        let path = PathBufferBudget::new(1);
+        let clone = path.clone();
+        let only = ResourceBudgets::default().with_path_buffer(Some(path.clone()));
+        assert!(!only.is_empty());
+        only.check().unwrap();
+        path.charge().unwrap();
+        assert_eq!(clone.charged_rows(), 1);
+        assert!(clone.charge().is_err());
+        assert!(matches!(
+            only.check(),
+            Err(QueryEvaluationError::ResourceLimitExceeded {
+                resource: QueryResource::PathBufferRows,
+                phase: QueryResourcePhase::PathBuffer,
+                limit: 1,
+            })
+        ));
+        let aggregate = AggregateDistinctBudget::new(0);
+        let budgets = ResourceBudgets::new(None, None, None, None, Some(aggregate.clone()))
+            .with_path_buffer(Some(path));
+        assert!(aggregate.charge().is_err());
+        assert!(matches!(
+            budgets.check(),
+            Err(QueryEvaluationError::ResourceLimitExceeded {
+                resource: QueryResource::AggregateDistinctRows,
+                ..
+            })
+        ));
+        assert_eq!(
+            QueryResource::PathBufferRows.to_string(),
+            "path_buffer_rows"
+        );
+        assert_eq!(QueryResourcePhase::PathBuffer.to_string(), "path_buffer");
+        let max = PathBufferBudget::new(u64::MAX);
+        max.0.charged.store(u64::MAX - 1, Ordering::Release);
+        max.charge().unwrap();
+        assert!(max.charge().is_err());
+        assert_eq!(max.charged_rows(), u64::MAX);
+    }
 
     #[test]
     fn exact_limit_and_shared_sticky_failure() {

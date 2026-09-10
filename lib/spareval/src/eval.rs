@@ -9,6 +9,7 @@ use crate::expression::{
     build_expression_evaluator, partial_cmp, try_build_internal_expression_evaluator,
 };
 use crate::model::{QuerySolutionIter, QueryTripleIter};
+use crate::resources::PathBufferBudget;
 use crate::service::ServiceHandlerRegistry;
 use crate::{
     AggregateFunctionAccumulator, CustomAggregateFunctionRegistry, QueryDatasetSpecification,
@@ -1308,6 +1309,7 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         let object_selector =
             TupleSelector::from_ground_term_pattern(object, encoded_variables, &self.dataset)?;
         let dataset = self.dataset.clone();
+        let path_buffer = self.budgets.path_buffer().cloned();
         Ok(Rc::new(move |from| {
             let input_subject = match subject_selector.get_pattern_value(
                 &from,
@@ -1319,6 +1321,7 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
             };
             let path_eval = PathEvaluator {
                 dataset: dataset.clone(),
+                path_buffer: path_buffer.clone(),
             };
             let input_object = match object_selector.get_pattern_value(
                 &from,
@@ -3541,6 +3544,7 @@ pub enum PropertyPath<T> {
 
 struct PathEvaluator<'a, D: QueryableDataset<'a>> {
     dataset: EvalDataset<'a, D>,
+    path_buffer: Option<PathBufferBudget>,
 }
 
 impl<'a, D: QueryableDataset<'a>> PathEvaluator<'a, D> {
@@ -3582,6 +3586,7 @@ impl<'a, D: QueryableDataset<'a>> PathEvaluator<'a, D> {
                         self.eval_from(p, start, graph_name),
                         move |e| self.eval_from(p, &e, graph_name),
                         end,
+                        self.path_buffer.clone(),
                     )?
                 }
             }
@@ -3589,6 +3594,7 @@ impl<'a, D: QueryableDataset<'a>> PathEvaluator<'a, D> {
                 self.eval_from(p, start, graph_name),
                 move |e| self.eval_from(p, &e, graph_name),
                 end,
+                self.path_buffer.clone(),
             )?,
             PropertyPath::ZeroOrOne(p) => {
                 if start == end {
@@ -3639,29 +3645,35 @@ impl<'a, D: QueryableDataset<'a>> PathEvaluator<'a, D> {
                         }),
                 )
             }
-            PropertyPath::Alternative(a, b) => Box::new(hash_deduplicate(
+            PropertyPath::Alternative(a, b) => path_hash_deduplicate(
                 self.eval_from(a, start, graph_name)
                     .chain(self.eval_from(b, start, graph_name)),
-            )),
+                self.path_buffer.clone(),
+            ),
             PropertyPath::ZeroOrMore(p) => {
                 let eval = self.clone();
                 let p = Rc::clone(p);
                 let graph_name2 = graph_name.cloned();
-                transitive_closure(Some(Ok(start.clone())), move |e| {
-                    eval.eval_from(&p, &e, graph_name2.as_ref())
-                })
+                transitive_closure(
+                    Some(Ok(start.clone())),
+                    move |e| eval.eval_from(&p, &e, graph_name2.as_ref()),
+                    self.path_buffer.clone(),
+                )
             }
             PropertyPath::OneOrMore(p) => {
                 let eval = self.clone();
                 let p = Rc::clone(p);
                 let graph_name2 = graph_name.cloned();
-                transitive_closure(self.eval_from(&p, start, graph_name), move |e| {
-                    eval.eval_from(&p, &e, graph_name2.as_ref())
-                })
+                transitive_closure(
+                    self.eval_from(&p, start, graph_name),
+                    move |e| eval.eval_from(&p, &e, graph_name2.as_ref()),
+                    self.path_buffer.clone(),
+                )
             }
-            PropertyPath::ZeroOrOne(p) => Box::new(hash_deduplicate(
+            PropertyPath::ZeroOrOne(p) => path_hash_deduplicate(
                 once(Ok(start.clone())).chain(self.eval_from(p, start, graph_name)),
-            )),
+                self.path_buffer.clone(),
+            ),
             PropertyPath::NegatedPropertySet(ps) => {
                 let ps = Rc::clone(ps);
                 Box::new(
@@ -3704,29 +3716,35 @@ impl<'a, D: QueryableDataset<'a>> PathEvaluator<'a, D> {
                         .flat_map_ok(move |middle| eval.eval_to(&a, &middle, graph_name2.as_ref())),
                 )
             }
-            PropertyPath::Alternative(a, b) => Box::new(hash_deduplicate(
+            PropertyPath::Alternative(a, b) => path_hash_deduplicate(
                 self.eval_to(a, end, graph_name)
                     .chain(self.eval_to(b, end, graph_name)),
-            )),
+                self.path_buffer.clone(),
+            ),
             PropertyPath::ZeroOrMore(p) => {
                 let eval = self.clone();
                 let p = Rc::clone(p);
                 let graph_name2 = graph_name.cloned();
-                transitive_closure(Some(Ok(end.clone())), move |e| {
-                    eval.eval_to(&p, &e, graph_name2.as_ref())
-                })
+                transitive_closure(
+                    Some(Ok(end.clone())),
+                    move |e| eval.eval_to(&p, &e, graph_name2.as_ref()),
+                    self.path_buffer.clone(),
+                )
             }
             PropertyPath::OneOrMore(p) => {
                 let eval = self.clone();
                 let p = Rc::clone(p);
                 let graph_name2 = graph_name.cloned();
-                transitive_closure(self.eval_to(&p, end, graph_name), move |e| {
-                    eval.eval_to(&p, &e, graph_name2.as_ref())
-                })
+                transitive_closure(
+                    self.eval_to(&p, end, graph_name),
+                    move |e| eval.eval_to(&p, &e, graph_name2.as_ref()),
+                    self.path_buffer.clone(),
+                )
             }
-            PropertyPath::ZeroOrOne(p) => Box::new(hash_deduplicate(
+            PropertyPath::ZeroOrOne(p) => path_hash_deduplicate(
                 once(Ok(end.clone())).chain(self.eval_to(p, end, graph_name)),
-            )),
+                self.path_buffer.clone(),
+            ),
             PropertyPath::NegatedPropertySet(ps) => {
                 let ps = Rc::clone(ps);
                 Box::new(
@@ -3779,10 +3797,11 @@ impl<'a, D: QueryableDataset<'a>> PathEvaluator<'a, D> {
                         }),
                 )
             }
-            PropertyPath::Alternative(a, b) => Box::new(hash_deduplicate(
+            PropertyPath::Alternative(a, b) => path_hash_deduplicate(
                 self.eval_open(a, graph_name)
                     .chain(self.eval_open(b, graph_name)),
-            )),
+                self.path_buffer.clone(),
+            ),
             PropertyPath::ZeroOrMore(p) => {
                 let eval = self.clone();
                 let p = Rc::clone(p);
@@ -3793,21 +3812,27 @@ impl<'a, D: QueryableDataset<'a>> PathEvaluator<'a, D> {
                         eval.eval_from(&p, &middle, graph_name2.as_ref())
                             .map(move |end| Ok((start.clone(), end?)))
                     },
+                    self.path_buffer.clone(),
                 )
             }
             PropertyPath::OneOrMore(p) => {
                 let eval = self.clone();
                 let p = Rc::clone(p);
                 let graph_name2 = graph_name.cloned();
-                transitive_closure(self.eval_open(&p, graph_name), move |(start, middle)| {
-                    eval.eval_from(&p, &middle, graph_name2.as_ref())
-                        .map(move |end| Ok((start.clone(), end?)))
-                })
+                transitive_closure(
+                    self.eval_open(&p, graph_name),
+                    move |(start, middle)| {
+                        eval.eval_from(&p, &middle, graph_name2.as_ref())
+                            .map(move |end| Ok((start.clone(), end?)))
+                    },
+                    self.path_buffer.clone(),
+                )
             }
-            PropertyPath::ZeroOrOne(p) => Box::new(hash_deduplicate(
+            PropertyPath::ZeroOrOne(p) => path_hash_deduplicate(
                 self.get_subject_or_object_identity_pairs(graph_name)
                     .chain(self.eval_open(p, graph_name)),
-            )),
+                self.path_buffer.clone(),
+            ),
             PropertyPath::NegatedPropertySet(ps) => {
                 let ps = Rc::clone(ps);
                 Box::new(
@@ -3848,6 +3873,7 @@ impl<'a, D: QueryableDataset<'a>> Clone for PathEvaluator<'a, D> {
     fn clone(&self) -> Self {
         Self {
             dataset: self.dataset.clone(),
+            path_buffer: self.path_buffer.clone(),
         }
     }
 }
@@ -4342,10 +4368,209 @@ impl<'a, D: QueryableDataset<'a>> Iterator for DescribeIterator<'a, D> {
     }
 }
 
-fn transitive_closure<'a, T: Clone + Eq + Hash + 'a, E: 'a, NI: Iterator<Item = Result<T, E>>>(
-    start: impl IntoIterator<Item = Result<T, E>>,
+fn path_hash_deduplicate<'a, T: Clone + Eq + Hash + 'a>(
+    mut iter: impl Iterator<Item = Result<T, QueryEvaluationError>> + 'a,
+    budget: Option<PathBufferBudget>,
+) -> Box<dyn Iterator<Item = Result<T, QueryEvaluationError>> + 'a> {
+    let Some(budget) = budget else {
+        return Box::new(hash_deduplicate(iter));
+    };
+    // Ignore the source's size hint, and never pull another source item after
+    // our fatal error. Set duplicates do not allocate another retained entry.
+    let mut seen = FxHashSet::default();
+    let mut finished = false;
+    Box::new(std::iter::from_fn(move || {
+        if finished {
+            return None;
+        }
+        if let Err(error) = budget.check() {
+            finished = true;
+            return Some(Err(error));
+        }
+        loop {
+            let value = match iter.next()? {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
+            if let Err(error) = budget.check() {
+                finished = true;
+                return Some(Err(error));
+            }
+            if seen.contains(&value) {
+                continue;
+            }
+            if let Err(error) = budget.charge() {
+                finished = true;
+                return Some(Err(error));
+            }
+            seen.insert(value.clone());
+            return Some(Ok(value));
+        }
+    }))
+}
+
+/// Bounded counterpart of the two eager native closure buffers. Preserve
+/// initial worklist duplicates and traversal order; each actual collection
+/// insertion has its own charge, including set/worklist copies of one state.
+struct PathClosure<T> {
+    todo: Vec<T>,
+    all: FxHashSet<T>,
+}
+
+impl<T: Clone + Eq + Hash> PathClosure<T> {
+    fn new(
+        start: impl IntoIterator<Item = Result<T, QueryEvaluationError>>,
+        budget: &PathBufferBudget,
+    ) -> Result<Self, QueryEvaluationError> {
+        budget.check()?;
+        let mut todo = Vec::new();
+        for value in start {
+            let value = value?;
+            budget.charge()?;
+            todo.push(value);
+        }
+        let mut all = FxHashSet::default();
+        for value in &todo {
+            if !all.contains(value) {
+                budget.charge()?;
+                all.insert(value.clone());
+            }
+        }
+        Ok(Self { todo, all })
+    }
+
+    fn retain(&mut self, value: T, budget: &PathBufferBudget) -> Result<(), QueryEvaluationError> {
+        budget.check()?;
+        if !self.all.contains(&value) {
+            budget.charge()?;
+            self.all.insert(value.clone());
+            budget.charge()?;
+            self.todo.push(value);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod path_buffer_tests {
+    use super::{PathBufferBudget, PathClosure, QueryEvaluationError, path_hash_deduplicate};
+    use std::cell::Cell;
+    use std::hash::{Hash, Hasher};
+    use std::rc::Rc;
+
+    struct Key(u8, Rc<Cell<usize>>);
+    impl Clone for Key {
+        fn clone(&self) -> Self {
+            self.1.set(self.1.get() + 1);
+            Self(self.0, Rc::clone(&self.1))
+        }
+    }
+    impl PartialEq for Key {
+        fn eq(&self, other: &Self) -> bool {
+            self.0 == other.0
+        }
+    }
+    impl Eq for Key {}
+    impl Hash for Key {
+        fn hash<H: Hasher>(&self, hasher: &mut H) {
+            self.0.hash(hasher);
+        }
+    }
+
+    struct Inflated<I>(I);
+    impl<T, I: Iterator<Item = T>> Iterator for Inflated<I> {
+        type Item = T;
+        fn next(&mut self) -> Option<T> {
+            self.0.next()
+        }
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            (usize::MAX, None)
+        }
+    }
+
+    #[test]
+    fn path_set_charges_unique_entries_before_clone_and_stops_after_denial() {
+        let clones = Rc::new(Cell::new(0));
+        let reads = Rc::new(Cell::new(0));
+        let values = [1, 1, 2, 3, 4].into_iter().map(|value| {
+            reads.set(reads.get() + 1);
+            Ok(Key(value, Rc::clone(&clones)))
+        });
+        let budget = PathBufferBudget::new(2);
+        let mut rows = path_hash_deduplicate(Inflated(values), Some(budget.clone()));
+        assert_eq!(rows.next().unwrap().unwrap().0, 1);
+        assert_eq!(rows.next().unwrap().unwrap().0, 2);
+        assert!(matches!(
+            rows.next(),
+            Some(Err(QueryEvaluationError::ResourceLimitExceeded { .. }))
+        ));
+        assert!(rows.next().is_none());
+        assert_eq!(reads.get(), 4);
+        assert_eq!(clones.get(), 2);
+        assert_eq!(budget.charged_rows(), 2);
+    }
+
+    #[test]
+    fn path_closure_counts_seed_duplicates_and_each_set_worklist_copy() {
+        let clones = Rc::new(Cell::new(0));
+        let budget = PathBufferBudget::new(5);
+        let seed = Inflated(
+            [1, 1]
+                .into_iter()
+                .map(|value| Ok(Key(value, Rc::clone(&clones)))),
+        );
+        let mut state = PathClosure::new(seed, &budget).unwrap();
+        assert_eq!(budget.charged_rows(), 3); // two todo entries, one visited key
+        state.retain(Key(1, Rc::clone(&clones)), &budget).unwrap();
+        assert_eq!(budget.charged_rows(), 3);
+        state.retain(Key(2, Rc::clone(&clones)), &budget).unwrap();
+        assert_eq!(budget.charged_rows(), 5);
+        assert_eq!(state.todo.len(), 3);
+        assert_eq!(state.all.len(), 2);
+        assert!(state.retain(Key(3, Rc::clone(&clones)), &budget).is_err());
+        assert_eq!(clones.get(), 2);
+        assert_eq!(budget.charged_rows(), 5);
+    }
+
+    #[test]
+    fn denied_closure_seed_set_entry_is_not_cloned() {
+        let clones = Rc::new(Cell::new(0));
+        for limit in [0, 1] {
+            let budget = PathBufferBudget::new(limit);
+            let result = PathClosure::new([Ok(Key(1, Rc::clone(&clones)))], &budget);
+            assert!(result.is_err());
+            assert_eq!(budget.charged_rows(), limit);
+            assert_eq!(clones.get(), 0);
+        }
+    }
+}
+
+fn transitive_closure<
+    'a,
+    T: Clone + Eq + Hash + 'a,
+    NI: Iterator<Item = Result<T, QueryEvaluationError>>,
+>(
+    start: impl IntoIterator<Item = Result<T, QueryEvaluationError>>,
     mut next: impl FnMut(T) -> NI,
-) -> Box<dyn Iterator<Item = Result<T, E>> + 'a> {
+    budget: Option<PathBufferBudget>,
+) -> Box<dyn Iterator<Item = Result<T, QueryEvaluationError>> + 'a> {
+    if let Some(budget) = budget {
+        let retained = (|| {
+            let mut state = PathClosure::new(start, &budget)?;
+            while let Some(value) = state.todo.pop() {
+                for value in next(value) {
+                    state.retain(value?, &budget)?;
+                }
+            }
+            budget.check()?;
+            Ok(state.all)
+        })();
+        return match retained {
+            Ok(all) => Box::new(all.into_iter().map(Ok)),
+            Err(error) => Box::new(once(Err(error))),
+        };
+    }
+    // Keep the original unbudgeted collection/insert path unchanged.
     let mut todo = match start.into_iter().collect::<Result<Vec<_>, _>>() {
         Ok(values) => values,
         Err(error) => return Box::new(once(Err(error))),
@@ -4366,11 +4591,30 @@ fn transitive_closure<'a, T: Clone + Eq + Hash + 'a, E: 'a, NI: Iterator<Item = 
     Box::new(all.into_iter().map(Ok))
 }
 
-fn look_in_transitive_closure<T: Clone + Eq + Hash, E, NI: Iterator<Item = Result<T, E>>>(
-    start: impl IntoIterator<Item = Result<T, E>>,
+fn look_in_transitive_closure<
+    T: Clone + Eq + Hash,
+    NI: Iterator<Item = Result<T, QueryEvaluationError>>,
+>(
+    start: impl IntoIterator<Item = Result<T, QueryEvaluationError>>,
     mut next: impl FnMut(T) -> NI,
     target: &T,
-) -> Result<bool, E> {
+    budget: Option<PathBufferBudget>,
+) -> Result<bool, QueryEvaluationError> {
+    if let Some(budget) = budget {
+        let mut state = PathClosure::new(start, &budget)?;
+        while let Some(value) = state.todo.pop() {
+            budget.check()?;
+            if value == *target {
+                return Ok(true);
+            }
+            for value in next(value) {
+                state.retain(value?, &budget)?;
+            }
+        }
+        budget.check()?;
+        return Ok(false);
+    }
+    // Keep the original unbudgeted collection/insert path unchanged.
     let mut todo = start.into_iter().collect::<Result<Vec<_>, _>>()?;
     let mut all = todo.iter().cloned().collect::<FxHashSet<_>>();
     while let Some(e) = todo.pop() {
