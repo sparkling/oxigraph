@@ -461,6 +461,14 @@ This binary refuses ordinary opens of the guarded copy, including after moving
 its store directory. Preparation does **not** transform or activate the store;
 see [the preparation contract and limits](docs/adr/0028-safe-storage-schema-upgrades.md#native-inactive-shadow-preparation-2026-09-10).
 
+`Store::transform_prepared_upgrade` now transforms that verified copy through the
+version-0/1 migration edges while preserving the original source and backup.
+`TransformedUpgrade::verify` checks ancestry, logical quads, named graphs,
+namespaces and exact output files. Native leases span transformation and final
+hashing; the result remains guarded and inactive. This is a bounded Rust API,
+not resume, a sealed `UpgradeReceipt`, activation or a transformation CLI.
+See [the transformation contract and limits](docs/adr/0028-safe-storage-schema-upgrades.md#native-inactive-transformation-2026-09-10).
+
 ## Upstream Oxigraph
 
 Oxigraph is both a graph database and a [RDF](https://www.w3.org/TR/rdf11-primer/) and [SPARQL](https://www.w3.org/TR/sparql11-overview/) toolkit.

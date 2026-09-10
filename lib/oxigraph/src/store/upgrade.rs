@@ -11,6 +11,10 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+#[path = "upgrade_transform.rs"]
+mod transform;
+pub use transform::{TransformedUpgrade, UpgradeTransformOptions};
+
 pub(crate) const UPGRADE_GUARD: &str = ".oxigraph-upgrade-incomplete";
 const JOURNAL: &str = "oxigraph-upgrade-preflight";
 const COMPLETE: &str = "oxigraph-upgrade-prepared.complete";
@@ -60,7 +64,14 @@ impl PreparedUpgrade {
         directory: impl AsRef<Path>,
         options: &LegacyBackupOptions,
     ) -> Result<Self, BackupError> {
-        let started = Instant::now();
+        Ok(Self::verify_leased(directory.as_ref(), options, Instant::now())?.0)
+    }
+
+    fn verify_leased(
+        directory: &Path,
+        options: &LegacyBackupOptions,
+        started: Instant,
+    ) -> Result<(Self, LegacyStoreSnapshot), BackupError> {
         check_options(options, started)?;
         let directory = stable_directory(directory.as_ref())?;
         check_workspace(&directory)?;
@@ -69,9 +80,9 @@ impl PreparedUpgrade {
             return Err(BackupError::InvalidManifest);
         }
         let store = stable_directory(&directory.join("store"))?;
-        let _copy_lease = verify_copy(&store, &receipt, options, started)?;
+        let copy_lease = verify_copy(&store, &receipt, options, started)?;
         check(&options.control, started)?;
-        Ok(Self { directory, receipt })
+        Ok((Self { directory, receipt }, copy_lease))
     }
 }
 

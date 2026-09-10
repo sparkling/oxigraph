@@ -6,7 +6,7 @@
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
-  shadow-copy preparation API implemented;
+  shadow-copy preparation and explicit inactive transformation APIs implemented;
   ordinary writable open still
   performs known version-0/1 migrations in place. Full compatibility rejection,
   schema envelopes and shadow upgrades remain open
@@ -257,6 +257,59 @@ This closes inactive physical preparation only. Explicit transformation, logical
 and topology comparison, verified resume, sealed upgrade receipts, activation,
 old/new-binary and crash qualification remain open. Known in-place migrations
 remain until their explicit replacement is ready; this ADR remains Proposed.
+
+## Native inactive transformation (2026-09-10)
+
+`Store::transform_prepared_upgrade(source, completed_legacy_backup, prepared,
+&UpgradeTransformOptions)` now applies the declared version-0 -> 1 -> 2 edges
+only to a verified prepared copy. Source, backup and copy retain their native
+leases continuously. The C++ lease adapter now returns database adoption without
+physically unlocking until the final lease owner drops, including after DB
+close and throughout final output hashing. The migration also removes old
+RDF-star keys using their original recursive encoding and removes its exact
+owned SST staging file after successful ingestion.
+
+An independent read-only projection derives expected quads, named-graph
+inventory (including version-1 empty graphs) and namespace mappings from the
+legacy input. Nested/repeated RDF-star terms become graph-local reification.
+Output index validation and canonical logical fingerprints must agree with that
+projection. Primary, secondary and graph keys receive iterative raw-key depth
+and byte checks before recursive decoding. The limit is 128 nested triple nodes;
+default retained projection limits are one million entries and 256 MiB per
+projection. These are cooperative bounds, not RSS, native-memory or disk quotas.
+Cancellation/deadline accounting spans the whole operation.
+
+Checksummed append-only edge frames are synchronized before native mutation.
+The separate complete-last `TransformedUpgrade` observation binds the original
+legacy receipt, RDF-1.2 feature bit, logical counts/fingerprint, journal and exact
+recognized native output files plus the guard. Native file counts exclude the
+guard; byte limits and output hashes include it. Verification rechecks unchanged
+source/backup ancestry and independently reads the current-format output.
+Hashes establish content identity, not authorship or upgrade authorization.
+
+The ordinary delivery workflow `5c9cc78e-d7ef-4857-a194-4c648e90e06f` used
+native Terra Medium proposals with root-assisted implementation, root-only
+application, deterministic checks, and independent Sol Medium review. Actual
+test and review failures fed repair; earlier failed evidence was retained.
+The final native lanes passed: default upgrade (16), RDF-1.2 upgrade (17),
+preparation/legacy/current backup/restore (26), safe-open (18 reported outcomes,
+including helper-process probes), no-default store (12), and RDF-1.2 store (29).
+Overlapping lanes/rechecks are not additional product behavior. Tests cover
+input preservation, lease re-adoption/release, nested/repeated triples across
+graphs, empty graphs/namespaces, over-depth primary and secondary keys,
+sidecars/file bounds, cancellation/deadline/fault boundaries, tampering and
+guard refusal. Exact workflow evidence is in Ruflo
+`programme-task-evidence/workflow-5c9cc78e-d7ef-4857-a194-4c648e90e06f`.
+
+This closes the bounded inactive transformation API slice only. Missing
+`rdf-12` support for legacy triple terms is refused before writable work, but
+currently as a storage/corruption error, not a frozen feature classifier.
+Unsupported legacy default-column metadata is refused rather than synthesized.
+Interrupted work requires fresh preparation; post-completion errors remain
+indeterminate and require verification. Resume, a sealed exact-build
+`UpgradeReceipt`, activation/cutover, older-binary/crash qualification and a
+transformation CLI remain open. Ordinary known in-place migration is retained;
+this ADR remains Proposed and full G4.3 is not complete.
 
 ## Staged implementation and evaluator gates
 

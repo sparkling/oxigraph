@@ -492,7 +492,7 @@ struct RwDbHandler {
     #[cfg(test)]
     transaction_outcome_fault_control: Mutex<TransactionOutcomeFaultControl>,
     // Drop only after rocksdb_close and all options in the Drop implementation.
-    _open_lease: Option<OpenLease>,
+    _open_lease: Option<Arc<OpenLease>>,
 }
 
 pub(super) struct OpenLease {
@@ -974,6 +974,19 @@ impl Db {
         Self::open_read_write_internal(path, column_families, db_options, None)
     }
 
+    /// Opens under an existing native lease without releasing and reacquiring it.
+    pub(super) fn open_read_write_with_lease(
+        path: &Path,
+        column_families: Vec<ColumnFamilyDefinition>,
+        db_options: DbOptions,
+        lease: Arc<OpenLease>,
+    ) -> Result<Self, StorageError> {
+        if path.canonicalize()? != lease.path {
+            return Err(StorageError::SchemaUnknown);
+        }
+        Self::open_read_write_internal(path, column_families, db_options, Some(lease))
+    }
+
     pub fn open_read_write_with_preflight(
         path: &Path,
         column_families: Vec<ColumnFamilyDefinition>,
@@ -983,14 +996,14 @@ impl Db {
         let lease = OpenLease::acquire(path)?;
         preflight(&lease.path, lease.is_fresh()?)?;
         let path = lease.path.clone();
-        Self::open_read_write_internal(&path, column_families, db_options, Some(lease))
+        Self::open_read_write_internal(&path, column_families, db_options, Some(Arc::new(lease)))
     }
 
     fn open_read_write_internal(
         path: &Path,
         column_families: Vec<ColumnFamilyDefinition>,
         db_options: DbOptions,
-        open_lease: Option<OpenLease>,
+        open_lease: Option<Arc<OpenLease>>,
     ) -> Result<Self, StorageError> {
         let c_path = path_to_cstring(path)?;
         unsafe {
@@ -2791,6 +2804,45 @@ mod tests {
             "Reader::scan_prefix returned keys outside the requested prefix:\n{}",
             mismatches.join("\n")
         );
+        Ok(())
+    }
+
+    #[test]
+    fn upgrade_native_lease_survives_database_close_and_readoption() -> Result<(), StorageError> {
+        let directory = TempDir::new()?;
+        drop(Db::open_read_write(
+            directory.path(),
+            vec![],
+            DbOptions::default(),
+        )?);
+        let lease = Arc::new(OpenLease::acquire_existing(directory.path())?);
+        {
+            let db = Db::open_read_write_with_lease(
+                directory.path(),
+                vec![],
+                DbOptions::default(),
+                Arc::clone(&lease),
+            )?;
+            let default = db.column_family("default")?;
+            db.insert(&default, b"lease", b"held")?;
+            db.flush()?;
+        }
+        assert!(OpenLease::acquire_existing(directory.path()).is_err());
+        {
+            let db = Db::open_read_write_with_lease(
+                directory.path(),
+                vec![],
+                DbOptions::default(),
+                Arc::clone(&lease),
+            )?;
+            assert_eq!(
+                db.get(&db.column_family("default")?, b"lease")?.as_deref(),
+                Some(&b"held"[..])
+            );
+        }
+        assert!(OpenLease::acquire_existing(directory.path()).is_err());
+        drop(lease);
+        OpenLease::acquire_existing(directory.path())?;
         Ok(())
     }
 }

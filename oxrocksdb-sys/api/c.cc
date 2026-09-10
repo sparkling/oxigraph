@@ -108,7 +108,12 @@ class PreflightLeaseEnv final : public ROCKSDB_NAMESPACE::EnvWrapper {
 
   Status UnlockFile(ROCKSDB_NAMESPACE::FileLock* lock) override {
     std::lock_guard<std::mutex> guard(mutex_);
-    if (lock == held_) held_ = nullptr;
+    if (lock == held_) {
+      // RocksDB closes its DB before the lease owner drops. Keep the native
+      // lock held across that close; the lease destructor releases it.
+      adopted_ = false;
+      return Status::OK();
+    }
     return target()->UnlockFile(lock);
   }
 

@@ -660,6 +660,20 @@ The checks prove only the changed product/binding behavior at this source
 state. They do not confer production readiness, performance, containment,
 provider, or broad semantic-parity claims.
 
+## Native adapter admission for product repair (2026-09-10)
+
+The ordinary workflow now admits the exact product file
+`oxrocksdb-sys/api/c.cc` for the native lease-lifetime fix needed by ADR-0028.
+This is not general admission of native headers, sibling sources or vendored
+RocksDB. Exact positive/negative path checks passed with the ordinary workflow
+contracts on Node 24 and Node 20 (29 each), with independent Sol Medium review.
+The focused adapter commit is `9cf51cfe`; its first final host readback envelope
+was malformed, so that controller run is recorded as failed despite separately
+verified tests, review and commit. It is not claimed as successful execution.
+The subsequent product workflow uses the documented host protocol, including
+actual failed-check/review feedback into native repair. No new agent platform,
+qualification surface, model transport or harness-evolution work is introduced.
+
 ## Acceptance boundary
 
 All nine recovery gates below are verified on 2026-09-07. The source handoff

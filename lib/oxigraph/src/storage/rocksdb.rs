@@ -54,7 +54,8 @@ const LATEST_STORAGE_VERSION: u64 = 2;
 /// Field drop order closes the read-only database before releasing the native lease.
 pub(crate) struct LegacyStoreSnapshot {
     _db: Db,
-    _lease: OpenLease,
+    _lease: Arc<OpenLease>,
+    _path: PathBuf,
     pub version: u64,
     pub database_id: Vec<u8>,
     pub sequence: u64,
@@ -63,7 +64,7 @@ pub(crate) struct LegacyStoreSnapshot {
 
 impl LegacyStoreSnapshot {
     pub(crate) fn open(path: &Path, options: super::StorageOptions) -> Result<Self, StorageError> {
-        let lease = OpenLease::acquire_existing(path)?;
+        let lease = Arc::new(OpenLease::acquire_existing(path)?);
         let options = DbOptions {
             max_open_files: options.max_open_files,
             fd_reserve: options.fd_reserve,
@@ -101,6 +102,7 @@ impl LegacyStoreSnapshot {
         Ok(Self {
             _db: db,
             _lease: lease,
+            _path: path.canonicalize()?,
             version,
             database_id,
             sequence,
@@ -108,6 +110,9 @@ impl LegacyStoreSnapshot {
         })
     }
 }
+
+#[path = "rocksdb_upgrade.rs"]
+mod upgrade;
 
 #[cfg(test)]
 mod format_inspection_tests;
@@ -355,6 +360,13 @@ impl RocksDbStorage {
     }
 
     fn setup(db: Db) -> Result<Self, StorageError> {
+        let this = Self::setup_unmigrated(db)?;
+        this.migrate()?;
+        this.snapshot().namespaces()?;
+        Ok(this)
+    }
+
+    fn setup_unmigrated(db: Db) -> Result<Self, StorageError> {
         let this = Self {
             default_cf: db.column_family(DEFAULT_CF)?,
             id2str_cf: db.column_family(ID2STR_CF)?,
@@ -370,14 +382,20 @@ impl RocksDbStorage {
             graphs_cf: db.column_family(GRAPHS_CF)?,
             db,
         };
-        this.migrate()?;
-        this.snapshot().namespaces()?;
         Ok(this)
     }
 
     fn migrate(&self) -> Result<(), StorageError> {
-        let mut version = self.ensure_version()?;
+        self.migrate_versioned(self.ensure_version()?, &mut |_| Ok(()))
+    }
+
+    fn migrate_versioned(
+        &self,
+        mut version: u64,
+        phase: &mut impl FnMut(u64) -> Result<(), StorageError>,
+    ) -> Result<(), StorageError> {
         if version == 0 {
+            phase(0)?;
             // We migrate to v1
             if !self.db.is_writable() {
                 return Err(StorageError::Other(
@@ -386,6 +404,7 @@ impl RocksDbStorage {
             }
             let mut graph_names = FxHashSet::default();
             for quad in self.snapshot().quads() {
+                phase(0)?;
                 let quad = quad?;
                 if !quad.graph_name.is_default_graph() {
                     graph_names.insert(quad.graph_name);
@@ -398,14 +417,19 @@ impl RocksDbStorage {
             graph_names.sort_unstable();
             let mut stt_file = self.db.new_sst_file()?;
             for k in graph_names {
+                phase(0)?;
                 stt_file.insert_empty(&k)?;
             }
+            let staging = stt_file.finish()?;
             self.db
-                .insert_stt_files(&[(self.graphs_cf.clone(), stt_file.finish()?)])?;
+                .insert_stt_files(&[(self.graphs_cf.clone(), staging.clone())])?;
+            remove_file(staging)?;
+            phase(0)?;
             version = 1;
             self.update_version(version)?;
         }
         if version == 1 {
+            phase(1)?;
             // We migrate to v2
             #[cfg(feature = "rdf-12")]
             fn to_rdf12_reified_triple(
@@ -464,6 +488,7 @@ impl RocksDbStorage {
             {
                 #[cfg_attr(not(feature = "rdf-12"), expect(unused_variables))]
                 let quad = quad?;
+                phase(1)?;
                 #[cfg(not(feature = "rdf-12"))]
                 return Err(CorruptionError::msg(
                     "You need to enable the rdf-12 Cargo feature to read a database with triple terms",
@@ -494,10 +519,11 @@ impl RocksDbStorage {
                         )?;
                     }
                     w.insert(snapshot.decode_quad(&new_quad)?);
-                    w.remove_encoded(&quad);
+                    w.remove_legacy_encoded(&quad);
                     w.commit()?;
                 }
             }
+            phase(1)?;
             version = 2;
             self.update_version(version)?;
         }
@@ -2067,6 +2093,106 @@ impl RocksDbStorageTransaction<'_> {
             self.buffer.clear();
             write_gosp_quad(&mut self.buffer, quad);
             self.transaction.remove(&self.storage.gosp_cf, &self.buffer);
+        }
+    }
+
+    #[cfg(feature = "rdf-12")]
+    fn remove_legacy_encoded(&mut self, quad: &EncodedQuad) {
+        fn term(buffer: &mut Vec<u8>, value: &EncodedTerm) {
+            if let EncodedTerm::Triple(triple) = value {
+                buffer.push(TYPE_STAR_TRIPLE);
+                term(buffer, &triple.subject);
+                term(buffer, &triple.predicate);
+                term(buffer, &triple.object);
+            } else {
+                write_term(buffer, value);
+            }
+        }
+        fn key(buffer: &mut Vec<u8>, terms: &[&EncodedTerm]) {
+            for term_value in terms {
+                term(buffer, term_value);
+            }
+        }
+        self.buffer.clear();
+        if quad.graph_name.is_default_graph() {
+            key(
+                &mut self.buffer,
+                &[&quad.subject, &quad.predicate, &quad.object],
+            );
+            self.transaction.remove(&self.storage.dspo_cf, &self.buffer);
+            self.buffer.clear();
+            key(
+                &mut self.buffer,
+                &[&quad.predicate, &quad.object, &quad.subject],
+            );
+            self.transaction.remove(&self.storage.dpos_cf, &self.buffer);
+            self.buffer.clear();
+            key(
+                &mut self.buffer,
+                &[&quad.object, &quad.subject, &quad.predicate],
+            );
+            self.transaction.remove(&self.storage.dosp_cf, &self.buffer);
+        } else {
+            for (column_family, terms) in [
+                (
+                    &self.storage.spog_cf,
+                    [
+                        &quad.subject,
+                        &quad.predicate,
+                        &quad.object,
+                        &quad.graph_name,
+                    ],
+                ),
+                (
+                    &self.storage.posg_cf,
+                    [
+                        &quad.predicate,
+                        &quad.object,
+                        &quad.subject,
+                        &quad.graph_name,
+                    ],
+                ),
+                (
+                    &self.storage.ospg_cf,
+                    [
+                        &quad.object,
+                        &quad.subject,
+                        &quad.predicate,
+                        &quad.graph_name,
+                    ],
+                ),
+                (
+                    &self.storage.gspo_cf,
+                    [
+                        &quad.graph_name,
+                        &quad.subject,
+                        &quad.predicate,
+                        &quad.object,
+                    ],
+                ),
+                (
+                    &self.storage.gpos_cf,
+                    [
+                        &quad.graph_name,
+                        &quad.predicate,
+                        &quad.object,
+                        &quad.subject,
+                    ],
+                ),
+                (
+                    &self.storage.gosp_cf,
+                    [
+                        &quad.graph_name,
+                        &quad.object,
+                        &quad.subject,
+                        &quad.predicate,
+                    ],
+                ),
+            ] {
+                self.buffer.clear();
+                key(&mut self.buffer, &terms);
+                self.transaction.remove(column_family, &self.buffer);
+            }
         }
     }
 

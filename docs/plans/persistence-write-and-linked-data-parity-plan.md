@@ -1535,11 +1535,16 @@ pass alongside existing backup/restore and feature lanes. `Store::prepare_upgrad
 now stages a verified inactive shadow copy while retaining source/backup leases;
 `PreparedUpgrade::verify` checks its exact files, metadata, journal and complete
 record. This binary refuses guarded copies through ordinary opens, including
-after moving the store directory. Preparation, cancellation/lock tests and the
-RDF-1.2 regression lane pass; these are not transformation or upgrade
-qualification. Full compatibility rejection, the envelope/classifier, resumable
-shadow transformation and its cutover/failure matrix remain outstanding.
-See [ADR-0028's preparation scope and limits](../adr/0028-safe-storage-schema-upgrades.md#native-inactive-shadow-preparation-2026-09-10).
+after moving the store directory. `Store::transform_prepared_upgrade` now
+transforms that copy through the version-0/1 migration edges, with continuous
+native leases, independent expected/output checks for quads, graph inventory and
+namespaces, and exact source/backup ancestry verification. The bounded Rust API
+and `TransformedUpgrade::verify` pass default/RDF-1.2 upgrade, backup/restore,
+safe-open and store regression lanes. The output remains guarded and inactive;
+this is not activation or upgrade qualification. Full compatibility rejection,
+the envelope/classifier, resume, a sealed `UpgradeReceipt`, transformation CLI
+and the cutover/crash/older-binary matrix remain outstanding.
+See [ADR-0028's transformation scope and limits](../adr/0028-safe-storage-schema-upgrades.md#native-inactive-transformation-2026-09-10).
 
 The programme now records the named decisions admitted by this user:
 

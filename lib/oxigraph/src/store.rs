@@ -150,7 +150,7 @@ pub use transaction_metrics::{
 };
 pub use transactional::{TransactionalDataset, WritableDataset};
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
-pub use upgrade::PreparedUpgrade;
+pub use upgrade::{PreparedUpgrade, TransformedUpgrade, UpgradeTransformOptions};
 
 /// Isolation provided between concurrent writers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

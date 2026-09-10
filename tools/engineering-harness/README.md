@@ -92,6 +92,10 @@ task and admits only ordinary Node checks. Editable paths are explicit and
 restricted by `validateWorkflow`; protected state is not in either inventory.
 Unsupported files/commands require a reviewed adapter, not a bypass.
 
+The product inventory includes the specifically reviewed native lock adapter
+`oxrocksdb-sys/api/c.cc`; it does not admit sibling headers or vendored native
+sources. This exception supports ordinary ADR-0028 implementation/repair only.
+
 Output lives in ignored `target/engineering-delivery/workflow-*/`: exact host
 requests, completed stage/check events and a final result or failure. These
 records do not implement crash-resume. A fresh controller requires fresh
