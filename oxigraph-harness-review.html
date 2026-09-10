@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Owner review of the Oxigraph ordinary delivery harness repair, commit 6c2f972a.">
+<title>Oxigraph · Harness review · 6c2f972a</title>
+<style>
+:root{--bg:#f8f8f4;--surface:#fff;--ink:#1e2935;--muted:#52606b;--line:#d8dfdf;--accent:#005e68;--ok:#126548;--warn:#825100;--soft:#fff2ce;--code:#eef1f2;--add:#e8f5eb;--remove:#fce9e7}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:5rem}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px}a:hover{text-decoration-thickness:2px}
+.wrap{width:min(1120px,calc(100% - 40px));margin:auto}.bar{border-bottom:1px solid var(--line);background:var(--surface)}.bar .wrap{display:flex;justify-content:space-between;gap:12px;padding:12px 0;font-size:.83rem}.label{font-weight:700;letter-spacing:.13em;text-transform:uppercase}.muted,small{color:var(--muted)}
+header{padding:56px 0 30px}h1{font-size:clamp(2.2rem,5.5vw,4rem);font-weight:650;letter-spacing:-.045em;line-height:1.08;margin:14px 0 18px}h2{font-size:1.7rem;letter-spacing:-.025em;line-height:1.2;margin:0 0 18px}h3{font-size:1.06rem;margin:0 0 10px}.lead{font-size:1.16rem;max-width:75ch;margin:0 0 20px}.eyebrow{color:var(--accent);font-size:.84rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase}.badge{display:inline-block;border:1px solid var(--line);border-radius:4px;padding:3px 9px;font-size:.8rem;font-weight:650}.hold{background:var(--soft);color:var(--warn);border-color:#d8bc70}.good{color:var(--ok)}
+nav{display:flex;flex-wrap:wrap;gap:9px 23px;border-block:1px solid var(--line);padding:14px 0;margin-bottom:14px;font-size:.94rem}
+section{padding:32px 0;border-bottom:1px solid var(--line)}p{max-width:78ch;margin:0 0 14px}.two{display:grid;grid-template-columns:1fr 1fr;gap:30px}.two>div+div{border-left:1px solid var(--line);padding-left:30px}.old{color:var(--muted)}ul,ol{padding-left:22px;margin:8px 0 0}li{margin:7px 0}.facts{display:grid;grid-template-columns:repeat(4,1fr);border-block:1px solid var(--line);margin-top:28px}.fact{padding:17px 20px 17px 0}.fact strong{display:block;font-size:1.65rem;letter-spacing:-.035em}.fact span{font-size:.82rem;color:var(--muted)}
+.flow{display:grid;grid-template-columns:repeat(3,1fr);list-style:none;padding:0;gap:12px;counter-reset:stage}.flow li{border-top:3px solid var(--accent);background:var(--surface);padding:15px;counter-increment:stage}.flow li:before{content:"0" counter(stage);color:var(--accent);font-size:.8rem;font-weight:700;display:block;margin-bottom:6px}.flow strong{display:block}.flow span{display:block;font-size:.9rem;color:var(--muted);margin-top:5px}
+.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:.94rem}th,td{text-align:left;border-bottom:1px solid var(--line);padding:12px 15px 12px 0;vertical-align:top}th{font-size:.79rem;text-transform:uppercase;letter-spacing:.055em;color:var(--muted)}td:first-child{font-weight:600}code{font: .88em ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;background:var(--code);padding:2px 4px;border-radius:3px}pre{overflow:auto;padding:18px;background:var(--code);font-size:.83rem;line-height:1.65;border-radius:4px}pre code{padding:0;background:none;white-space:pre;overflow-wrap:normal}.callout{border-left:4px solid var(--accent);background:var(--surface);padding:18px 22px;margin:22px 0}.callout.warn{border-color:#b07813;background:var(--soft);color:var(--ink)}.callout p:last-child{margin-bottom:0}
+.finding{display:grid;grid-template-columns:1fr 2fr;gap:26px;padding:18px 0;border-bottom:1px solid var(--line)}.finding:last-child{border-bottom:0}.finding p{margin:0;font-size:.94rem}.finding .badge{margin-bottom:7px}
+details{margin:12px 0;border:1px solid var(--line);border-radius:4px;background:var(--surface)}summary{cursor:pointer;padding:14px 16px;font-weight:600;overflow-wrap:anywhere}summary small{display:block;font-weight:400;margin-top:3px}.details-body{padding:0 16px 16px}.source summary{font: .87rem ui-monospace,SFMono-Regular,Consolas,monospace}.source summary small{font:.75rem system-ui,sans-serif}.diff{overflow:auto;max-height:620px;padding:12px 0;border-top:1px solid var(--line);font:12px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace}.diff>div{min-width:max-content;white-space:pre;padding:0 16px}.add{background:var(--add)}.remove{background:var(--remove)}.hunk{color:var(--accent);background:var(--code)}.hash{font-size:.8rem;word-break:break-all}footer{padding:30px 0 45px;font-size:.84rem;color:var(--muted)}.note{font-size:.88rem;color:var(--muted)}:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.skip{position:absolute;top:-70px;padding:8px;background:var(--surface)}.skip:focus{top:8px}
+@media(prefers-color-scheme:dark){:root{--bg:#141b21;--surface:#1b252d;--ink:#e7edef;--muted:#afbcc5;--line:#35434c;--accent:#81cbd0;--ok:#96d5b1;--warn:#edcf80;--soft:#302819;--code:#222f39;--add:#173a2c;--remove:#42252b}.hold{border-color:#806634}.callout.warn{color:var(--ink)}}
+@media(max-width:700px){.wrap{width:calc(100% - 30px)}header{padding-top:32px}.two,.finding{grid-template-columns:1fr;gap:16px}.two>div+div{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:18px}.facts{grid-template-columns:1fr 1fr}.flow{grid-template-columns:1fr}.bar .wrap{flex-direction:column;gap:3px}section{padding:25px 0}th,td{min-width:120px}.source summary{font-size:.77rem}}
+@media print{body{background:white;color:black}nav,.skip{display:none}.wrap{width:100%}section{break-inside:avoid}.diff{max-height:none}.bar{background:none}a{color:inherit}}
+</style>
+</head>
+<body>
+<a class="skip" href="#review">Skip to review</a>
+<div class="bar"><div class="wrap"><span class="label">Oxigraph / Engineering</span><span>Owner review · 10 September 2026 · Private tailnet copy</span></div></div>
+<main class="wrap" id="review">
+<header>
+<div class="eyebrow">Delivery harness repair</div>
+<h1>One build path.<br>Real execution evidence.</h1>
+<p class="lead">The ordinary delivery lane is implemented locally. It makes native build/test execution observable and gives routine workers explicit model roles. <strong>Your review is required before the main build resumes.</strong></p>
+<span class="badge hold">Awaiting owner review</span> <span class="badge">Local commit · 6c2f972a</span> <span class="badge">Not pushed</span>
+<div class="facts"><div class="fact"><strong>40 / 40</strong><span>JavaScript checks · Node 24.14.1</span></div><div class="fact"><strong>40 / 40</strong><span>Same checks · Node 20.20.2</span></div><div class="fact"><strong>16 / 16</strong><span>Existing Rust tests through the lane</span></div><div class="fact"><strong>0</strong><span>New dependencies / model calls for builds</span></div></div>
+</header>
+<nav aria-label="Review sections"><a href="#change">What changed</a><a href="#execution">Execution path</a><a href="#models">Models</a><a href="#evidence">Checks</a><a href="#findings">Review findings</a><a href="#limits">Limits</a><a href="#source">Exact diff</a><a href="#decision">Your decision</a></nav>
+<section id="change"><h2>What this fixes</h2><div class="two"><div class="old"><h3>Before</h3><p>The engineering harness existed, but its active registry covered historical G1 candidates. Current product changes used native agents and direct Cargo commands.</p><p>Ruflo task rows, installed packages and passing tests did not establish that the current build ran through a harness.</p></div><div><h3>After</h3><p>A separate ordinary-delivery entry point now runs native commands through the existing Agentic-QE process runner. Each run binds its command, completion check, source inputs, tool versions, output and actual result.</p><p>The frozen candidate runtime and semantic qualifier are unchanged. This is an additive execution lane, not another qualification programme.</p></div></div><div class="callout"><strong>Review focus</strong><p>Is the explicit native-coordinator workflow sufficient for everyday delivery? The CLI supervises commands; it deliberately does not authenticate MCP task IDs or automatically dispatch models. That distinction is part of the contract, not an omitted claim.</p></div></section>
+<section id="execution"><h2>The path every programme build uses</h2><ol class="flow"><li><strong>Recover &amp; select</strong><span>Native coordinator retrieves the live Ruflo task/control over MCP, honors the review hold and defines one observable completion check.</span></li><li><strong>Execute &amp; observe</strong><span>Explicit worker model/effort when needed. All build/test commands use the delivery entry point and its native process runner.</span></li><li><strong>Review &amp; hand off</strong><span>Inspect real results, update the live task and repository memory, then read back the exact evidence. A command pass is not task completion.</span></li></ol>
+<pre><code>node tools/engineering-harness/bin/oxigraph-delivery.mjs run \
+  --task &lt;live-ruflo-task-id&gt; \
+  --check "Store integration tests pass" \
+  -- cargo test --locked -p oxigraph --test store</code></pre>
+<p class="note">Admitted now: Cargo build/check/clippy/test plus an explicit ordinary Node test inventory. Unsupported commands need a reviewed adapter before use; the workflow does not permit a direct-shell bypass.</p>
+<p>Local output: <code>target/engineering-delivery/run-*/</code> contains the input plan, result and stdout/stderr logs. Successful status is <code>command-passed</code>. Failed exits, timeouts, output overflow, missing/zero tests and boundary source drift prevent success.</p>
+</section>
+<section id="models"><h2>Faster defaults, explicit exceptions</h2><div class="table-wrap"><table><thead><tr><th>Work</th><th>Ordinary default</th><th>Boundary</th></tr></thead><tbody>
+<tr><td>Build / test execution</td><td>Deterministic tools</td><td>No model invocation</td></tr>
+<tr><td>Bounded implementation</td><td>Terra · Medium</td><td>One scoped task and completion check</td></tr>
+<tr><td>Documentation / narrow language</td><td>Luna · Low</td><td>Compact context</td></tr>
+<tr><td>Routine independent review</td><td>Sol · Medium</td><td>Terra Medium is an explicit permitted alternative</td></tr>
+<tr><td>Named difficult problem</td><td>Sol · High</td><td>Escalate the problem, not the entire programme</td></tr>
+<tr><td>Consequential decision</td><td>Astra · High</td><td>Stronger effort only for a demonstrated need</td></tr>
+<tr><td>Max / Ultra</td><td>No default</td><td>Explicit owner or unresolved-problem selection, reason and completion check</td></tr>
+</tbody></table></div><p class="note">The owner's active conversation model is unchanged. The planner emits native Codex arguments; authorized native Claude alternatives remain governed by ADR-0043, but this planner neither launches nor probes them. No measured savings or model-quality ranking is claimed.</p></section>
+<section id="evidence"><h2>What was actually verified</h2><div class="table-wrap"><table><thead><tr><th>Check</th><th>Observed result</th><th>Meaning</th></tr></thead><tbody>
+<tr><td>Delivery + Astra policy + shared runner</td><td class="good">40 passed on Node 24<br>40 passed on Node 20</td><td>Same 40 checks in two runtime lanes, not 80 distinct features</td></tr>
+<tr><td>Native Rust execution</td><td class="good">16 oxrdf unit tests passed</td><td>Existing tests compiled and ran through the new entry point; no new product behavior claimed</td></tr>
+<tr><td>Zero-test negative control</td><td class="good">Harness rejected it</td><td>Cargo exited 0 with 0 matching tests; harness exited 1</td></tr>
+<tr><td>Source / logs</td><td class="good">Hashes checked</td><td>Final tested new source files match commit 6c2f972a; captured log hashes match observations</td></tr>
+<tr><td>Scheduled review</td><td class="good">Prompt v4 matches loaded service</td><td>Unit validation and reload passed; no manual timer firing was claimed</td></tr>
+<tr><td>Independent review</td><td class="good">No remaining blocking issue found</td><td>Terra Medium follow-up checked the four corrected boundaries below</td></tr>
+</tbody></table></div>
+<details><summary>Exact commands and observation identities</summary><div class="details-body">
+<p>Each native command below was invoked through <code>oxigraph-delivery.mjs run</code> with live task <code>task-1789029677663-f3imxt</code> and an explicit completion check.</p>
+<pre><code>node --test --test-reporter=tap \
+  tools/engineering-harness/test/delivery.test.mjs \
+  tools/engineering-harness/test/astra-routing.test.mjs \
+  tools/agentic-qe/process-runner.test.mjs
+
+cargo test --locked -p oxrdf --lib -j12
+cargo test --locked -p oxrdf --lib delivery_harness_no_matching_test -j12</code></pre>
+<p>Rust toolchain observed: Cargo 1.98.0 · rustc 1.98.0.</p>
+<table><thead><tr><th>Observation</th><th>Result JSON SHA-256</th></tr></thead><tbody>
+<tr><td>run-e2aIkE · Node 24</td><td class="hash">056bbbdf32640c4d43236750c258aa76c8e14c8d3fc373f1cf4308c6f8b8b29e</td></tr>
+<tr><td>run-ddPMn8 · Node 20</td><td class="hash">22ade3f9a18ffc3854a85c6d6c05e9df4c932cc444cabb14c227d03f8e5853a8</td></tr>
+<tr><td>run-HvSAf6 · Rust</td><td class="hash">6f10ccc2bf19e786d3a05c4fc6a42a4605549e2bc80e74af3e0fd7b7953a5c29</td></tr>
+<tr><td>run-uTuIVH · negative</td><td class="hash">580a62ef734ec6e050bfac3f39bb9c5683d153ddeaf278674cb469d65eb39e5b</td></tr>
+</tbody></table><p class="note">Full observations remain local. They are not qualification receipts. The review evidence was stored and read back through live Ruflo MCP.</p></div></details></section>
+<section id="findings"><h2>Independent findings and corrections</h2>
+<div class="finding"><div><span class="badge good">Corrected</span><h3>Unverified task attribution</h3></div><p>The run requires a completion check and binds the deterministic plan/hash. Its task ID remains explicitly coordinator-supplied and unverified locally; status is <code>command-passed</code>. The native coordinator performs the real MCP lookup and outcome readback.</p></div>
+<div class="finding"><div><span class="badge good">Corrected</span><h3>A stale or unrelated artifact</h3></div><p>Artifact selection is restricted to a compatible Cargo build, binary and profile. It requires one matching <code>compiler-artifact</code> event from that command and retains Cargo's <code>fresh</code> flag. An old file's mere presence is insufficient.</p></div>
+<div class="finding"><div><span class="badge good">Corrected</span><h3>Unrestricted high-effort overrides</h3></div><p>Max/Ultra now require <code>--selection owner</code> or <code>--selection unresolved</code>, as well as the explicit model, effort, reason and completion check. Parallel work alone does not justify either.</p></div>
+<div class="finding"><div><span class="badge good">Corrected</span><h3>Nonregular untracked inputs</h3></div><p>Source capture now rejects an unsupported nonregular untracked entry with an explicit diagnostic, rather than treating it as a regular readable source file.</p></div>
+</section>
+<section id="limits"><h2>What this does not prove</h2><div class="two"><div><h3>Deliberate boundaries</h3><ul><li>No automatic model transport or MCP synchronization inside the CLI.</li><li>No operating-system interception of commands run outside the harness.</li><li>Before/after source checks do not prove absence of transient concurrent edits.</li><li>No change to frozen G1 registries, expected results or protected runtime.</li></ul></div><div><h3>Still not claimed</h3><ul><li>No semantic qualification, G1.7 activation, promotion or application release.</li><li>No full CLI artifact rebuild during the owner hold; artifact-event binding has positive/negative contract tests.</li><li>No product milestone credited for harness/documentation work.</li><li>No lifting of the main-build pause by this page or the timer.</li></ul></div></div>
+<p class="note">Ruflo caveat: the task status read back as completed/100, but its <code>completedAt</code> and <code>result</code> fields stayed null. The source-bound command evidence was therefore stored and verified separately. Hook-generated quality/duration values were not used as measured performance or model-quality evidence.</p>
+</section>
+<section id="source"><h2>Review the exact committed change</h2><p>Eight files · 573 additions · 3 deletions. The diffs below are embedded from local commit <code>6c2f972afb25c5a26fdebe584dff296dd5c3e920</code>; no GitHub availability or external network request is required.</p>
+<p>Start with <a href="#source-6">execution and role policy</a>, then <a href="#source-7">the new tests</a>, <a href="#source-4">the usage contract</a>, and <a href="#source-2">ADR-0043 §10</a>. <a href="#source-1">ADR-0017</a> records the additive boundary.</p>
+<details id="source-0" class="source"><summary><span>README.md</span><small>Expand exact committed diff</small></summary><div class="diff" tabindex="0" aria-label="README.md diff"><div class="context">diff --git a/README.md b/README.md</div>
+<div class="context">index 4c243abb..753b6aed 100644</div>
+<div class="context">--- a/README.md</div>
+<div class="context">+++ b/README.md</div>
+<div class="hunk">@@ -510,6 +510,15 @@ hashes, while Darwin qualification additionally hashes its installed package</div>
+<div class="context"> tree before and after each reviewed run.</div>
+<div class="context"> </div>
+<div class="context"> `tools/metaharness` remains the semantic qualification adapter.</div>
+<div class="add">+For current programme development, every build/test uses the</div>
+<div class="add">+[ordinary delivery entry point](tools/engineering-harness/README.md#ordinary-delivery-use-for-every-programme-build-and-test)</div>
+<div class="add">+with a live Ruflo task and observable completion check. It runs the native</div>
+<div class="add">+tools, records actual source/command/results, and applies the explicit faster</div>
+<div class="add">+worker policy in [ADR-0043 §10](docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md#10-make-the-ordinary-delivery-harness-the-actual-execution-path).</div>
+<div class="add">+This is development tooling, not a Node dependency of the Rust application.</div>
+<div class="add">+The owner requested a review stop after this harness repair; scheduled work</div>
+<div class="add">+must not resume the main build until that hold is explicitly lifted.</div>
+<div class="add">+</div>
+<div class="context"> `tools/engineering-harness` is now the separate local-only G1-G3 application</div>
+<div class="context"> control plane accepted by ADR-0017. It consumes frozen evaluator commits,</div>
+<div class="context"> reconstructs candidates in disposable Git workspaces, runs one</div></div></details>
+<details id="source-1" class="source"><summary><span>docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md</span><small>Expand exact committed diff</small></summary><div class="diff" tabindex="0" aria-label="docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md diff"><div class="context">diff --git a/docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md b/docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md</div>
+<div class="context">index c75743e5..8636b066 100644</div>
+<div class="context">--- a/docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md</div>
+<div class="context">+++ b/docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md</div>
+<div class="hunk">@@ -10,6 +10,13 @@</div>
+<div class="context">   harness work, but they do not gate R1 or ordinary product implementation.</div>
+<div class="context">   This repository now uses one writer directly on `main`; read-only parallel</div>
+<div class="context">   reviewers do not receive feature branches or worktrees.</div>
+<div class="add">+- 2026-09-10 delivery amendment: all ordinary programme builds/tests use</div>
+<div class="add">+  `tools/engineering-harness/bin/oxigraph-delivery.mjs` and the native</div>
+<div class="add">+  coordinator's live Ruflo MCP lifecycle, as defined in ADR-0043 §10. This</div>
+<div class="add">+  additive lane reuses Agentic-QE process supervision and explicit model-role</div>
+<div class="add">+  planning. It is not the frozen HarnessKernel candidate/qualification lane;</div>
+<div class="add">+  it does not change its registry, receipts, activation gates, or definition</div>
+<div class="add">+  of done. The owner's review hold takes precedence over scheduled continuation.</div>
+<div class="context"> - Implementation status: the separate `tools/engineering-harness` runtime,</div>
+<div class="context">   native Codex/Claude workers, quality-first Router, sealed reconstruction,</div>
+<div class="context">   one-session sandbox, repair/review lifecycle, application receipts, canonical</div></div></details>
+<details id="source-2" class="source"><summary><span>docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md</span><small>Expand exact committed diff</small></summary><div class="diff" tabindex="0" aria-label="docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md diff"><div class="context">diff --git a/docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md b/docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md</div>
+<div class="context">index e53ee748..e43d2efd 100644</div>
+<div class="context">--- a/docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md</div>
+<div class="context">+++ b/docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md</div>
+<div class="hunk">@@ -535,6 +535,56 @@ training, new receipt formats, and benchmarking remain optional future work.</div>
+<div class="context"> The native Astra Ultra compatibility correction is `7d89e7bc`; historical Sol</div>
+<div class="context"> contracts and qualification evidence are not rewritten.</div>
+<div class="context"> </div>
+<div class="add">+### 10. Make the ordinary delivery harness the actual execution path</div>
+<div class="add">+</div>
+<div class="add">+The 2026-09-10 usage review found that ordinary product changes were using</div>
+<div class="add">+native agents and direct Cargo commands while the engineering registry still</div>
+<div class="add">+covered historical G1 candidates only. Ruflo task rows and an installed harness</div>
+<div class="add">+were not evidence that current builds used it. The owner requested repair</div>
+<div class="add">+before further product work, mandatory harness use for all building, and a</div>
+<div class="add">+stop for owner review when that repair is ready.</div>
+<div class="add">+</div>
+<div class="add">+Use the additive `tools/engineering-harness/bin/oxigraph-delivery.mjs` entry</div>
+<div class="add">+point for every ordinary programme build/test, including focused checks,</div>
+<div class="add">+repair iterations and release builds. It admits literal native Cargo commands</div>
+<div class="add">+and an explicit ordinary Node test inventory, reusing the existing Agentic-QE</div>
+<div class="add">+process runner, output limits and native summary checks. It adds no dependency.</div>
+<div class="add">+An unsupported command needs a reviewed adapter before execution; do not</div>
+<div class="add">+silently bypass the harness or route through the frozen qualification runner.</div>
+<div class="add">+</div>
+<div class="add">+The native coordinator retrieves live Ruflo task/control state, defines the</div>
+<div class="add">+completion check, selects explicit model/effort arguments with `route`, and</div>
+<div class="add">+dispatches real native workers when useful. It binds their actual native IDs</div>
+<div class="add">+and results through MCP. `route` itself is only a plan; neither a queued worker</div>
+<div class="add">+nor a Ruflo task/agent status establishes execution. The owner's selected</div>
+<div class="add">+conversation is unchanged. The routine defaults and explicit override rule</div>
+<div class="add">+implement §9; no provider invocation or model-usage budget is added to builds.</div>
+<div class="add">+</div>
+<div class="add">+Each `run` records literal commands, task ID, source HEAD and dirty-input</div>
+<div class="add">+hashes, tool versions, output hashes/logs, process result and observed tests in</div>
+<div class="add">+ignored `target/engineering-delivery/`. It rejects nonzero exits, timeouts,</div>
+<div class="add">+output overflow, missing/zero test summaries and before/after source drift.</div>
+<div class="add">+Build artifact selection requires a matching Cargo compiler-artifact event</div>
+<div class="add">+and binds the observed path/bytes/hash to the selected binary/profile; cached</div>
+<div class="add">+builds are not described as fresh rebuilds. The successful local status is</div>
+<div class="add">+`command-passed`, never completed delivery. These are</div>
+<div class="add">+ordinary local observations, not protected receipts, semantic qualification,</div>
+<div class="add">+host containment or publication authority. Boundary source checks do not</div>
+<div class="add">+prove absence of transient concurrent edits. The coordinator verifies live</div>
+<div class="add">+MCP task identity and writes/readbacks the actual outcome; the CLI does not</div>
+<div class="add">+pretend to synchronize MCP itself or authenticate a supplied task ID.</div>
+<div class="add">+</div>
+<div class="add">+This fixes the current execution gap without changing any frozen G1 registry,</div>
+<div class="add">+expected result, receipt validator, protected runtime or semantic qualifier.</div>
+<div class="add">+It does not activate Dream Machine, G1.7, containment successors, Router</div>
+<div class="add">+training, or another calibration programme. A shell outside the entry point</div>
+<div class="add">+remains technically possible but violates the programme's build workflow.</div>
+<div class="add">+</div>
+<div class="add">+An explicit owner-review hold must stop both normal and scheduled product</div>
+<div class="add">+continuation. Finish and present the harness repair; do not resume G4.3 or the</div>
+<div class="add">+main build until the owner approves. Keep the timer available for review but</div>
+<div class="add">+make it respect the hold, rather than silently disabling the programme.</div>
+<div class="add">+</div>
+<div class="context"> ## Implemented R1 evidence</div>
+<div class="context"> </div>
+<div class="context"> The `eb0f0cc2` source state passed:</div></div></details>
+<details id="source-3" class="source"><summary><span>docs/plans/oxigraph-six-hour-delivery-review-prompt.md</span><small>Expand exact committed diff</small></summary><div class="diff" tabindex="0" aria-label="docs/plans/oxigraph-six-hour-delivery-review-prompt.md diff"><div class="context">diff --git a/docs/plans/oxigraph-six-hour-delivery-review-prompt.md b/docs/plans/oxigraph-six-hour-delivery-review-prompt.md</div>
+<div class="context">index ba871307..ee27f351 100644</div>
+<div class="context">--- a/docs/plans/oxigraph-six-hour-delivery-review-prompt.md</div>
+<div class="context">+++ b/docs/plans/oxigraph-six-hour-delivery-review-prompt.md</div>
+<div class="hunk">@@ -1,4 +1,4 @@</div>
+<div class="remove">-SIX-HOUR OXIGRAPH DELIVERY REVIEW (v3)</div>
+<div class="add">+SIX-HOUR OXIGRAPH DELIVERY REVIEW (v4)</div>
+<div class="context"> </div>
+<div class="context"> Goal: deliver the agreed Oxigraph programme through runnable, tested, obtainable product milestones. R1 under ADR-0043 is the first recovery milestone, not the end of the programme. A milestone requires its promised behavior, affected tests, reproducible source/dependencies, an identified usable artifact, and authorized handoff. A reported release hold is not completion.</div>
+<div class="context"> </div>
+<div class="hunk">@@ -10,8 +10,8 @@ Goal: deliver the agreed Oxigraph programme through runnable, tested, obtainable</div>
+<div class="context"> </div>
+<div class="context"> 4. Diagnose the obstruction and implement the next delivery step now. Classify failures as product behavior, compiler/build, dependency/publication, optional evaluator, or unavailable host. Prioritise an unobtainable checkout, failing consumer build, or failed write/query/rollback/restart journey. An optional evaluator rejecting a changed historical subject is not an application build failure. If progress stalled, name the cause and stop the non-gating activity responsible. Choose the single highest-value remaining step, define its observable completion check, implement it, run proportional native tests, and commit the verified slice on main. If progress was good, continue the next step anyway. Keep G1.7, containment successors, harness evolution, and router training off the product path unless separately activated for a named requirement.</div>
+<div class="context"> </div>
+<div class="remove">-5. Use the adopted model roles in ADR-0043 and respect the user's selected model. Terra/Sonnet suit bounded implementation; Sol/Opus suit difficult implementation; Astra suits consequential judgment; Max suits a hard single problem; Ultra suits useful independent subtasks; Luna/Haiku suit narrow language work. Use deterministic tools where sufficient. Keep delegated context compact, one Git writer, and independent reviewers focused on concrete questions. Escalate for a demonstrated need, never merely to repeat the same review.</div>
+<div class="add">+5. Use the actual delivery harness for every programme build/test, including repairs: node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task TASK_ID --check OBSERVABLE_CHECK -- COMMAND ARGS. Follow its README lifecycle: live MCP task/control lookup, explicit completion check, route plan, real native execution, inspected result, MCP update and exact readback. An unregistered command needs a reviewed adapter, not a bypass. Build/test execution is deterministic, without model calls. Respect the owner's selected conversation model. Choose explicit worker model/effort: Terra Medium for bounded implementation, Luna Low for narrow language work, Sol Medium for routine review, Sol High for difficult implementation, Astra High for consequential judgment; authorized native Claude alternatives follow ADR-0043. Max/Ultra require an explicit bounded reason and completion check, never automatic inheritance or parallelism alone. Keep delegated context compact and one Git writer. A route plan, task row or queued agent is not execution evidence.</div>
+<div class="context"> </div>
+<div class="context"> 6. Persist concrete evidence and continue the programme. Update the live task and a concise repository-memory review with interval, commits, exact tests, artifact identity, gates closed, blocker, correction, and next action; read back the exact value. Report remaining gates instead of an unsupported calendar ETA. Apply existing publication authority without repeatedly asking; resolve any exact authority gap after independent authorized preparation. Once a milestone is actually delivered, activate the next approved product slice and keep this timer running. Disable it only when the agreed programme is complete or the owner asks to stop.</div>
+<div class="context"> </div>
+<div class="remove">-Always use Ruflo through MCP. Obey AGENTS.md: main only, one writer, immutable evidence, and exact publication boundaries. Do not run G1.7 or provider-backed qualification without exact authority. Never use OpenRouter or model-provider API keys. If a required native subscription or requested model is unavailable, pause and report the exact client, model, and error; do not substitute another model or change concurrency to conceal it.</div>
+<div class="add">+Before continuing any product work, honor explicit owner-review holds in the latest user instruction and live programme control. The 2026-09-10 owner request is to finish the harness repair, then stop for review before the main build; a timer firing does not lift that hold. Always use Ruflo through MCP. Obey AGENTS.md: main only, one writer, immutable evidence, and exact publication boundaries. Do not run G1.7 or provider-backed qualification without exact authority. Never use OpenRouter or model-provider API keys. If a required native subscription or requested model is unavailable, pause and report the exact client, model, and error; do not substitute another model or change concurrency to conceal it.</div></div></details>
+<details id="source-4" class="source"><summary><span>tools/engineering-harness/README.md</span><small>Expand exact committed diff</small></summary><div class="diff" tabindex="0" aria-label="tools/engineering-harness/README.md diff"><div class="context">diff --git a/tools/engineering-harness/README.md b/tools/engineering-harness/README.md</div>
+<div class="context">index cb697fb8..68cac586 100644</div>
+<div class="context">--- a/tools/engineering-harness/README.md</div>
+<div class="context">+++ b/tools/engineering-harness/README.md</div>
+<div class="hunk">@@ -8,6 +8,74 @@ The package requests current upstream `latest` dist-tags. Its committed npm</div>
+<div class="context"> lock binds exact registry tarballs and SHA-512 integrity, and `.npmrc` disables</div>
+<div class="context"> lifecycle scripts. Runtime publication and OpenRouter transport are forbidden.</div>
+<div class="context"> </div>
+<div class="add">+## Ordinary delivery: use for every programme build and test</div>
+<div class="add">+</div>
+<div class="add">+The mandatory everyday entry point is</div>
+<div class="add">+`node tools/engineering-harness/bin/oxigraph-delivery.mjs`, run from the</div>
+<div class="add">+canonical repository root. It uses the existing Agentic-QE native process</div>
+<div class="add">+runner; it does not start the frozen G1 candidate runner or semantic qualifier.</div>
+<div class="add">+No new dependency or product runtime requirement is introduced.</div>
+<div class="add">+</div>
+<div class="add">+```sh</div>
+<div class="add">+node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task &lt;live-ruflo-task-id&gt; --check &quot;Store integration tests pass&quot; -- cargo test --locked -p oxigraph --test store</div>
+<div class="add">+node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task &lt;live-ruflo-task-id&gt; --check &quot;CLI builds and Cargo identifies its artifact&quot; --artifact target/release/oxigraph -- cargo build --locked --release -p oxigraph-cli</div>
+<div class="add">+node tools/engineering-harness/bin/oxigraph-delivery.mjs route --task &lt;live-ruflo-task-id&gt; --role implement --check &quot;observable native completion check&quot;</div>
+<div class="add">+```</div>
+<div class="add">+</div>
+<div class="add">+The native coordinator owns this small lifecycle:</div>
+<div class="add">+</div>
+<div class="add">+1. Retrieve the live task and programme control through structured Ruflo MCP;</div>
+<div class="add">+   honor an owner-review hold before any product work. Define one completion check.</div>
+<div class="add">+2. Use `route` for each model-assisted subtask. It emits explicit native Codex</div>
+<div class="add">+   arguments, not a dispatched worker. Use the native agent tools to execute;</div>
+<div class="add">+   link the actual native ID/model/effort to Ruflo through MCP. Keep one writer.</div>
+<div class="add">+3. Run **all** programme build/test commands through `run`, including repairs</div>
+<div class="add">+   and reviewer-requested checks. Cargo build/check/clippy/test and the explicit</div>
+<div class="add">+   ordinary Node test inventory are admitted. Unregistered commands require a</div>
+<div class="add">+   small reviewed adapter and tests before use, not a direct-shell bypass.</div>
+<div class="add">+4. Inspect `target/engineering-delivery/run-*/result.json` and logs. It records</div>
+<div class="add">+   the task ID, completion-check plan/hash, literal argv, Node/native versions,</div>
+<div class="add">+   HEAD, tracked diff and</div>
+<div class="add">+   untracked-file hashes, before/after source identity, actual exit and test</div>
+<div class="add">+   summaries. A selected build artifact requires a matching Cargo</div>
+<div class="add">+   `compiler-artifact` event and records exact bytes, SHA-256 and Cargo's</div>
+<div class="add">+   cached/fresh indicator.</div>
+<div class="add">+   Nonzero exits, timeouts, output overflow, source drift, and missing/zero</div>
+<div class="add">+   test observations fail; a cached Cargo build is not called a fresh rebuild.</div>
+<div class="add">+5. Review the actual result, update the live Ruflo task and concise evidence</div>
+<div class="add">+   memory, and read back that exact value. Only then hand off the verified slice.</div>
+<div class="add">+</div>
+<div class="add">+The CLI deliberately has no Ruflo CLI/database fallback and no model transport.</div>
+<div class="add">+Its successful status is `command-passed`, never completed delivery. Task</div>
+<div class="add">+attribution stays explicitly coordinator-supplied and unverified in the local</div>
+<div class="add">+observation; the MCP readback is separate, performed by the native coordinator.</div>
+<div class="add">+Its task ID is coordinator-supplied, **not independently MCP-verified**; the</div>
+<div class="add">+coordinator must perform step 1 and step 5. An observation is not a signed</div>
+<div class="add">+qualification receipt, completed product task, or publication authorization.</div>
+<div class="add">+Source stability detects changes at the boundaries; it is not a filesystem</div>
+<div class="add">+sandbox or hostile-concurrency guarantee. Shell access is not globally</div>
+<div class="add">+intercepted: this is the required programme execution path, not an OS-wide ban.</div>
+<div class="add">+Legacy build instructions remain recipes to pass through this entry point.</div>
+<div class="add">+</div>
+<div class="add">+Model roles are executable policy in `src/delivery.mjs`: no model for build/test;</div>
+<div class="add">+Terra/Medium for bounded implementation, Luna/Low for documentation, Sol/Medium</div>
+<div class="add">+for routine review, Sol/High for a named difficult problem, and Astra/High for</div>
+<div class="add">+consequential decisions. An explicit supported model/effort override needs its</div>
+<div class="add">+reason and completion check; Max/Ultra also require `--selection owner` or</div>
+<div class="add">+`--selection unresolved` for that bounded exception. This does not switch the</div>
+<div class="add">+owner's active model.</div>
+<div class="add">+Native Claude alternatives remain allowed by ADR-0043 when specifically</div>
+<div class="add">+selected and available; this Codex dispatch planner does not claim to launch</div>
+<div class="add">+or probe them. Ruflo's Claude-only model-outcome enum cannot truthfully record</div>
+<div class="add">+Codex outcomes: store the actual native model and result in repository memory,</div>
+<div class="add">+without training under a false model name or claiming measured savings.</div>
+<div class="add">+</div>
+<div class="add">+Focused self-checks (use the supported Node executable, then Node 20):</div>
+<div class="add">+</div>
+<div class="add">+```sh</div>
+<div class="add">+node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task &lt;live-ruflo-task-id&gt; --check &quot;Delivery harness contracts pass&quot; -- node --test --test-reporter=tap tools/engineering-harness/test/delivery.test.mjs</div>
+<div class="add">+```</div>
+<div class="add">+</div>
+<div class="context"> ## GPT-6 Astra routing</div>
+<div class="context"> </div>
+<div class="context"> Schema-v2 contracts may select native Codex model `gpt-6-astra` with exactly</div></div></details>
+<details id="source-5" class="source"><summary><span>tools/engineering-harness/bin/oxigraph-delivery.mjs</span><small>Expand exact committed diff</small></summary><div class="diff" tabindex="0" aria-label="tools/engineering-harness/bin/oxigraph-delivery.mjs diff"><div class="context">diff --git a/tools/engineering-harness/bin/oxigraph-delivery.mjs b/tools/engineering-harness/bin/oxigraph-delivery.mjs</div>
+<div class="context">new file mode 100644</div>
+<div class="context">index 00000000..8f340483</div>
+<div class="context">--- /dev/null</div>
+<div class="context">+++ b/tools/engineering-harness/bin/oxigraph-delivery.mjs</div>
+<div class="hunk">@@ -0,0 +1,45 @@</div>
+<div class="add">+#!/usr/bin/env node</div>
+<div class="add">+import { routeDelivery, runDelivery } from &quot;../src/delivery.mjs&quot;;</div>
+<div class="add">+</div>
+<div class="add">+const help = `Ordinary Oxigraph delivery (ADR-0043)</div>
+<div class="add">+  run --task ID --check &quot;observable completion&quot; [--timeout-ms N] [--artifact target/release/oxigraph] -- cargo test --locked -p oxigraph --test store</div>
+<div class="add">+  run --task ID --check &quot;harness contracts pass&quot; -- node --test --test-reporter=tap tools/engineering-harness/test/delivery.test.mjs</div>
+<div class="add">+  route --task ID --role implement --check &quot;observable completion&quot; [--model MODEL --effort EFFORT --reason REASON --selection owner|unresolved]</div>
+<div class="add">+Use live Ruflo MCP before dispatch and after execution. Route is a plan, not a model invocation.</div>
+<div class="add">+No shell, publication, provider execution, qualification, or G1.7 commands are admitted.</div>
+<div class="add">+`;</div>
+<div class="add">+try {</div>
+<div class="add">+  const [action, ...args] = process.argv.slice(2);</div>
+<div class="add">+  if (!action || action === &quot;--help&quot; || action === &quot;help&quot;) {</div>
+<div class="add">+    process.stdout.write(help);</div>
+<div class="add">+  } else {</div>
+<div class="add">+    const split = args.indexOf(&quot;--&quot;);</div>
+<div class="add">+    const options = split &lt; 0 ? args : args.slice(0, split);</div>
+<div class="add">+    const values = {};</div>
+<div class="add">+    const allowed = action === &quot;run&quot; ? [&quot;--task&quot;, &quot;--check&quot;, &quot;--timeout-ms&quot;, &quot;--artifact&quot;] :</div>
+<div class="add">+      action === &quot;route&quot; ? [&quot;--task&quot;, &quot;--role&quot;, &quot;--check&quot;, &quot;--model&quot;, &quot;--effort&quot;, &quot;--reason&quot;, &quot;--selection&quot;] : [];</div>
+<div class="add">+    for (let i = 0; i &lt; options.length; i += 2) {</div>
+<div class="add">+      if (!allowed.includes(options[i]) || Object.hasOwn(values, options[i]) || !options[i + 1]) {</div>
+<div class="add">+        throw new Error(&quot;Unknown, duplicate or incomplete delivery option&quot;);</div>
+<div class="add">+      }</div>
+<div class="add">+      values[options[i]] = options[i + 1];</div>
+<div class="add">+    }</div>
+<div class="add">+    if (action === &quot;run&quot; &amp;&amp; split &gt;= 0) {</div>
+<div class="add">+      const run = await runDelivery({</div>
+<div class="add">+        taskId: values[&quot;--task&quot;], completionCheck: values[&quot;--check&quot;], argv: args.slice(split + 1),</div>
+<div class="add">+        timeoutMs: values[&quot;--timeout-ms&quot;] === undefined ? undefined : Number(values[&quot;--timeout-ms&quot;]),</div>
+<div class="add">+        artifact: values[&quot;--artifact&quot;],</div>
+<div class="add">+      });</div>
+<div class="add">+      process.stdout.write(JSON.stringify({ status: run.status, directory: run.directory, taskId: run.taskId,</div>
+<div class="add">+        sourceStable: run.sourceStable, artifact: run.artifact, failure: run.failure }) + &quot;\n&quot;);</div>
+<div class="add">+      process.exitCode = run.status === &quot;command-passed&quot; ? 0 : 1;</div>
+<div class="add">+    } else if (action === &quot;route&quot; &amp;&amp; split &lt; 0) {</div>
+<div class="add">+      process.stdout.write(JSON.stringify(routeDelivery({ taskId: values[&quot;--task&quot;], role: values[&quot;--role&quot;],</div>
+<div class="add">+        completionCheck: values[&quot;--check&quot;], model: values[&quot;--model&quot;], effort: values[&quot;--effort&quot;],</div>
+<div class="add">+        reason: values[&quot;--reason&quot;], selection: values[&quot;--selection&quot;] }), null, 2) + &quot;\n&quot;);</div>
+<div class="add">+    } else { throw new Error(&quot;Expected run with literal argv or route with role and completion check&quot;); }</div>
+<div class="add">+  }</div>
+<div class="add">+} catch (error) {</div>
+<div class="add">+  process.stderr.write(`${error.message}\n`);</div>
+<div class="add">+  process.exitCode = 2;</div>
+<div class="add">+}</div></div></details>
+<details id="source-6" class="source"><summary><span>tools/engineering-harness/src/delivery.mjs</span><small>Expand exact committed diff</small></summary><div class="diff" tabindex="0" aria-label="tools/engineering-harness/src/delivery.mjs diff"><div class="context">diff --git a/tools/engineering-harness/src/delivery.mjs b/tools/engineering-harness/src/delivery.mjs</div>
+<div class="context">new file mode 100644</div>
+<div class="context">index 00000000..4f80c9c1</div>
+<div class="context">--- /dev/null</div>
+<div class="context">+++ b/tools/engineering-harness/src/delivery.mjs</div>
+<div class="hunk">@@ -0,0 +1,264 @@</div>
+<div class="add">+// Ordinary delivery, not the frozen candidate/qualification runtime (ADR-0043).</div>
+<div class="add">+import { createHash } from &quot;node:crypto&quot;;</div>
+<div class="add">+import { execFileSync } from &quot;node:child_process&quot;;</div>
+<div class="add">+import {</div>
+<div class="add">+  lstatSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, writeFileSync,</div>
+<div class="add">+} from &quot;node:fs&quot;;</div>
+<div class="add">+import { dirname, join, resolve } from &quot;node:path&quot;;</div>
+<div class="add">+import { fileURLToPath } from &quot;node:url&quot;;</div>
+<div class="add">+import {</div>
+<div class="add">+  applyCommandSafeguards, commandPassed, execute,</div>
+<div class="add">+} from &quot;../../agentic-qe/process-runner.mjs&quot;;</div>
+<div class="add">+import { ensureDirectoryInsideRepository } from &quot;../../agentic-qe/path-policy.mjs&quot;;</div>
+<div class="add">+import { scrubbedChildEnvironment } from &quot;../../child-environment.mjs&quot;;</div>
+<div class="add">+</div>
+<div class="add">+export const repository = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), &quot;../../..&quot;));</div>
+<div class="add">+const sha256 = (bytes) =&gt; createHash(&quot;sha256&quot;).update(bytes).digest(&quot;hex&quot;);</div>
+<div class="add">+const roles = Object.freeze({</div>
+<div class="add">+  build: [null, null],</div>
+<div class="add">+  test: [null, null],</div>
+<div class="add">+  implement: [&quot;gpt-5.6-terra&quot;, &quot;medium&quot;],</div>
+<div class="add">+  documentation: [&quot;gpt-5.6-luna&quot;, &quot;low&quot;],</div>
+<div class="add">+  review: [&quot;gpt-5.6-sol&quot;, &quot;medium&quot;],</div>
+<div class="add">+  difficult: [&quot;gpt-5.6-sol&quot;, &quot;high&quot;],</div>
+<div class="add">+  decision: [&quot;gpt-6-astra&quot;, &quot;high&quot;],</div>
+<div class="add">+});</div>
+<div class="add">+const efforts = {</div>
+<div class="add">+  &quot;gpt-5.6-luna&quot;: [&quot;low&quot;, &quot;medium&quot;, &quot;high&quot;, &quot;xhigh&quot;, &quot;max&quot;],</div>
+<div class="add">+  &quot;gpt-5.6-terra&quot;: [&quot;low&quot;, &quot;medium&quot;, &quot;high&quot;, &quot;xhigh&quot;, &quot;max&quot;, &quot;ultra&quot;],</div>
+<div class="add">+  &quot;gpt-5.6-sol&quot;: [&quot;low&quot;, &quot;medium&quot;, &quot;high&quot;, &quot;xhigh&quot;, &quot;max&quot;, &quot;ultra&quot;],</div>
+<div class="add">+  &quot;gpt-6-astra&quot;: [&quot;low&quot;, &quot;medium&quot;, &quot;high&quot;, &quot;xhigh&quot;, &quot;max&quot;, &quot;ultra&quot;],</div>
+<div class="add">+};</div>
+<div class="add">+</div>
+<div class="add">+export function routeDelivery({ role, taskId, completionCheck, model, effort, reason, selection }) {</div>
+<div class="add">+  if (!Object.hasOwn(roles, role)) throw new Error(&quot;Unknown delivery role&quot;);</div>
+<div class="add">+  if (!/^task-[a-zA-Z0-9-]+$/.test(taskId ?? &quot;&quot;) || !completionCheck?.trim()) {</div>
+<div class="add">+    throw new Error(&quot;A live task ID and observable completion check are required&quot;);</div>
+<div class="add">+  }</div>
+<div class="add">+  const [defaultModel, defaultEffort] = roles[role];</div>
+<div class="add">+  if (model !== undefined || effort !== undefined) {</div>
+<div class="add">+    if (!defaultModel || !reason?.trim() || !efforts[model]?.includes(effort)) {</div>
+<div class="add">+      throw new Error(&quot;A model override needs an explicit supported model, effort and reason&quot;);</div>
+<div class="add">+    }</div>
+<div class="add">+  }</div>
+<div class="add">+  const selectedModel = model ?? defaultModel;</div>
+<div class="add">+  const selectedEffort = effort ?? defaultEffort;</div>
+<div class="add">+  if ([&quot;max&quot;, &quot;ultra&quot;].includes(selectedEffort) &amp;&amp; ![&quot;owner&quot;, &quot;unresolved&quot;].includes(selection)) {</div>
+<div class="add">+    throw new Error(&quot;Max/Ultra need selection=owner or selection=unresolved, plus reason and completion check&quot;);</div>
+<div class="add">+  }</div>
+<div class="add">+  return {</div>
+<div class="add">+    policy: &quot;adr-0043-ordinary-delivery-v1&quot;, role, taskId, completionCheck,</div>
+<div class="add">+    model: selectedModel, effort: selectedEffort, reason: reason ?? &quot;role default&quot;,</div>
+<div class="add">+    selection: selection ?? &quot;role-policy&quot;,</div>
+<div class="add">+    status: &quot;planned-not-dispatched&quot;, ownerConversationChanged: false,</div>
+<div class="add">+    nativeDispatch: selectedModel === null ? null : {</div>
+<div class="add">+      model: selectedModel, reasoning_effort: selectedEffort, fork_turns: &quot;none&quot;,</div>
+<div class="add">+    },</div>
+<div class="add">+    instructions: &quot;One writer on canonical main. Use the delivery entry point for every build/test. Native subscription only; no model fallback. Return exact findings and commands; a tracked agent is not proof of execution.&quot;,</div>
+<div class="add">+  };</div>
+<div class="add">+}</div>
+<div class="add">+</div>
+<div class="add">+const cargoFlags = new Set([</div>
+<div class="add">+  &quot;--locked&quot;, &quot;--offline&quot;, &quot;--release&quot;, &quot;--lib&quot;, &quot;--bins&quot;, &quot;--tests&quot;,</div>
+<div class="add">+  &quot;--all-targets&quot;, &quot;--workspace&quot;, &quot;--all-features&quot;, &quot;--no-default-features&quot;,</div>
+<div class="add">+  &quot;--quiet&quot;, &quot;-q&quot;,</div>
+<div class="add">+]);</div>
+<div class="add">+const cargoValues = new Set([</div>
+<div class="add">+  &quot;-p&quot;, &quot;--package&quot;, &quot;--features&quot;, &quot;--test&quot;, &quot;--bin&quot;, &quot;--example&quot;, &quot;--bench&quot;,</div>
+<div class="add">+  &quot;--target&quot;, &quot;-j&quot;, &quot;--jobs&quot;,</div>
+<div class="add">+]);</div>
+<div class="add">+const nodeTests = new Set([</div>
+<div class="add">+  &quot;tools/engineering-harness/test/delivery.test.mjs&quot;,</div>
+<div class="add">+  &quot;tools/engineering-harness/test/astra-routing.test.mjs&quot;,</div>
+<div class="add">+  &quot;tools/engineering-harness/test/cli.test.mjs&quot;,</div>
+<div class="add">+  &quot;tools/engineering-harness/test/task-profile.test.mjs&quot;,</div>
+<div class="add">+  &quot;tools/agentic-qe/process-runner.test.mjs&quot;,</div>
+<div class="add">+]);</div>
+<div class="add">+</div>
+<div class="add">+// Extend this ordinary command surface with reviewed tests, never with an</div>
+<div class="add">+// arbitrary shell/Node/npm escape hatch. Existing G1 registries stay untouched.</div>
+<div class="add">+export function admitCommand(argv) {</div>
+<div class="add">+  if (!Array.isArray(argv) || argv.length &lt; 2 || argv.some((s) =&gt;</div>
+<div class="add">+    typeof s !== &quot;string&quot; || !s.length || /[\x00-\x1f\x7f]/u.test(s))) {</div>
+<div class="add">+    throw new Error(&quot;Expected a literal executable and argument array&quot;);</div>
+<div class="add">+  }</div>
+<div class="add">+  const [program, command, ...args] = argv;</div>
+<div class="add">+  if (program === &quot;cargo&quot; &amp;&amp; [&quot;test&quot;, &quot;build&quot;, &quot;check&quot;, &quot;clippy&quot;].includes(command)) {</div>
+<div class="add">+    if (!args.includes(&quot;--locked&quot;)) throw new Error(&quot;Cargo requires --locked&quot;);</div>
+<div class="add">+    let filterSeen = false;</div>
+<div class="add">+    for (let i = 0; i &lt; args.length; i++) {</div>
+<div class="add">+      const arg = args[i];</div>
+<div class="add">+      if (cargoFlags.has(arg) || /^-j[1-9][0-9]*$/.test(arg)) continue;</div>
+<div class="add">+      if (cargoValues.has(arg)) {</div>
+<div class="add">+        if (!/^[a-zA-Z0-9_.,:/+-]+$/.test(args[++i] ?? &quot;&quot;) || args[i].startsWith(&quot;-&quot;)) {</div>
+<div class="add">+          throw new Error(`Invalid value for ${arg}`);</div>
+<div class="add">+        }</div>
+<div class="add">+        continue;</div>
+<div class="add">+      }</div>
+<div class="add">+      if (command === &quot;test&quot; &amp;&amp; arg === &quot;--&quot;) {</div>
+<div class="add">+        if (args.slice(i + 1).some((value) =&gt;</div>
+<div class="add">+          ![&quot;--exact&quot;, &quot;--nocapture&quot;, &quot;--show-output&quot;].includes(value) &amp;&amp;</div>
+<div class="add">+          !/^--test-threads=[1-9][0-9]*$/.test(value))) {</div>
+<div class="add">+          throw new Error(&quot;Unsupported libtest argument&quot;);</div>
+<div class="add">+        }</div>
+<div class="add">+        break;</div>
+<div class="add">+      }</div>
+<div class="add">+      if (command === &quot;test&quot; &amp;&amp; !filterSeen &amp;&amp; /^[a-zA-Z0-9_:.-]+$/.test(arg) &amp;&amp; !arg.startsWith(&quot;-&quot;)) {</div>
+<div class="add">+        filterSeen = true;</div>
+<div class="add">+        continue;</div>
+<div class="add">+      }</div>
+<div class="add">+      throw new Error(`Unsupported Cargo delivery argument: ${arg}`);</div>
+<div class="add">+    }</div>
+<div class="add">+    return { program, args: [command, ...args], kind: command === &quot;test&quot; ? &quot;cargo-test&quot; : command };</div>
+<div class="add">+  }</div>
+<div class="add">+  if (program === &quot;node&quot; &amp;&amp; command === &quot;--test&quot; &amp;&amp; args[0] === &quot;--test-reporter=tap&quot; &amp;&amp;</div>
+<div class="add">+      args.length &gt; 1 &amp;&amp; args.slice(1).every((path) =&gt; nodeTests.has(path)) &amp;&amp;</div>
+<div class="add">+      new Set(args.slice(1)).size === args.length - 1) {</div>
+<div class="add">+    return { program: process.execPath, args: [command, ...args], kind: &quot;node-test&quot; };</div>
+<div class="add">+  }</div>
+<div class="add">+  throw new Error(&quot;Command not registered for ordinary delivery; add a reviewed adapter, do not bypass the harness&quot;);</div>
+<div class="add">+}</div>
+<div class="add">+</div>
+<div class="add">+function git(args) {</div>
+<div class="add">+  return execFileSync(&quot;git&quot;, args, {</div>
+<div class="add">+    cwd: repository, env: scrubbedChildEnvironment(), maxBuffer: 32 * 1024 * 1024,</div>
+<div class="add">+    timeout: 30000,</div>
+<div class="add">+  });</div>
+<div class="add">+}</div>
+<div class="add">+</div>
+<div class="add">+export function sourceObservation() {</div>
+<div class="add">+  const branch = git([&quot;branch&quot;, &quot;--show-current&quot;]).toString().trim();</div>
+<div class="add">+  if (branch !== &quot;main&quot; || realpathSync(git([&quot;rev-parse&quot;, &quot;--show-toplevel&quot;]).toString().trim()) !== repository ||</div>
+<div class="add">+      realpathSync(resolve(repository, git([&quot;rev-parse&quot;, &quot;--git-common-dir&quot;]).toString().trim())) !==</div>
+<div class="add">+      realpathSync(resolve(repository, git([&quot;rev-parse&quot;, &quot;--git-dir&quot;]).toString().trim()))) {</div>
+<div class="add">+    throw new Error(&quot;Delivery requires the canonical main checkout, not another worktree&quot;);</div>
+<div class="add">+  }</div>
+<div class="add">+  const untracked = git([&quot;ls-files&quot;, &quot;--others&quot;, &quot;--exclude-standard&quot;, &quot;-z&quot;]).toString()</div>
+<div class="add">+    .split(&quot;\0&quot;).filter(Boolean).sort().map((path) =&gt; {</div>
+<div class="add">+      const absolute = join(repository, path);</div>
+<div class="add">+      const stat = lstatSync(absolute);</div>
+<div class="add">+      if (!stat.isFile() &amp;&amp; !stat.isSymbolicLink()) {</div>
+<div class="add">+        throw new Error(`Cannot bind nonregular untracked source: ${path}`);</div>
+<div class="add">+      }</div>
+<div class="add">+      return { path, sha256: sha256(stat.isSymbolicLink() ? readlinkSync(absolute) : readFileSync(absolute)) };</div>
+<div class="add">+    });</div>
+<div class="add">+  return {</div>
+<div class="add">+    root: repository, branch, head: git([&quot;rev-parse&quot;, &quot;HEAD&quot;]).toString().trim(),</div>
+<div class="add">+    trackedDiffSha256: sha256(git([&quot;diff&quot;, &quot;--binary&quot;, &quot;HEAD&quot;, &quot;--&quot;])),</div>
+<div class="add">+    status: git([&quot;status&quot;, &quot;--porcelain=v1&quot;, &quot;--untracked-files=all&quot;]).toString(),</div>
+<div class="add">+    untracked,</div>
+<div class="add">+  };</div>
+<div class="add">+}</div>
+<div class="add">+</div>
+<div class="add">+export function evaluateResult(command, result) {</div>
+<div class="add">+  if (command.kind === &quot;cargo-test&quot;) {</div>
+<div class="add">+    result = applyCommandSafeguards(result, { minimumPassedTests: 1 });</div>
+<div class="add">+  } else if (command.kind === &quot;node-test&quot;) {</div>
+<div class="add">+    const observed = result.observedNodeTestSummary;</div>
+<div class="add">+    result = {</div>
+<div class="add">+      ...result,</div>
+<div class="add">+      testSafeguard: {</div>
+<div class="add">+        format: &quot;node-tap-v13&quot;, observed,</div>
+<div class="add">+        passed: observed?.duplicateOrMissing === false &amp;&amp; observed.terminal === true &amp;&amp;</div>
+<div class="add">+          observed.conserved === true &amp;&amp; observed.tests &gt; 0 &amp;&amp; observed.pass === observed.tests &amp;&amp;</div>
+<div class="add">+          observed.fail === 0 &amp;&amp; observed.cancelled === 0 &amp;&amp; observed.skipped === 0 &amp;&amp; observed.todo === 0,</div>
+<div class="add">+      },</div>
+<div class="add">+    };</div>
+<div class="add">+  }</div>
+<div class="add">+  return { ...result, passed: commandPassed(result) };</div>
+<div class="add">+}</div>
+<div class="add">+</div>
+<div class="add">+export function bindBuildArtifact(command, stdout, path) {</div>
+<div class="add">+  if (command.kind !== &quot;build&quot;) throw new Error(&quot;Only a build can identify a produced artifact&quot;);</div>
+<div class="add">+  const matches = stdout.split(/\r?\n/u).filter(Boolean).flatMap((line) =&gt; {</div>
+<div class="add">+    try {</div>
+<div class="add">+      const message = JSON.parse(line);</div>
+<div class="add">+      return message.reason === &quot;compiler-artifact&quot; &amp;&amp; message.executable === path &amp;&amp;</div>
+<div class="add">+        message.target?.name === path.split(&quot;/&quot;).at(-1) &amp;&amp; typeof message.fresh === &quot;boolean&quot; ? [message] : [];</div>
+<div class="add">+    } catch { return []; }</div>
+<div class="add">+  });</div>
+<div class="add">+  if (matches.length !== 1) throw new Error(&quot;Selected artifact lacks one exact Cargo compiler-artifact observation&quot;);</div>
+<div class="add">+  return { cargoFresh: matches[0].fresh, packageId: matches[0].package_id,</div>
+<div class="add">+    targetName: matches[0].target.name, origin: &quot;Cargo compiler-artifact from this command&quot; };</div>
+<div class="add">+}</div>
+<div class="add">+</div>
+<div class="add">+export function deliveryStatus(before, after, result, failure) {</div>
+<div class="add">+  const sourceStable = after !== null &amp;&amp; JSON.stringify(before) === JSON.stringify(after);</div>
+<div class="add">+  return { sourceStable, status: !failure &amp;&amp; sourceStable &amp;&amp; result?.passed ? &quot;command-passed&quot; : &quot;failed&quot; };</div>
+<div class="add">+}</div>
+<div class="add">+</div>
+<div class="add">+export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1800000, artifact }) {</div>
+<div class="add">+  if (!/^task-[a-zA-Z0-9-]+$/.test(taskId ?? &quot;&quot;)) throw new Error(&quot;A live Ruflo task ID is required&quot;);</div>
+<div class="add">+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs &lt; 1 || timeoutMs &gt; 7200000) {</div>
+<div class="add">+    throw new Error(&quot;Timeout must be between 1ms and 2h (local process bound, not a model budget)&quot;);</div>
+<div class="add">+  }</div>
+<div class="add">+  const command = admitCommand(argv);</div>
+<div class="add">+  const plan = routeDelivery({ role: command.kind.endsWith(&quot;test&quot;) ? &quot;test&quot; : &quot;build&quot;, taskId, completionCheck });</div>
+<div class="add">+  if (artifact !== undefined &amp;&amp; !/^target\/(?:release|debug)\/[a-zA-Z0-9_-]+$/.test(artifact)) {</div>
+<div class="add">+    throw new Error(&quot;Artifact must identify a native target/release or target/debug executable&quot;);</div>
+<div class="add">+  }</div>
+<div class="add">+  if (artifact !== undefined) {</div>
+<div class="add">+    const name = artifact.split(&quot;/&quot;).at(-1);</div>
+<div class="add">+    const hasPair = (flag, value) =&gt; command.args.some((arg, index) =&gt; arg === flag &amp;&amp; command.args[index + 1] === value);</div>
+<div class="add">+    if (command.kind !== &quot;build&quot; || command.args.includes(&quot;--target&quot;) ||</div>
+<div class="add">+        artifact.split(&quot;/&quot;)[1] !== (command.args.includes(&quot;--release&quot;) ? &quot;release&quot; : &quot;debug&quot;) ||</div>
+<div class="add">+        !(hasPair(&quot;--bin&quot;, name) || (name === &quot;oxigraph&quot; &amp;&amp; (hasPair(&quot;-p&quot;, &quot;oxigraph-cli&quot;) || hasPair(&quot;--package&quot;, &quot;oxigraph-cli&quot;))))) {</div>
+<div class="add">+      throw new Error(&quot;Artifact must match this native Cargo build's selected binary and profile&quot;);</div>
+<div class="add">+    }</div>
+<div class="add">+    command.args.push(&quot;--message-format=json-render-diagnostics&quot;);</div>
+<div class="add">+  }</div>
+<div class="add">+  const before = sourceObservation();</div>
+<div class="add">+  const root = ensureDirectoryInsideRepository(join(repository, &quot;target&quot;, &quot;engineering-delivery&quot;));</div>
+<div class="add">+  const directory = mkdtempSync(join(root, &quot;run-&quot;));</div>
+<div class="add">+  const startedAt = new Date().toISOString();</div>
+<div class="add">+  const input = {</div>
+<div class="add">+    schema: &quot;ordinary-delivery-run-v1&quot;, taskId, command, source: before,</div>
+<div class="add">+    plan, planSha256: sha256(JSON.stringify(plan)), taskAttribution: &quot;unverified-coordinator-supplied&quot;,</div>
+<div class="add">+    startedAt, timeoutMs, node: { version: process.version, executable: process.execPath },</div>
+<div class="add">+    nativeVersions: command.program === &quot;cargo&quot; ? Object.fromEntries([&quot;cargo&quot;, &quot;rustc&quot;].map((program) =&gt;</div>
+<div class="add">+      [program, execFileSync(program, [&quot;--version&quot;], { cwd: repository,</div>
+<div class="add">+        env: scrubbedChildEnvironment(), timeout: 30000, encoding: &quot;utf8&quot; }).trim()])) : {},</div>
+<div class="add">+    modelExecution: false, qualification: false, publication: false,</div>
+<div class="add">+    mcpSync: &quot;native coordinator must update live MCP task and read back evidence&quot;,</div>
+<div class="add">+  };</div>
+<div class="add">+  writeFileSync(join(directory, &quot;input.json&quot;), JSON.stringify(input, null, 2) + &quot;\n&quot;, { flag: &quot;wx&quot; });</div>
+<div class="add">+  let result;</div>
+<div class="add">+  let completeStdout = &quot;&quot;;</div>
+<div class="add">+  let failure = null;</div>
+<div class="add">+  try {</div>
+<div class="add">+    result = await execute(command.program, command.args, {</div>
+<div class="add">+      cwd: repository, timeoutMs, captureOutputBytes: 16 * 1024 * 1024,</div>
+<div class="add">+    });</div>
+<div class="add">+  } catch (error) {</div>
+<div class="add">+    failure = error.message;</div>
+<div class="add">+    result = error.processResult;</div>
+<div class="add">+  }</div>
+<div class="add">+  if (result) {</div>
+<div class="add">+    const { capturedOutput, ...observation } = result;</div>
+<div class="add">+    completeStdout = capturedOutput?.stdout.toString(&quot;utf8&quot;) ?? &quot;&quot;;</div>
+<div class="add">+    writeFileSync(join(directory, &quot;stdout.log&quot;), capturedOutput?.stdout ?? &quot;&quot;, { flag: &quot;wx&quot; });</div>
+<div class="add">+    writeFileSync(join(directory, &quot;stderr.log&quot;), capturedOutput?.stderr ?? &quot;&quot;, { flag: &quot;wx&quot; });</div>
+<div class="add">+    result = evaluateResult(command, observation);</div>
+<div class="add">+  }</div>
+<div class="add">+  let after = null;</div>
+<div class="add">+  let artifactIdentity = null;</div>
+<div class="add">+  try {</div>
+<div class="add">+    after = sourceObservation();</div>
+<div class="add">+    if (artifact !== undefined) {</div>
+<div class="add">+      const path = join(repository, artifact);</div>
+<div class="add">+      if (!lstatSync(path).isFile() || realpathSync(path) !== path) throw new Error(&quot;Artifact is not a regular in-repository file&quot;);</div>
+<div class="add">+      const bytes = readFileSync(path);</div>
+<div class="add">+      artifactIdentity = { path: artifact, bytes: bytes.length, sha256: sha256(bytes),</div>
+<div class="add">+        ...bindBuildArtifact(command, completeStdout, path) };</div>
+<div class="add">+    }</div>
+<div class="add">+  } catch (error) { failure ??= error.message; }</div>
+<div class="add">+  const { sourceStable, status } = deliveryStatus(before, after, result, failure);</div>
+<div class="add">+  const output = {</div>
+<div class="add">+    ...input, finishedAt: new Date().toISOString(), result: result ?? null,</div>
+<div class="add">+    sourceAfter: after, sourceStable, artifact: artifactIdentity, failure,</div>
+<div class="add">+    status,</div>
+<div class="add">+    scope: &quot;Exact native command only; not task completion, semantic qualification, promotion, or publication&quot;,</div>
+<div class="add">+  };</div>
+<div class="add">+  writeFileSync(join(directory, &quot;result.json&quot;), JSON.stringify(output, null, 2) + &quot;\n&quot;, { flag: &quot;wx&quot; });</div>
+<div class="add">+  return { directory, ...output };</div>
+<div class="add">+}</div></div></details>
+<details id="source-7" class="source"><summary><span>tools/engineering-harness/test/delivery.test.mjs</span><small>Expand exact committed diff</small></summary><div class="diff" tabindex="0" aria-label="tools/engineering-harness/test/delivery.test.mjs diff"><div class="context">diff --git a/tools/engineering-harness/test/delivery.test.mjs b/tools/engineering-harness/test/delivery.test.mjs</div>
+<div class="context">new file mode 100644</div>
+<div class="context">index 00000000..a56f84e1</div>
+<div class="context">--- /dev/null</div>
+<div class="context">+++ b/tools/engineering-harness/test/delivery.test.mjs</div>
+<div class="hunk">@@ -0,0 +1,127 @@</div>
+<div class="add">+import assert from &quot;node:assert/strict&quot;;</div>
+<div class="add">+import { execFileSync } from &quot;node:child_process&quot;;</div>
+<div class="add">+import test from &quot;node:test&quot;;</div>
+<div class="add">+import { admitCommand, bindBuildArtifact, deliveryStatus, evaluateResult, routeDelivery, runDelivery, sourceObservation } from &quot;../src/delivery.mjs&quot;;</div>
+<div class="add">+import { execute } from &quot;../../agentic-qe/process-runner.mjs&quot;;</div>
+<div class="add">+</div>
+<div class="add">+const taskId = &quot;task-delivery-test&quot;;</div>
+<div class="add">+const completionCheck = &quot;focused native assertions pass&quot;;</div>
+<div class="add">+test(&quot;source drift or missing process observation prevents command success&quot;, () =&gt; {</div>
+<div class="add">+  const before = { head: &quot;a&quot;, trackedDiffSha256: &quot;b&quot;, untracked: [{ path: &quot;new.rs&quot;, sha256: &quot;c&quot; }] };</div>
+<div class="add">+  assert.equal(deliveryStatus(before, before, { passed: true }, null).status, &quot;command-passed&quot;);</div>
+<div class="add">+  for (const after of [null, { ...before, head: &quot;changed&quot; }, { ...before, untracked: [] }]) {</div>
+<div class="add">+    assert.equal(deliveryStatus(before, after, { passed: true }, null).status, &quot;failed&quot;);</div>
+<div class="add">+  }</div>
+<div class="add">+  assert.equal(deliveryStatus(before, before, null, null).status, &quot;failed&quot;);</div>
+<div class="add">+  assert.equal(deliveryStatus(before, before, { passed: true }, &quot;cannot read artifact&quot;).status, &quot;failed&quot;);</div>
+<div class="add">+});</div>
+<div class="add">+test(&quot;routine role models are explicit and do not inherit coordinator Max&quot;, () =&gt; {</div>
+<div class="add">+  for (const [role, model, effort] of [</div>
+<div class="add">+    [&quot;implement&quot;, &quot;gpt-5.6-terra&quot;, &quot;medium&quot;], [&quot;documentation&quot;, &quot;gpt-5.6-luna&quot;, &quot;low&quot;],</div>
+<div class="add">+    [&quot;review&quot;, &quot;gpt-5.6-sol&quot;, &quot;medium&quot;], [&quot;difficult&quot;, &quot;gpt-5.6-sol&quot;, &quot;high&quot;],</div>
+<div class="add">+    [&quot;decision&quot;, &quot;gpt-6-astra&quot;, &quot;high&quot;],</div>
+<div class="add">+  ]) {</div>
+<div class="add">+    const route = routeDelivery({ role, taskId, completionCheck });</div>
+<div class="add">+    assert.equal(route.model, model);</div>
+<div class="add">+    assert.equal(route.effort, effort);</div>
+<div class="add">+    assert.equal(route.nativeDispatch.fork_turns, &quot;none&quot;);</div>
+<div class="add">+    assert.equal(route.status, &quot;planned-not-dispatched&quot;);</div>
+<div class="add">+    assert.equal(route.ownerConversationChanged, false);</div>
+<div class="add">+  }</div>
+<div class="add">+});</div>
+<div class="add">+test(&quot;builds and tests do not invoke a model; overrides require exact selection and reason&quot;, () =&gt; {</div>
+<div class="add">+  for (const role of [&quot;build&quot;, &quot;test&quot;]) {</div>
+<div class="add">+    assert.equal(routeDelivery({ role, taskId, completionCheck }).nativeDispatch, null);</div>
+<div class="add">+    assert.throws(() =&gt; routeDelivery({ role, taskId, completionCheck, model: &quot;gpt-6-astra&quot;, effort: &quot;max&quot;, reason: &quot;owner&quot; }));</div>
+<div class="add">+  }</div>
+<div class="add">+  for (const effort of [&quot;max&quot;, &quot;ultra&quot;]) {</div>
+<div class="add">+    assert.throws(() =&gt; routeDelivery({ role: &quot;review&quot;, taskId, completionCheck, model: &quot;gpt-6-astra&quot;, effort }));</div>
+<div class="add">+    assert.throws(() =&gt; routeDelivery({ role: &quot;review&quot;, taskId, completionCheck, model: &quot;gpt-6-astra&quot;, effort, reason: &quot;just because&quot; }));</div>
+<div class="add">+    assert.equal(routeDelivery({ role: &quot;review&quot;, taskId, completionCheck, model: &quot;gpt-6-astra&quot;, effort, reason: &quot;owner selected this bounded review&quot;, selection: &quot;owner&quot; }).effort, effort);</div>
+<div class="add">+  }</div>
+<div class="add">+  assert.throws(() =&gt; routeDelivery({ role: &quot;review&quot;, taskId, completionCheck, model: &quot;not-a-model&quot;, effort: &quot;high&quot;, reason: &quot;test&quot; }));</div>
+<div class="add">+  assert.throws(() =&gt; routeDelivery({ role: &quot;unknown&quot;, taskId, completionCheck }));</div>
+<div class="add">+  assert.throws(() =&gt; routeDelivery({ role: &quot;review&quot;, taskId }));</div>
+<div class="add">+});</div>
+<div class="add">+test(&quot;a stale artifact without this command's Cargo event cannot be attributed&quot;, () =&gt; {</div>
+<div class="add">+  const path = &quot;/checkout/target/release/oxigraph&quot;;</div>
+<div class="add">+  const command = { kind: &quot;build&quot; };</div>
+<div class="add">+  const event = { reason: &quot;compiler-artifact&quot;, executable: path,</div>
+<div class="add">+    target: { name: &quot;oxigraph&quot; }, package_id: &quot;oxigraph-cli&quot;, fresh: true };</div>
+<div class="add">+  assert.throws(() =&gt; bindBuildArtifact(command, &quot;&quot;, path));</div>
+<div class="add">+  assert.throws(() =&gt; bindBuildArtifact(command, JSON.stringify({ ...event, executable: &quot;/other&quot; }), path));</div>
+<div class="add">+  assert.throws(() =&gt; bindBuildArtifact(command, [event, event].map(JSON.stringify).join(&quot;\n&quot;), path));</div>
+<div class="add">+  assert.throws(() =&gt; bindBuildArtifact({ kind: &quot;cargo-test&quot; }, JSON.stringify(event), path));</div>
+<div class="add">+  assert.equal(bindBuildArtifact(command, JSON.stringify(event), path).cargoFresh, true);</div>
+<div class="add">+  assert.equal(bindBuildArtifact(command, JSON.stringify({ ...event, fresh: false }), path).cargoFresh, false);</div>
+<div class="add">+});</div>
+<div class="add">+test(&quot;runs require a completion check and reject artifact/command mismatches before execution&quot;, async () =&gt; {</div>
+<div class="add">+  await assert.rejects(runDelivery({ taskId, argv: [&quot;cargo&quot;, &quot;check&quot;, &quot;--locked&quot;, &quot;-p&quot;, &quot;oxrdf&quot;] }), /completion check/);</div>
+<div class="add">+  for (const argv of [</div>
+<div class="add">+    [&quot;cargo&quot;, &quot;test&quot;, &quot;--locked&quot;, &quot;-p&quot;, &quot;oxigraph&quot;],</div>
+<div class="add">+    [&quot;cargo&quot;, &quot;build&quot;, &quot;--locked&quot;, &quot;--release&quot;, &quot;-p&quot;, &quot;oxrdf&quot;],</div>
+<div class="add">+    [&quot;cargo&quot;, &quot;build&quot;, &quot;--locked&quot;, &quot;-p&quot;, &quot;oxigraph-cli&quot;],</div>
+<div class="add">+  ]) await assert.rejects(runDelivery({ taskId, completionCheck, argv, artifact: &quot;target/release/oxigraph&quot; }), /Artifact must match/);</div>
+<div class="add">+});</div>
+<div class="add">+test(&quot;literal native commands are admitted; broad or protected entry points are rejected&quot;, () =&gt; {</div>
+<div class="add">+  assert.equal(admitCommand([&quot;cargo&quot;, &quot;test&quot;, &quot;--locked&quot;, &quot;-p&quot;, &quot;oxigraph&quot;, &quot;--test&quot;, &quot;store&quot;, &quot;-j12&quot;]).kind, &quot;cargo-test&quot;);</div>
+<div class="add">+  assert.equal(admitCommand([&quot;cargo&quot;, &quot;build&quot;, &quot;--locked&quot;, &quot;--release&quot;, &quot;-p&quot;, &quot;oxigraph-cli&quot;]).kind, &quot;build&quot;);</div>
+<div class="add">+  assert.equal(admitCommand([&quot;node&quot;, &quot;--test&quot;, &quot;--test-reporter=tap&quot;, &quot;tools/engineering-harness/test/delivery.test.mjs&quot;]).kind, &quot;node-test&quot;);</div>
+<div class="add">+  for (const argv of [</div>
+<div class="add">+    [&quot;cargo&quot;, &quot;test&quot;], [&quot;cargo&quot;, &quot;publish&quot;, &quot;--locked&quot;], [&quot;cargo&quot;, &quot;test&quot;, &quot;--locked&quot;, &quot;--config&quot;, &quot;x=y&quot;],</div>
+<div class="add">+    [&quot;cargo&quot;, &quot;test&quot;, &quot;--locked&quot;, &quot;--&quot;, &quot;--list&quot;], [&quot;cargo&quot;, &quot;test&quot;, &quot;--locked&quot;, &quot;--manifest-path&quot;, &quot;elsewhere/Cargo.toml&quot;],</div>
+<div class="add">+    [&quot;node&quot;, &quot;--test&quot;, &quot;--test-reporter=tap&quot;, &quot;tools/engineering-harness/test/g17-qualification-cli.test.mjs&quot;],</div>
+<div class="add">+    [&quot;node&quot;, &quot;--eval&quot;, &quot;process.exit(0)&quot;], [&quot;npm&quot;, &quot;test&quot;], [&quot;sh&quot;, &quot;-c&quot;, &quot;true&quot;], [&quot;ruflo&quot;, &quot;status&quot;],</div>
+<div class="add">+    [&quot;cargo&quot;, &quot;test&quot;, &quot;--locked\n&quot;],</div>
+<div class="add">+  ]) assert.throws(() =&gt; admitCommand(argv), JSON.stringify(argv));</div>
+<div class="add">+});</div>
+<div class="add">+test(&quot;source observations require main and bind untracked source as well as HEAD&quot;, () =&gt; {</div>
+<div class="add">+  const source = sourceObservation();</div>
+<div class="add">+  assert.equal(source.branch, &quot;main&quot;);</div>
+<div class="add">+  assert.match(source.head, /^[a-f0-9]{40}$/);</div>
+<div class="add">+  assert.match(source.trackedDiffSha256, /^[a-f0-9]{64}$/);</div>
+<div class="add">+  assert.ok(source.untracked.every((file) =&gt; /^[a-f0-9]{64}$/.test(file.sha256)));</div>
+<div class="add">+});</div>
+<div class="add">+async function fixture(code, options = {}) {</div>
+<div class="add">+  return execute(process.execPath, [&quot;--eval&quot;, code], { quiet: true, announce: false, timeoutMs: 5000, ...options });</div>
+<div class="add">+}</div>
+<div class="add">+test(&quot;exit zero with no tests is not a passing test run&quot;, async () =&gt; {</div>
+<div class="add">+  const result = await fixture(&quot;process.stdout.write('finished\\n')&quot;);</div>
+<div class="add">+  assert.equal(evaluateResult({ kind: &quot;cargo-test&quot; }, result).passed, false);</div>
+<div class="add">+  assert.equal(evaluateResult({ kind: &quot;node-test&quot; }, result).passed, false);</div>
+<div class="add">+});</div>
+<div class="add">+test(&quot;native failure remains a failed build even if it prints a passing test summary&quot;, async () =&gt; {</div>
+<div class="add">+  const result = await fixture(&quot;console.log('test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s'); process.exitCode=1&quot;);</div>
+<div class="add">+  assert.equal(evaluateResult({ kind: &quot;cargo-test&quot; }, result).passed, false);</div>
+<div class="add">+  assert.equal(evaluateResult({ kind: &quot;build&quot; }, result).passed, false);</div>
+<div class="add">+});</div>
+<div class="add">+test(&quot;terminal successful Cargo output is counted, trailing junk and zero tests fail&quot;, async () =&gt; {</div>
+<div class="add">+  const summary = &quot;test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s&quot;;</div>
+<div class="add">+  const success = evaluateResult({ kind: &quot;cargo-test&quot; }, await fixture(`console.log(${JSON.stringify(summary)})`));</div>
+<div class="add">+  assert.equal(success.passed, true);</div>
+<div class="add">+  assert.equal(success.observedPassedTests, 1);</div>
+<div class="add">+  const trailing = await fixture(`console.log(${JSON.stringify(summary)}); console.log('not a terminal summary')`);</div>
+<div class="add">+  assert.equal(evaluateResult({ kind: &quot;cargo-test&quot; }, trailing).passed, false);</div>
+<div class="add">+  const zero = await fixture(`console.log(${JSON.stringify(summary.replace(&quot;1 passed&quot;, &quot;0 passed&quot;))})`);</div>
+<div class="add">+  assert.equal(evaluateResult({ kind: &quot;cargo-test&quot; }, zero).passed, false);</div>
+<div class="add">+});</div>
+<div class="add">+test(&quot;timeout and output overflow never turn into successful completion&quot;, async () =&gt; {</div>
+<div class="add">+  for (const [code, options, reason] of [</div>
+<div class="add">+    [&quot;setInterval(()=&gt;{},1000)&quot;, { timeoutMs: 100, terminationGraceMs: 50 }, &quot;timeout&quot;],</div>
+<div class="add">+    [&quot;process.stdout.write('x'.repeat(65536)); setInterval(()=&gt;{},1000)&quot;, { captureOutputBytes: 1024, terminationGraceMs: 50 }, &quot;output-limit&quot;],</div>
+<div class="add">+  ]) {</div>
+<div class="add">+    await assert.rejects(fixture(code, options), (error) =&gt; {</div>
+<div class="add">+      assert.equal(error.code, &quot;PROCESS_CLEANUP_UNCONFIRMED&quot;);</div>
+<div class="add">+      assert.equal(error.processResult.terminationReason, reason);</div>
+<div class="add">+      assert.equal(evaluateResult({ kind: &quot;build&quot; }, error.processResult).passed, false);</div>
+<div class="add">+      return true;</div>
+<div class="add">+    });</div>
+<div class="add">+  }</div>
+<div class="add">+});</div>
+<div class="add">+test(&quot;CLI route is inspectable without any model execution; invalid run rejects before spawn&quot;, () =&gt; {</div>
+<div class="add">+  const cli = &quot;tools/engineering-harness/bin/oxigraph-delivery.mjs&quot;;</div>
+<div class="add">+  const route = JSON.parse(execFileSync(process.execPath, [cli, &quot;route&quot;, &quot;--task&quot;, taskId,</div>
+<div class="add">+    &quot;--role&quot;, &quot;implement&quot;, &quot;--check&quot;, completionCheck], { encoding: &quot;utf8&quot; }));</div>
+<div class="add">+  assert.equal(route.nativeDispatch.model, &quot;gpt-5.6-terra&quot;);</div>
+<div class="add">+  assert.throws(() =&gt; execFileSync(process.execPath, [cli, &quot;run&quot;, &quot;--task&quot;, taskId, &quot;--&quot;, &quot;cargo&quot;, &quot;publish&quot;, &quot;--locked&quot;], { stdio: &quot;pipe&quot; }));</div>
+<div class="add">+});</div></div></details>
+</section>
+<section id="decision"><h2>Your decision</h2><div class="callout warn"><strong>Main build: paused.</strong><p>Approve this harness workflow or request changes in the conversation. Reviewing or opening this page does not grant approval. The existing uncommitted legacy-backup work is preserved and will not resume automatically.</p></div><p>Suggested review questions:</p><ol><li>Is the split between deterministic command execution and explicit native/MCP coordination clear enough?</li><li>Are the routine model defaults and Max/Ultra exception rule appropriate?</li><li>Are the observation limits acceptable for ordinary delivery, separate from qualification?</li></ol></section>
+</main>
+<footer class="wrap"><p>Review target: <code>6c2f972a</code> · Parent: <code>5d8de3e5</code> · Evidence checked 10 September 2026.<br>Self-contained HTML · No analytics, external assets, model calls or build step · Main programme hold remains active.</p></footer>
+</body></html>
+
