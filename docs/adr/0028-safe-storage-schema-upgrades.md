@@ -2,14 +2,15 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-10
+- Updated: 2026-09-11
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
-  shadow-copy preparation and explicit inactive transformation APIs/CLI implemented.
+  shadow-copy preparation and explicit inactive transformation APIs/CLI implemented;
+  additive verified checkpoint/restart APIs implemented.
   Ordinary writable open still performs known version-0/1 migrations in place.
-  Full compatibility rejection, schema envelopes, resumable upgrades and
-  explicit activation remain open
+  Full compatibility rejection, schema envelopes, recovery CLI exposure,
+  sealed upgrade receipts and explicit activation remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
@@ -25,9 +26,10 @@ RocksDB storage records an `oxversion` integer, recognizes storage
 version 2, and calls migration from ordinary setup. The legacy version-0 and
 version-1 paths mutate column families and then advance the version. Read-only
 open rejects a required migration, but read-write open had no separate
-inspection or preflight at programme entry, and still has no upgrade-bound
-backup receipt, resumable journal, failure-injection contract, or
-operator-controlled cutover. Before the native preflight below, a missing
+inspection or preflight at programme entry. The bounded slices below now add
+physical backup ancestry, inactive construction and verified checkpoint restart;
+a sealed upgrade receipt and operator-controlled cutover remain outstanding.
+Before the native preflight below, a missing
 version key was stamped as latest rather than classified independently.
 
 That behavior was sufficient for bounded historical transitions, but it is
@@ -351,9 +353,77 @@ is recorded in Ruflo
 
 This closes the bounded offline CLI journey only. No library, dependency or
 storage-format changes were made in this slice. The workspace remains guarded
-and cannot be served through ordinary open. Resume, a sealed exact-build
-`UpgradeReceipt`, activation/cutover/rollback and the frozen compatibility/crash
-matrix remain open. This ADR remains Proposed; full G4.3 is not complete.
+and cannot be served through ordinary open. This CLI slice does not expose
+the recovery APIs below. A sealed exact-build `UpgradeReceipt`,
+activation/cutover/rollback and the frozen compatibility/crash matrix remain
+open. This ADR remains Proposed; full G4.3 is not complete.
+
+## Verified restartable inactive upgrades (2026-09-11)
+
+`Store::start_upgrade_recovery(source, completed_legacy_backup, fresh_destination,
+&UpgradeRecoveryOptions)` creates a separate recovery workspace with a verified
+initial checkpoint. `Store::resume_upgrade_recovery` completes only the remaining
+version-0 -> 1 -> 2 edges and final output. `UpgradeRecovery::verify` independently
+checks the record chain, exact external ancestry, every completed checkpoint
+and, when present, the standard `TransformedUpgrade` output. `completed()` means
+that output was published, not activation or an authorized `UpgradeReceipt`.
+
+Each attempt has its own guarded store under `attempts/`. Before an edge runs,
+its verified input is copied to a fresh attempt. A completed record binds the
+prior record hash, legacy-receipt fingerprint, schema edge, feature/limit profile,
+logical fingerprint/counts and exact output file hashes. Native data files and
+the containing directories are synchronized before the completion record;
+potentially published failures return `CompletionIndeterminate` and require
+verification. Source, backup and completed checkpoints retain their native
+leases and unchanged bytes. Caller-controlled paths must remain offline,
+stable, disjoint and exclusively controlled.
+
+Interrupted, unpublished attempts are retained but never reused as input.
+Only the bounded partial-attempt scanner admits the migration's exact
+`bulk-<decimal u128>.sst` staging names; completed inventories remain strict.
+Changed checkpoints, torn/reordered journals, mismatched profiles and unexpected
+paths/files are refused, not repaired or rebaselined. If verification cannot
+establish a completed checkpoint, use a fresh destination. Published edges are
+not rerun; resuming an already completed workspace independently verifies it
+without another native migration. All nested stores remain guarded and refused
+by this binary's ordinary writable/read-only opens.
+
+`UpgradeRecoveryOptions` wraps the existing transformation limits and adds
+`max_attempts` (default 16, maximum 64). It includes the initial checkpoint,
+failed attempts, successful edges and final output; an uninterrupted version-0
+journey needs four attempts and version-1 needs three. The RDF feature bit and
+content/attempt limits must match on resume. A new cancellation/deadline control
+may be supplied; accounting covers the whole call, including completed-output
+verification. Limits are cooperative and per copy/projection, not global disk,
+RSS or native-memory quotas. Retained copies require additional operator-managed
+disk space; this API does not delete failed attempts.
+
+The ordinary workflow `f91835b2-1918-48f4-b769-eb545b45eda2` used native Sol
+High implementation and Astra High independent review, root-only application,
+actual failure/review feedback and exact Ruflo MCP readback. Final focused
+lanes passed: default recovery integration (3), recovery unit cases (4),
+RDF-1.2 recovery/transformation integration (7), existing preparation/backup/
+restore (26), and no-default store (12). Additional upgrade units passed in
+both default (16) and RDF-1.2 (17), including real process exits during native
+SST creation and a committed RDF-star transaction, publication boundaries,
+cancellation/lease release, completed-edge reuse and independent topology.
+Counts overlap and include helper tests; they are not additional product
+milestones or the frozen crash/promotion matrix. An extra parallel regression
+exposed pre-existing in-place fixture mutation in `tests/store.rs`; its failed
+result is retained at `target/engineering-delivery/run-EUXUkM`. Exact fixture
+restoration and a serial unchanged-source recovery run (16 tests,
+`run-s1kxL7`) passed. Isolating those compatibility fixtures is the immediate
+follow-up, not a recovery-algorithm rebaseline.
+
+This is additive: old `PreparedUpgrade`/`TransformedUpgrade` formats and
+validators are unchanged. Their old interrupted workspaces do not become
+resumable; start the new recovery workflow before expecting restart support.
+Legacy RDF-star terms still require `rdf-12`. No new dependency, persisted
+logical schema version, automatic cutover or default-open migration change is
+introduced. CLI recovery exposure, the sealed exact-build receipt,
+activation/cutover/rollback, the envelope/classifier and frozen compatibility,
+crash and system-RocksDB lanes remain open. This ADR remains Proposed;
+the bounded recovery API is not full G4.3 completion.
 
 ## Staged implementation and evaluator gates
 

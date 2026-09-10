@@ -391,10 +391,22 @@ impl RocksDbStorage {
 
     fn migrate_versioned(
         &self,
-        mut version: u64,
+        version: u64,
         phase: &mut impl FnMut(u64) -> Result<(), StorageError>,
     ) -> Result<(), StorageError> {
-        if version == 0 {
+        self.migrate_versioned_to(version, LATEST_STORAGE_VERSION, phase)
+    }
+
+    fn migrate_versioned_to(
+        &self,
+        mut version: u64,
+        target: u64,
+        phase: &mut impl FnMut(u64) -> Result<(), StorageError>,
+    ) -> Result<(), StorageError> {
+        if target > LATEST_STORAGE_VERSION || version > target {
+            return Err(CorruptionError::msg("invalid storage migration target").into());
+        }
+        if version == 0 && target > 0 {
             phase(0)?;
             // We migrate to v1
             if !self.db.is_writable() {
@@ -416,6 +428,8 @@ impl RocksDbStorage {
                 .collect::<Vec<_>>();
             graph_names.sort_unstable();
             let mut stt_file = self.db.new_sst_file()?;
+            #[cfg(test)]
+            upgrade::exit_test_process_at_owned_sst();
             for k in graph_names {
                 phase(0)?;
                 stt_file.insert_empty(&k)?;
@@ -428,7 +442,7 @@ impl RocksDbStorage {
             version = 1;
             self.update_version(version)?;
         }
-        if version == 1 {
+        if version == 1 && target > 1 {
             phase(1)?;
             // We migrate to v2
             #[cfg(feature = "rdf-12")]
@@ -528,15 +542,14 @@ impl RocksDbStorage {
             self.update_version(version)?;
         }
 
-        match version {
-            _ if version < LATEST_STORAGE_VERSION => Err(CorruptionError::msg(format!(
+        match version.cmp(&target) {
+            std::cmp::Ordering::Less => Err(CorruptionError::msg(format!(
                 "The RocksDB database is using the outdated encoding version {version}. Automated migration is not supported, please dump the store dataset using a compatible Oxigraph version and load it again using the current version"
             )).into()),
-            LATEST_STORAGE_VERSION => Ok(()),
-            _ => Err(CorruptionError::msg(format!(
+            std::cmp::Ordering::Equal => Ok(()),
+            std::cmp::Ordering::Greater => Err(CorruptionError::msg(format!(
                 "The RocksDB database is using the too recent version {version}. Upgrade to the latest Oxigraph version to load this database"
-
-            )).into())
+            )).into()),
         }
     }
 

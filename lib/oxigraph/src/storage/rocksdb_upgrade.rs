@@ -85,6 +85,13 @@ fn controlled(options: &UpgradeTransformOptions, started: Instant) -> Result<(),
     }
     Ok(())
 }
+#[cfg(test)]
+pub(super) fn exit_test_process_at_owned_sst() {
+    if std::env::var_os("OXIGRAPH_RECOVERY_TEST_EXIT_AT_NATIVE_SST").is_some() {
+        std::process::exit(73);
+    }
+}
+
 fn native_options(options: &UpgradeTransformOptions) -> DbOptions {
     let options: super::super::StorageOptions = options.backup.store_options.clone().into();
     DbOptions {
@@ -427,6 +434,89 @@ impl LegacyStoreSnapshot {
         let db = Db::open_read_only_with_options(&self._path, families, native_options(options))?;
         project(&db, self.version, true, options, started)
     }
+    pub(crate) fn transform_upgrade_edge(
+        self,
+        target: u64,
+        expected: &UpgradeProjection,
+        options: &UpgradeTransformOptions,
+        started: Instant,
+        mut phase: impl FnMut(u64) -> Result<(), StorageError>,
+    ) -> Result<TransformedStorage, StorageError> {
+        let Self {
+            _db,
+            _lease,
+            _path,
+            version,
+            ..
+        } = self;
+        if target != version + 1 || target > LATEST_STORAGE_VERSION {
+            return Err(StorageError::SchemaUnknown);
+        }
+        controlled(options, started)?;
+        phase(version)?;
+        drop(_db);
+        let db = Db::open_read_write_with_lease(
+            &_path,
+            RocksDbStorage::column_families(),
+            native_options(options),
+            Arc::clone(&_lease),
+        )?;
+        let storage = RocksDbStorage::setup_unmigrated(db)?;
+        storage.migrate_versioned_to(version, target, &mut |edge| {
+            controlled(options, started)?;
+            phase(edge)
+        })?;
+        controlled(options, started)?;
+        let observed = project(
+            &storage.db,
+            target,
+            target != LATEST_STORAGE_VERSION,
+            options,
+            started,
+        )?;
+        if target == LATEST_STORAGE_VERSION {
+            storage.snapshot().validate()?;
+        }
+        if &observed != expected {
+            return Err(StorageError::Other(
+                "upgrade logical projection mismatch".into(),
+            ));
+        }
+        storage.flush()?;
+        controlled(options, started)?;
+        drop(storage);
+        Ok(TransformedStorage {
+            _lease,
+            projection: observed,
+        })
+    }
+
+    pub(crate) fn verify_upgrade_checkpoint(
+        path: &Path,
+        version: u64,
+        expected: &UpgradeProjection,
+        options: &UpgradeTransformOptions,
+        started: Instant,
+    ) -> Result<TransformedStorage, StorageError> {
+        if version == LATEST_STORAGE_VERSION {
+            return Self::verify_transformed(path, expected.fingerprint(), options, started);
+        }
+        let snapshot =
+            LegacyStoreSnapshot::open(path, options.backup.store_options.clone().into())?;
+        if snapshot.version != version {
+            return Err(StorageError::SchemaUnknown);
+        }
+        let projection = snapshot.project_upgrade(options, started)?;
+        if &projection != expected {
+            return Err(StorageError::Other(
+                "upgrade logical projection mismatch".into(),
+            ));
+        }
+        let Self { _db, _lease, .. } = snapshot;
+        drop(_db);
+        Ok(TransformedStorage { _lease, projection })
+    }
+
     pub(crate) fn transform_upgrade(
         self,
         expected: &UpgradeProjection,
@@ -518,7 +608,7 @@ impl LegacyStoreSnapshot {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use crate::store::{Store, TransformedUpgrade};
+    use crate::store::{Store, TransformedUpgrade, UpgradeRecoveryOptions};
     type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
     fn assert_transformed(
@@ -543,6 +633,58 @@ mod tests {
         );
         // Test-only native read of the inactive result. Do not remove its guard.
         let db = Db::open_read_only(&prepared.join("store"), RocksDbStorage::column_families())?;
+        let storage = RocksDbStorage::setup_unmigrated(db)?;
+        let reader = storage.snapshot();
+        let actual = reader
+            .quads()
+            .map(|quad| reader.decode_quad(&quad?).map(|quad| quad.to_string()))
+            .collect::<std::result::Result<BTreeSet<_>, StorageError>>()?;
+        assert_eq!(actual, quads);
+        let actual = reader
+            .named_graphs()
+            .map(|graph| {
+                reader
+                    .decode_named_or_blank_node(&graph?)
+                    .map(|graph| graph.to_string())
+            })
+            .collect::<std::result::Result<BTreeSet<_>, StorageError>>()?;
+        assert_eq!(actual, graphs);
+        assert_eq!(reader.namespaces()?, namespaces);
+
+        let recovery_backup = parent.join("recovery-backup");
+        let recovery_directory = parent.join("recovery-workspace");
+        let recovery_options = UpgradeRecoveryOptions::default();
+        Store::backup_legacy(source, &recovery_backup, &recovery_options.transform.backup)?;
+        Store::start_upgrade_recovery(
+            source,
+            &recovery_backup,
+            &recovery_directory,
+            &recovery_options,
+        )?;
+        let recovery = Store::resume_upgrade_recovery(
+            source,
+            &recovery_backup,
+            &recovery_directory,
+            &recovery_options,
+        )?;
+        assert!(recovery.completed());
+        assert_eq!(recovery.quad_count(), quads.len() as u64);
+        assert_eq!(recovery.named_graph_count(), graphs.len() as u64);
+        assert_eq!(recovery.namespace_count(), namespaces.len() as u64);
+        assert_eq!(
+            recovery,
+            crate::store::UpgradeRecovery::verify(
+                source,
+                &recovery_backup,
+                &recovery_directory,
+                &recovery_options,
+            )?
+        );
+        let output = recovery
+            .transformed()
+            .ok_or_else(|| io::Error::other("recovery output missing"))?
+            .directory();
+        let db = Db::open_read_only(&output.join("store"), RocksDbStorage::column_families())?;
         let storage = RocksDbStorage::setup_unmigrated(db)?;
         let reader = storage.snapshot();
         let actual = reader

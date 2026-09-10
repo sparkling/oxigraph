@@ -1301,9 +1301,17 @@ safe-open and store regression lanes. The additive `prepare-upgrade`,
 `verify-upgrade-transformation` commands now expose this offline operator
 journey with explicit limits and inactive-stage output. The output remains
 guarded and inactive; this is not activation or upgrade qualification.
-Full compatibility rejection, the envelope/classifier, resume, a sealed
-`UpgradeReceipt` and the cutover/crash/older-binary matrix remain outstanding.
-See [ADR-0028's CLI scope and limits](../adr/0028-safe-storage-schema-upgrades.md#offline-inactive-upgrade-cli-2026-09-10).
+The additive `Store::start_upgrade_recovery`, `Store::resume_upgrade_recovery`
+and `UpgradeRecovery::verify` APIs now provide verified restart from completed
+checkpoints in a separate recovery workspace. Native interruption/cancellation
+tests cover both migration edges, publication boundaries, unchanged source/
+backup/checkpoints and explicit completed-edge reuse. Old interrupted
+preparation/transformation workspaces do not become resumable.
+Full compatibility rejection, the envelope/classifier, recovery CLI exposure,
+a sealed `UpgradeReceipt` and the cutover/crash/older-binary matrix remain open.
+A parallel regression also exposed existing compatibility tests mutating shared
+fixtures; isolating those tests on temporary copies is the immediate follow-up.
+See [ADR-0028's recovery scope and limits](../adr/0028-safe-storage-schema-upgrades.md#verified-restartable-inactive-upgrades-2026-09-11).
 
 G4.1 native implementation is complete: the anonymous startup boundary requires explicit
 non-loopback consent before store open and binds the exact validated address

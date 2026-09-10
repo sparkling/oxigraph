@@ -8,6 +8,10 @@ const TRANSFORM_COMPLETE: &str = "oxigraph-upgrade-transformed.complete";
 const TRANSFORM_PENDING: &str = "oxigraph-upgrade-transformed.pending";
 const TRANSFORM_MAGIC: &[u8] = b"oxigraph.transformed-inactive.v1\0";
 
+#[path = "upgrade_resume.rs"]
+mod resume;
+pub use resume::{UpgradeRecovery, UpgradeRecoveryOptions};
+
 /// Cooperative limits for an offline explicit transformation.
 /// Projection limits bound retained canonical entries and bytes per projection,
 /// not native RocksDB memory, temporary term decoding, filesystem capacity or RSS.

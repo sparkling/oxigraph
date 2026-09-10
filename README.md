@@ -468,8 +468,15 @@ namespaces and exact output files. Native leases span transformation and final
 hashing; the result remains guarded and inactive. Four additive CLI commands now
 expose preparation, transformation and their distinct verification steps with
 explicit bounds; see [the offline operator journey](cli/README.md#offline-inactive-upgrade-construction-fork).
-These APIs and commands do not provide resume, a sealed `UpgradeReceipt` or activation.
+These earlier APIs and commands do not provide resume, a sealed `UpgradeReceipt` or activation.
 See [the transformation contract and limits](docs/adr/0028-safe-storage-schema-upgrades.md#native-inactive-transformation-2026-09-10).
+
+`Store::start_upgrade_recovery`, `Store::resume_upgrade_recovery` and
+`UpgradeRecovery::verify` now support verified restart through a separate
+checkpoint workspace. Completed steps are verified and reused; interrupted
+attempts are retained but never trusted as input. Source and backup remain
+unchanged, and the output remains guarded and inactive. See
+[recovery requirements and limits](docs/adr/0028-safe-storage-schema-upgrades.md#verified-restartable-inactive-upgrades-2026-09-11).
 
 ## Upstream Oxigraph
 
