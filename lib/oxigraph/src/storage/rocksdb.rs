@@ -118,6 +118,11 @@ mod feature_inspection;
 mod format_inspection_tests;
 #[cfg(test)]
 mod safe_open_tests;
+#[path = "rocksdb/state_inspection.rs"]
+mod state_inspection;
+#[cfg(test)]
+#[path = "rocksdb/state_inspection_tests.rs"]
+mod state_inspection_tests;
 const ID2STR_CF: &str = "id2str";
 const SPOG_CF: &str = "spog";
 const POSG_CF: &str = "posg";

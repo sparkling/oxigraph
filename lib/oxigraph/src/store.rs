@@ -103,7 +103,10 @@ pub use evaluation_metrics::{
     EvaluationDurationHistogram, EvaluationMetrics, EvaluationOperation, EvaluationOutcome,
 };
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
-pub use format::{StoreFeatureInspection, StoreFormatInfo, StoreVersionStatus};
+pub use format::{
+    GovernanceStateInspectionStatus, StoreFeatureInspection, StoreFormatInfo, StoreStateInspection,
+    StoreVersionStatus, UpgradeGuardInspectionStatus,
+};
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 pub use legacy_backup::{LegacyBackupOptions, LegacyBackupReceipt};
 pub use namespace::{

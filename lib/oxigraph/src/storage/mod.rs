@@ -384,6 +384,14 @@ impl Storage {
         RocksDbStorage::inspect_features(path, control)
     }
 
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    pub fn inspect_state(
+        path: &Path,
+        control: &TransactionStartControl,
+    ) -> Result<crate::store::StoreStateInspection, StorageError> {
+        RocksDbStorage::inspect_state(path, control)
+    }
+
     pub fn snapshot(&self) -> StorageReader<'static> {
         StorageReader {
             kind: match &self.kind {

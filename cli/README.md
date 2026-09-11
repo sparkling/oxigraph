@@ -982,6 +982,34 @@ concurrent inspection lease. The library also exposes
 `Store::inspect_features_with_control` for cooperative cancellation.
 See [the bounded contract](../docs/adr/0028-safe-storage-schema-upgrades.md#explicit-offline-rdf-feature-inspection-2026-09-11).
 
+### Explicit lineage and upgrade-guard inspection
+
+Stop writers and keep the store directory unchanged, then run:
+
+```sh
+oxigraph inspect-state --location ./data
+```
+
+The `oxigraph.store-state-inspection.v1` JSON reports physical format,
+`upgrade_guard`, `governance_state`, `lineage_identity` and `receipt_sequence`.
+Governance is `present`, `absent`, or `not-inspected`: only an exact current
+version and complete known column-family layout permits decoding it. Existing
+lineage identity is rendered as 32 hexadecimal digits; it is an opaque 128-bit
+identity, not a schema UUID. Inspection never invents an identity.
+
+Any guard entry, including a directory or dangling symlink, is reported as
+present without reading or following it. Guarded stores remain inspectable;
+corrupt current-layout governance still causes an error rather than a partial
+report. Guard absence means only that no entry was observed, not that an upgrade
+journal is complete or the store is ready. `upgrade_readiness` remains
+`not-determined`, and full logical consistency is `not-checked`.
+
+This operation never opens the store for writing, creates `LOCK`, migrates
+data, or emits RDF terms. It does not provide a concurrent inspection lease.
+The library exposes `Store::inspect_state_with_control` for cooperative
+cancellation. Existing `inspect` and `inspect-features` behavior is unchanged.
+See [the bounded contract](../docs/adr/0028-safe-storage-schema-upgrades.md#explicit-lineage-and-upgrade-guard-inspection-2026-09-11).
+
 ## Offline legacy physical backups (fork)
 
 Build this fork's CLI. Stop all writers and keep source, package and destination

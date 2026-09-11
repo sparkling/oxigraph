@@ -1,5 +1,5 @@
 //! Read-only physical format observations; not upgrade or compatibility approval.
-use super::{StorageError, Store};
+use super::{StorageError, Store, StoreIdentity};
 use crate::storage::Storage;
 use std::path::Path;
 
@@ -197,6 +197,90 @@ impl StoreFeatureInspection {
     }
 }
 
+/// Observation of whether an inactive-upgrade guard directory entry exists.
+///
+/// Absence means only that the marker entry was not present during inspection;
+/// it is not upgrade readiness or journal-consistency evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum UpgradeGuardInspectionStatus {
+    /// A filesystem entry exists at the guard path.
+    Present,
+    /// No filesystem entry exists at the guard path.
+    Absent,
+}
+
+/// Whether governed lineage state was eligible for and observed by inspection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum GovernanceStateInspectionStatus {
+    /// A current-layout governance record was decoded and validated.
+    Present,
+    /// The exact current layout contains no governance record.
+    Absent,
+    /// The physical layout was not the exact current layout, so bytes were not interpreted.
+    NotInspected,
+}
+
+/// Explicit offline observation of the upgrade guard and governed lineage state.
+///
+/// Governance bytes are interpreted only for the exact current version and
+/// complete known column-family inventory. A lineage identity is an opaque
+/// 128-bit identity preserved by backups, not a UUID or a schema identifier.
+/// This report does not establish full logical consistency, upgrade readiness,
+/// journal completeness, RDF compatibility, or a schema envelope.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StoreStateInspection {
+    format: StoreFormatInfo,
+    upgrade_guard_status: UpgradeGuardInspectionStatus,
+    governance_status: GovernanceStateInspectionStatus,
+    lineage_identity: Option<StoreIdentity>,
+    receipt_sequence: Option<u64>,
+}
+
+impl StoreStateInspection {
+    pub(crate) fn new(
+        format: StoreFormatInfo,
+        upgrade_guard_status: UpgradeGuardInspectionStatus,
+        governance_status: GovernanceStateInspectionStatus,
+        lineage_identity: Option<StoreIdentity>,
+        receipt_sequence: Option<u64>,
+    ) -> Self {
+        Self {
+            format,
+            upgrade_guard_status,
+            governance_status,
+            lineage_identity,
+            receipt_sequence,
+        }
+    }
+
+    /// Returns the physical format observation that bounded governance decoding.
+    pub const fn format_info(&self) -> &StoreFormatInfo {
+        &self.format
+    }
+
+    /// Returns whether any filesystem entry was observed at the upgrade-guard path.
+    pub const fn upgrade_guard_status(&self) -> UpgradeGuardInspectionStatus {
+        self.upgrade_guard_status
+    }
+
+    /// Returns whether governance was present, absent, or intentionally not inspected.
+    pub const fn governance_status(&self) -> GovernanceStateInspectionStatus {
+        self.governance_status
+    }
+
+    /// Returns the exact existing opaque lineage identity when governance is present.
+    pub const fn lineage_identity(&self) -> Option<&StoreIdentity> {
+        self.lineage_identity.as_ref()
+    }
+
+    /// Returns the governed receipt high-water sequence when governance is present.
+    pub const fn receipt_sequence(&self) -> Option<u64> {
+        self.receipt_sequence
+    }
+}
+
 impl Store {
     /// Inspects an existing, offline disk store without creating or migrating it.
     ///
@@ -224,5 +308,23 @@ impl Store {
         control: &super::TransactionStartControl,
     ) -> Result<StoreFeatureInspection, StorageError> {
         Storage::inspect_features(path.as_ref(), control)
+    }
+
+    /// Explicitly observes the upgrade guard and existing governed lineage state.
+    ///
+    /// Physical metadata is inspected first. Governance bytes are decoded only
+    /// for the exact current, complete layout; invalid current governance returns
+    /// corruption rather than a partial report. No writable open, setup,
+    /// migration, namespace or RDF decoding is performed.
+    pub fn inspect_state(path: impl AsRef<Path>) -> Result<StoreStateInspection, StorageError> {
+        Self::inspect_state_with_control(path, &super::TransactionStartControl::new())
+    }
+
+    /// Equivalent to state inspection with cooperative cancellation.
+    pub fn inspect_state_with_control(
+        path: impl AsRef<Path>,
+        control: &super::TransactionStartControl,
+    ) -> Result<StoreStateInspection, StorageError> {
+        Storage::inspect_state(path.as_ref(), control)
     }
 }

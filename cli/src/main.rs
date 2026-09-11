@@ -275,6 +275,69 @@ pub fn main() -> anyhow::Result<()> {
             writeln!(stdout().lock(), "{output}")?;
             Ok(())
         }
+        Command::InspectState { location } => {
+            use oxigraph::store::{
+                GovernanceStateInspectionStatus, StoreVersionStatus,
+                UpgradeGuardInspectionStatus,
+            };
+
+            let report = Store::inspect_state(location)?;
+            let info = report.format_info();
+            let version_status = match info.version_status() {
+                StoreVersionStatus::Missing => "missing",
+                StoreVersionStatus::Malformed => "malformed",
+                StoreVersionStatus::Older => "older",
+                StoreVersionStatus::Current => "current",
+                StoreVersionStatus::Newer => "newer",
+                _ => "unknown",
+            };
+            let upgrade_guard = match report.upgrade_guard_status() {
+                UpgradeGuardInspectionStatus::Present => "present",
+                UpgradeGuardInspectionStatus::Absent => "absent",
+                _ => "unknown",
+            };
+            let upgrade_guard_interpretation = match report.upgrade_guard_status() {
+                UpgradeGuardInspectionStatus::Present => "incomplete-upgrade-marker-present",
+                UpgradeGuardInspectionStatus::Absent => "marker-not-present",
+                _ => "unknown",
+            };
+            let governance_state = match report.governance_status() {
+                GovernanceStateInspectionStatus::Present => "present",
+                GovernanceStateInspectionStatus::Absent => "absent",
+                GovernanceStateInspectionStatus::NotInspected => "not-inspected",
+                _ => "unknown",
+            };
+            let lineage_identity = report.lineage_identity().map(|identity| {
+                identity
+                    .as_bytes()
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>()
+            });
+            let output = serde_json::json!({
+                "format": "oxigraph.store-state-inspection.v1",
+                "inspection": "physical-metadata-and-current-governance-state",
+                "version_status": version_status,
+                "storage_version": info.storage_version(),
+                "current_storage_version": info.current_storage_version(),
+                "version_marker_bytes": info.version_marker_bytes(),
+                "column_families": info.column_families(),
+                "missing_column_families": info.missing_column_families(),
+                "unexpected_column_families": info.unexpected_column_families(),
+                "upgrade_guard": upgrade_guard,
+                "upgrade_guard_interpretation": upgrade_guard_interpretation,
+                "governance_state": governance_state,
+                "lineage_identity": lineage_identity,
+                "lineage_identity_kind": "opaque-128-bit-not-uuid",
+                "receipt_sequence": report.receipt_sequence(),
+                "full_logical_consistency": "not-checked",
+                "upgrade_readiness": "not-determined",
+                "schema_envelope": "not-inspected",
+                "rdf_feature_compatibility": "not-inspected",
+            });
+            writeln!(stdout().lock(), "{output}")?;
+            Ok(())
+        }
         Command::VerifyBackup { location } => {
             let receipt = oxigraph::store::BackupReceipt::verify(
                 location,

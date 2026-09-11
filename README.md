@@ -470,6 +470,11 @@ emitting RDF terms. The retained-record scan can be linear in retained history;
 it does not run during ordinary opens. Unexamined history, derived state and
 complete compatibility remain unproven. The existing metadata-only `inspect`
 command is unchanged.
+`Store::inspect_state` and `oxigraph inspect-state --location <path>` separately
+report the existing governed lineage identity and upgrade-guard presence without
+changing the offline store. Noncurrent layouts report governance as unexamined;
+absent guards are not proof of upgrade readiness. See
+[state inspection usage](cli/README.md#explicit-lineage-and-upgrade-guard-inspection).
 `Store::backup_legacy` now makes source-preserving physical copies of offline
 version-0/1 stores. Its separate `LegacyBackupReceipt` verifies both the exact
 package and, optionally, unchanged source ancestry. This requires an existing

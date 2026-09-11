@@ -17,6 +17,8 @@
   RDF 1.2-only encodings in current-format live object indexes.
   Bounded outbox consumption distinguishes valid retained RDF 1.2-only effects
   from malformed payloads without adding open-time history admission.
+  Explicit offline feature inspection and governed-lineage/upgrade-guard
+  observation APIs/CLI are implemented, with the bounded scopes below.
   Full compatibility rejection, schema envelopes, older-binary rollback and
   the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
@@ -810,6 +812,41 @@ independent native review and exact MCP readback. Clippy warnings remain open.
 This is a bounded product inspection slice, not closure of any complete staged
 gate below. ADR status remains Proposed; frozen qualification, full G4.3 and
 publication remain separate.
+
+## Explicit lineage and upgrade-guard inspection (2026-09-11)
+
+`Store::inspect_state`, its cooperative-control variant and CLI `inspect-state`
+observe physical metadata, the existing upgrade-guard entry and existing
+governed lineage state. They preserve the metadata-only `inspect` contract and
+the separate feature inspector. Database access is read-only and default-family
+only; no setup, migration, namespace/RDF decoding or identity creation occurs.
+
+Only an exact current marker and complete known column-family inventory admits
+the existing `GovernanceState::decode` validator. The report distinguishes
+decoded `present`, current-layout `absent`, and other-layout `not-inspected`.
+The reported 16 bytes are the receipt lineage identity, not a schema UUID;
+receipt sequence is observed, not independently qualified against all history.
+Malformed current governance remains corruption even when a guard is present.
+
+Guard observation uses `symlink_metadata`: any existing entry counts as present,
+including directories and dangling symlinks, without reading or following it.
+Other I/O errors propagate. An absent marker does not establish complete journal
+state, crash recovery or readiness. Writers must remain stopped and paths stable.
+
+Native tests cover governed identity/checkpoint preservation, absent governance,
+invalid governance version/length/checksum, noncurrent layouts, guard kinds,
+cancellation, missing paths and repeated source preservation. Default/RDF-1.2
+library and default/no-default CLI lanes pass. The separately selected malformed
+CLI test requires the actual decoder diagnostic, not merely a nonzero exit from
+a stale executable. Store/receipt regressions, formatting and an identified
+local CLI build also pass. Exact final review is
+`programme-native-reviews/g43-state-inspection-sol-review-v2`; the ordinary
+workflow completed after formatting and two bounded CLI review corrections.
+
+This implements existing-state observations, not the checksummed schema UUID
+envelope, full interrupted-journal interpretation, complete compatibility or
+frozen qualification. All complete staged gates below and G4.3 remain open;
+this ADR remains Proposed. No publication is implied.
 
 ## Staged implementation and evaluator gates
 

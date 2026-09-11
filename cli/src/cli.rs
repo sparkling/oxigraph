@@ -181,6 +181,15 @@ pub enum Command {
         #[arg(short, long, value_hint = ValueHint::DirPath)]
         location: PathBuf,
     },
+    /// Inspect offline physical format, upgrade guard and existing lineage state
+    ///
+    /// Stop all writers first. Governance is decoded only for the exact current
+    /// layout. Guard absence is marker absence, not readiness or journal proof.
+    InspectState {
+        /// Existing offline store directory
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
+        location: PathBuf,
+    },
     /// Verify a completed backup package without opening or changing its database
     VerifyBackup {
         /// Directory containing the backup completion manifest
