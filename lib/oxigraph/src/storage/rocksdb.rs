@@ -118,6 +118,8 @@ mod feature_inspection;
 mod format_inspection_tests;
 #[cfg(test)]
 mod safe_open_tests;
+#[cfg(test)]
+mod schema_envelope_tests;
 #[path = "rocksdb/state_inspection.rs"]
 mod state_inspection;
 #[cfg(test)]

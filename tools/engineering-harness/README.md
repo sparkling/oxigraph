@@ -202,11 +202,14 @@ Legacy build instructions remain recipes to pass through this entry point.
 
 Model roles are executable policy in `src/delivery.mjs`: no model for build/test;
 Terra/Medium for bounded implementation, Luna/Low for documentation, Sol/Medium
-for routine review, Sol/High for a named difficult problem, and Astra/High for
+for routine review, owner-selected Astra/Low replacing Sol/High for programme implementation, and Astra/High for
 consequential decisions. An explicit supported model/effort override needs its
 reason and completion check; Max/Ultra also require `--selection owner` or
 `--selection unresolved` for that bounded exception. This does not switch the
-owner's active model.
+owner's active model. The September 12 owner override is explicit in ordinary
+workflow specifications (`model: "gpt-6-astra"`, `effort: "low"`,
+`selection: "owner"`); the generic Terra/Medium default and Sol/Medium reviewer
+remain unchanged. Superseded Sol-bound runs retain their own original identities.
 Native Claude alternatives remain allowed by ADR-0043 when specifically
 selected and available; this Codex dispatch planner does not claim to launch
 or probe them. Ruflo's Claude-only model-outcome enum cannot truthfully record

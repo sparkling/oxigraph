@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-09-07
-- Updated: 2026-09-11
+- Updated: 2026-09-12
 - Deciders: Oxigraph parity programme
 - Implementation status: R1 source handoff `aa7128bb` is delivered. Ordinary
   product work follows the implemented native-host workflow below; the wider
@@ -264,10 +264,17 @@ jobs terminated at handoff are not passing tests.
 | Routine bounded implementation and focused test authoring | Terra Medium; Sonnet on an authorized native Claude route |
 | Narrow extraction, documentation edits and repetitive language work | Luna Low or Haiku |
 | Routine recovery coordination and focused review | Sol Low/Medium or Terra Medium |
-| Difficult Rust, transaction, or SPARQL implementation | Sol High or Opus for the named difficult part |
+| Difficult Rust, transaction, or SPARQL implementation | Astra Low (owner replacement for Sol High); Opus only on an explicitly selected native Claude route |
 | Consequential architectural judgment or an unresolved correctness review | Astra High; Xhigh only for a demonstrated need; Fable for a targeted authorized review |
 | A particularly hard unresolved problem, or an explicit owner selection | Astra Max/Ultra for that bounded problem, with its reason and completion check recorded |
 | Useful independent subtasks | Mixed faster workers chosen by subtask, not automatic Ultra; one Git writer |
+
+The owner's September 12 selection replaces Sol High with Astra Low for this
+programme's implementation work. The schema-envelope workflow records this as
+`model=gpt-6-astra`, `effort=low`, `selection=owner`; Sol Medium independent
+review is unchanged. The prior Sol-bound attempt was stopped before application,
+not relabelled as an Astra execution. This does not switch the conversation
+model or change deterministic build/test execution.
 
 Do not inherit a Max/Ultra coordinator's settings into routine workers. Select
 their model/effort explicitly and pass only the relevant contract, files and

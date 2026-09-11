@@ -25,19 +25,28 @@ programme plans link here instead of copying another status narrative.
 ## G4.3 — safe storage upgrades
 
 [ADR-0028](../adr/0028-safe-storage-schema-upgrades.md) remains **Proposed**
-(updated 2026-09-11). The following rows preserve its four staged gates and
+(updated 2026-09-12). The following rows preserve its four staged gates and
 separate promotion/handoff requirements. None is claimed fully closed.
 
 | Gate | Proven native boundary | Still required to close the gate |
 | --- | --- | --- |
-| 1. Inventory and inspection | Offline marker/column-family inspection; typed unknown/newer/legacy refusal; bounded live RDF-feature refusal and retained-outbox consumption errors; explicit feature-independent reporting of live and retained-outbox RDF requirements; explicit existing governed-lineage identity and upgrade-guard observation; verified incomplete/pending/sealed outer upgrade-workspace inspection on the admitted build-bound profile. [Inspection](../../lib/oxigraph/src/storage/rocksdb/format_inspection_tests.rs), [ordinary-open refusal](../../lib/oxigraph/src/storage/rocksdb/safe_open_tests.rs), [live features](../../lib/oxigraph/src/storage/rocksdb/feature_compatibility_tests.rs), [codec classification](../../lib/oxigraph/src/store/change_codec_feature_tests.rs), [outbox validation](../../lib/oxigraph/src/store/outbox.rs), [state CLI](../../cli/tests/store_inspection.rs), [upgrade inspection](../../lib/oxigraph/src/store/upgrade_inspection_tests.rs). | Schema-envelope store UUID; the checksummed schema/feature/subsystem envelope; full history/derived-state admission and frozen cross-profile interrupted-fixture inspection. Hash-pin v0, v1, current, missing, corrupt, too-new, RDF-feature-mismatch and interrupted fixtures, and prove inspect/open/read-only source-byte preservation under their literal contracts. Default metadata-only inspection still reports RDF compatibility unknown; explicit feature inspection certifies only its declared scopes. |
+| 1. Inventory and inspection | Offline marker/column-family inspection; typed unknown/newer/legacy refusal; bounded live RDF-feature refusal and retained-outbox consumption errors; explicit feature-independent reporting of live and retained-outbox RDF requirements; explicit existing governed-lineage identity and upgrade-guard observation; verified incomplete/pending/sealed outer upgrade-workspace inspection on the admitted build-bound profile; canonical checksummed envelope decoding with distinct schema UUID and declared RDF/codec metadata. [Inspection](../../lib/oxigraph/src/storage/rocksdb/format_inspection_tests.rs), [ordinary-open refusal](../../lib/oxigraph/src/storage/rocksdb/safe_open_tests.rs), [live features](../../lib/oxigraph/src/storage/rocksdb/feature_compatibility_tests.rs), [codec classification](../../lib/oxigraph/src/store/change_codec_feature_tests.rs), [outbox validation](../../lib/oxigraph/src/store/outbox.rs), [state CLI](../../cli/tests/store_inspection.rs), [upgrade inspection](../../lib/oxigraph/src/store/upgrade_inspection_tests.rs). | Envelope writing, explicit v2-to-v3 upgrade and profile admission; full history/derived-state admission and frozen cross-profile interrupted-fixture inspection. Hash-pin v0, v1, current, missing, corrupt, too-new, RDF-feature-mismatch and interrupted fixtures, and prove inspect/open/read-only source-byte preservation under their literal contracts. Default metadata-only inspection still reports RDF compatibility unknown; explicit feature inspection certifies only its declared scopes. |
 | 2. Shadow transformation | Source-preserving legacy backup, ancestry, inactive preparation and explicit v0/v1 transformation; native quad/topology/namespace and failure checks. [Backups](../../lib/oxigraph/tests/legacy_backups.rs), [preparation](../../lib/oxigraph/tests/upgrade_preparation.rs), [transformation](../../lib/oxigraph/tests/upgrade_transformation.rs). | Full required logical/subsystem comparison, including metadata/receipt/outbox/index state where applicable; rebuild and validate required derived indexes. Inject failure/cancellation at every journal/fsync boundary, preserving the source and rejecting unsealed output; retain disk-exhaustion coverage. Existing native tests are not the complete frozen matrix. |
 | 3. Receipt and recovery | Verified completed-edge restart and build-bound inactive receipts on the bounded Linux/static Oxigraph/vendored-RocksDB profile. [Recovery](../../lib/oxigraph/tests/upgrade_recovery.rs), [receipts](../../lib/oxigraph/tests/upgrade_receipts.rs). | Complete feature/subsystem/cursor identities and exact-receipt independent qualification, including fresh-process open/validate, tampering, crash/power-loss, path substitution and insufficient-disk checks. Old preparation/transformation workspaces are not made resumable. |
 | 4. Operational compatibility | Fresh, disjoint target activation is implemented; source, backup and sealed workspace remain preserved. [API](../../lib/oxigraph/tests/upgrade_activation.rs), [CLI](../../cli/tests/upgrade_activation.rs). | Complete backup → upgrade → explicit cutover → older-binary rollback to preserved source → restore drills; frozen size classes and supported-version windows; duration, peak disk, peak memory, read amplification and write amplification. Native activation is not service routing, automatic cutover or rollback qualification. |
 | Promotion | The native profile and its limitations are documented; no aggregate qualification is claimed. | ADR-0028's evaluator-only commit, pre-existing frozen fixtures, independent logical export comparison, default/RDF-1.2 and vendored/system-RocksDB matrix, exact receipts and predecessor upgrade/failure path. The recorded system lane lacks `rocksdb.pc >= 9.10.0`; do not count a vendored helper test as system qualification. |
-| Obtainable handoff | Upgrade-inspection build `run-v60JXW` identifies its CLI artifact; supplemental CLI journey `run-9o2aor` passes, but the observed post-test binary differs from that build identity. Both exact sizes/hashes are recorded in [ADR-0028](../adr/0028-safe-storage-schema-upgrades.md#verified-outer-upgrade-workspace-inspection-2026-09-11), without claiming they match. | Reproducible source/dependencies, an identified usable artifact for the declared milestone, all applicable gates, and exact publication authority. Local development artifacts are not newly published releases; do not substitute the post-test binary for an earlier build receipt. |
+| Obtainable handoff | Envelope reader build `run-gwWSRy` identifies the local CLI artifact; native API, literal CLI mapping and existing CLI inspection tests pass. Exact bytes/hash and scope are in [ADR-0028](../adr/0028-safe-storage-schema-upgrades.md#schema-envelope-read-side-2026-09-12). | Full milestone gates, reproducible source/dependencies and exact publication authority. This post-test development build is not an exact-executable journey or a published release. The previous upgrade-inspection artifact mismatch remains recorded separately. |
 
-Latest bounded implementation evidence:
+Latest bounded implementation: checksummed schema-envelope read side,
+`programme-native-reviews/g43-schema-envelope-sol-v1`, workflow
+`8f252fa7-1855-46b2-ac47-c85ad19ec5fb`. Astra Low implemented it; Sol Medium
+independently accepted exact source/check identities. Formatting, envelope
+default/RDF-1.2 (4/4), legacy inspection (7), safe opens (17 top-level plus five
+child observations), CLI compilation, literal CLI mapping (2), and existing CLI
+inspection (9) pass. No envelope writer or version-3 admission is implemented.
+See [the exact read-side boundary](../adr/0028-safe-storage-schema-upgrades.md#schema-envelope-read-side-2026-09-12).
+
+Earlier bounded inspection evidence:
 `programme-native-reviews/g43-upgrade-inspection-sol-v1`.
 Workflow `4e7df9b6-bd69-4f89-a223-1d02ec4306c5` completed its six declared
 checks, native independent review and exact MCP handoff. Formatting and
@@ -57,12 +66,12 @@ review is `programme-native-reviews/g43-formatting-sol-v1`. This resolves the
 recorded crate formatting failure, not a whole-programme gate; the prior failed
 record remains intact. No new CLI artifact was built for formatting-only edits.
 
-Next product step: define the remaining schema-envelope contract against existing
-receipt/upgrade formats and immutable evidence before changing stored formats.
-Keep schema UUID distinct from receipt lineage; resolve RDF-profile and external
-derived-index semantics before freezing new envelope bytes. Existing inspection
-does not replace those requirements. Do not repeat delivered reporting or expand
-ordinary opens into a history scan. Full compatibility gates remain open.
+Next product step: implement the envelope writer and explicit v2-to-v3 shadow
+upgrade, retaining the distinct schema UUID across retries and binding the
+envelope into new receipt/backup formats. Resolve writer RDF-ceiling selection
+and the supported rollback window before activation; preserve all old receipt
+bytes and validators. The read-side descriptor does not substitute for that
+write path, full history/derived-state admission or frozen compatibility gates.
 
 ## Programme boundaries beyond G4.3
 

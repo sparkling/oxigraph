@@ -218,6 +218,7 @@ pub fn main() -> anyhow::Result<()> {
                 "storage_version": info.storage_version(),
                 "current_storage_version": info.current_storage_version(),
                 "version_marker_bytes": info.version_marker_bytes(),
+                "schema_envelope": schema_envelope_json(info.schema_envelope()),
                 "column_families": info.column_families(),
                 "missing_column_families": info.missing_column_families(),
                 "unexpected_column_families": info.unexpected_column_families(),
@@ -6955,5 +6956,69 @@ mod tests {
             .to_string(),
             "https://example.org/foo"
         );
+    }
+}
+
+// The inspect command and its focused tests share this exact JSON projection.
+fn schema_envelope_json(envelope: Option<&oxigraph::store::StoreSchemaEnvelope>) -> serde_json::Value {
+    envelope.map_or(serde_json::Value::Null, |envelope| {
+        serde_json::json!({
+            "envelope_version": envelope.envelope_version(),
+            "logical_version": envelope.logical_version(),
+            "schema_uuid": envelope.schema_uuid().to_string(),
+            "rdf_write_profile": envelope.rdf_write_profile().as_str(),
+            "encoding_profile": envelope.encoding_profile(),
+            "required_column_families": envelope.required_column_families(),
+            "namespace_schema": envelope.namespace_schema(),
+            "transaction_outcome_schema": envelope.transaction_outcome_schema(),
+            "commit_receipt_schema": envelope.commit_receipt_schema(),
+            "governance_schema": envelope.governance_schema(),
+            "outbox_record_schema": envelope.outbox_record_schema(),
+            "derived_generation_schema": envelope.derived_generation_schema(),
+            "semantic_change_schema": envelope.semantic_change_schema(),
+        })
+    })
+}
+
+#[cfg(test)]
+mod schema_envelope_cli_tests {
+    use super::schema_envelope_json;
+    use oxigraph::store::StoreSchemaEnvelope;
+    // Complete independently precomputed fixtures, including domain-separated
+    // checksums. Tests do not construct or serialize an envelope.
+    const RDF11: &[u8] = b"\x4f\x58\x53\x43\x48\x45\x4d\x41\x01\x00\x00\x00\x00\x00\x00\x00\x03\x12\x34\x56\x78\x9a\xbc\x4d\xef\x80\x12\x34\x56\x78\x9a\xbc\xde\x0b\x00\x01\x00\x01\x00\x02\x00\x02\x00\x03\x00\x01\x00\x01\x00\x01\x0c\x07\x64\x65\x66\x61\x75\x6c\x74\x04\x64\x6f\x73\x70\x04\x64\x70\x6f\x73\x04\x64\x73\x70\x6f\x04\x67\x6f\x73\x70\x04\x67\x70\x6f\x73\x06\x67\x72\x61\x70\x68\x73\x04\x67\x73\x70\x6f\x06\x69\x64\x32\x73\x74\x72\x04\x6f\x73\x70\x67\x04\x70\x6f\x73\x67\x04\x73\x70\x6f\x67\xec\x9d\xbe\x25\x32\x37\x48\x6f\x72\xc0\x68\x80\x3b\x92\x3d\xe8\x8a\xe9\x62\x2c\xc9\xa7\xc0\x7b\xc6\x7f\x07\x1b\xa2\xff\xb4\xd6";
+    const RDF12: &[u8] = b"\x4f\x58\x53\x43\x48\x45\x4d\x41\x01\x00\x00\x00\x00\x00\x00\x00\x03\x12\x34\x56\x78\x9a\xbc\x4d\xef\x80\x12\x34\x56\x78\x9a\xbc\xde\x0c\x00\x01\x00\x01\x00\x02\x00\x02\x00\x03\x00\x01\x00\x01\x00\x01\x0c\x07\x64\x65\x66\x61\x75\x6c\x74\x04\x64\x6f\x73\x70\x04\x64\x70\x6f\x73\x04\x64\x73\x70\x6f\x04\x67\x6f\x73\x70\x04\x67\x70\x6f\x73\x06\x67\x72\x61\x70\x68\x73\x04\x67\x73\x70\x6f\x06\x69\x64\x32\x73\x74\x72\x04\x6f\x73\x70\x67\x04\x70\x6f\x73\x67\x04\x73\x70\x6f\x67\x2c\x14\x19\x49\x6f\x71\x74\xaf\xc0\x2f\x33\xdd\xbe\x80\x71\x3d\x54\xff\x25\xe3\xac\x96\xbf\xbf\x20\xae\x57\xcf\x18\x78\x6f\xec";
+
+    #[test]
+    fn legacy_missing_or_malformed_envelope_reports_null() {
+        assert_eq!(schema_envelope_json(None), serde_json::Value::Null);
+    }
+
+    #[test]
+    fn independent_schema_envelope_profiles_report_exact_json() {
+        for (bytes, profile) in [(RDF11, "rdf-11"), (RDF12, "rdf-12")] {
+            let envelope = StoreSchemaEnvelope::decode(bytes).unwrap();
+            assert_eq!(
+                schema_envelope_json(Some(&envelope)),
+                serde_json::json!({
+                    "envelope_version": 1,
+                    "logical_version": 3,
+                    "schema_uuid": "12345678-9abc-4def-8012-3456789abcde",
+                    "rdf_write_profile": profile,
+                    "encoding_profile": 1,
+                    "required_column_families": [
+                        "default", "dosp", "dpos", "dspo", "gosp", "gpos",
+                        "graphs", "gspo", "id2str", "ospg", "posg", "spog"
+                    ],
+                    "namespace_schema": 1,
+                    "transaction_outcome_schema": 2,
+                    "commit_receipt_schema": 2,
+                    "governance_schema": 3,
+                    "outbox_record_schema": 1,
+                    "derived_generation_schema": 1,
+                    "semantic_change_schema": 1,
+                })
+            );
+        }
     }
 }

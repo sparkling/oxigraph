@@ -1,15 +1,15 @@
 //! Read-only physical format observations; not upgrade or compatibility approval.
-use super::{StorageError, Store, StoreIdentity};
+use super::{StorageError, Store, StoreIdentity, StoreSchemaEnvelope};
 use crate::storage::Storage;
 use std::path::Path;
 
-/// Classification of the legacy `oxversion` marker, not of the store's contents.
+/// Classification of the `oxversion` marker, not of the store's contents.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum StoreVersionStatus {
     /// No marker exists. Inspection never stamps a missing marker.
     Missing,
-    /// The marker is not an eight-byte big-endian integer.
+    /// The marker is neither a legacy integer nor a valid supported envelope.
     Malformed,
     /// The marker predates this binary's current storage version.
     Older,
@@ -22,13 +22,15 @@ pub enum StoreVersionStatus {
 
 /// Physical metadata observed without opening a writable store or migrating it.
 ///
-/// These legacy fields do not record an RDF feature profile, a governed store
-/// identity, or an upgrade journal. This is not a validation, backup, upgrade,
+/// Legacy markers have no schema envelope. A parsed envelope describes an
+/// immutable write profile, not observed RDF usage or governed lineage.
+/// This is not a validation, backup, upgrade,
 /// readiness, or compatibility receipt. In particular a current version marker
 /// may coexist with a missing column family or invalid logical data.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StoreFormatInfo {
     storage_version: Option<u64>,
+    schema_envelope: Option<StoreSchemaEnvelope>,
     current_storage_version: u64,
     version_marker_bytes: Option<usize>,
     column_families: Vec<String>,
@@ -45,10 +47,18 @@ impl StoreFormatInfo {
     ) -> Self {
         column_families.sort_unstable();
         required.sort_unstable();
+        let schema_envelope = marker.and_then(StoreSchemaEnvelope::decode);
+        let storage_version = marker
+            .and_then(|value| value.try_into().ok())
+            .map(u64::from_be_bytes)
+            .or_else(|| {
+                schema_envelope
+                    .as_ref()
+                    .map(StoreSchemaEnvelope::logical_version)
+            });
         Self {
-            storage_version: marker
-                .and_then(|value| value.try_into().ok())
-                .map(u64::from_be_bytes),
+            storage_version,
+            schema_envelope,
             current_storage_version,
             version_marker_bytes: marker.map(<[u8]>::len),
             missing_column_families: required
@@ -75,7 +85,13 @@ impl StoreFormatInfo {
         }
     }
 
-    /// Parsed marker value, absent for a missing or malformed marker.
+    /// Parsed envelope, absent for legacy, missing or malformed markers.
+    /// This does not validate stored contents against the declared profile.
+    pub const fn schema_envelope(&self) -> Option<&StoreSchemaEnvelope> {
+        self.schema_envelope.as_ref()
+    }
+
+    /// Parsed logical marker value, absent for a missing or malformed marker.
     pub const fn storage_version(&self) -> Option<u64> {
         self.storage_version
     }

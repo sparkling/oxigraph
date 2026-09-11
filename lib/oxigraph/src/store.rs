@@ -61,6 +61,8 @@ mod format;
 mod legacy_backup;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod restore;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+mod schema_envelope;
 #[cfg(all(not(target_family = "wasm"), feature = "spatial-index"))]
 mod spatial_index;
 #[cfg(all(not(target_family = "wasm"), feature = "statistics"))]
@@ -130,6 +132,8 @@ pub use retention::{
     ExpiredCommitReceipt, GovernanceError, GovernanceHealth, GovernanceTime, OutboxLease,
     OutboxLeaseToken, OutboxMaintenance, OutboxRetentionPolicy,
 };
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+pub use schema_envelope::{SchemaRdfProfile, SchemaUuid, StoreSchemaEnvelope};
 pub use semantic_change::{
     ChangeTrackingError, ChangeTrackingTransaction, SemanticChange, SemanticChangeSet,
 };

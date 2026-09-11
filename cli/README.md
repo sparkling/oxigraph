@@ -925,6 +925,17 @@ that the store is compatible or ready. A `current` marker does not prove valid
 RDF, feature compatibility, or absence of an interrupted upgrade; these checks
 are explicitly `unknown`/`not-checked`. No RDF terms are emitted.
 
+The additive `schema_envelope` field is null for legacy integer, missing or
+malformed markers. A canonical checksummed v1 envelope reports its schema UUID,
+logical version, immutable RDF write ceiling, encoding profile, required column
+families and subsystem codec ceilings. These are declarations, not validation
+of store contents. The schema UUID is distinct from governed receipt lineage.
+Envelope logical versions start at 3; this binary still creates version-2 stores
+and refuses those newer envelopes on ordinary open. There is no envelope writer
+or v2-to-v3 upgrade yet. Do not rewrite a marker to bypass the refusal.
+`StoreSchemaEnvelope::decode` exposes the same bounded byte parser without any
+filesystem access or write authority. See [the read-side contract](../docs/adr/0028-safe-storage-schema-upgrades.md#schema-envelope-read-side-2026-09-12).
+
 Keep the directory unchanged during inspection. This is not a concurrent
 inspection lease or an upgrade command. Ordinary writable and read-only opens
 now refuse recognized version-0/1 layouts with an explicit-upgrade diagnostic;

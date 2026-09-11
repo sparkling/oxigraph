@@ -447,6 +447,11 @@ This fork also provides `Store::inspect` and `oxigraph inspect --location <path>
 for offline, non-migrating version-marker and column-family inspection. This is
 physical metadata, not logical/feature compatibility or upgrade approval; see
 [inspection usage and limits](cli/README.md#offline-storage-inspection-fork).
+Inspection also decodes the checksummed schema-envelope v1 descriptor when
+present: schema UUID, declared RDF write ceiling, encoding, column families and
+subsystem codec ceilings. Legacy integer markers have no envelope. This is a
+read-side implementation only: new stores still use version 2, envelope-declared
+versions 3 and later remain too new to open, and no upgrade writer emits them.
 Ordinary opens now reject unknown/newer markers and incomplete current layouts
 before writable database setup. Writable preflight holds the native store lock;
 checkpoints without one gain an empty `LOCK` even on refusal. Recognized version-0/1
@@ -468,8 +473,8 @@ requirements in live object indexes and physically retained governed outbox
 records, including requirements unsupported by the inspecting binary, without
 emitting RDF terms. The retained-record scan can be linear in retained history;
 it does not run during ordinary opens. Unexamined history, derived state and
-complete compatibility remain unproven. The existing metadata-only `inspect`
-command is unchanged.
+complete compatibility remain unproven. Metadata-only `inspect` does not scan
+these contents; its optional envelope reports declarations, not observed usage.
 `Store::inspect_state` and `oxigraph inspect-state --location <path>` separately
 report the existing governed lineage identity and upgrade-guard presence without
 changing the offline store. Noncurrent layouts report governance as unexamined;

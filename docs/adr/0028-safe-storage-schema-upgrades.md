@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-11
+- Updated: 2026-09-12
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
@@ -21,7 +21,8 @@
   observation APIs/CLI are implemented, with the bounded scopes below.
   Existing build-bound outer upgrade workspaces also have a non-mutating
   inspection API/CLI for verified incomplete, pending and sealed states.
-  Full compatibility rejection, schema envelopes, older-binary rollback and
+  Checksummed schema-envelope decoding and metadata reporting are implemented;
+  envelope writing/admission, full compatibility rejection, older-binary rollback and
   the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
@@ -901,6 +902,56 @@ This closes the admitted outer-workspace observation gap only. Schema/feature
 envelopes, complete history/derived-state admission, frozen cross-profile
 inspection/compatibility, older-binary rollback and system-RocksDB qualification
 remain open. ADR-0028 remains Proposed and full G4.3 is not complete.
+
+## Schema-envelope read side (2026-09-12)
+
+`StoreSchemaEnvelope::decode`, `StoreFormatInfo::schema_envelope`, and the
+existing `inspect` CLI now expose the read side of the primary envelope at
+`oxversion`. Every eight-byte marker retains its legacy integer interpretation.
+No constructor, ordinary-open writer, upgrade writer, journal, receipt or
+receipt validator changes. `LATEST_STORAGE_VERSION` remains 2. A canonical
+envelope with logical version >=3 is reported as newer and ordinary opens return
+`SchemaTooNew`; malformed envelope bytes return no descriptor and are rejected
+as `SchemaUnknown`. Inspection never allocates a new identity.
+
+The bounded v1 grammar is implemented in
+[`schema_envelope.rs`](../../lib/oxigraph/src/store/schema_envelope.rs):
+`OXSCHEMA` magic, envelope version 1, big-endian logical version, RFC 4122 v4
+UUID, RDF ceiling 11/12, encoding profile 1, seven u16 codec ceilings, and the
+exact sorted twelve-family inventory. Names are length-prefixed; the entire
+marker is bounded to 512 bytes and permits no padding or extensions. A SHA-256
+checksum covers domain `oxigraph.schema-envelope.v1\0` and the preceding bytes.
+The checksum establishes byte consistency, not authorship or logical validity.
+
+The schema UUID is separate from governed lineage and RocksDB identity. RDF is
+an immutable permitted-write ceiling, not observed term usage. Codec ceilings
+are namespace 1, transaction outcome 2, commit receipt 2, governance 3, outbox
+record 1, derived-generation container 1 and semantic changes 1. They describe
+permitted codec revisions, not subsystem presence or completeness. External
+provider identities remain separately validated. Different descriptor profiles
+need a reviewed format revision; this reader grants no writer/default activation.
+
+Workflow `8f252fa7-1855-46b2-ac47-c85ad19ec5fb` used owner-selected Astra Low
+implementation and independent Sol Medium review, root-only application and
+exact MCP handoff. Formatting (`run-Uj2PKz`), default/RDF-1.2 envelope tests
+(`run-0Lkawd`/`run-t4ZpEH`, four each), legacy inspection (`run-DtErKu`, seven),
+safe opens (`run-PkGrNG`, 17 top-level tests plus five child observations), and
+CLI compilation (`run-QCsEyj`) passed. Literal-envelope CLI JSON tests passed
+two (`run-2IMzSV`); existing CLI inspection passed nine (`run-9e88Kx`). Counts
+across configurations overlap. The initial formatting failure `run-sHPhXY`
+remains recorded. Independent review is
+`programme-native-reviews/g43-schema-envelope-sol-v1`.
+
+Local build `run-gwWSRy` identifies `target/debug/oxigraph`, 642,456,072 bytes,
+SHA-256 `95a66d763ecd5120096270c187026ebaa827d95cff0a2e7d2a3b720232e4d4c6`,
+from its Cargo compiler-artifact event (`cargoFresh=false`). This development
+artifact was built after the tests; no exact-executable journey or publication
+is claimed. The preceding upgrade-inspection artifact mismatch remains history.
+
+Next is the explicit envelope writer and v2-to-v3 shadow path, with UUID retained
+through retries, receipt/backup binding, RDF-ceiling admission and failure tests.
+Default activation, frozen compatibility/rollback gates and full G4.3 remain
+open. The ADR remains Proposed.
 
 ## Staged implementation and evaluator gates
 
