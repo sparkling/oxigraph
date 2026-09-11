@@ -7,9 +7,9 @@
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
   shadow-copy preparation and explicit inactive transformation APIs/CLI implemented;
-  additive verified checkpoint/restart APIs implemented.
+  additive verified checkpoint/restart APIs and offline recovery CLI implemented.
   Ordinary writable open still performs known version-0/1 migrations in place.
-  Full compatibility rejection, schema envelopes, recovery CLI exposure,
+  Full compatibility rejection, schema envelopes,
   sealed upgrade receipts and explicit activation remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - **Depends on**:
@@ -431,10 +431,52 @@ validators are unchanged. Their old interrupted workspaces do not become
 resumable; start the new recovery workflow before expecting restart support.
 Legacy RDF-star terms still require `rdf-12`. No new dependency, persisted
 logical schema version, automatic cutover or default-open migration change is
-introduced. CLI recovery exposure, the sealed exact-build receipt,
+introduced. CLI recovery exposure is covered by the subsequent slice below;
+the sealed exact-build receipt,
 activation/cutover/rollback, the envelope/classifier and frozen compatibility,
 crash and system-RocksDB lanes remain open. This ADR remains Proposed;
 the bounded recovery API is not full G4.3 completion.
+
+## Offline recovery CLI (2026-09-11)
+
+`start-upgrade-recovery`, `resume-upgrade-recovery` and
+`verify-upgrade-recovery` expose the existing checkpoint/restart APIs without
+changing their formats or migration algorithms. Start requires a fresh workspace
+and reports an incomplete initial checkpoint. Resume reuses only verified steps;
+completed resume verifies without rerunning migration. The independent verifier
+accepts either a valid incomplete chain or completed output, reporting the
+actual state, attempts, counts and content fingerprints. All outcomes retain
+`active=false` and `upgrade_authorized=false`. See the
+[operator journey](../../cli/README.md#offline-restartable-upgrade-recovery-fork).
+
+All six positive limit options preserve API defaults when omitted. Content and
+attempt limits and the RDF feature profile must match across calls; a new timeout
+is allowed. The existing maximum of 100,000 files is unchanged, and the CLI
+parser rejects attempt limits outside 1..=64. Validation/refusal errors emit no
+success record; uncertain post-completion I/O outcomes require verification.
+
+Ordinary workflow `4c744606-360e-457d-893c-01a95cf6fffc` used a complete native
+Sol High proposal, root-only application, deterministic checks and independent
+Sol Medium review. Default recovery tests passed (3), no-default recovery and
+existing upgrade/backup/restore/inspection tests passed (18), default existing
+upgrade/legacy-backup regressions passed (8), and option-adapter units passed (2).
+These lanes overlap and are not separate product milestones. They cover both
+legacy layouts where supported, fresh-process continuation and verification,
+exact source/backup inventories, initial/final guards, matching custom limits,
+numeric parser failures and changed-profile/journal/checkpoint refusal.
+
+The initial `run-4d5eFi` failure remains recorded: the newly authored successful
+journey incorrectly selected 200,000 files above the existing hard maximum.
+The corrected test uses 99,999 and separately verifies refusal of 100,001;
+no production bound, pinned fixture or expected logical result was changed.
+Exact accepted workflow evidence is in Ruflo
+`programme-task-evidence/workflow-4c744606-360e-457d-893c-01a95cf6fffc`.
+
+This closes recovery CLI exposure only. Old interrupted preparation workspaces
+are not converted, ordinary known in-place migration is retained, and no new
+dependency is introduced. The sealed exact-build receipt, activation/cutover/
+rollback, envelope/classifier and frozen compatibility/crash/system-RocksDB
+lanes remain open. ADR-0028 remains Proposed; full G4.3 is not complete.
 
 ## Staged implementation and evaluator gates
 

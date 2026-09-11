@@ -1018,6 +1018,64 @@ These commands do not implement resume, a sealed `UpgradeReceipt`,
 activation/cutover or the full old/new-binary and crash qualification matrix.
 See [ADR-0028](../docs/adr/0028-safe-storage-schema-upgrades.md#offline-inactive-upgrade-cli-2026-09-10).
 
+## Offline restartable upgrade recovery (fork)
+
+Use this separate workflow when you need verified continuation after an
+interruption. Stop writers and keep the source, completed legacy backup and
+workspace offline, stable, exclusively controlled and pairwise disjoint.
+The source must already have a regular native `LOCK`; start requires a fresh
+workspace. Old `prepare-upgrade` / `transform-upgrade` workspaces are not
+converted into recovery workspaces.
+
+```sh
+oxigraph backup-legacy --location ./legacy-data --destination ./legacy-backup-new
+oxigraph start-upgrade-recovery --source ./legacy-data \
+  --backup ./legacy-backup-new --destination ./recovery-work-new
+oxigraph verify-upgrade-recovery --source ./legacy-data \
+  --backup ./legacy-backup-new --location ./recovery-work-new
+oxigraph resume-upgrade-recovery --source ./legacy-data \
+  --backup ./legacy-backup-new --location ./recovery-work-new
+oxigraph verify-upgrade-recovery --source ./legacy-data \
+  --backup ./legacy-backup-new --location ./recovery-work-new
+```
+
+Start publishes a verified initial checkpoint, not a completed transformation.
+Resume verifies completed checkpoints and constructs only the remaining edges
+and final output in new attempts. Already completed resume performs independent
+verification without rerunning migration. Verification can succeed for either
+an incomplete checkpoint chain or a completed transformed output; inspect
+`recovery_state` rather than treating verification success as completion.
+
+Every command checks exact source/backup ancestry and reports content
+fingerprints, counts and attempt count. All output remains guarded and inactive,
+with `active=false` and `upgrade_authorized=false`. Do not remove guards or
+serve any nested store. Completion is not a sealed `UpgradeReceipt`, activation
+or permission to cut over.
+
+All three commands accept positive `--max-files`, `--max-bytes`,
+`--max-entries`, `--max-projection-bytes`, `--max-attempts` and
+`--timeout-ms`. Omission preserves API defaults; `--max-files` cannot exceed
+100,000. Content and attempt limits and the RDF feature profile must match the
+start call on subsequent resume/verification;
+a new whole-call timeout may be supplied. Legacy triple terms require
+`rdf-12`, enabled in the default CLI build.
+
+`--max-attempts` defaults to 16 and cannot exceed 64. It counts the initial
+checkpoint, failed attempts, successful migration edges and final output.
+An uninterrupted version-0 journey needs four attempts; version-1 needs three.
+Attempts and completed copies are retained; this workflow does not clean them
+up. Bounds are cooperative and per copy/projection, not an overall disk or
+process-memory quota. Reserve space for those retained copies.
+
+Validation and refusal errors emit no success record. An output or I/O error
+can occur after work completes; verify an uncertain result before deciding
+whether to resume. Changed completed checkpoints, mismatched limits or a damaged
+journal are refused, not repaired or rebaselined;
+use a fresh workspace if verification cannot establish a valid checkpoint.
+The source and completed backup remain unchanged.
+
+See [ADR-0028's recovery CLI boundary](../docs/adr/0028-safe-storage-schema-upgrades.md#offline-recovery-cli-2026-09-11).
+
 ## Using a Docker image
 
 ### Display the help menu

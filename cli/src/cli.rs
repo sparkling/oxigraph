@@ -13,6 +13,18 @@ fn loopback_admin_address(value: &str) -> ParseResult<SocketAddr, String> {
     Ok(address)
 }
 
+fn recovery_attempt_limit(
+    value: &str,
+) -> ParseResult<std::num::NonZeroUsize, String> {
+    let value = value
+        .parse::<std::num::NonZeroUsize>()
+        .map_err(|_| "expected an integer in the range 1..=64")?;
+    if value.get() > 64 {
+        return Err("expected an integer in the range 1..=64".into());
+    }
+    Ok(value)
+}
+
 #[derive(Parser)]
 #[command(about, version, name = "oxigraph")]
 /// Oxigraph command line toolkit and SPARQL HTTP server
@@ -297,6 +309,110 @@ pub enum Command {
         /// Maximum retained bytes per logical projection; omit for the API default of 268435456
         #[arg(long)]
         max_projection_bytes: Option<std::num::NonZeroU64>,
+    },
+    /// Start a verified restartable inactive upgrade recovery workspace
+    ///
+    /// Source, backup, and destination must be offline, stable, exclusively
+    /// controlled, and pairwise disjoint. This publishes only a verified initial
+    /// checkpoint. It does not resume, activate, or produce an UpgradeReceipt.
+    StartUpgradeRecovery {
+        /// Original offline version-0 or version-1 store
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        source: PathBuf,
+        /// Completed immutable legacy physical-backup package
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        backup: PathBuf,
+        /// Fresh inactive recovery workspace; existing paths are rejected
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        destination: PathBuf,
+        /// Maximum native files; omit to retain the API default of 100000
+        #[arg(long)]
+        max_files: Option<std::num::NonZeroUsize>,
+        /// Maximum aggregate native-file bytes; omit to retain the API default
+        #[arg(long)]
+        max_bytes: Option<std::num::NonZeroU64>,
+        /// Cooperative whole-operation timeout in milliseconds; omit for no deadline
+        #[arg(long)]
+        timeout_ms: Option<std::num::NonZeroU64>,
+        /// Maximum retained entries per logical projection; omit for the API default of 1000000
+        #[arg(long)]
+        max_entries: Option<std::num::NonZeroUsize>,
+        /// Maximum retained bytes per logical projection; omit for the API default of 268435456
+        #[arg(long)]
+        max_projection_bytes: Option<std::num::NonZeroU64>,
+        /// Maximum retained attempts; omit for the API default of 16, maximum 64
+        #[arg(long, value_parser = recovery_attempt_limit)]
+        max_attempts: Option<std::num::NonZeroUsize>,
+    },
+    /// Resume a verified restartable inactive upgrade recovery workspace
+    ///
+    /// Source, backup, and workspace must be offline, stable, exclusively
+    /// controlled, and pairwise disjoint. Content and attempt limits must match
+    /// the persisted profile; timeout may be supplied afresh. This never
+    /// activates or produces an UpgradeReceipt.
+    ResumeUpgradeRecovery {
+        /// Original offline version-0 or version-1 store
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        source: PathBuf,
+        /// Completed immutable legacy physical-backup package
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        backup: PathBuf,
+        /// Existing inactive recovery workspace
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        location: PathBuf,
+        /// Maximum native files; omit to retain the API default of 100000
+        #[arg(long)]
+        max_files: Option<std::num::NonZeroUsize>,
+        /// Maximum aggregate native-file bytes; omit to retain the API default
+        #[arg(long)]
+        max_bytes: Option<std::num::NonZeroU64>,
+        /// Cooperative whole-operation timeout in milliseconds; omit for no deadline
+        #[arg(long)]
+        timeout_ms: Option<std::num::NonZeroU64>,
+        /// Maximum retained entries per logical projection; omit for the API default of 1000000
+        #[arg(long)]
+        max_entries: Option<std::num::NonZeroUsize>,
+        /// Maximum retained bytes per logical projection; omit for the API default of 268435456
+        #[arg(long)]
+        max_projection_bytes: Option<std::num::NonZeroU64>,
+        /// Maximum retained attempts; omit for the API default of 16, maximum 64
+        #[arg(long, value_parser = recovery_attempt_limit)]
+        max_attempts: Option<std::num::NonZeroUsize>,
+    },
+    /// Independently verify a restartable inactive upgrade recovery workspace
+    ///
+    /// Source, backup, and workspace must be offline, stable, exclusively
+    /// controlled, and pairwise disjoint. Content and attempt limits must match
+    /// the persisted profile; timeout may be supplied afresh. This never
+    /// resumes, activates, or produces an UpgradeReceipt.
+    VerifyUpgradeRecovery {
+        /// Original offline version-0 or version-1 store
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        source: PathBuf,
+        /// Completed immutable legacy physical-backup package
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        backup: PathBuf,
+        /// Existing inactive recovery workspace
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        location: PathBuf,
+        /// Maximum native files; omit to retain the API default of 100000
+        #[arg(long)]
+        max_files: Option<std::num::NonZeroUsize>,
+        /// Maximum aggregate native-file bytes; omit to retain the API default
+        #[arg(long)]
+        max_bytes: Option<std::num::NonZeroU64>,
+        /// Cooperative whole-operation timeout in milliseconds; omit for no deadline
+        #[arg(long)]
+        timeout_ms: Option<std::num::NonZeroU64>,
+        /// Maximum retained entries per logical projection; omit for the API default of 1000000
+        #[arg(long)]
+        max_entries: Option<std::num::NonZeroUsize>,
+        /// Maximum retained bytes per logical projection; omit for the API default of 268435456
+        #[arg(long)]
+        max_projection_bytes: Option<std::num::NonZeroU64>,
+        /// Maximum retained attempts; omit for the API default of 16, maximum 64
+        #[arg(long, value_parser = recovery_attempt_limit)]
+        max_attempts: Option<std::num::NonZeroUsize>,
     },
     /// Restore a completed backup into a fresh root; serve its store/ subdirectory
     Restore {

@@ -370,6 +370,84 @@ pub fn main() -> anyhow::Result<()> {
             )?;
             upgrade::print_transformation_verified(transformed)
         }
+        Command::StartUpgradeRecovery {
+            source,
+            backup,
+            destination,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+            max_attempts,
+        } => {
+            let recovery = Store::start_upgrade_recovery(
+                source,
+                backup,
+                destination,
+                &upgrade::recovery_options(
+                    max_files,
+                    max_bytes,
+                    timeout_ms,
+                    max_entries,
+                    max_projection_bytes,
+                    max_attempts,
+                ),
+            )?;
+            upgrade::print_recovery_started(recovery)
+        }
+        Command::ResumeUpgradeRecovery {
+            source,
+            backup,
+            location,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+            max_attempts,
+        } => {
+            let recovery = Store::resume_upgrade_recovery(
+                source,
+                backup,
+                location,
+                &upgrade::recovery_options(
+                    max_files,
+                    max_bytes,
+                    timeout_ms,
+                    max_entries,
+                    max_projection_bytes,
+                    max_attempts,
+                ),
+            )?;
+            upgrade::print_recovery_resumed(recovery)
+        }
+        Command::VerifyUpgradeRecovery {
+            source,
+            backup,
+            location,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+            max_attempts,
+        } => {
+            let recovery = oxigraph::store::UpgradeRecovery::verify(
+                source,
+                backup,
+                location,
+                &upgrade::recovery_options(
+                    max_files,
+                    max_bytes,
+                    timeout_ms,
+                    max_entries,
+                    max_projection_bytes,
+                    max_attempts,
+                ),
+            )?;
+            upgrade::print_recovery_verified(recovery)
+        }
         Command::Restore {
             backup,
             destination,

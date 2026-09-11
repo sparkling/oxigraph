@@ -1,5 +1,6 @@
 use oxigraph::store::{
-    LegacyBackupOptions, PreparedUpgrade, TransformedUpgrade, UpgradeTransformOptions,
+    LegacyBackupOptions, PreparedUpgrade, TransformedUpgrade, UpgradeRecovery,
+    UpgradeRecoveryOptions, UpgradeTransformOptions,
 };
 use std::io::{Write, stdout};
 use std::num::{NonZeroU64, NonZeroUsize};
@@ -43,6 +44,67 @@ pub fn transform_options(
         options.max_projection_bytes = value;
     }
     options
+}
+
+pub fn recovery_options(
+    max_files: Option<NonZeroUsize>,
+    max_bytes: Option<NonZeroU64>,
+    timeout_ms: Option<NonZeroU64>,
+    max_entries: Option<NonZeroUsize>,
+    max_projection_bytes: Option<NonZeroU64>,
+    max_attempts: Option<NonZeroUsize>,
+) -> UpgradeRecoveryOptions {
+    let mut options = UpgradeRecoveryOptions {
+        transform: transform_options(
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+        ),
+        ..UpgradeRecoveryOptions::default()
+    };
+    if let Some(value) = max_attempts {
+        options.max_attempts = value;
+    }
+    options
+}
+
+fn print_recovery(value: UpgradeRecovery, outcome: &str) -> anyhow::Result<()> {
+    let transformed_fingerprint = value
+        .transformed()
+        .map(|transformed| hex(transformed.fingerprint()))
+        .unwrap_or_else(|| "not-published".into());
+    writeln!(
+        stdout().lock(),
+        "{outcome} stage=recovery recovery_state={} storage_version={} attempts={} legacy_backup_fingerprint={} transformed_fingerprint={} logical_fingerprint={} quads={} named_graphs={} namespaces={} external_ancestry=exact active=false upgrade_authorized=false",
+        if value.completed() {
+            "completed"
+        } else {
+            "incomplete"
+        },
+        value.storage_version(),
+        value.attempt_count(),
+        hex(value.legacy_backup().fingerprint()),
+        transformed_fingerprint,
+        hex(value.logical_fingerprint()),
+        value.quad_count(),
+        value.named_graph_count(),
+        value.namespace_count()
+    )?;
+    Ok(())
+}
+
+pub fn print_recovery_started(value: UpgradeRecovery) -> anyhow::Result<()> {
+    print_recovery(value, "upgrade_recovery_started=true")
+}
+
+pub fn print_recovery_resumed(value: UpgradeRecovery) -> anyhow::Result<()> {
+    print_recovery(value, "upgrade_recovery_resumed=true")
+}
+
+pub fn print_recovery_verified(value: UpgradeRecovery) -> anyhow::Result<()> {
+    print_recovery(value, "upgrade_recovery_verified=true")
 }
 
 fn hex(bytes: [u8; 32]) -> String {
@@ -93,6 +155,51 @@ pub fn print_transformation_verified(value: TransformedUpgrade) -> anyhow::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recovery_option_adapter_preserves_defaults_and_maps_every_override() {
+        let defaults = UpgradeRecoveryOptions::default();
+        let adapted = recovery_options(None, None, None, None, None, None);
+        assert_eq!(adapted.max_attempts, defaults.max_attempts);
+        assert_eq!(
+            adapted.transform.backup.max_files,
+            defaults.transform.backup.max_files
+        );
+        assert_eq!(
+            adapted.transform.backup.max_bytes,
+            defaults.transform.backup.max_bytes
+        );
+        assert_eq!(
+            adapted.transform.backup.control.timeout(),
+            defaults.transform.backup.control.timeout()
+        );
+        assert_eq!(
+            adapted.transform.max_entries,
+            defaults.transform.max_entries
+        );
+        assert_eq!(
+            adapted.transform.max_projection_bytes,
+            defaults.transform.max_projection_bytes
+        );
+
+        let adapted = recovery_options(
+            NonZeroUsize::new(7),
+            NonZeroU64::new(11),
+            NonZeroU64::new(13),
+            NonZeroUsize::new(17),
+            NonZeroU64::new(19),
+            NonZeroUsize::new(23),
+        );
+        assert_eq!(adapted.transform.backup.max_files.get(), 7);
+        assert_eq!(adapted.transform.backup.max_bytes.get(), 11);
+        assert_eq!(
+            adapted.transform.backup.control.timeout(),
+            Some(Duration::from_millis(13))
+        );
+        assert_eq!(adapted.transform.max_entries.get(), 17);
+        assert_eq!(adapted.transform.max_projection_bytes.get(), 19);
+        assert_eq!(adapted.max_attempts.get(), 23);
+    }
 
     #[test]
     fn option_adapters_preserve_defaults_and_map_every_override() {

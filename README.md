@@ -477,6 +477,12 @@ checkpoint workspace. Completed steps are verified and reused; interrupted
 attempts are retained but never trusted as input. Source and backup remain
 unchanged, and the output remains guarded and inactive. See
 [recovery requirements and limits](docs/adr/0028-safe-storage-schema-upgrades.md#verified-restartable-inactive-upgrades-2026-09-11).
+The CLI now exposes `start-upgrade-recovery`, `resume-upgrade-recovery` and
+`verify-upgrade-recovery`, including explicit cooperative limits and distinct
+incomplete/completed observations. See the
+[restartable operator journey](cli/README.md#offline-restartable-upgrade-recovery-fork).
+This does not add a sealed `UpgradeReceipt`, activation or the full compatibility
+and crash qualification matrix.
 
 ## Upstream Oxigraph
 
