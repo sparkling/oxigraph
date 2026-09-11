@@ -1,6 +1,6 @@
 use oxigraph::store::{
     LegacyBackupOptions, PreparedUpgrade, TransformedUpgrade, UpgradeRecovery,
-    UpgradeRecoveryOptions, UpgradeTransformOptions,
+    UpgradeOptions, UpgradeReceipt, UpgradeRecoveryOptions, UpgradeTransformOptions,
 };
 use std::io::{Write, stdout};
 use std::num::{NonZeroU64, NonZeroUsize};
@@ -70,6 +70,21 @@ pub fn recovery_options(
     options
 }
 
+pub fn receipt_options(
+    max_files: Option<NonZeroUsize>,
+    max_bytes: Option<NonZeroU64>,
+    timeout_ms: Option<NonZeroU64>,
+    max_entries: Option<NonZeroUsize>,
+    max_projection_bytes: Option<NonZeroU64>,
+    max_attempts: Option<NonZeroUsize>,
+) -> UpgradeOptions {
+    UpgradeOptions {
+        recovery: recovery_options(
+            max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts,
+        ),
+    }
+}
+
 fn print_recovery(value: UpgradeRecovery, outcome: &str) -> anyhow::Result<()> {
     let transformed_fingerprint = value
         .transformed()
@@ -105,6 +120,69 @@ pub fn print_recovery_resumed(value: UpgradeRecovery) -> anyhow::Result<()> {
 
 pub fn print_recovery_verified(value: UpgradeRecovery) -> anyhow::Result<()> {
     print_recovery(value, "upgrade_recovery_verified=true")
+}
+
+fn print_receipt(value: &UpgradeReceipt, outcome: &str) -> anyhow::Result<()> {
+    writeln!(
+        stdout().lock(),
+        "{outcome} stage=sealed workspace={} profile={} executable_len={} executable_sha256={} rocksdb_build_kind={} rocksdb_version={} rocksdb_source_revision={} rdf12={} legacy_backup_fingerprint={} transformed_fingerprint={} logical_fingerprint={} quads={} named_graphs={} namespaces={} output_files={} output_metadata_scope={} receipt_fingerprint={} active={} upgrade_authorized={}",
+        serde_json::to_string(value.directory())?,
+        value.profile(),
+        value.executable_len(),
+        hex(value.executable_sha256()),
+        value.rocksdb_build_kind(),
+        value.rocksdb_version(),
+        value.rocksdb_source_revision(),
+        value.rdf12(),
+        hex(value.legacy_backup().fingerprint()),
+        hex(value.transformed_fingerprint()),
+        hex(value.logical_fingerprint()),
+        value.quad_count(),
+        value.named_graph_count(),
+        value.namespace_count(),
+        value.output_file_count(),
+        value.output_metadata_scope(),
+        hex(value.fingerprint()),
+        value.active(),
+        value.upgrade_authorized(),
+    )?;
+    Ok(())
+}
+
+pub fn print_upgrade_started(
+    value: &UpgradeRecovery,
+    _directory: &std::path::Path,
+) -> anyhow::Result<()> {
+    let directory = value
+        .directory()
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("nested upgrade recovery has no outer workspace"))?;
+    writeln!(
+        stdout().lock(),
+        "upgrade_started=true stage=incomplete workspace={} recovery_workspace={} storage_version={} attempts={} legacy_backup_fingerprint={} logical_fingerprint={} quads={} named_graphs={} namespaces={} active=false upgrade_authorized=false",
+        serde_json::to_string(directory)?,
+        serde_json::to_string(value.directory())?,
+        value.storage_version(),
+        value.attempt_count(),
+        hex(value.legacy_backup().fingerprint()),
+        hex(value.logical_fingerprint()),
+        value.quad_count(),
+        value.named_graph_count(),
+        value.namespace_count(),
+    )?;
+    Ok(())
+}
+
+pub fn print_upgrade_resumed(value: &UpgradeReceipt) -> anyhow::Result<()> {
+    print_receipt(value, "upgrade_resumed=true")
+}
+
+pub fn print_upgrade_completed(value: &UpgradeReceipt) -> anyhow::Result<()> {
+    print_receipt(value, "upgrade_complete=true")
+}
+
+pub fn print_upgrade_verified(value: &UpgradeReceipt) -> anyhow::Result<()> {
+    print_receipt(value, "upgrade_verified=true")
 }
 
 fn hex(bytes: [u8; 32]) -> String {
@@ -237,4 +315,48 @@ mod tests {
         assert_ne!(adapted.max_entries, defaults.max_entries);
         assert_ne!(adapted.max_projection_bytes, defaults.max_projection_bytes);
     }
+    #[test]
+    fn receipt_option_adapter_preserves_defaults_and_maps_every_override() {
+        let defaults = UpgradeOptions::default();
+        let adapted = receipt_options(None, None, None, None, None, None);
+        assert_eq!(adapted.recovery.max_attempts, defaults.recovery.max_attempts);
+        assert_eq!(
+            adapted.recovery.transform.backup.max_files,
+            defaults.recovery.transform.backup.max_files
+        );
+        assert_eq!(
+            adapted.recovery.transform.backup.max_bytes,
+            defaults.recovery.transform.backup.max_bytes
+        );
+        assert_eq!(
+            adapted.recovery.transform.max_entries,
+            defaults.recovery.transform.max_entries
+        );
+        assert_eq!(
+            adapted.recovery.transform.max_projection_bytes,
+            defaults.recovery.transform.max_projection_bytes
+        );
+
+        let adapted = receipt_options(
+            NonZeroUsize::new(7),
+            NonZeroU64::new(11),
+            NonZeroU64::new(13),
+            NonZeroUsize::new(17),
+            NonZeroU64::new(19),
+            NonZeroUsize::new(23),
+        );
+        assert_eq!(adapted.recovery.transform.backup.max_files.get(), 7);
+        assert_eq!(adapted.recovery.transform.backup.max_bytes.get(), 11);
+        assert_eq!(
+            adapted.recovery.transform.backup.control.timeout(),
+            Some(Duration::from_millis(13))
+        );
+        assert_eq!(adapted.recovery.transform.max_entries.get(), 17);
+        assert_eq!(
+            adapted.recovery.transform.max_projection_bytes.get(),
+            19
+        );
+        assert_eq!(adapted.recovery.max_attempts.get(), 23);
+    }
+
 }

@@ -491,8 +491,11 @@ embedded Oxigraph and vendored static RocksDB. It binds the executable before
 construction and verifies ancestry, checkpoints and completed output; it cannot
 retrofit that provenance onto old completed recovery work. Resume and verification
 take the original outer workspace, not its nested `recovery/` directory.
-The output remains guarded and inactive. CLI exposure of these new APIs,
-activation/rollback and full compatibility qualification remain outstanding.
+The output remains guarded and inactive. The CLI now exposes `start-upgrade`,
+`resume-upgrade`, `upgrade` and `verify-upgrade`, with distinct incomplete/sealed
+observations, canonical outer paths and exact executable/receipt fingerprints.
+See the [build-bound operator journey](cli/README.md#offline-build-bound-sealed-upgrades-fork).
+Activation/rollback and full compatibility qualification remain outstanding.
 See [the receipt contract and limits](docs/adr/0028-safe-storage-schema-upgrades.md#build-bound-inactive-upgrade-receipts-2026-09-11).
 
 ## Upstream Oxigraph

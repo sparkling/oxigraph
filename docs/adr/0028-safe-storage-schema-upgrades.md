@@ -8,10 +8,10 @@
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
   shadow-copy preparation and explicit inactive transformation APIs/CLI implemented;
   additive verified checkpoint/restart APIs and offline recovery CLI implemented;
-  native build-bound inactive upgrade receipt APIs implemented for the bounded
+  native build-bound inactive upgrade receipt APIs and CLI implemented for the bounded
   Linux/static Oxigraph/vendored RocksDB profile below.
   Ordinary writable open still performs known version-0/1 migrations in place.
-  Full compatibility rejection, schema envelopes, receipt CLI exposure and
+  Full compatibility rejection, schema envelopes and
   explicit activation remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - **Depends on**:
@@ -556,11 +556,54 @@ It requires matching Cargo dependencies; it is not a standalone executable,
 published release or runner compiler-artifact receipt.
 
 The output remains guarded, `active=false` and `upgrade_authorized=false`.
-This closes only the native build-bound receipt API slice. CLI exposure of
-these new APIs, explicit activation/cutover/rollback, complete compatibility
+This closes only the native build-bound receipt API slice; CLI exposure is
+recorded below. Explicit activation/cutover/rollback, complete compatibility
 rejection, the envelope/classifier and the frozen compatibility/crash/older-
 binary/system-RocksDB lanes remain open. Ordinary known in-place migration is
 retained. ADR-0028 remains Proposed; full G4.3 is not complete.
+
+## Build-bound inactive upgrade receipt CLI (2026-09-11)
+
+The additive `start-upgrade`, `resume-upgrade`, `upgrade` and
+`verify-upgrade` commands expose the corresponding accepted API slice above.
+All six positive recovery limits preserve API defaults and map explicit
+overrides. Start reports an incomplete observation and canonical outer
+workspace; resume, one-shot construction and independent verification report
+a sealed receipt, exact executable/profile identity, receipt and ancestry
+fingerprints, and counts. Verification requires sealed completion, not merely
+a valid incomplete recovery chain. Every result remains `active=false` and
+`upgrade_authorized=false`. The same executable bytes must be retained.
+
+Ordinary workflow `a17cad03-e574-449e-a21c-a4422c451f1c` used Terra Medium
+implementation, root-only application, failure feedback and independent Sol
+Medium acceptance of the exact four CLI files. Ruflo stored and exactly read
+back the workflow evidence. Final checks passed: default CLI receipts (5,
+including actual version-0 and RDF-star version-1 journeys), no-default (6,
+including version-1 refusal), existing CLI compatibility (16), option-adapter
+units (3), selected Clippy and the CLI build. The CLI default enables
+`rdf-12`; the library default does not. Test counts overlap and are not
+additional programme milestones.
+
+Fresh CLI processes verify the real executable length/hash and stable receipt
+identity. Tests cover relative-input canonical paths, numeric and option
+bounds, wrong outer paths, changed ancestry/profile/checkpoints, changed
+executable bytes, and retained guards on every generated store. Refusals
+preserve the source, backup and existing workspace and emit no success record.
+Earlier compiler and invalid symlink-success test failures remain recorded;
+the final relative-path test respects the existing no-symlink contract.
+
+The build recorded the local development executable `target/debug/oxigraph`:
+641,525,208 bytes, SHA-256
+`7232e5e561c322b1b1517a934f560162b76655fd98af49eb6f78c6e9936b59e3`,
+from this command's Cargo compiler-artifact event (`cargoFresh=false`).
+Selected Clippy adds no changed-source diagnostic; existing warnings remain
+and strict warnings-denied CI is not claimed.
+
+This closes receipt CLI exposure, not activation/cutover/rollback,
+the remaining compatibility/envelope/classifier/frozen crash or older-binary
+gates, cross-platform/system-RocksDB qualification, full G4.3, or publication.
+ADR-0028 remains Proposed. See the
+[operator journey](../../cli/README.md#offline-build-bound-sealed-upgrades-fork).
 
 ## Staged implementation and evaluator gates
 

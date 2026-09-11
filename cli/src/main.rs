@@ -448,6 +448,22 @@ pub fn main() -> anyhow::Result<()> {
             )?;
             upgrade::print_recovery_verified(recovery)
         }
+        Command::StartUpgrade { source, backup, destination, max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts } => {
+            let recovery = Store::start_upgrade(&source, &backup, &destination, &upgrade::receipt_options(max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts))?;
+            upgrade::print_upgrade_started(&recovery, &destination)
+        }
+        Command::ResumeUpgrade { source, backup, location, max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts } => {
+            let receipt = Store::resume_upgrade(&source, &backup, &location, &upgrade::receipt_options(max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts))?;
+            upgrade::print_upgrade_resumed(&receipt)
+        }
+        Command::Upgrade { source, backup, destination, max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts } => {
+            let receipt = Store::upgrade(&source, &backup, &destination, &upgrade::receipt_options(max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts))?;
+            upgrade::print_upgrade_completed(&receipt)
+        }
+        Command::VerifyUpgrade { source, backup, location, max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts } => {
+            let receipt = Store::verify_upgrade(&source, &backup, &location, &upgrade::receipt_options(max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts))?;
+            upgrade::print_upgrade_verified(&receipt)
+        }
         Command::Restore {
             backup,
             destination,

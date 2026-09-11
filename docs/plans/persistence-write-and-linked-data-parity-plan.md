@@ -1571,9 +1571,17 @@ pass, including whole-workspace no-write refusal, fresh-process verification,
 changed-executable refusal and completed-evidence reuse. Independent review
 accepted the exact source through the ordinary harness and Ruflo readback.
 This closes the bounded native receipt API, not activation or full G4.3.
-Next: expose these new APIs through the CLI, then explicit activation/rollback
-and remaining compatibility acceptance. No qualification or publication is
-implied. See [ADR-0028's receipt scope and limits](../adr/0028-safe-storage-schema-upgrades.md#build-bound-inactive-upgrade-receipts-2026-09-11).
+The `start-upgrade`, `resume-upgrade`, `upgrade` and `verify-upgrade` CLI now
+expose it, with canonical outer paths, exact executable/receipt fingerprints,
+explicit incomplete/sealed observations and retained inactive guards. Ordinary
+harness checks pass: default CLI receipts (5, including real version-0/1),
+no-default (6, including version-1 refusal), existing CLI compatibility (16),
+option units (3), selected Clippy and an identified local executable build.
+Independent Sol Medium review accepted the exact Terra Medium implementation
+and MCP evidence readback completed. This closes receipt CLI exposure only.
+Next: explicit activation/cutover/rollback and remaining compatibility,
+envelope/classifier and frozen acceptance gates. No qualification or publication
+is implied. See [ADR-0028's CLI scope and limits](../adr/0028-safe-storage-schema-upgrades.md#build-bound-inactive-upgrade-receipt-cli-2026-09-11).
 
 The programme now records the named decisions admitted by this user:
 

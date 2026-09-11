@@ -1076,6 +1076,51 @@ The source and completed backup remain unchanged.
 
 See [ADR-0028's recovery CLI boundary](../docs/adr/0028-safe-storage-schema-upgrades.md#offline-recovery-cli-2026-09-11).
 
+## Offline build-bound sealed upgrades (fork)
+
+Use `start-upgrade`, `resume-upgrade`, `upgrade` and `verify-upgrade`
+when you need a sealed `UpgradeReceipt`, not only a recovery observation.
+The first profile is Linux with statically embedded Oxigraph and vendored
+static RocksDB. Keep the **same executable bytes** for construction, resume
+and verification; another build is refused even if its version label matches.
+Keep source, completed legacy backup and outer workspace offline, unchanged,
+caller-controlled and pairwise disjoint. Symlinked path components are refused.
+
+```sh
+oxigraph backup-legacy --location ./legacy-data --destination ./legacy-backup-new
+oxigraph start-upgrade --source ./legacy-data \
+  --backup ./legacy-backup-new --destination ./upgrade-work-new
+oxigraph resume-upgrade --source ./legacy-data \
+  --backup ./legacy-backup-new --location ./upgrade-work-new
+oxigraph verify-upgrade --source ./legacy-data \
+  --backup ./legacy-backup-new --location ./upgrade-work-new
+```
+
+Start reports `stage=incomplete`; resume seals after verified construction.
+Unlike `verify-upgrade-recovery`, `verify-upgrade` requires a completed sealed
+receipt. Always pass the original outer workspace, never its `recovery/`
+subdirectory. For a fresh one-shot construction use
+`upgrade --source SOURCE --backup BACKUP --destination FRESH_OUTER_WORKSPACE`,
+then independently verify.
+
+Output reports the canonical outer workspace as a JSON-escaped path. Sealed
+observations report the executable length/hash, native/RDF profile, receipt,
+backup/transformed/logical fingerprints and counts. `receipt_fingerprint`
+identifies the sealed receipt; the whole output remains `active=false` and
+`upgrade_authorized=false`. Do not remove guards or serve a nested store.
+This is not cutover, rollback, authorship authentication or qualification.
+
+All four commands accept the six recovery limits above. Content/attempt limits
+must match across calls; timeout may change. Omission keeps API defaults.
+Use the default CLI build for legacy RDF-star version-1 data (`rdf-12`);
+a no-default build refuses that profile. Old completed recovery work cannot
+be retrofitted into this executable-bound workspace.
+
+Validation/refusal errors emit no success observation. I/O or output errors can
+happen after completion: retain all evidence and independently verify an
+uncertain outcome. Damaged or pending evidence is not rewritten into success.
+See [ADR-0028](../docs/adr/0028-safe-storage-schema-upgrades.md#build-bound-inactive-upgrade-receipt-cli-2026-09-11).
+
 ## Using a Docker image
 
 ### Display the help menu
