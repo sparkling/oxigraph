@@ -450,6 +450,11 @@ layouts now return `StorageError::UpgradeRequired` from both writable and
 read-only opens; ordinary opens no longer migrate them in place. Use the explicit
 [backup, sealed upgrade and activation journey](cli/README.md#offline-fresh-target-upgrade-activation-fork).
 This is an intentional compatibility change, not full safe-upgrade qualification.
+Builds without `rdf-12` also return `StorageError::FeatureIncompatible` when
+current-format live object indexes contain recognized RDF 1.2-only encodings.
+This bounded check does not certify historical outbox records or a whole-store
+feature profile; `inspect` still reports feature compatibility as unknown. See
+[the feature-refusal scope](docs/adr/0028-safe-storage-schema-upgrades.md#bounded-live-rdf-feature-refusal-2026-09-11).
 `Store::backup_legacy` now makes source-preserving physical copies of offline
 version-0/1 stores. Its separate `LegacyBackupReceipt` verifies both the exact
 package and, optionally, unchanged source ancestry. This requires an existing

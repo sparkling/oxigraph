@@ -13,6 +13,8 @@
   RocksDB profile below.
   Ordinary writable/read-only opens now return typed `UpgradeRequired` for
   recognized version-0/1 layouts instead of starting migration.
+  Builds without `rdf-12` also return typed `FeatureIncompatible` for recognized
+  RDF 1.2-only encodings in current-format live object indexes.
   Full compatibility rejection, schema envelopes, older-binary rollback and
   the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
@@ -694,6 +696,49 @@ The local CLI is 641,713,800 bytes, SHA-256
 Feature envelopes, the frozen classifier, older-binary rollback, the frozen
 compatibility/crash matrix and full G4.3 remain open. This ADR stays Proposed;
 receipt/activation contracts and publication boundaries are unchanged.
+
+## Bounded live-RDF feature refusal (2026-09-11)
+
+After guard/lease and exact current-version/layout checks, builds without
+`rdf-12` probe object-leading `dosp` and `ospg` indexes for the existing tags
+48, 49 and 56..63. At most 20 one-byte prefix seeks detect live triple and
+directional-literal encodings without a full-store scan or recursive decoding.
+Iterator status is checked before absence is accepted, and caller database
+options are retained. Ordinary writable, options and read-only opens return
+`StorageError::FeatureIncompatible { feature: "rdf-12" }`, convertible to
+`io::ErrorKind::InvalidData`, before data-changing setup. Existing source bytes
+are preserved; writable refusal retains the documented absent-empty-`LOCK`
+caveat, while read-only refusal creates no file.
+
+This is bounded positive detection in valid live primary indexes, not complete
+feature admission. A regression demonstrates that removed RDF 1.2 quads can
+remain in outbox history after the live detector returns false. Unknown tags,
+inconsistent indexes, history and derived-state compatibility are not certified.
+`Store::inspect` and CLI inspection still report feature compatibility as
+unknown. Encoding values, version markers, receipts, activation profiles,
+dependency locks and all 16 historical fixture files remain unchanged.
+
+Ordinary workflow `0814fd27-3856-4254-9038-b6aa32f023ec` passed all nine checks:
+default/RDF-1.2 safe-open units (21/19 parent tests, plus 5 child observations
+in each lane), RDF-1.2 encoder units (2), default store/backup/restore (47),
+RDF-1.2 store/activation/mode tests (38), memory-only store (12), two Clippy
+lanes and the CLI build. Counts overlap; Clippy exits successfully with existing
+and new test-style warnings, not warnings-denied certification. Raw-tag tests
+cover every declared tag in both indexes; real RDF-1.2 writer tests cover
+nested triples and all directional forms in both graph kinds. Their private
+same-build disabled-profile probe is not cross-binary qualification. An initial
+checkpoint test incorrectly expected read-only success; its failing run remains
+recorded and the corrected test requires the intended typed refusal.
+
+Native Terra Medium implementation received independent Sol Medium acceptance;
+Ruflo exactly read back
+`programme-task-evidence/workflow-0814fd27-3856-4254-9038-b6aa32f023ec`.
+The local development CLI is 641,730,720 bytes, SHA-256
+`37d8d251723a2bc1ffcddfa615f8cc2e232710296e5c59810784b8effbfd6090`
+(`cargoFresh=false`), not a published release. Full feature envelopes/history
+admission, the frozen classifier, older-binary rollback and frozen
+compatibility/crash/system-RocksDB gates remain open. G4.3 is incomplete and
+this ADR stays Proposed; no qualification or publication authority is added.
 
 ## Staged implementation and evaluator gates
 

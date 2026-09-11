@@ -935,6 +935,13 @@ lock across inspection and open. A checkpoint without `LOCK` gains an empty
 native lock file even when rejected; existing data files are not changed by
 that refusal. Use `inspect` when no new file may be created.
 
+For current-format stores, an executable built without `rdf-12` also refuses
+recognized RDF 1.2-only encodings in the live object indexes. Use an executable
+with the required feature enabled; do not change the stored version marker.
+This is not complete feature admission: removed RDF 1.2 data can remain in
+outbox history, and `inspect` still reports feature compatibility as unknown.
+See [the bounded feature check](../docs/adr/0028-safe-storage-schema-upgrades.md#bounded-live-rdf-feature-refusal-2026-09-11).
+
 **Compatibility change:** opening legacy data is no longer an upgrade command.
 Retain the original store, then use `backup-legacy`, `upgrade`, `verify-upgrade`
 and `activate-upgrade` with the same supported executable and fresh destinations.

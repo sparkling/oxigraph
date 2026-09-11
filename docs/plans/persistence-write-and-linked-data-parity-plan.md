@@ -1594,7 +1594,12 @@ closed by typed refusal, with unchanged logical assertions exercised after
 explicit activation. A separate test-only transformed-file copy retains the
 system-profile test path without changing production activation; its helper is exercised
 on vendored RocksDB, while actual system compilation is blocked by missing
-`rocksdb.pc`. Next: remaining feature compatibility, envelope/classifier,
+`rocksdb.pc`. Builds without `rdf-12` now also reject recognized unsupported
+encodings in current-format live object indexes. Nine ordinary-harness checks
+and independent Sol Medium review passed for the Terra Medium slice; this
+does not certify outbox history or change inspection's unknown feature status.
+See [the bounded feature-refusal contract](../adr/0028-safe-storage-schema-upgrades.md#bounded-live-rdf-feature-refusal-2026-09-11).
+Next: full feature-envelope/history admission, the frozen classifier,
 older-binary rollback and frozen acceptance gates. No qualification or
 publication is implied. See
 [the ordinary-open contract and checks](../adr/0028-safe-storage-schema-upgrades.md#ordinary-legacy-open-refusal-2026-09-11) and

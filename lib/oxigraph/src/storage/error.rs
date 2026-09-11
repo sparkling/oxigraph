@@ -36,6 +36,12 @@ pub enum StorageError {
         /// Highest storage version supported by this binary.
         supported: u64,
     },
+    /// The store uses a feature that is disabled in this binary.
+    #[error("storage requires the {feature} Cargo feature; enable it before opening this store")]
+    FeatureIncompatible {
+        /// The disabled Cargo feature required by the store.
+        feature: &'static str,
+    },
     #[doc(hidden)]
     #[error("{0}")]
     Other(#[source] Box<dyn Error + Send + Sync + 'static>),
@@ -50,7 +56,10 @@ impl From<StorageError> for io::Error {
             error @ (StorageError::UpgradeIncomplete
             | StorageError::SchemaUnknown
             | StorageError::UpgradeRequired { .. }
-            | StorageError::SchemaTooNew { .. }) => Self::new(io::ErrorKind::InvalidData, error),
+            | StorageError::SchemaTooNew { .. }
+            | StorageError::FeatureIncompatible { .. }) => {
+                Self::new(io::ErrorKind::InvalidData, error)
+            },
             StorageError::Other(error) => Self::other(error),
         }
     }

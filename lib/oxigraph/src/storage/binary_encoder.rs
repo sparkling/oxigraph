@@ -50,24 +50,29 @@ const TYPE_DURATION_LITERAL: u8 = 42;
 const TYPE_YEAR_MONTH_DURATION_LITERAL: u8 = 43;
 const TYPE_DAY_TIME_DURATION_LITERAL: u8 = 44;
 pub const TYPE_STAR_TRIPLE: u8 = 48;
-#[cfg(feature = "rdf-12")]
 const TYPE_TRIPLE: u8 = 49;
-#[cfg(feature = "rdf-12")]
 const TYPE_LTR_SMALL_SMALL_DIR_LANG_STRING_LITERAL: u8 = 56;
-#[cfg(feature = "rdf-12")]
 const TYPE_LTR_SMALL_BIG_DIR_LANG_STRING_LITERAL: u8 = 57;
-#[cfg(feature = "rdf-12")]
 const TYPE_LTR_BIG_SMALL_DIR_LANG_STRING_LITERAL: u8 = 58;
-#[cfg(feature = "rdf-12")]
 const TYPE_LTR_BIG_BIG_DIR_LANG_STRING_LITERAL: u8 = 59;
-#[cfg(feature = "rdf-12")]
 const TYPE_RTL_SMALL_SMALL_DIR_LANG_STRING_LITERAL: u8 = 60;
-#[cfg(feature = "rdf-12")]
 const TYPE_RTL_SMALL_BIG_DIR_LANG_STRING_LITERAL: u8 = 61;
-#[cfg(feature = "rdf-12")]
 const TYPE_RTL_BIG_SMALL_DIR_LANG_STRING_LITERAL: u8 = 62;
-#[cfg(feature = "rdf-12")]
 const TYPE_RTL_BIG_BIG_DIR_LANG_STRING_LITERAL: u8 = 63;
+
+#[cfg(any(not(feature = "rdf-12"), test))]
+pub(crate) const RDF_12_ONLY_TERM_TYPES: &[u8] = &[
+    TYPE_STAR_TRIPLE,
+    TYPE_TRIPLE,
+    TYPE_LTR_SMALL_SMALL_DIR_LANG_STRING_LITERAL,
+    TYPE_LTR_SMALL_BIG_DIR_LANG_STRING_LITERAL,
+    TYPE_LTR_BIG_SMALL_DIR_LANG_STRING_LITERAL,
+    TYPE_LTR_BIG_BIG_DIR_LANG_STRING_LITERAL,
+    TYPE_RTL_SMALL_SMALL_DIR_LANG_STRING_LITERAL,
+    TYPE_RTL_SMALL_BIG_DIR_LANG_STRING_LITERAL,
+    TYPE_RTL_BIG_SMALL_DIR_LANG_STRING_LITERAL,
+    TYPE_RTL_BIG_BIG_DIR_LANG_STRING_LITERAL,
+];
 
 #[derive(Clone, Copy)]
 pub enum QuadEncoding {

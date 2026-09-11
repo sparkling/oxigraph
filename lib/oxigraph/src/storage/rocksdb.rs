@@ -114,6 +114,8 @@ mod upgrade;
 mod format_inspection_tests;
 #[cfg(test)]
 mod safe_open_tests;
+#[cfg(test)]
+mod feature_compatibility_tests;
 const ID2STR_CF: &str = "id2str";
 const SPOG_CF: &str = "spog";
 const POSG_CF: &str = "posg";
@@ -260,7 +262,34 @@ impl RocksDbStorage {
         if version != LATEST_STORAGE_VERSION || !info.missing_column_families().is_empty() {
             return Err(StorageError::SchemaUnknown);
         }
+        #[cfg(not(feature = "rdf-12"))]
+        if Self::contains_disabled_rdf_12_terms(path, options)? {
+            return Err(StorageError::FeatureIncompatible { feature: "rdf-12" });
+        }
         Ok(())
+    }
+
+    // Valid RDF 1.2-only terms are object-leading in these complete indexes.
+    // This bounded probe intentionally neither decodes terms nor scans data.
+    #[cfg(any(not(feature = "rdf-12"), test))]
+    fn contains_disabled_rdf_12_terms(path: &Path, options: DbOptions) -> Result<bool, StorageError> {
+        let column_families = Self::column_families()
+            .into_iter()
+            .filter(|column_family| matches!(column_family.name, DOSP_CF | OSPG_CF))
+            .collect();
+        let db = Db::open_read_only_with_options(path, column_families, options)?;
+        let reader = db.snapshot();
+        for column_family_name in [DOSP_CF, OSPG_CF] {
+            let column_family = db.column_family(column_family_name)?;
+            for tag in crate::storage::binary_encoder::RDF_12_ONLY_TERM_TYPES {
+                let iter = reader.scan_prefix(&column_family, &[*tag]);
+                iter.status()?;
+                if iter.is_valid() {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 
     pub fn open_read_only(path: &Path) -> Result<Self, StorageError> {
