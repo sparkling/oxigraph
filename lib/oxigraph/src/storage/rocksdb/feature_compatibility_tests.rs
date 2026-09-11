@@ -66,6 +66,11 @@ fn safe_open_rejects_each_declared_disabled_object_tag_without_source_changes() 
             let directory = tempfile::tempdir()?;
             insert_object_leading_tag(directory.path(), column_family, *tag)?;
             let before = files(directory.path())?;
+            let report = Store::inspect_features(directory.path())?;
+            assert!(report.live_rdf_12_required());
+            assert!(!report.retained_outbox_rdf_12_required());
+            assert!(report.rdf_12_unsupported());
+            assert_eq!(files(directory.path())?, before);
             for _ in 0..2 {
                 assert_feature_incompatible(Store::open(directory.path()).err().expect("feature-incompatible open must fail"));
                 assert_feature_incompatible(
@@ -86,10 +91,11 @@ fn safe_open_admits_prefix_adjacent_tags_and_compatible_quads() -> Result {
         for column_family in [DOSP_CF, OSPG_CF] {
             let directory = tempfile::tempdir()?;
             insert_object_leading_tag(directory.path(), column_family, tag)?;
-            assert!(!RocksDbStorage::contains_disabled_rdf_12_terms(
+            assert!(!RocksDbStorage::contains_rdf_12_terms(
                 directory.path(),
                 DbOptions::default(),
             )?);
+            assert!(!Store::inspect_features(directory.path())?.rdf_12_required());
         }
     }
 
@@ -254,6 +260,12 @@ fn retained_only_rdf_12_outbox_payload_fails_on_consumption_without_source_chang
     // propagation. It does not claim a cross-binary writer journey or complete
     // history admission.
     let before = files(path)?;
+    let inspection = Store::inspect_features(path)?;
+    assert!(!inspection.live_rdf_12_required());
+    assert!(inspection.retained_outbox_rdf_12_required());
+    assert!(inspection.rdf_12_unsupported());
+    assert_eq!(inspection.retained_outbox_records(), 5);
+    assert_eq!(files(path)?, before);
     let reopened = Store::open_read_only(path)?;
     let header = reopened.read_outbox(None, NonZeroUsize::MIN)?;
     assert!(matches!(
@@ -343,9 +355,10 @@ fn safe_open_rdf_12_writer_terms_roundtrip_and_private_disabled_profile_probe() 
     drop(read_only);
 
     let before = files(path)?;
-    // This private same-build probe models a disabled profile only; it is not
-    // cross-build qualification and it never establishes a feature envelope.
-    assert!(RocksDbStorage::contains_disabled_rdf_12_terms(
+    let inspection = Store::inspect_features(path)?;
+    assert!(inspection.live_rdf_12_required());
+    assert!(!inspection.rdf_12_unsupported());
+    assert!(RocksDbStorage::contains_rdf_12_terms(
         path,
         DbOptions::default(),
     )?);
@@ -405,11 +418,18 @@ fn safe_open_outbox_history_is_not_live_feature_admission() -> Result {
         )
     }));
     drop(reopened);
-    // The bounded live-index detector intentionally says nothing about retained
-    // outbox history once the RDF 1.2 quad itself has been removed.
-    assert!(!RocksDbStorage::contains_disabled_rdf_12_terms(
+    // Live indexes are ordinary-compatible, while retained history still
+    // records the recognized RDF 1.2 requirement.
+    let before = files(directory.path())?;
+    let inspection = Store::inspect_features(directory.path())?;
+    assert!(!inspection.live_rdf_12_required());
+    assert!(inspection.retained_outbox_rdf_12_required());
+    assert!(inspection.rdf_12_supported());
+    assert!(!inspection.rdf_12_unsupported());
+    assert!(!RocksDbStorage::contains_rdf_12_terms(
         directory.path(),
         DbOptions::default(),
     )?);
+    assert_eq!(files(directory.path())?, before);
     Ok(())
 }

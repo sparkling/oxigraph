@@ -462,6 +462,14 @@ feature profile; `inspect` still reports feature compatibility as unknown. See
 Bounded outbox reads now return the same typed feature error for valid retained
 RDF 1.2-only effects; malformed payloads still return corruption. This does not
 add an open-time history scan or whole-store feature admission.
+For an explicit offline report, use `Store::inspect_features` or
+`oxigraph inspect-features --location <path>`. It reports recognized RDF 1.2
+requirements in live object indexes and physically retained governed outbox
+records, including requirements unsupported by the inspecting binary, without
+emitting RDF terms. The retained-record scan can be linear in retained history;
+it does not run during ordinary opens. Unexamined history, derived state and
+complete compatibility remain unproven. The existing metadata-only `inspect`
+command is unchanged.
 `Store::backup_legacy` now makes source-preserving physical copies of offline
 version-0/1 stores. Its separate `LegacyBackupReceipt` verifies both the exact
 package and, optionally, unchanged source ancestry. This requires an existing

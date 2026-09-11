@@ -1,12 +1,13 @@
 # Current Oxigraph delivery gates
 
-- Reviewed: 2026-09-11, source `991c480a`.
+- Reviewed: 2026-09-11; latest source identity is recorded in the bounded
+  inspection evidence below.
 - Active product task: `task-1787670632284-k0cti5` (G4.3).
 - Scope: current execution/acceptance projection, not a replacement for the two
   [parity](persistence-write-and-linked-data-parity-plan.md) and
   [evolution](linked-data-store-evolution-harness-plan.md) scope catalogues.
 - Evidence below identifies existing code, tests and recorded runs. This
-  documentation review did not rerun product tests or close a product gate.
+  checklist update does not itself close a product gate.
 
 ## How completion is recorded
 
@@ -29,22 +30,25 @@ separate promotion/handoff requirements. None is claimed fully closed.
 
 | Gate | Proven native boundary | Still required to close the gate |
 | --- | --- | --- |
-| 1. Inventory and inspection | Offline marker/column-family inspection; typed unknown/newer/legacy refusal; bounded live RDF-feature refusal and retained-outbox consumption errors. [Inspection](../../lib/oxigraph/src/storage/rocksdb/format_inspection_tests.rs), [ordinary-open refusal](../../lib/oxigraph/src/storage/rocksdb/safe_open_tests.rs), [live features](../../lib/oxigraph/src/storage/rocksdb/feature_compatibility_tests.rs), [codec classification](../../lib/oxigraph/src/store/change_codec_feature_tests.rs), [outbox envelope priority](../../lib/oxigraph/src/store/outbox.rs), [CLI](../../cli/tests/store_inspection.rs). | Required-feature, store-UUID and interrupted-upgrade inspection; the checksummed schema/feature/subsystem envelope; full history/derived-state admission. Hash-pin v0, v1, current, missing, corrupt, too-new, RDF-feature-mismatch and interrupted fixtures, and prove inspect/open/read-only source-byte preservation under their literal contracts. Inspection still reports RDF compatibility unknown. |
+| 1. Inventory and inspection | Offline marker/column-family inspection; typed unknown/newer/legacy refusal; bounded live RDF-feature refusal and retained-outbox consumption errors; explicit feature-independent reporting of live and retained-outbox RDF requirements. [Inspection](../../lib/oxigraph/src/storage/rocksdb/format_inspection_tests.rs), [ordinary-open refusal](../../lib/oxigraph/src/storage/rocksdb/safe_open_tests.rs), [live features](../../lib/oxigraph/src/storage/rocksdb/feature_compatibility_tests.rs), [codec classification](../../lib/oxigraph/src/store/change_codec_feature_tests.rs), [outbox validation](../../lib/oxigraph/src/store/outbox.rs), [CLI](../../cli/tests/store_inspection.rs). | Store-UUID and interrupted-upgrade inspection; the checksummed schema/feature/subsystem envelope; full history/derived-state admission. Hash-pin v0, v1, current, missing, corrupt, too-new, RDF-feature-mismatch and interrupted fixtures, and prove inspect/open/read-only source-byte preservation under their literal contracts. Default metadata-only inspection still reports RDF compatibility unknown; explicit feature inspection certifies only its declared scopes. |
 | 2. Shadow transformation | Source-preserving legacy backup, ancestry, inactive preparation and explicit v0/v1 transformation; native quad/topology/namespace and failure checks. [Backups](../../lib/oxigraph/tests/legacy_backups.rs), [preparation](../../lib/oxigraph/tests/upgrade_preparation.rs), [transformation](../../lib/oxigraph/tests/upgrade_transformation.rs). | Full required logical/subsystem comparison, including metadata/receipt/outbox/index state where applicable; rebuild and validate required derived indexes. Inject failure/cancellation at every journal/fsync boundary, preserving the source and rejecting unsealed output; retain disk-exhaustion coverage. Existing native tests are not the complete frozen matrix. |
 | 3. Receipt and recovery | Verified completed-edge restart and build-bound inactive receipts on the bounded Linux/static Oxigraph/vendored-RocksDB profile. [Recovery](../../lib/oxigraph/tests/upgrade_recovery.rs), [receipts](../../lib/oxigraph/tests/upgrade_receipts.rs). | Complete feature/subsystem/cursor identities and exact-receipt independent qualification, including fresh-process open/validate, tampering, crash/power-loss, path substitution and insufficient-disk checks. Old preparation/transformation workspaces are not made resumable. |
 | 4. Operational compatibility | Fresh, disjoint target activation is implemented; source, backup and sealed workspace remain preserved. [API](../../lib/oxigraph/tests/upgrade_activation.rs), [CLI](../../cli/tests/upgrade_activation.rs). | Complete backup → upgrade → explicit cutover → older-binary rollback to preserved source → restore drills; frozen size classes and supported-version windows; duration, peak disk, peak memory, read amplification and write amplification. Native activation is not service routing, automatic cutover or rollback qualification. |
 | Promotion | The native profile and its limitations are documented; no aggregate qualification is claimed. | ADR-0028's evaluator-only commit, pre-existing frozen fixtures, independent logical export comparison, default/RDF-1.2 and vendored/system-RocksDB matrix, exact receipts and predecessor upgrade/failure path. The recorded system lane lacks `rocksdb.pc >= 9.10.0`; do not count a vendored helper test as system qualification. |
-| Obtainable handoff | Latest local product commit `991c480a`; the recorded development CLI has SHA-256 `daae9e41c81370c330d8671981beeb7c09c8c0688c021e0f07881ba257173151`. | Reproducible source/dependencies, an identified usable artifact for the declared milestone, all applicable gates, and exact publication authority. This local development binary is not a newly published release. |
+| Obtainable handoff | Local feature-inspection CLI from `run-yyR0mB`: 642,078,120 bytes, SHA-256 `13a5618db3f22b1b6d9c652cece699ef2e57c3b30c11561a56140f65ac3aa9ff`; exact reviewed source hashes are in the evidence below. | Reproducible source/dependencies, an identified usable artifact for the declared milestone, all applicable gates, and exact publication authority. This local development binary is not a newly published release. |
 
 Latest bounded implementation evidence:
-`programme-reviews/oxigraph-g43-outbox-feature-errors-delivery-2026-09-11-v1`.
-Its ten checks and independent review establish the retained-outbox error fix,
-not full G4.3. Counts across feature configurations overlap.
+`programme-native-reviews/g43-feature-inspection-final-sol-v1`.
+The twelve declared product checks and separate real cross-feature test support
+bounded feature inspection, not full G4.3. Counts across configurations overlap;
+child-process observations are not additional unique library tests. Formatting
+still fails and Clippy emits warnings. The original workflow timed out; recovered
+`run` checks and independent native review do not relabel it successful.
 
-Next product step: explicit read-only required-feature reporting/inspection.
-Report the content actually inspected, retain unknown for unexamined history,
-and preserve the bounded ordinary-open path. This is a step toward the full
-envelope/compatibility contract above, not a substitute for it.
+Next product step: resolve changed-source formatting, then scope the remaining
+store-identity/interrupted-upgrade inspection contract. Do not repeat the
+delivered explicit feature-reporting work or expand ordinary opens into a
+history scan. Full envelope/compatibility gates above remain open.
 
 ## Programme boundaries beyond G4.3
 

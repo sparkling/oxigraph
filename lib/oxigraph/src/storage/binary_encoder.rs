@@ -60,7 +60,6 @@ const TYPE_RTL_SMALL_BIG_DIR_LANG_STRING_LITERAL: u8 = 61;
 const TYPE_RTL_BIG_SMALL_DIR_LANG_STRING_LITERAL: u8 = 62;
 const TYPE_RTL_BIG_BIG_DIR_LANG_STRING_LITERAL: u8 = 63;
 
-#[cfg(any(not(feature = "rdf-12"), test))]
 pub(crate) const RDF_12_ONLY_TERM_TYPES: &[u8] = &[
     TYPE_STAR_TRIPLE,
     TYPE_TRIPLE,

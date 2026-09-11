@@ -235,7 +235,7 @@ fn seal_record(identity: &StoreIdentity, position: u64, mut body: Vec<u8>) -> Ve
     body
 }
 
-#[cfg(all(test, not(feature = "rdf-12")))]
+#[cfg(test)]
 pub(crate) fn seal_record_for_test(
     identity: &StoreIdentity,
     position: u64,
@@ -244,7 +244,7 @@ pub(crate) fn seal_record_for_test(
     seal_record(identity, position, body)
 }
 
-#[cfg(all(test, not(feature = "rdf-12")))]
+#[cfg(test)]
 pub(crate) fn rdf_12_payload_for_test() -> Vec<u8> {
     super::change_codec::feature_tests::valid_single_triple_payload()
 }
@@ -259,11 +259,27 @@ fn record_checksum(identity: &StoreIdentity, position: u64, body: &[u8]) -> [u8;
     hasher.finalize().into()
 }
 
-pub(crate) fn decode_record(
+enum DecodedRecord<T> {
+    Commit {
+        cursor: OutboxCursor,
+        receipt: CommitReceipt,
+    },
+    Event {
+        cursor: OutboxCursor,
+        header_cursor: OutboxCursor,
+        commit_id: CommitId,
+        event_index: u64,
+        event_count: u64,
+        payload: T,
+    },
+}
+
+fn decode_record_with<T>(
     identity: &StoreIdentity,
     position: u64,
     bytes: &[u8],
-) -> Result<OutboxRecord, StorageError> {
+    decode_payload: impl FnOnce(&[u8]) -> Result<T, StorageError>,
+) -> Result<DecodedRecord<T>, StorageError> {
     let size = bytes
         .len()
         .checked_sub(32)
@@ -277,10 +293,7 @@ pub(crate) fn decode_record(
             CorruptionError::msg("invalid outbox record version, position or checksum").into(),
         );
     }
-    let cursor = OutboxCursor {
-        store_identity: identity.clone(),
-        position,
-    };
+    let cursor = OutboxCursor::new(identity.clone(), position);
     match tag[1] {
         0 => {
             let receipt = CommitReceipt::decode(payload)?;
@@ -291,34 +304,219 @@ pub(crate) fn decode_record(
                     CorruptionError::msg("outbox header does not match its receipt").into(),
                 );
             }
-            Ok(OutboxRecord::Commit { cursor, receipt })
+            Ok(DecodedRecord::Commit { cursor, receipt })
         }
         1 if body.len() >= 59 => {
             let (fields, payload) = payload.split_at(56);
             let fields: [u8; 56] = receipt_field(fields)?;
             let header = u64::from_be_bytes(receipt_field(&fields[..8])?);
-            let index = u64::from_be_bytes(receipt_field(&fields[8..16])?);
-            let count = u64::from_be_bytes(receipt_field(&fields[16..24])?);
+            let event_index = u64::from_be_bytes(receipt_field(&fields[8..16])?);
+            let event_count = u64::from_be_bytes(receipt_field(&fields[16..24])?);
             if header == 0
-                || index >= count
-                || header.checked_add(index).and_then(|n| n.checked_add(1)) != Some(position)
+                || event_index >= event_count
+                || header
+                    .checked_add(event_index)
+                    .and_then(|value| value.checked_add(1))
+                    != Some(position)
             {
                 return Err(CorruptionError::msg("invalid outbox event position").into());
             }
-            Ok(OutboxRecord::Event {
+            Ok(DecodedRecord::Event {
                 cursor,
-                header_cursor: OutboxCursor {
-                    store_identity: identity.clone(),
-                    position: header,
-                },
+                header_cursor: OutboxCursor::new(identity.clone(), header),
                 commit_id: CommitId::from_bytes(receipt_field(&fields[24..])?),
-                event_index: index,
-                event_count: count,
-                change: super::change_codec::decode(payload)?,
+                event_index,
+                event_count,
+                payload: decode_payload(payload)?,
             })
         }
         _ => Err(CorruptionError::msg("invalid outbox record kind or length").into()),
     }
+}
+
+pub(crate) fn decode_record(
+    identity: &StoreIdentity,
+    position: u64,
+    bytes: &[u8],
+) -> Result<OutboxRecord, StorageError> {
+    match decode_record_with(identity, position, bytes, super::change_codec::decode)? {
+        DecodedRecord::Commit { cursor, receipt } => {
+            Ok(OutboxRecord::Commit { cursor, receipt })
+        }
+        DecodedRecord::Event {
+            cursor,
+            header_cursor,
+            commit_id,
+            event_index,
+            event_count,
+            payload: change,
+        } => Ok(OutboxRecord::Event {
+            cursor,
+            header_cursor,
+            commit_id,
+            event_index,
+            event_count,
+            change,
+        }),
+    }
+}
+
+fn validate_event_fields(
+    commit_id: &CommitId,
+    event_count: u64,
+    header_cursor: &OutboxCursor,
+    receipt: &CommitReceipt,
+) -> Result<(), StorageError> {
+    if commit_id != receipt.commit_id()
+        || event_count != receipt.effect_count()
+        || receipt.outbox_header_cursor().as_ref() != Some(header_cursor)
+    {
+        return Err(CorruptionError::msg("outbox event disagrees with its commit header").into());
+    }
+    Ok(())
+}
+
+pub(crate) struct RetainedFeatureInspection {
+    pub records: u64,
+    pub from: Option<u64>,
+    pub through: Option<u64>,
+    pub coverage_after_receipt_sequence: Option<u64>,
+    pub rdf_12_required: bool,
+    pub expired_history_unexamined: bool,
+}
+
+pub(crate) fn inspect_retained_features(
+    state: Option<&GovernanceState>,
+    mut get: impl FnMut(u64) -> Result<Option<Vec<u8>>, StorageError>,
+    mut receipt_for: impl FnMut(&[u8; 16]) -> Result<Option<CommitReceipt>, StorageError>,
+    mut has_after: impl FnMut(u64) -> Result<bool, StorageError>,
+    mut check: impl FnMut() -> Result<(), StorageError>,
+) -> Result<RetainedFeatureInspection, StorageError> {
+    if let Some(state) = state {
+        super::retention::validate(state)?;
+    }
+    let physical_gc = state.map_or(0, super::retention::physical_gc);
+    let floor = state.map_or(0, super::retention::floor);
+    let high = state
+        .and_then(|state| state.outbox.as_ref())
+        .map_or(0, |outbox| outbox.high_water);
+    if has_after(high)? {
+        return Err(CorruptionError::msg("outbox records beyond high-water state").into());
+    }
+    let Some((state, outbox)) =
+        state.and_then(|state| state.outbox.as_ref().map(|outbox| (state, outbox)))
+    else {
+        return Ok(RetainedFeatureInspection {
+            records: 0,
+            from: None,
+            through: None,
+            coverage_after_receipt_sequence: None,
+            rdf_12_required: false,
+            expired_history_unexamined: physical_gc > 0,
+        });
+    };
+    let anchor = state
+        .retention
+        .as_ref()
+        .and_then(|retention| retention.anchor.as_ref());
+    if let Some(anchor) = anchor {
+        validate_header(anchor, state, &mut receipt_for)?;
+    }
+    let mut cached_header = anchor.cloned();
+    let mut rdf_12_required = false;
+    let mut position = physical_gc;
+    while position < high {
+        position += 1;
+        check()?;
+        let bytes = get(position)?
+            .ok_or_else(|| CorruptionError::msg("outbox gap below high-water mark"))?;
+        let record =
+            decode_record_with(&state.store_identity, position, &bytes, |payload| {
+                super::change_codec::inspect_features(payload)
+            })?;
+        let required = match &record {
+            DecodedRecord::Commit { .. } => false,
+            DecodedRecord::Event { payload, .. } => *payload,
+        };
+        rdf_12_required |= required;
+        if position <= floor {
+            let anchor =
+                anchor.ok_or_else(|| CorruptionError::msg("missing pending cleanup anchor"))?;
+            match &record {
+                DecodedRecord::Commit { receipt, .. } if receipt == anchor => {}
+                DecodedRecord::Commit { .. } => {
+                    return Err(
+                        CorruptionError::msg("cleanup header disagrees with anchor").into(),
+                    );
+                }
+                DecodedRecord::Event {
+                    commit_id,
+                    event_count,
+                    header_cursor,
+                    ..
+                } => validate_event_fields(commit_id, *event_count, header_cursor, anchor)?,
+            }
+            continue;
+        }
+        match &record {
+            DecodedRecord::Commit { cursor, receipt } => {
+                validate_header(receipt, state, &mut receipt_for)?;
+                if let Some(previous) = &cached_header {
+                    if previous
+                        .outbox_end_cursor()
+                        .and_then(|cursor| cursor.position().checked_add(1))
+                        != Some(cursor.position())
+                        || previous.sequence().checked_add(1) != Some(receipt.sequence())
+                    {
+                        return Err(CorruptionError::msg(
+                            "outbox commit boundary or sequence gap",
+                        )
+                        .into());
+                    }
+                } else if cursor.position() != 1
+                    || receipt.sequence() != outbox.after_receipt_sequence + 1
+                {
+                    return Err(
+                        CorruptionError::msg("outbox origin disagrees with first receipt").into(),
+                    );
+                }
+                cached_header = Some(receipt.clone());
+            }
+            DecodedRecord::Event {
+                commit_id,
+                event_count,
+                header_cursor,
+                ..
+            } => {
+                let receipt = cached_header
+                    .as_ref()
+                    .ok_or_else(|| CorruptionError::msg("outbox event without preceding header"))?;
+                validate_event_fields(commit_id, *event_count, header_cursor, receipt)?;
+            }
+        }
+    }
+    let latest = cached_header
+        .as_ref()
+        .ok_or_else(|| CorruptionError::msg("missing latest outbox receipt"))?;
+    if latest.sequence() != state.sequence
+        || latest
+            .outbox_end_cursor()
+            .is_none_or(|cursor| cursor.position() != high)
+    {
+        return Err(CorruptionError::msg(
+            "outbox high-water does not finish the latest receipt",
+        )
+        .into());
+    }
+    validate_header(latest, state, &mut receipt_for)?;
+    Ok(RetainedFeatureInspection {
+        records: high - physical_gc,
+        from: (physical_gc < high).then(|| physical_gc + 1),
+        through: (physical_gc < high).then_some(high),
+        coverage_after_receipt_sequence: Some(outbox.after_receipt_sequence),
+        rdf_12_required,
+        expired_history_unexamined: physical_gc > 0,
+    })
 }
 
 /// Both backends supply point reads from ONE locked/snapshot generation.
@@ -541,11 +739,8 @@ pub(crate) fn validate_event(
         header_cursor,
         ..
     } = record
-        && (commit_id != receipt.commit_id()
-            || *event_count != receipt.effect_count()
-            || receipt.outbox_header_cursor().as_ref() != Some(header_cursor))
     {
-        return Err(CorruptionError::msg("outbox event disagrees with its commit header").into());
+        validate_event_fields(commit_id, *event_count, header_cursor, receipt)?;
     }
     Ok(())
 }
@@ -561,6 +756,7 @@ mod tests {
     use crate::model::{GraphName, NamedNode, Quad};
     use crate::store::Store;
     use std::collections::{BTreeMap, HashMap};
+    use std::num::{NonZeroU16, NonZeroU64};
 
     fn changes() -> SemanticChangeSet {
         let node = NamedNode::new_unchecked("urn:term");
@@ -782,6 +978,146 @@ mod tests {
             decode_record(&identity, 2, &seal_record(&identity, 2, body)),
             Err(StorageError::Corruption(_))
         ));
+    }
+
+    #[test]
+    fn feature_inspection_accepts_valid_cleanup_stopped_inside_expired_commit()
+    -> Result<(), StorageError> {
+        let first = prepare(&GovernanceState::default(), &[1; 16], &changes())?;
+        let second = prepare(&first.state, &[2; 16], &SemanticChangeSet::default())?;
+        let records: BTreeMap<_, _> = first
+            .records
+            .iter()
+            .chain(&second.records)
+            .filter(|(position, _)| *position >= 2)
+            .cloned()
+            .collect();
+        let receipts = HashMap::from([
+            ([1; 16], first.receipt.clone()),
+            ([2; 16], second.receipt.clone()),
+        ]);
+        let mut state = second.state.clone();
+        state.retention = Some(super::super::retention::RetentionState {
+            policy: crate::store::OutboxRetentionPolicy::new(
+                NonZeroU64::new(20).expect("non-zero"),
+                NonZeroU16::new(2).expect("non-zero"),
+            )
+            .expect("valid policy"),
+            clock: 10,
+            floor: 2,
+            physical_gc: 1,
+            anchor: Some(first.receipt),
+            leases: BTreeMap::new(),
+        });
+        let report = inspect_retained_features(
+            Some(&state),
+            |position| Ok(records.get(&position).cloned()),
+            |key| Ok(receipts.get(key).cloned()),
+            |position| {
+                Ok(records
+                    .last_key_value()
+                    .is_some_and(|(last, _)| *last > position))
+            },
+            || Ok(()),
+        )?;
+        assert_eq!(report.records, 2);
+        assert_eq!(report.from, Some(2));
+        assert_eq!(report.through, Some(3));
+        assert!(report.expired_history_unexamined);
+
+        let mut invalid_anchor_outcome = receipts;
+        invalid_anchor_outcome.remove(&[1; 16]);
+        assert!(matches!(
+            inspect_retained_features(
+                Some(&state),
+                |position| Ok(records.get(&position).cloned()),
+                |key| Ok(invalid_anchor_outcome.get(key).cloned()),
+                |position| {
+                    Ok(records
+                        .last_key_value()
+                        .is_some_and(|(last, _)| *last > position))
+                },
+                || Ok(()),
+            ),
+            Err(StorageError::Corruption(_))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn feature_inspection_validates_records_after_a_recognized_rdf_12_payload()
+    -> Result<(), StorageError> {
+        let first = prepare(&GovernanceState::default(), &[1; 16], &changes())?;
+        let second = prepare(&first.state, &[2; 16], &changes())?;
+        let mut records: BTreeMap<_, _> = first
+            .records
+            .iter()
+            .chain(&second.records)
+            .cloned()
+            .collect();
+        let receipts = HashMap::from([
+            ([1; 16], first.receipt.clone()),
+            ([2; 16], second.receipt.clone()),
+        ]);
+        let mut feature_body = records
+            .get(&2)
+            .expect("first event")
+            .get(..58)
+            .expect("event fields")
+            .to_vec();
+        feature_body.extend_from_slice(&rdf_12_payload_for_test());
+        records.insert(
+            2,
+            seal_record(&second.state.store_identity, 2, feature_body),
+        );
+        let inspect = |records: &BTreeMap<u64, Vec<u8>>| {
+            inspect_retained_features(
+                Some(&second.state),
+                |position| Ok(records.get(&position).cloned()),
+                |key| Ok(receipts.get(key).cloned()),
+                |position| {
+                    Ok(records
+                        .last_key_value()
+                        .is_some_and(|(last, _)| *last > position))
+                },
+                || Ok(()),
+            )
+        };
+
+        let report = inspect(&records)?;
+        assert!(report.rdf_12_required);
+        assert_eq!(report.records, 4);
+        assert_eq!(report.from, Some(1));
+        assert_eq!(report.through, Some(4));
+
+        let mut malformed_later = records.clone();
+        let mut malformed_body = malformed_later
+            .get(&4)
+            .expect("later event")
+            .get(..58)
+            .expect("event fields")
+            .to_vec();
+        malformed_body.push(255);
+        malformed_later.insert(
+            4,
+            seal_record(&second.state.store_identity, 4, malformed_body),
+        );
+        assert!(matches!(
+            inspect(&malformed_later),
+            Err(StorageError::Corruption(_))
+        ));
+
+        let mut corrupt_later = records.clone();
+        *corrupt_later
+            .get_mut(&3)
+            .expect("later record")
+            .last_mut()
+            .expect("checksum") ^= 1;
+        assert!(matches!(
+            inspect(&corrupt_later),
+            Err(StorageError::Corruption(_))
+        ));
+        Ok(())
     }
 
     #[test]

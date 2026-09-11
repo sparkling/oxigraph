@@ -2,7 +2,11 @@
 
 use assert_cmd::Command;
 use oxigraph::model::{GraphName, NamedNode, Quad};
+#[cfg(feature = "rdf-12")]
+use oxigraph::model::Triple;
 use oxigraph::store::{Namespace, NamespacePrefix, Store};
+#[cfg(feature = "rdf-12")]
+use oxigraph::store::{TransactionKey, TransactionRequest, WritableDataset};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -83,6 +87,134 @@ fn inspection_reports_metadata_without_changing_the_offline_store() -> Result {
             .len(),
         1
     );
+    Ok(())
+}
+
+#[test]
+fn feature_inspection_reports_bounded_scopes_without_terms_or_source_changes() -> Result {
+    let directory = assert_fs::TempDir::new()?;
+    let store = Store::open(directory.path())?;
+    let node = NamedNode::new("urn:feature-inspection:secret")?;
+    store.insert(Quad::new(
+        node.clone(),
+        node.clone(),
+        node,
+        GraphName::DefaultGraph,
+    ))?;
+    store.flush()?;
+    drop(store);
+    let before = tree(directory.path())?;
+
+    let output = Command::cargo_bin("oxigraph")?
+        .args(["inspect-features", "--location"])
+        .arg(directory.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value = serde_json::from_slice(&output)?;
+    assert_eq!(
+        report["format"],
+        "oxigraph.store-feature-inspection.v1"
+    );
+    assert_eq!(
+        report["inspection"],
+        "recognized-current-rdf-features"
+    );
+    assert_eq!(report["version_status"], "current");
+    assert_eq!(report["required_features"], serde_json::json!([]));
+    assert_eq!(
+        report["scopes"]["live_primary_object_indexes"]["status"],
+        "inspected"
+    );
+    assert_eq!(
+        report["scopes"]["retained_governed_outbox"]["records"],
+        0
+    );
+    assert_eq!(report["complete_compatibility"], "not-checked");
+    assert_eq!(report["derived_state"], "unknown-unexamined");
+    assert!(!String::from_utf8(output)?.contains("urn:feature-inspection:secret"));
+    assert_eq!(tree(directory.path())?, before);
+    Ok(())
+}
+
+#[cfg(feature = "rdf-12")]
+#[test]
+fn feature_inspection_reports_retained_only_rdf_12_without_exposing_terms() -> Result {
+    let directory = assert_fs::TempDir::new()?;
+    let store = Store::open(directory.path())?;
+    let subject = NamedNode::new("urn:cli-retained:secret-subject")?;
+    let predicate = NamedNode::new("urn:cli-retained:predicate")?;
+    let object = Triple::new(
+        subject.clone(),
+        predicate.clone(),
+        NamedNode::new("urn:cli-retained:object")?,
+    );
+    let quad = Quad::new(
+        subject,
+        predicate,
+        object,
+        GraphName::DefaultGraph,
+    );
+    let mut insert = store
+        .start_governed_transaction(
+            TransactionRequest::default(),
+            TransactionKey::new([31; 16]),
+        )?
+        .into_transaction();
+    insert.insert(quad.clone())?;
+    insert.commit()?;
+    let mut remove = store
+        .start_governed_transaction(
+            TransactionRequest::default(),
+            TransactionKey::new([32; 16]),
+        )?
+        .into_transaction();
+    remove.remove(&quad)?;
+    remove.commit()?;
+    assert!(!store.contains(&quad)?);
+    drop(store);
+    let before = tree(directory.path())?;
+
+    let output = Command::cargo_bin("oxigraph")?
+        .args(["inspect-features", "--location"])
+        .arg(directory.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value = serde_json::from_slice(&output)?;
+    assert_eq!(report["required_features"], serde_json::json!(["rdf-12"]));
+    assert_eq!(
+        report["scopes"]["live_primary_object_indexes"]["rdf_12_required"],
+        false
+    );
+    assert_eq!(
+        report["scopes"]["retained_governed_outbox"]["rdf_12_required"],
+        true
+    );
+    assert_eq!(
+        report["history_before_governed_outbox_coverage"],
+        "unknown-unexamined"
+    );
+    assert!(!String::from_utf8(output)?.contains("urn:cli-retained:"));
+    assert_eq!(tree(directory.path())?, before);
+    Ok(())
+}
+
+#[test]
+fn feature_inspection_failure_does_not_create_a_database() -> Result {
+    let directory = assert_fs::TempDir::new()?;
+    let missing = directory.path().join("missing");
+    Command::cargo_bin("oxigraph")?
+        .args(["inspect-features", "--location"])
+        .arg(&missing)
+        .assert()
+        .failure();
+    assert!(!missing.exists());
+    assert_eq!(std::fs::read_dir(directory.path())?.count(), 0);
     Ok(())
 }
 

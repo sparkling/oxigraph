@@ -116,6 +116,8 @@ mod format_inspection_tests;
 mod safe_open_tests;
 #[cfg(test)]
 mod feature_compatibility_tests;
+#[path = "rocksdb/feature_inspection.rs"]
+mod feature_inspection;
 const ID2STR_CF: &str = "id2str";
 const SPOG_CF: &str = "spog";
 const POSG_CF: &str = "posg";
@@ -263,7 +265,7 @@ impl RocksDbStorage {
             return Err(StorageError::SchemaUnknown);
         }
         #[cfg(not(feature = "rdf-12"))]
-        if Self::contains_disabled_rdf_12_terms(path, options)? {
+        if Self::contains_rdf_12_terms(path, options)? {
             return Err(StorageError::FeatureIncompatible { feature: "rdf-12" });
         }
         Ok(())
@@ -271,8 +273,7 @@ impl RocksDbStorage {
 
     // Valid RDF 1.2-only terms are object-leading in these complete indexes.
     // This bounded probe intentionally neither decodes terms nor scans data.
-    #[cfg(any(not(feature = "rdf-12"), test))]
-    fn contains_disabled_rdf_12_terms(path: &Path, options: DbOptions) -> Result<bool, StorageError> {
+    fn contains_rdf_12_terms(path: &Path, options: DbOptions) -> Result<bool, StorageError> {
         let column_families = Self::column_families()
             .into_iter()
             .filter(|column_family| matches!(column_family.name, DOSP_CF | OSPG_CF))
@@ -921,8 +922,16 @@ impl RocksDbStorage {
         reader: &Reader<'_>,
         position: u64,
     ) -> Result<Option<Vec<u8>>, StorageError> {
+        Self::read_outbox_record_from(reader, &self.default_cf, position)
+    }
+
+    fn read_outbox_record_from(
+        reader: &Reader<'_>,
+        default_cf: &ColumnFamily,
+        position: u64,
+    ) -> Result<Option<Vec<u8>>, StorageError> {
         let key = outbox_record_key(position);
-        let mut records = reader.scan_prefix_from(&self.default_cf, OUTBOX_RECORD_PREFIX, &key);
+        let mut records = reader.scan_prefix_from(default_cf, OUTBOX_RECORD_PREFIX, &key);
         records.status()?;
         if records.key() != Some(key.as_slice()) {
             return Ok(None);

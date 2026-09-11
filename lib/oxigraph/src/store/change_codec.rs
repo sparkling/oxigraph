@@ -130,6 +130,7 @@ fn bad(message: &'static str) -> StorageError {
 
 struct Cursor<'a> {
     remaining: &'a [u8],
+    requires_rdf_12: bool,
 }
 impl<'a> Cursor<'a> {
     fn take(&mut self, length: usize) -> Result<&'a [u8], StorageError> {
@@ -216,6 +217,7 @@ impl<'a> Cursor<'a> {
                 Ok(Some(result))
             }
             direction @ (1 | 2) => {
+                self.requires_rdf_12 = true;
                 let language =
                     language.ok_or_else(|| bad("literal direction requires a language tag"))?;
                 #[cfg(feature = "rdf-12")]
@@ -265,6 +267,7 @@ impl<'a> Cursor<'a> {
                 if depth >= MAX_TRIPLE_DEPTH {
                     return Err(bad("semantic-change triple nesting exceeds 32"));
                 }
+                self.requires_rdf_12 = true;
                 let subject = self.subject()?;
                 let predicate = self.predicate()?;
                 let object = self.term(depth + 1)?;
@@ -287,8 +290,13 @@ impl<'a> Cursor<'a> {
     }
 }
 
-pub(super) fn decode(bytes: &[u8]) -> Result<SemanticChange, StorageError> {
-    let mut input = Cursor { remaining: bytes };
+fn decode_with_features(
+    bytes: &[u8],
+) -> Result<(Option<SemanticChange>, bool), StorageError> {
+    let mut input = Cursor {
+        remaining: bytes,
+        requires_rdf_12: false,
+    };
     let change = match input.byte()? {
         tag @ (0 | 1) => {
             let subject = input.subject()?;
@@ -331,15 +339,24 @@ pub(super) fn decode(bytes: &[u8]) -> Result<SemanticChange, StorageError> {
     if !input.remaining.is_empty() {
         return Err(bad("trailing semantic-change bytes"));
     }
-    let Some(change) = change else {
-        return Err(StorageError::FeatureIncompatible { feature: "rdf-12" });
-    };
-    let mut canonical = Vec::new();
-    emit(&change, &mut |part| canonical.extend_from_slice(part));
-    if canonical != bytes {
-        return Err(bad("noncanonical semantic-change payload"));
+    if let Some(change) = &change {
+        let mut canonical = Vec::new();
+        emit(change, &mut |part| canonical.extend_from_slice(part));
+        if canonical != bytes {
+            return Err(bad("noncanonical semantic-change payload"));
+        }
     }
-    Ok(change)
+    Ok((change, input.requires_rdf_12))
+}
+
+pub(super) fn inspect_features(bytes: &[u8]) -> Result<bool, StorageError> {
+    Ok(decode_with_features(bytes)?.1)
+}
+
+pub(super) fn decode(bytes: &[u8]) -> Result<SemanticChange, StorageError> {
+    decode_with_features(bytes)?.0.ok_or(StorageError::FeatureIncompatible {
+        feature: "rdf-12",
+    })
 }
 
 #[cfg(test)]

@@ -171,6 +171,16 @@ pub enum Command {
         #[arg(short, long, value_hint = ValueHint::DirPath)]
         location: PathBuf,
     },
+    /// Explicitly inspect recognized current-format RDF feature requirements
+    ///
+    /// Stop all writers first. The JSON result covers live object indexes and
+    /// physically retained governed outbox records only. It does not inspect
+    /// expired history, derived state, or establish complete compatibility.
+    InspectFeatures {
+        /// Existing offline current-format store directory
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
+        location: PathBuf,
+    },
     /// Verify a completed backup package without opening or changing its database
     VerifyBackup {
         /// Directory containing the backup completion manifest

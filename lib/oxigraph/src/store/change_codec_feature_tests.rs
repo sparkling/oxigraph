@@ -168,6 +168,10 @@ fn production_encoder_matches_independent_rdf_12_payload_fixtures(
 #[test]
 fn valid_rdf_12_payloads_and_every_truncation_have_exact_classification() {
     for (name, payload) in valid_rdf_12_payloads() {
+        assert!(
+            matches!(inspect_features(&payload), Ok(true)),
+            "{name}"
+        );
         #[cfg(not(feature = "rdf-12"))]
         assert_feature_incompatible(&payload);
         #[cfg(feature = "rdf-12")]
@@ -257,6 +261,10 @@ fn malformed_rdf_12_payloads_remain_corruption_after_unsupported_terms() {
         quad(0, vec![0], vec![0]),
     ] {
         assert_corruption(&payload);
+        assert!(matches!(
+            inspect_features(&payload),
+            Err(StorageError::Corruption(_))
+        ));
     }
 }
 
@@ -268,9 +276,18 @@ fn directionless_dir_lang_string_keeps_existing_feature_mode_semantics() {
         vec![0],
     );
     #[cfg(not(feature = "rdf-12"))]
-    assert!(decode(&payload).is_ok());
+    {
+        assert!(decode(&payload).is_ok());
+        assert!(matches!(inspect_features(&payload), Ok(false)));
+    }
     #[cfg(feature = "rdf-12")]
-    assert_corruption(&payload);
+    {
+        assert_corruption(&payload);
+        assert!(matches!(
+            inspect_features(&payload),
+            Err(StorageError::Corruption(_))
+        ));
+    }
 }
 
 #[test]

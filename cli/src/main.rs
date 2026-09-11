@@ -228,6 +228,53 @@ pub fn main() -> anyhow::Result<()> {
             writeln!(stdout().lock(), "{output}")?;
             Ok(())
         }
+        Command::InspectFeatures { location } => {
+            let report = Store::inspect_features(location)?;
+            let required_features = report
+                .rdf_12_required()
+                .then_some("rdf-12")
+                .into_iter()
+                .collect::<Vec<_>>();
+            let unsupported_features = report
+                .rdf_12_unsupported()
+                .then_some("rdf-12")
+                .into_iter()
+                .collect::<Vec<_>>();
+            let output = serde_json::json!({
+                "format": "oxigraph.store-feature-inspection.v1",
+                "inspection": "recognized-current-rdf-features",
+                "version_status": "current",
+                "storage_version": report.format_info().storage_version(),
+                "binary_supports_rdf_12": report.rdf_12_supported(),
+                "required_features": required_features,
+                "unsupported_features": unsupported_features,
+                "scopes": {
+                    "live_primary_object_indexes": {
+                        "status": "inspected",
+                        "rdf_12_required": report.live_rdf_12_required(),
+                    },
+                    "retained_governed_outbox": {
+                        "status": "inspected",
+                        "records": report.retained_outbox_records(),
+                        "from_position": report.retained_outbox_from(),
+                        "through_position": report.retained_outbox_through(),
+                        "coverage_after_receipt_sequence":
+                            report.outbox_coverage_after_receipt_sequence(),
+                        "rdf_12_required": report.retained_outbox_rdf_12_required(),
+                    },
+                },
+                "expired_outbox_history": if report.expired_outbox_history_unexamined() {
+                    "unknown-unexamined"
+                } else {
+                    "not-present-in-governed-lineage"
+                },
+                "history_before_governed_outbox_coverage": "unknown-unexamined",
+                "derived_state": "unknown-unexamined",
+                "complete_compatibility": "not-checked",
+            });
+            writeln!(stdout().lock(), "{output}")?;
+            Ok(())
+        }
         Command::VerifyBackup { location } => {
             let receipt = oxigraph::store::BackupReceipt::verify(
                 location,

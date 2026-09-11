@@ -771,6 +771,43 @@ error, not full feature-envelope/history admission, older-binary rollback or
 the frozen compatibility/crash/system-profile gates. G4.3 remains incomplete
 and this ADR remains Proposed; no qualification or publication is implied.
 
+## Explicit offline RDF feature inspection (2026-09-11)
+
+`Store::inspect_features`, its cooperative-control variant, and CLI
+`inspect-features --location PATH` add an explicit read-only report for exact
+current layouts. Existing metadata-only inspection is unchanged. The report
+identifies recognized RDF 1.2 requirements independently of the inspecting
+binary's features, distinguishing live primary object indexes from physically
+retained governed outbox history. No RDF terms are emitted and no source files
+or native lock are created. Writers must be stopped and paths remain stable.
+
+The retained-history scan validates the retention anchor, record envelopes,
+positions, checksums, receipt linkage and complete logical payloads. It keeps
+scanning after finding RDF 1.2 encodings, so later malformed records are not
+hidden by an unsupported-feature finding. The shared logical parser avoids a
+second feature-dependent decoder. This explicit scan can be linear in retained
+records; ordinary-open work remains bounded. Unknown/older/newer/incomplete
+layouts are not interpreted as current content.
+
+The report does not establish a checksummed schema envelope, store UUID,
+complete history or derived-state compatibility. Expired and pre-coverage
+history remain explicitly unexamined; `complete_compatibility` is `not-checked`.
+Success means the inspection completed, not compatibility or upgrade approval.
+
+Native checks cover both library feature configurations, CLI default and
+no-default modes, malformed tails, retained-only requirements and unchanged
+source trees. The explicitly selected cross-feature regression uses a real
+RDF-1.2 writer and a no-default CLI, proving retained-only RDF-1.2 requirements
+are reported as unsupported without changing the source. Recorded checks also
+include store/receipt/outbox regressions, Clippy and an identified local CLI
+build. The original implementation workflow timed out during host coordination;
+remaining checks used ordinary `run` recovery, not a claimed successful original
+controller. Formatting check failure and Clippy warnings remain recorded.
+
+This is a bounded product inspection slice, not closure of any complete staged
+gate below. ADR status remains Proposed; frozen qualification, full G4.3 and
+publication remain separate.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,

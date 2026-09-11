@@ -101,6 +101,102 @@ impl StoreFormatInfo {
     }
 }
 
+/// Recognized RDF requirements observed by an explicit offline content inspection.
+///
+/// This report covers only the current-format live object-leading indexes and
+/// the physically retained governed outbox records described by its accessors.
+/// It is not a schema envelope or a complete compatibility/validity claim.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StoreFeatureInspection {
+    format: StoreFormatInfo,
+    live_rdf_12_required: bool,
+    retained_outbox_rdf_12_required: bool,
+    retained_outbox_records: u64,
+    retained_outbox_from: Option<u64>,
+    retained_outbox_through: Option<u64>,
+    outbox_coverage_after_receipt_sequence: Option<u64>,
+    expired_outbox_history_unexamined: bool,
+}
+
+impl StoreFeatureInspection {
+    pub(crate) fn new(
+        format: StoreFormatInfo,
+        live_rdf_12_required: bool,
+        retained_outbox_rdf_12_required: bool,
+        retained_outbox_records: u64,
+        retained_outbox_from: Option<u64>,
+        retained_outbox_through: Option<u64>,
+        outbox_coverage_after_receipt_sequence: Option<u64>,
+        expired_outbox_history_unexamined: bool,
+    ) -> Self {
+        Self {
+            format,
+            live_rdf_12_required,
+            retained_outbox_rdf_12_required,
+            retained_outbox_records,
+            retained_outbox_from,
+            retained_outbox_through,
+            outbox_coverage_after_receipt_sequence,
+            expired_outbox_history_unexamined,
+        }
+    }
+
+    /// Returns the physical format information used to authorize this inspection.
+    pub const fn format_info(&self) -> &StoreFormatInfo {
+        &self.format
+    }
+
+    /// Returns whether a recognized RDF 1.2-only term occurs in live object indexes.
+    pub const fn live_rdf_12_required(&self) -> bool {
+        self.live_rdf_12_required
+    }
+
+    /// Returns whether a recognized RDF 1.2-only term occurs in retained outbox payloads.
+    pub const fn retained_outbox_rdf_12_required(&self) -> bool {
+        self.retained_outbox_rdf_12_required
+    }
+
+    /// Returns whether either inspected scope requires RDF 1.2.
+    pub const fn rdf_12_required(&self) -> bool {
+        self.live_rdf_12_required || self.retained_outbox_rdf_12_required
+    }
+
+    /// Returns whether this binary was built with RDF 1.2 support.
+    pub const fn rdf_12_supported(&self) -> bool {
+        cfg!(feature = "rdf-12")
+    }
+
+    /// Returns whether the inspected requirements exceed this binary's support.
+    pub const fn rdf_12_unsupported(&self) -> bool {
+        self.rdf_12_required() && !self.rdf_12_supported()
+    }
+
+    /// Returns the number of physically retained outbox records inspected.
+    pub const fn retained_outbox_records(&self) -> u64 {
+        self.retained_outbox_records
+    }
+
+    /// Returns the first inspected physical outbox position, if any.
+    pub const fn retained_outbox_from(&self) -> Option<u64> {
+        self.retained_outbox_from
+    }
+
+    /// Returns the last inspected physical outbox position, if any.
+    pub const fn retained_outbox_through(&self) -> Option<u64> {
+        self.retained_outbox_through
+    }
+
+    /// Returns the receipt sequence immediately before governed outbox coverage.
+    pub const fn outbox_coverage_after_receipt_sequence(&self) -> Option<u64> {
+        self.outbox_coverage_after_receipt_sequence
+    }
+
+    /// Returns whether physically expired outbox history was outside the inspection.
+    pub const fn expired_outbox_history_unexamined(&self) -> bool {
+        self.expired_outbox_history_unexamined
+    }
+}
+
 impl Store {
     /// Inspects an existing, offline disk store without creating or migrating it.
     ///
@@ -110,5 +206,23 @@ impl Store {
     /// return does not authorize open, upgrade, cutover, or publication.
     pub fn inspect(path: impl AsRef<Path>) -> Result<StoreFormatInfo, StorageError> {
         Storage::inspect(path.as_ref())
+    }
+
+    /// Explicitly inspects recognized live and retained-outbox RDF requirements.
+    ///
+    /// The store must have the exact current marker and column-family layout.
+    /// This offline operation never calls ordinary open, setup, or migration.
+    pub fn inspect_features(
+        path: impl AsRef<Path>,
+    ) -> Result<StoreFeatureInspection, StorageError> {
+        Self::inspect_features_with_control(path, &super::TransactionStartControl::new())
+    }
+
+    /// Equivalent to the explicit feature inspection with cooperative cancellation.
+    pub fn inspect_features_with_control(
+        path: impl AsRef<Path>,
+        control: &super::TransactionStartControl,
+    ) -> Result<StoreFeatureInspection, StorageError> {
+        Storage::inspect_features(path.as_ref(), control)
     }
 }

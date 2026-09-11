@@ -956,6 +956,32 @@ qualified by this refusal. See the
 [explicit activation instructions](#offline-fresh-target-upgrade-activation-fork).
 See [ADR-0028](../docs/adr/0028-safe-storage-schema-upgrades.md#native-metadata-inspection-slice-2026-09-10).
 
+### Explicit RDF feature inspection
+
+With writers stopped and the directory kept unchanged, run:
+
+```sh
+oxigraph inspect-features --location ./data
+```
+
+This separate, read-only operation requires a recognized complete current
+layout and rejects guarded incomplete upgrades. It does not create `LOCK`,
+migrate data or emit RDF terms. Its `oxigraph.store-feature-inspection.v1`
+JSON reports `required_features` and `unsupported_features` for recognized
+RDF 1.2 encodings in live primary object indexes and physically retained
+governed outbox records. An executable without `rdf-12` can still report those
+requirements. Exit success means inspection completed, even when required
+features are unsupported by that executable.
+
+The retained-record scan validates envelopes and complete logical payloads,
+including records after an RDF 1.2 requirement is found. Its work can grow
+linearly with retained history; it is not part of ordinary open. Expired or
+pre-coverage history and derived state are not certified; the report keeps
+`complete_compatibility` as `not-checked`. It is not upgrade approval or a
+concurrent inspection lease. The library also exposes
+`Store::inspect_features_with_control` for cooperative cancellation.
+See [the bounded contract](../docs/adr/0028-safe-storage-schema-upgrades.md#explicit-offline-rdf-feature-inspection-2026-09-11).
+
 ## Offline legacy physical backups (fork)
 
 Build this fork's CLI. Stop all writers and keep source, package and destination

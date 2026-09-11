@@ -376,6 +376,14 @@ impl Storage {
         RocksDbStorage::inspect(path)
     }
 
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    pub fn inspect_features(
+        path: &Path,
+        control: &TransactionStartControl,
+    ) -> Result<crate::store::StoreFeatureInspection, StorageError> {
+        RocksDbStorage::inspect_features(path, control)
+    }
+
     pub fn snapshot(&self) -> StorageReader<'static> {
         StorageReader {
             kind: match &self.kind {
