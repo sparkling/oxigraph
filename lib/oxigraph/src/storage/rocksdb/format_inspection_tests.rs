@@ -1,7 +1,7 @@
 use super::*;
-use crate::store::{Store, StoreVersionStatus};
 #[cfg(feature = "rdf-12")]
 use crate::model::{GraphName, NamedNode, Quad, Triple};
+use crate::store::{Store, StoreVersionStatus};
 #[cfg(feature = "rdf-12")]
 use crate::store::{TransactionKey, TransactionRequest, WritableDataset};
 use std::collections::BTreeMap;
@@ -116,11 +116,7 @@ fn feature_inspection_only_classifies_exact_legacy_inventories_as_upgradeable() 
             .into_iter()
             .filter(|definition| Some(definition.name) != omitted)
             .collect();
-        let db = Db::open_read_write(
-            directory.path(),
-            definitions,
-            DbOptions::default(),
-        )?;
+        let db = Db::open_read_write(directory.path(), definitions, DbOptions::default())?;
         db.insert(
             &db.column_family(DEFAULT_CF)?,
             b"oxversion",
@@ -153,11 +149,7 @@ fn feature_inspection_only_classifies_exact_legacy_inventories_as_upgradeable() 
         min_prefix_size: 0,
         unordered_writes: false,
     });
-    let db = Db::open_read_write(
-        directory.path(),
-        definitions,
-        DbOptions::default(),
-    )?;
+    let db = Db::open_read_write(directory.path(), definitions, DbOptions::default())?;
     db.insert(
         &db.column_family(DEFAULT_CF)?,
         b"oxversion",
@@ -269,18 +261,12 @@ fn rdf_12_writer_retained_history_is_reported_unsupported_by_no_default_cli() ->
         GraphName::DefaultGraph,
     );
     let mut insert = store
-        .start_governed_transaction(
-            TransactionRequest::default(),
-            TransactionKey::new([41; 16]),
-        )?
+        .start_governed_transaction(TransactionRequest::default(), TransactionKey::new([41; 16]))?
         .into_transaction();
     insert.insert(quad.clone())?;
     insert.commit()?;
     let mut remove = store
-        .start_governed_transaction(
-            TransactionRequest::default(),
-            TransactionKey::new([42; 16]),
-        )?
+        .start_governed_transaction(TransactionRequest::default(), TransactionKey::new([42; 16]))?
         .into_transaction();
     remove.remove(&quad)?;
     remove.commit()?;

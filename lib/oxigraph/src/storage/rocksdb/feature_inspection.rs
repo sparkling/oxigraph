@@ -1,13 +1,10 @@
 use super::*;
 use std::time::Instant;
 
-fn check(
-    control: &TransactionStartControl,
-    started_at: Instant,
-) -> Result<(), StorageError> {
-    control.check(started_at).map_err(|_| {
-        StorageError::Other("feature inspection was cancelled or timed out".into())
-    })
+fn check(control: &TransactionStartControl, started_at: Instant) -> Result<(), StorageError> {
+    control
+        .check(started_at)
+        .map_err(|_| StorageError::Other("feature inspection was cancelled or timed out".into()))
 }
 
 impl RocksDbStorage {
@@ -22,7 +19,9 @@ impl RocksDbStorage {
         if !format.unexpected_column_families().is_empty() {
             return Err(StorageError::SchemaUnknown);
         }
-        let version = format.storage_version().ok_or(StorageError::SchemaUnknown)?;
+        let version = format
+            .storage_version()
+            .ok_or(StorageError::SchemaUnknown)?;
         if version > LATEST_STORAGE_VERSION {
             return Err(StorageError::SchemaTooNew {
                 found: version,
@@ -37,14 +36,11 @@ impl RocksDbStorage {
                 supported: LATEST_STORAGE_VERSION,
             });
         }
-        if version != LATEST_STORAGE_VERSION
-            || !format.missing_column_families().is_empty()
-        {
+        if version != LATEST_STORAGE_VERSION || !format.missing_column_families().is_empty() {
             return Err(StorageError::SchemaUnknown);
         }
         check(control, started_at)?;
-        let live_rdf_12_required =
-            Self::contains_rdf_12_terms(path, DbOptions::default())?;
+        let live_rdf_12_required = Self::contains_rdf_12_terms(path, DbOptions::default())?;
         check(control, started_at)?;
 
         // Open only the default metadata/outbox family. Do not construct a Store,
@@ -75,24 +71,18 @@ impl RocksDbStorage {
                     .get(&default_cf, &transaction_outcome_key(key))?
                     .is_some()
                 {
-                    return Err(
-                        CorruptionError::msg("outbox key also has a legacy outcome").into(),
-                    );
+                    return Err(CorruptionError::msg("outbox key also has a legacy outcome").into());
                 }
                 let value = reader.get(&default_cf, &governed_outcome_key(key))?;
                 value
                     .map(|value| {
                         if value.starts_with(&[2, 4]) {
                             let state = state.as_ref().ok_or_else(|| {
-                                CorruptionError::msg(
-                                    "expired anchor without governance state",
-                                )
+                                CorruptionError::msg("expired anchor without governance state")
                             })?;
                             return crate::store::retention::anchor_receipt(
                                 state,
-                                &crate::store::ExpiredCommitReceipt::decode(
-                                    key, &value, state,
-                                )?,
+                                &crate::store::ExpiredCommitReceipt::decode(key, &value, state)?,
                             );
                         }
                         Ok(
@@ -106,11 +96,7 @@ impl RocksDbStorage {
             |position| {
                 let mut lower = outbox_record_key(position);
                 lower.push(0);
-                let records = reader.scan_prefix_from(
-                    &default_cf,
-                    OUTBOX_RECORD_PREFIX,
-                    &lower,
-                );
+                let records = reader.scan_prefix_from(&default_cf, OUTBOX_RECORD_PREFIX, &lower);
                 records.status()?;
                 Ok(records.is_valid())
             },

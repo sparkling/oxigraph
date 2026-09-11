@@ -1,11 +1,11 @@
 use super::*;
 #[cfg(feature = "rdf-12")]
 use crate::model::{BaseDirection, Literal, Triple};
-use crate::store::{Store, TransactionKey, TransactionRequest, WritableDataset};
 #[cfg(not(feature = "rdf-12"))]
 use crate::store::{OutboxReadError, StoreOptions};
 #[cfg(feature = "rdf-12")]
 use crate::store::{OutboxRecord, SemanticChange};
+use crate::store::{Store, TransactionKey, TransactionRequest, WritableDataset};
 use std::collections::BTreeMap;
 #[cfg(not(feature = "rdf-12"))]
 use std::io;
@@ -32,7 +32,11 @@ fn files(path: &Path) -> Result<BTreeMap<PathBuf, (usize, [u8; 32])>> {
 
 #[cfg(not(feature = "rdf-12"))]
 fn current_fixture(path: &Path) -> Result<Db> {
-    let db = Db::open_read_write(path, RocksDbStorage::column_families(), DbOptions::default())?;
+    let db = Db::open_read_write(
+        path,
+        RocksDbStorage::column_families(),
+        DbOptions::default(),
+    )?;
     db.insert(
         &db.column_family(DEFAULT_CF)?,
         b"oxversion",
@@ -72,11 +76,21 @@ fn safe_open_rejects_each_declared_disabled_object_tag_without_source_changes() 
             assert!(report.rdf_12_unsupported());
             assert_eq!(files(directory.path())?, before);
             for _ in 0..2 {
-                assert_feature_incompatible(Store::open(directory.path()).err().expect("feature-incompatible open must fail"));
                 assert_feature_incompatible(
-                    Store::open_with_options(directory.path(), StoreOptions::default()).err().expect("feature-incompatible open must fail"),
+                    Store::open(directory.path())
+                        .err()
+                        .expect("feature-incompatible open must fail"),
                 );
-                assert_feature_incompatible(Store::open_read_only(directory.path()).err().expect("feature-incompatible open must fail"));
+                assert_feature_incompatible(
+                    Store::open_with_options(directory.path(), StoreOptions::default())
+                        .err()
+                        .expect("feature-incompatible open must fail"),
+                );
+                assert_feature_incompatible(
+                    Store::open_read_only(directory.path())
+                        .err()
+                        .expect("feature-incompatible open must fail"),
+                );
                 assert_eq!(files(directory.path())?, before);
             }
         }
@@ -130,7 +144,10 @@ fn safe_open_feature_refusal_follows_schema_and_guard_priority_and_releases_leas
 
     let directory = tempfile::tempdir()?;
     insert_object_leading_tag(directory.path(), DOSP_CF, 48)?;
-    std::fs::write(directory.path().join(crate::store::upgrade::UPGRADE_GUARD), b"guard")?;
+    std::fs::write(
+        directory.path().join(crate::store::upgrade::UPGRADE_GUARD),
+        b"guard",
+    )?;
     assert!(matches!(
         Store::open(directory.path()),
         Err(StorageError::UpgradeIncomplete)
@@ -138,7 +155,11 @@ fn safe_open_feature_refusal_follows_schema_and_guard_priority_and_releases_leas
 
     let directory = tempfile::tempdir()?;
     insert_object_leading_tag(directory.path(), DOSP_CF, 48)?;
-    assert_feature_incompatible(Store::open(directory.path()).err().expect("feature-incompatible open must fail"));
+    assert_feature_incompatible(
+        Store::open(directory.path())
+            .err()
+            .expect("feature-incompatible open must fail"),
+    );
     let db = Db::open_read_write(
         directory.path(),
         RocksDbStorage::column_families(),
@@ -196,28 +217,19 @@ fn retained_only_rdf_12_outbox_payload_fails_on_consumption_without_source_chang
 
     let store = Store::open(path)?;
     let mut insert = store
-        .start_governed_transaction(
-            TransactionRequest::default(),
-            TransactionKey::new([11; 16]),
-        )?
+        .start_governed_transaction(TransactionRequest::default(), TransactionKey::new([11; 16]))?
         .into_transaction();
     insert.insert(quad.clone())?;
     insert.commit()?;
 
     let mut remove = store
-        .start_governed_transaction(
-            TransactionRequest::default(),
-            TransactionKey::new([12; 16]),
-        )?
+        .start_governed_transaction(TransactionRequest::default(), TransactionKey::new([12; 16]))?
         .into_transaction();
     remove.remove(&quad)?;
     remove.commit()?;
 
     store
-        .start_governed_transaction(
-            TransactionRequest::default(),
-            TransactionKey::new([13; 16]),
-        )?
+        .start_governed_transaction(TransactionRequest::default(), TransactionKey::new([13; 16]))?
         .into_transaction()
         .commit()?;
     assert!(!store.contains(&quad)?);
@@ -240,8 +252,11 @@ fn retained_only_rdf_12_outbox_payload_fails_on_consumption_without_source_chang
     drop(compatible);
 
     {
-        let db =
-            Db::open_read_write(path, RocksDbStorage::column_families(), DbOptions::default())?;
+        let db = Db::open_read_write(
+            path,
+            RocksDbStorage::column_families(),
+            DbOptions::default(),
+        )?;
         let cf = db.column_family(DEFAULT_CF)?;
         let key = outbox_record_key(2);
         let record = db
@@ -297,7 +312,10 @@ fn rdf_12_object_terms() -> Result<Vec<Term>> {
         for (value, language) in [
             ("value", "en"),
             ("value", "fr-Latn-FR-x-foo-bar-baz-bat-aaaa-bbbb-cccc"),
-            ("foo-fr-literal-thisisaverylargelanguagetaggedstringliteral", "fr"),
+            (
+                "foo-fr-literal-thisisaverylargelanguagetaggedstringliteral",
+                "fr",
+            ),
             (
                 "foo-big-literal-thisisaverylargelanguagetaggedstringliteral",
                 "fr-Latn-FR-x-foo-bar-baz-bat-aaaa-bbbb-cccc",
@@ -332,12 +350,7 @@ fn safe_open_rdf_12_writer_terms_roundtrip_and_private_disabled_profile_probe() 
     let mut quads = Vec::new();
     for term in terms {
         for graph_name in [GraphName::DefaultGraph, graph.clone().into()] {
-            let quad = Quad::new(
-                subject.clone(),
-                predicate.clone(),
-                term.clone(),
-                graph_name,
-            );
+            let quad = Quad::new(subject.clone(), predicate.clone(), term.clone(), graph_name);
             store.insert(quad.clone())?;
             quads.push(quad);
         }
@@ -373,31 +386,26 @@ fn safe_open_outbox_history_is_not_live_feature_admission() -> Result {
     let store = Store::open(directory.path())?;
     let subject = NamedNode::new("urn:rdf12:history:s")?;
     let predicate = NamedNode::new("urn:rdf12:history:p")?;
-    let triple = Triple::new(subject.clone(), predicate.clone(), NamedNode::new("urn:rdf12:o")?);
+    let triple = Triple::new(
+        subject.clone(),
+        predicate.clone(),
+        NamedNode::new("urn:rdf12:o")?,
+    );
     let quad = Quad::new(subject, predicate, triple, GraphName::DefaultGraph);
     let mut insert = store
-        .start_governed_transaction(
-            TransactionRequest::default(),
-            TransactionKey::new([1; 16]),
-        )?
+        .start_governed_transaction(TransactionRequest::default(), TransactionKey::new([1; 16]))?
         .into_transaction();
     insert.insert(quad.clone())?;
     insert.commit()?;
     let mut remove = store
-        .start_governed_transaction(
-            TransactionRequest::default(),
-            TransactionKey::new([2; 16]),
-        )?
+        .start_governed_transaction(TransactionRequest::default(), TransactionKey::new([2; 16]))?
         .into_transaction();
     remove.remove(&quad)?;
     remove.commit()?;
     assert!(!store.contains(&quad)?);
     drop(store);
     let reopened = Store::open_read_only(directory.path())?;
-    let batch = reopened.read_outbox(
-        None,
-        NonZeroUsize::new(4).expect("four is non-zero"),
-    )?;
+    let batch = reopened.read_outbox(None, NonZeroUsize::new(4).expect("four is non-zero"))?;
     let records = batch.records();
     assert!(records.iter().any(|record| {
         matches!(

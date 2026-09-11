@@ -111,13 +111,13 @@ impl LegacyStoreSnapshot {
 mod upgrade;
 
 #[cfg(test)]
-mod format_inspection_tests;
-#[cfg(test)]
-mod safe_open_tests;
-#[cfg(test)]
 mod feature_compatibility_tests;
 #[path = "rocksdb/feature_inspection.rs"]
 mod feature_inspection;
+#[cfg(test)]
+mod format_inspection_tests;
+#[cfg(test)]
+mod safe_open_tests;
 const ID2STR_CF: &str = "id2str";
 const SPOG_CF: &str = "spog";
 const POSG_CF: &str = "posg";

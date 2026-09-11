@@ -368,7 +368,6 @@ impl Store {
         Self::resume_upgrade(source, package, destination, options)
     }
 
-
     /// Activates a verified sealed upgrade at a fresh disjoint target.
     ///
     /// Every input and evidence path must be offline, unchanged, and exclusively
@@ -977,7 +976,9 @@ fn verify_upgrade(
     directory: &Path,
     options: &UpgradeOptions,
 ) -> Result<UpgradeReceipt, BackupError> {
-    verify_upgrade_leased(source, package, directory, options, |receipt, _, _| Ok(receipt))
+    verify_upgrade_leased(source, package, directory, options, |receipt, _, _| {
+        Ok(receipt)
+    })
 }
 
 fn verify_upgrade_leased<T>(
@@ -985,11 +986,7 @@ fn verify_upgrade_leased<T>(
     package: &Path,
     directory: &Path,
     options: &UpgradeOptions,
-    on_verified: impl FnOnce(
-        UpgradeReceipt,
-        &TransformedUpgrade,
-        Instant,
-    ) -> Result<T, BackupError>,
+    on_verified: impl FnOnce(UpgradeReceipt, &TransformedUpgrade, Instant) -> Result<T, BackupError>,
 ) -> Result<T, BackupError> {
     let started = Instant::now();
     let build = BuildBinding::capture(options, started)?;
@@ -1067,7 +1064,6 @@ fn verify_upgrade_leased<T>(
     Ok(result)
 }
 
-
 fn activate_upgrade_inner(
     source: &Path,
     package: &Path,
@@ -1095,8 +1091,7 @@ fn activate_upgrade_inner(
             let source = stable_directory(source)?;
             let package = stable_directory(package)?;
             let workspace = stable_directory(directory)?;
-            let transformed_store =
-                stable_directory(&transformed.directory().join("store"))?;
+            let transformed_store = stable_directory(&transformed.directory().join("store"))?;
             let target = fresh_destination(destination, &source)?;
             if target.parent() != Some(parent.as_path())
                 || [&package, &workspace, &transformed_store]
@@ -1132,12 +1127,8 @@ fn activate_upgrade_inner(
                 copy_artifact(&artifact, &target.join(file.path()), control, started)?;
                 fault(2)?;
             }
-            if physical_files(
-                &target,
-                &options.recovery.transform.backup,
-                started,
-                true,
-            )? != transformed.files()
+            if physical_files(&target, &options.recovery.transform.backup, started, true)?
+                != transformed.files()
             {
                 return Err(BackupError::FileMismatch);
             }
@@ -1155,12 +1146,8 @@ fn activate_upgrade_inner(
                     .err()
                     .unwrap_or(BackupError::Storage(error))
             })?;
-            if physical_files(
-                &target,
-                &options.recovery.transform.backup,
-                started,
-                true,
-            )? != transformed.files()
+            if physical_files(&target, &options.recovery.transform.backup, started, true)?
+                != transformed.files()
             {
                 return Err(BackupError::FileMismatch);
             }
@@ -1883,19 +1870,13 @@ mod tests {
 
         let target = root.path().join("cancel-after-unlink");
         let control = options.recovery.transform.backup.control.clone();
-        let result = activate_upgrade_inner(
-            &source,
-            &backup,
-            &workspace,
-            &target,
-            &options,
-            |phase| {
+        let result =
+            activate_upgrade_inner(&source, &backup, &workspace, &target, &options, |phase| {
                 if phase == 5 {
                     control.cancel();
                 }
                 Ok(())
-            },
-        );
+            });
         assert!(matches!(
             result,
             Err(BackupError::CompletionIndeterminate(_))
@@ -2017,5 +1998,4 @@ mod tests {
         )?;
         std::process::exit(74);
     }
-
 }

@@ -41,11 +41,19 @@ Latest bounded implementation evidence:
 `programme-native-reviews/g43-feature-inspection-final-sol-v1`.
 The twelve declared product checks and separate real cross-feature test support
 bounded feature inspection, not full G4.3. Counts across configurations overlap;
-child-process observations are not additional unique library tests. Formatting
-still fails and Clippy emits warnings. The original workflow timed out; recovered
+child-process observations are not additional unique library tests. Clippy
+emits warnings. The original workflow timed out; recovered
 `run` checks and independent native review do not relabel it successful.
 
-Next product step: resolve changed-source formatting, then scope the remaining
+The subsequent formatting-only repair completed workflow
+`dfa93bfc-63df-4d6e-89aa-90482b8cbe27`: `run-FC1CD5` passes
+`cargo fmt -p oxigraph -- --check`; default/RDF-1.2 inspection checks each pass
+seven tests and the default store integration check passes 29. Independent
+review is `programme-native-reviews/g43-formatting-sol-v1`. This resolves the
+recorded crate formatting failure, not a whole-programme gate; the prior failed
+record remains intact. No new CLI artifact was built for formatting-only edits.
+
+Next product step: scope and implement the remaining
 store-identity/interrupted-upgrade inspection contract. Do not repeat the
 delivered explicit feature-reporting work or expand ordinary opens into a
 history scan. Full envelope/compatibility gates above remain open.

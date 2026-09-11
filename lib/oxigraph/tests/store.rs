@@ -6,6 +6,8 @@ use oxigraph::model::vocab::{rdf, xsd};
 use oxigraph::model::*;
 use oxigraph::sparql::{QueryResults, SparqlEvaluator};
 use oxigraph::store::Store;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+use oxigraph::store::StoreOptions;
 #[cfg(all(
     target_os = "linux",
     target_pointer_width = "64",
@@ -15,13 +17,16 @@ use oxigraph::store::Store;
 use oxigraph::store::{
     PreparedUpgrade, TransformedUpgrade, UpgradeOptions, UpgradeTransformOptions,
 };
-#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
-use oxigraph::store::StoreOptions;
 use std::error::Error;
 #[cfg(all(target_os = "linux", feature = "rocksdb"))]
 use std::fs::remove_dir_all;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::fs::{File, create_dir_all, read_dir, remove_dir};
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+use std::io::Write;
+use std::iter::empty;
+#[cfg(all(target_os = "linux", feature = "rocksdb"))]
+use std::iter::once;
 #[cfg(all(
     target_os = "linux",
     target_pointer_width = "64",
@@ -29,11 +34,6 @@ use std::fs::{File, create_dir_all, read_dir, remove_dir};
     feature = "rocksdb"
 ))]
 use std::path::{Path, PathBuf};
-#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
-use std::io::Write;
-use std::iter::empty;
-#[cfg(all(target_os = "linux", feature = "rocksdb"))]
-use std::iter::once;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use tempfile::TempDir;
 
@@ -580,7 +580,10 @@ impl AsRef<Path> for BackwardCompatibilityFixture {
 ))]
 impl BackwardCompatibilityFixture {
     fn assert_preserved(&self) -> Result<(), Box<dyn Error>> {
-        assert_eq!(tree(&self.directory.path().join("source"))?, self.source_before);
+        assert_eq!(
+            tree(&self.directory.path().join("source"))?,
+            self.source_before
+        );
         assert_eq!(
             tree(&self.directory.path().join("backup"))?,
             self.backup_before
@@ -761,8 +764,7 @@ fn test_verified_transformed_copy_is_ordinary_openable() -> Result<(), Box<dyn E
     Store::backup_legacy(&source, &backup, &options.backup)?;
     let backup_before = tree(&backup)?;
     Store::prepare_upgrade(&source, &backup, &workspace, &options.backup)?;
-    let transformed =
-        Store::transform_prepared_upgrade(&source, &backup, &workspace, &options)?;
+    let transformed = Store::transform_prepared_upgrade(&source, &backup, &workspace, &options)?;
     assert_eq!(
         transformed,
         TransformedUpgrade::verify(&source, &backup, &workspace, &options)?
@@ -771,10 +773,12 @@ fn test_verified_transformed_copy_is_ordinary_openable() -> Result<(), Box<dyn E
     // TEST-ONLY: this fresh native-file copy demonstrates ordinary-open
     // compatibility. It is not activation, a receipt, or upgrade authority.
     copy_verified_transformed_store(&transformed, &active)?;
-    assert!(workspace
-        .join("store")
-        .join(PreparedUpgrade::guard_name())
-        .exists());
+    assert!(
+        workspace
+            .join("store")
+            .join(PreparedUpgrade::guard_name())
+            .exists()
+    );
     let store = Store::open(&active)?;
     for q in quads(GraphName::DefaultGraph) {
         assert!(store.contains(&q)?);

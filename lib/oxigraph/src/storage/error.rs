@@ -59,7 +59,7 @@ impl From<StorageError> for io::Error {
             | StorageError::SchemaTooNew { .. }
             | StorageError::FeatureIncompatible { .. }) => {
                 Self::new(io::ErrorKind::InvalidData, error)
-            },
+            }
             StorageError::Other(error) => Self::other(error),
         }
     }

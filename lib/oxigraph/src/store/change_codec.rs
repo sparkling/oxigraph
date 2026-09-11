@@ -8,8 +8,7 @@ use sha2::{Digest, Sha256};
 
 const MAX_TRIPLE_DEPTH: usize = 32;
 #[cfg(not(feature = "rdf-12"))]
-const RDF_DIR_LANG_STRING: &str =
-    "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString";
+const RDF_DIR_LANG_STRING: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString";
 
 pub(super) fn checksum(changes: &SemanticChangeSet) -> [u8; 32] {
     let mut hasher = Sha256::new();
@@ -196,9 +195,8 @@ impl<'a> Cursor<'a> {
         match self.byte()? {
             0 => {
                 let result = if let Some(language) = language {
-                    let result =
-                        Literal::new_language_tagged_literal(value, language.clone())
-                            .map_err(|_| bad("invalid language tag"))?;
+                    let result = Literal::new_language_tagged_literal(value, language.clone())
+                        .map_err(|_| bad("invalid language tag"))?;
                     if result.language() != Some(language.as_str()) {
                         return Err(bad("noncanonical language tag"));
                     }
@@ -290,9 +288,7 @@ impl<'a> Cursor<'a> {
     }
 }
 
-fn decode_with_features(
-    bytes: &[u8],
-) -> Result<(Option<SemanticChange>, bool), StorageError> {
+fn decode_with_features(bytes: &[u8]) -> Result<(Option<SemanticChange>, bool), StorageError> {
     let mut input = Cursor {
         remaining: bytes,
         requires_rdf_12: false,
@@ -354,9 +350,9 @@ pub(super) fn inspect_features(bytes: &[u8]) -> Result<bool, StorageError> {
 }
 
 pub(super) fn decode(bytes: &[u8]) -> Result<SemanticChange, StorageError> {
-    decode_with_features(bytes)?.0.ok_or(StorageError::FeatureIncompatible {
-        feature: "rdf-12",
-    })
+    decode_with_features(bytes)?
+        .0
+        .ok_or(StorageError::FeatureIncompatible { feature: "rdf-12" })
 }
 
 #[cfg(test)]

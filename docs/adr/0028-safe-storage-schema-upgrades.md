@@ -802,7 +802,10 @@ are reported as unsupported without changing the source. Recorded checks also
 include store/receipt/outbox regressions, Clippy and an identified local CLI
 build. The original implementation workflow timed out during host coordination;
 remaining checks used ordinary `run` recovery, not a claimed successful original
-controller. Formatting check failure and Clippy warnings remain recorded.
+controller. Its formatting check failure remains recorded; a subsequent
+formatting-only workflow `dfa93bfc-63df-4d6e-89aa-90482b8cbe27` passed the crate
+format check and focused default/RDF-1.2 inspection and store regressions, with
+independent native review and exact MCP readback. Clippy warnings remain open.
 
 This is a bounded product inspection slice, not closure of any complete staged
 gate below. ADR status remains Proposed; frozen qualification, full G4.3 and

@@ -4,8 +4,7 @@ const SUBJECT: &str = "urn:rdf12:s";
 const PREDICATE: &str = "urn:rdf12:p";
 const OBJECT: &str = "urn:rdf12:o";
 const GRAPH: &str = "urn:rdf12:g";
-const RDF_DIR_LANG_STRING: &str =
-    "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString";
+const RDF_DIR_LANG_STRING: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString";
 
 fn field(value: &str) -> Vec<u8> {
     [
@@ -23,12 +22,7 @@ fn blank(value: &str) -> Vec<u8> {
     [vec![2], field(value)].concat()
 }
 
-fn literal(
-    value: &str,
-    datatype: &str,
-    language: Option<&str>,
-    direction: u8,
-) -> Vec<u8> {
+fn literal(value: &str, datatype: &str, language: Option<&str>, direction: u8) -> Vec<u8> {
     let mut bytes = vec![3];
     bytes.extend_from_slice(&field(value));
     bytes.extend_from_slice(&field(datatype));
@@ -103,17 +97,15 @@ fn assert_feature_incompatible(bytes: &[u8]) {
 
 #[cfg(feature = "rdf-12")]
 #[test]
-fn production_encoder_matches_independent_rdf_12_payload_fixtures(
-) -> Result<(), Box<dyn std::error::Error>> {
+fn production_encoder_matches_independent_rdf_12_payload_fixtures()
+-> Result<(), Box<dyn std::error::Error>> {
     use crate::model::{BaseDirection, Triple};
 
     let subject = NamedNode::new(SUBJECT)?;
     let predicate = NamedNode::new(PREDICATE)?;
     let object = NamedNode::new(OBJECT)?;
-    let single: Term =
-        Triple::new(subject.clone(), predicate.clone(), object.clone()).into();
-    let nested: Term =
-        Triple::new(subject.clone(), predicate.clone(), single.clone()).into();
+    let single: Term = Triple::new(subject.clone(), predicate.clone(), object.clone()).into();
+    let nested: Term = Triple::new(subject.clone(), predicate.clone(), single.clone()).into();
     let mut maximum: Term = object.into();
     for _ in 0..MAX_TRIPLE_DEPTH {
         maximum = Triple::new(subject.clone(), predicate.clone(), maximum).into();
@@ -134,21 +126,13 @@ fn production_encoder_matches_independent_rdf_12_payload_fixtures(
         SemanticChange::QuadAdded(Quad::new(
             subject.clone(),
             predicate.clone(),
-            Literal::new_directional_language_tagged_literal(
-                "left",
-                "en",
-                BaseDirection::Ltr,
-            )?,
+            Literal::new_directional_language_tagged_literal("left", "en", BaseDirection::Ltr)?,
             GraphName::DefaultGraph,
         )),
         SemanticChange::QuadRemoved(Quad::new(
             subject.clone(),
             predicate.clone(),
-            Literal::new_directional_language_tagged_literal(
-                "right",
-                "ar",
-                BaseDirection::Rtl,
-            )?,
+            Literal::new_directional_language_tagged_literal("right", "ar", BaseDirection::Rtl)?,
             BlankNode::new("g")?,
         )),
         SemanticChange::QuadAdded(Quad::new(
@@ -168,20 +152,14 @@ fn production_encoder_matches_independent_rdf_12_payload_fixtures(
 #[test]
 fn valid_rdf_12_payloads_and_every_truncation_have_exact_classification() {
     for (name, payload) in valid_rdf_12_payloads() {
-        assert!(
-            matches!(inspect_features(&payload), Ok(true)),
-            "{name}"
-        );
+        assert!(matches!(inspect_features(&payload), Ok(true)), "{name}");
         #[cfg(not(feature = "rdf-12"))]
         assert_feature_incompatible(&payload);
         #[cfg(feature = "rdf-12")]
         assert!(decode(&payload).is_ok(), "{name}");
         for end in 0..payload.len() {
             assert!(
-                matches!(
-                    decode(&payload[..end]),
-                    Err(StorageError::Corruption(_))
-                ),
+                matches!(decode(&payload[..end]), Err(StorageError::Corruption(_))),
                 "{name} truncation at {end}"
             );
         }
@@ -226,11 +204,7 @@ fn malformed_rdf_12_payloads_remain_corruption_after_unsupported_terms() {
             triple(literal("value", "urn:wrong", Some("en"), 0)),
             vec![0],
         ),
-        quad(
-            0,
-            literal("value", RDF_DIR_LANG_STRING, None, 1),
-            vec![0],
-        ),
+        quad(0, literal("value", RDF_DIR_LANG_STRING, None, 1), vec![0]),
         quad(
             0,
             literal("value", RDF_DIR_LANG_STRING, Some("not_a_tag"), 1),
@@ -241,16 +215,8 @@ fn malformed_rdf_12_payloads_remain_corruption_after_unsupported_terms() {
             literal("value", RDF_DIR_LANG_STRING, Some("EN"), 1),
             vec![0],
         ),
-        quad(
-            0,
-            literal("value", "urn:wrong", Some("en"), 1),
-            vec![0],
-        ),
-        quad(
-            0,
-            literal("value", "relative", Some("en"), 1),
-            vec![0],
-        ),
+        quad(0, literal("value", "urn:wrong", Some("en"), 1), vec![0]),
+        quad(0, literal("value", "relative", Some("en"), 1), vec![0]),
         quad(
             0,
             literal("value", RDF_DIR_LANG_STRING, Some("en"), 3),
@@ -270,11 +236,7 @@ fn malformed_rdf_12_payloads_remain_corruption_after_unsupported_terms() {
 
 #[test]
 fn directionless_dir_lang_string_keeps_existing_feature_mode_semantics() {
-    let payload = quad(
-        0,
-        literal("legacy", RDF_DIR_LANG_STRING, None, 0),
-        vec![0],
-    );
+    let payload = quad(0, literal("legacy", RDF_DIR_LANG_STRING, None, 0), vec![0]);
     #[cfg(not(feature = "rdf-12"))]
     {
         assert!(decode(&payload).is_ok());

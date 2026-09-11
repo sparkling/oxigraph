@@ -340,9 +340,7 @@ pub(crate) fn decode_record(
     bytes: &[u8],
 ) -> Result<OutboxRecord, StorageError> {
     match decode_record_with(identity, position, bytes, super::change_codec::decode)? {
-        DecodedRecord::Commit { cursor, receipt } => {
-            Ok(OutboxRecord::Commit { cursor, receipt })
-        }
+        DecodedRecord::Commit { cursor, receipt } => Ok(OutboxRecord::Commit { cursor, receipt }),
         DecodedRecord::Event {
             cursor,
             header_cursor,
@@ -430,10 +428,9 @@ pub(crate) fn inspect_retained_features(
         check()?;
         let bytes = get(position)?
             .ok_or_else(|| CorruptionError::msg("outbox gap below high-water mark"))?;
-        let record =
-            decode_record_with(&state.store_identity, position, &bytes, |payload| {
-                super::change_codec::inspect_features(payload)
-            })?;
+        let record = decode_record_with(&state.store_identity, position, &bytes, |payload| {
+            super::change_codec::inspect_features(payload)
+        })?;
         let required = match &record {
             DecodedRecord::Commit { .. } => false,
             DecodedRecord::Event { payload, .. } => *payload,
@@ -445,9 +442,7 @@ pub(crate) fn inspect_retained_features(
             match &record {
                 DecodedRecord::Commit { receipt, .. } if receipt == anchor => {}
                 DecodedRecord::Commit { .. } => {
-                    return Err(
-                        CorruptionError::msg("cleanup header disagrees with anchor").into(),
-                    );
+                    return Err(CorruptionError::msg("cleanup header disagrees with anchor").into());
                 }
                 DecodedRecord::Event {
                     commit_id,
@@ -468,10 +463,9 @@ pub(crate) fn inspect_retained_features(
                         != Some(cursor.position())
                         || previous.sequence().checked_add(1) != Some(receipt.sequence())
                     {
-                        return Err(CorruptionError::msg(
-                            "outbox commit boundary or sequence gap",
-                        )
-                        .into());
+                        return Err(
+                            CorruptionError::msg("outbox commit boundary or sequence gap").into(),
+                        );
                     }
                 } else if cursor.position() != 1
                     || receipt.sequence() != outbox.after_receipt_sequence + 1
@@ -503,10 +497,9 @@ pub(crate) fn inspect_retained_features(
             .outbox_end_cursor()
             .is_none_or(|cursor| cursor.position() != high)
     {
-        return Err(CorruptionError::msg(
-            "outbox high-water does not finish the latest receipt",
-        )
-        .into());
+        return Err(
+            CorruptionError::msg("outbox high-water does not finish the latest receipt").into(),
+        );
     }
     validate_header(latest, state, &mut receipt_for)?;
     Ok(RetainedFeatureInspection {
