@@ -1196,6 +1196,38 @@ happen after completion: retain all evidence and independently verify an
 uncertain outcome. Damaged or pending evidence is not rewritten into success.
 See [ADR-0028](../docs/adr/0028-safe-storage-schema-upgrades.md#build-bound-inactive-upgrade-receipt-cli-2026-09-11).
 
+## Offline upgrade workspace inspection (fork)
+
+Use `inspect-upgrade` to observe an existing outer build-bound workspace without
+resuming, repairing, sealing or activating it:
+
+```sh
+oxigraph inspect-upgrade --source ./legacy-data \
+  --backup ./legacy-backup-new --location ./upgrade-work-new
+```
+
+Use the same executable and persisted content/attempt limits as construction.
+The command accepts the same six limits as `verify-upgrade`. Source, backup and
+workspace must remain offline, stable, caller-controlled and disjoint. Inspection
+uses the existing workspace and native leases; non-mutation does not promise
+operation on a read-only filesystem.
+
+`stage` is `initial`, `running`, `complete-unsealed`, `receipt-pending` or
+`sealed`. `recovery_state` separately reports nested completion: a running
+outer journal can contain completed nested recovery awaiting its outer record.
+`receipt_status=pending-verified` means the pending bytes match a receipt
+derived from verified evidence, not that publication completed. Only `sealed`
+reports `receipt_status=sealed`. Every observation keeps `active=false` and
+`upgrade_authorized=false`; it makes no resumability or production-readiness
+promise. Uncommitted, malformed or inconsistent evidence fails without a
+success observation and is retained, not repaired.
+
+The API is `Store::inspect_upgrade(source, backup, workspace, &UpgradeOptions)`
+returning `UpgradeWorkspaceInspection`. It uses the existing Linux/static
+Oxigraph/vendored-RocksDB profile and does not introduce a schema UUID, new
+stored format or broader compatibility qualification. See
+[ADR-0028](../docs/adr/0028-safe-storage-schema-upgrades.md#verified-outer-upgrade-workspace-inspection-2026-09-11).
+
 ## Offline fresh-target upgrade activation (fork)
 
 After sealing and verifying an upgrade above, `activate-upgrade` copies its

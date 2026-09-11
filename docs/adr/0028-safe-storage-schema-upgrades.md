@@ -19,6 +19,8 @@
   from malformed payloads without adding open-time history admission.
   Explicit offline feature inspection and governed-lineage/upgrade-guard
   observation APIs/CLI are implemented, with the bounded scopes below.
+  Existing build-bound outer upgrade workspaces also have a non-mutating
+  inspection API/CLI for verified incomplete, pending and sealed states.
   Full compatibility rejection, schema envelopes, older-binary rollback and
   the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
@@ -847,6 +849,58 @@ This implements existing-state observations, not the checksummed schema UUID
 envelope, full interrupted-journal interpretation, complete compatibility or
 frozen qualification. All complete staged gates below and G4.3 remain open;
 this ADR remains Proposed. No publication is implied.
+
+## Verified outer upgrade workspace inspection (2026-09-11)
+
+`Store::inspect_upgrade(source, backup, workspace, &UpgradeOptions)` and
+`inspect-upgrade` observe the existing build-bound outer workspace. They reuse
+unchanged preflight, progress-chain, ancestry, nested recovery and receipt
+validators. No schema version, journal bytes, receipt encoding or ordinary-open
+behavior changes.
+
+`UpgradeWorkspaceState` distinguishes `Initial`, `Running`, `CompleteUnsealed`,
+`ReceiptPending` and `Sealed`. Initial requires the exact initial nested journal
+boundary; running permits incomplete or completed nested recovery. Complete
+states require completed nested recovery. Pending receipt bytes must decode
+canonically and equal the receipt derived from the verified evidence. Sealed
+inspection delegates to the existing sealed verifier. Invalid or uncommitted
+evidence remains an error, not a fabricated state or repair instruction.
+
+The existing workspace/native leases and final rereads span verification.
+Callers must retain the offline, stable, exclusively controlled paths and exact
+Linux/static/vendored executable/profile. No files are created, renamed,
+repaired or deleted. The workspace lock still needs its existing access mode;
+non-mutation is not a read-only-filesystem guarantee. Observations never grant
+resume, activation or publication authority. Only a verified sealed state
+exposes `sealed_receipt()`; a pending receipt remains pending.
+
+Ordinary workflow `4e7df9b6-bd69-4f89-a223-1d02ec4306c5` completed with native
+Sol High implementation, root-only application and independent Sol Medium
+acceptance (`programme-native-reviews/g43-upgrade-inspection-sol-v1`). Final
+checks passed: crate formatting; default/RDF-1.2 inspection tests (3/4);
+existing receipt/recovery API tests (9+3); default CLI inspection/receipt tests
+(3+5); and no-default CLI inspection (2). Configurations overlap, not distinct
+new behaviors. Successful journeys and cancellation compare all inputs;
+malformed journal/pending-receipt tests retain workspace bytes, and the CLI
+torn-progress test compares source, backup and workspace. Existing warnings
+remain; no warnings-denied or full frozen qualification claim is made.
+
+`run-v60JXW` built the local default CLI (642,385,400 bytes, SHA-256
+`1a9d21e89b0d50b68370731b00427ce9eb5d37b293b68339af2ac5a7ebbea0c7`).
+`run-9o2aor` then passed all three focused CLI journeys, but Cargo selected a
+different CLI artifact at `target/debug/oxigraph`: 643,027,336 bytes, SHA-256
+`219b52709da178ce695f0f58c251c38e61dfc926b2a46e8c085ea026c2fac57a`.
+The test uses Cargo's `CARGO_BIN_EXE_oxigraph` path; that post-test identity is
+recorded separately, not claimed to match the build receipt. These are local
+development artifacts, not published releases. The earlier source-scope refusal,
+formatting failure and CLI test
+compilation failure remain recorded. The module/filter mismatch was corrected
+before the first library test run; no zero-test pass is claimed.
+
+This closes the admitted outer-workspace observation gap only. Schema/feature
+envelopes, complete history/derived-state admission, frozen cross-profile
+inspection/compatibility, older-binary rollback and system-RocksDB qualification
+remain open. ADR-0028 remains Proposed and full G4.3 is not complete.
 
 ## Staged implementation and evaluator gates
 

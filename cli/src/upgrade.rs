@@ -1,7 +1,7 @@
 use oxigraph::store::{
     LegacyBackupOptions, PreparedUpgrade, TransformedUpgrade, UpgradeActivation,
     UpgradeOptions, UpgradeReceipt, UpgradeRecovery, UpgradeRecoveryOptions,
-    UpgradeTransformOptions,
+    UpgradeTransformOptions, UpgradeWorkspaceInspection, UpgradeWorkspaceState,
 };
 use std::io::{Write, stdout};
 use std::num::{NonZeroU64, NonZeroUsize};
@@ -184,6 +184,52 @@ pub fn print_upgrade_completed(value: &UpgradeReceipt) -> anyhow::Result<()> {
 
 pub fn print_upgrade_verified(value: &UpgradeReceipt) -> anyhow::Result<()> {
     print_receipt(value, "upgrade_verified=true")
+}
+
+pub fn print_upgrade_inspected(value: &UpgradeWorkspaceInspection) -> anyhow::Result<()> {
+    let transformed_fingerprint = value
+        .transformed_fingerprint()
+        .map(hex)
+        .unwrap_or_else(|| "not-published".into());
+    let receipt_fingerprint = value
+        .receipt_fingerprint()
+        .map(hex)
+        .unwrap_or_else(|| "not-published".into());
+    let receipt_status = match value.state() {
+        UpgradeWorkspaceState::ReceiptPending => "pending-verified",
+        UpgradeWorkspaceState::Sealed => "sealed",
+        _ => "absent",
+    };
+    let recovery_state = if value.transformed_fingerprint().is_some() {
+        "completed"
+    } else {
+        "incomplete"
+    };
+    writeln!(
+        stdout().lock(),
+        "upgrade_inspected=true stage={} workspace={} profile={} executable_len={} executable_sha256={} rocksdb_build_kind={} rocksdb_version={} rocksdb_source_revision={} rdf12={} recovery_state={} legacy_backup_fingerprint={} transformed_fingerprint={} logical_fingerprint={} quads={} named_graphs={} namespaces={} receipt_status={} receipt_fingerprint={} external_ancestry=exact active={} upgrade_authorized={}",
+        value.state().as_str(),
+        serde_json::to_string(value.directory())?,
+        value.profile(),
+        value.executable_len(),
+        hex(value.executable_sha256()),
+        value.rocksdb_build_kind(),
+        value.rocksdb_version(),
+        value.rocksdb_source_revision(),
+        value.rdf12(),
+        recovery_state,
+        hex(value.legacy_backup().fingerprint()),
+        transformed_fingerprint,
+        hex(value.logical_fingerprint()),
+        value.quad_count(),
+        value.named_graph_count(),
+        value.namespace_count(),
+        receipt_status,
+        receipt_fingerprint,
+        value.active(),
+        value.upgrade_authorized(),
+    )?;
+    Ok(())
 }
 
 

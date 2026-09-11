@@ -525,6 +525,13 @@ observations, canonical outer paths and exact executable/receipt fingerprints.
 See the [build-bound operator journey](cli/README.md#offline-build-bound-sealed-upgrades-fork).
 See [the receipt contract and limits](docs/adr/0028-safe-storage-schema-upgrades.md#build-bound-inactive-upgrade-receipts-2026-09-11).
 
+`Store::inspect_upgrade` and `inspect-upgrade` now verify an existing outer
+workspace without resuming or changing it. They distinguish initial, running,
+complete-but-unsealed, verified pending-receipt and sealed states using the
+existing build, ancestry, journal and receipt validators. A pending receipt is
+not a sealed receipt or activation permission. See
+[workspace inspection](cli/README.md#offline-upgrade-workspace-inspection-fork).
+
 `Store::activate_upgrade` and `activate-upgrade` now copy a verified sealed
 result into a fresh, disjoint current-format store. The target itself is
 usable through ordinary store APIs; the original source, backup and complete

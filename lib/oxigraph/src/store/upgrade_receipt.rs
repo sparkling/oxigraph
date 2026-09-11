@@ -39,6 +39,13 @@ const MAX_EXECUTABLE_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_PATH_BYTES: usize = 4096;
 const MAX_PROGRESS_BYTES: usize = 4096;
 
+#[path = "upgrade_inspection.rs"]
+mod inspection;
+pub use inspection::{UpgradeWorkspaceInspection, UpgradeWorkspaceState};
+#[cfg(all(test, target_os = "linux"))]
+#[path = "upgrade_inspection_tests.rs"]
+mod upgrade_inspection_tests;
+
 /// Options for the exact-build-bound offline upgrade.
 ///
 /// The persisted profile binds every recovery content limit and max_attempts.

@@ -194,7 +194,7 @@ next product-critical action becomes active.
 The review policy and its verified installation receipt are stored in Ruflo
 memory under the key named above. The programme owner explicitly authorized an
 external scheduler after the native Codex CLI boundary was confirmed. A
-user-level `systemd` timer now runs at `00:00`, `06:00`, `12:00`, and `18:00`
+user-level `systemd` timer was configured for `00:00`, `06:00`, `12:00`, and `18:00`
 Europe/Berlin and invokes native `codex queue` for this exact persisted thread.
 The queued turn must use live structured Ruflo MCP tools to retrieve task and
 memory state, dispatch a read-only audit worker, and validate both the exact
@@ -217,7 +217,7 @@ subscription usage.
 The timer and service are
 `~/.config/systemd/user/oxigraph-programme-review.timer` and
 `~/.config/systemd/user/oxigraph-programme-review.service`. The unit files pass
-`systemd-analyze --user verify`, the timer is enabled and active, and a manual
+`systemd-analyze --user verify`; at installation the timer was enabled and active, and a manual
 service start returned exit status zero after native Codex queued message
 `01a07b60-8e18-7ab1-acc3-b7c266c13229` into the intended thread. Separately,
 the natural 2026-09-07 18:00 Europe/Berlin firing is verified by the timer's
@@ -231,6 +231,12 @@ daemon counter advanced from 1951 to 1952, but `hooks_worker_status` left the
 exact dispatched record pending. The stale record was cancelled. Scheduled
 reviews must surface that mismatch and must not treat `queued`, `pending`, or
 `synthetic-completed` as proof that a worker result was produced.
+
+**Owner cancellation (2026-09-11):** the owner subsequently requested
+"cancel the cron job". The exact six-hour timer is now disabled and inactive,
+with no next firing; its service is inactive. Configuration and historical
+verification above are retained. Programme work may continue, but neither a
+goal continuation nor the old prompt re-enables this timer.
 
 ### 9. Match model use to the work
 

@@ -30,17 +30,21 @@ separate promotion/handoff requirements. None is claimed fully closed.
 
 | Gate | Proven native boundary | Still required to close the gate |
 | --- | --- | --- |
-| 1. Inventory and inspection | Offline marker/column-family inspection; typed unknown/newer/legacy refusal; bounded live RDF-feature refusal and retained-outbox consumption errors; explicit feature-independent reporting of live and retained-outbox RDF requirements; explicit existing governed-lineage identity and upgrade-guard observation. [Inspection](../../lib/oxigraph/src/storage/rocksdb/format_inspection_tests.rs), [ordinary-open refusal](../../lib/oxigraph/src/storage/rocksdb/safe_open_tests.rs), [live features](../../lib/oxigraph/src/storage/rocksdb/feature_compatibility_tests.rs), [codec classification](../../lib/oxigraph/src/store/change_codec_feature_tests.rs), [outbox validation](../../lib/oxigraph/src/store/outbox.rs), [CLI](../../cli/tests/store_inspection.rs). | Schema-envelope store UUID and complete interrupted-journal inspection; the checksummed schema/feature/subsystem envelope; full history/derived-state admission. Hash-pin v0, v1, current, missing, corrupt, too-new, RDF-feature-mismatch and interrupted fixtures, and prove inspect/open/read-only source-byte preservation under their literal contracts. Default metadata-only inspection still reports RDF compatibility unknown; explicit feature inspection certifies only its declared scopes. |
+| 1. Inventory and inspection | Offline marker/column-family inspection; typed unknown/newer/legacy refusal; bounded live RDF-feature refusal and retained-outbox consumption errors; explicit feature-independent reporting of live and retained-outbox RDF requirements; explicit existing governed-lineage identity and upgrade-guard observation; verified incomplete/pending/sealed outer upgrade-workspace inspection on the admitted build-bound profile. [Inspection](../../lib/oxigraph/src/storage/rocksdb/format_inspection_tests.rs), [ordinary-open refusal](../../lib/oxigraph/src/storage/rocksdb/safe_open_tests.rs), [live features](../../lib/oxigraph/src/storage/rocksdb/feature_compatibility_tests.rs), [codec classification](../../lib/oxigraph/src/store/change_codec_feature_tests.rs), [outbox validation](../../lib/oxigraph/src/store/outbox.rs), [state CLI](../../cli/tests/store_inspection.rs), [upgrade inspection](../../lib/oxigraph/src/store/upgrade_inspection_tests.rs). | Schema-envelope store UUID; the checksummed schema/feature/subsystem envelope; full history/derived-state admission and frozen cross-profile interrupted-fixture inspection. Hash-pin v0, v1, current, missing, corrupt, too-new, RDF-feature-mismatch and interrupted fixtures, and prove inspect/open/read-only source-byte preservation under their literal contracts. Default metadata-only inspection still reports RDF compatibility unknown; explicit feature inspection certifies only its declared scopes. |
 | 2. Shadow transformation | Source-preserving legacy backup, ancestry, inactive preparation and explicit v0/v1 transformation; native quad/topology/namespace and failure checks. [Backups](../../lib/oxigraph/tests/legacy_backups.rs), [preparation](../../lib/oxigraph/tests/upgrade_preparation.rs), [transformation](../../lib/oxigraph/tests/upgrade_transformation.rs). | Full required logical/subsystem comparison, including metadata/receipt/outbox/index state where applicable; rebuild and validate required derived indexes. Inject failure/cancellation at every journal/fsync boundary, preserving the source and rejecting unsealed output; retain disk-exhaustion coverage. Existing native tests are not the complete frozen matrix. |
 | 3. Receipt and recovery | Verified completed-edge restart and build-bound inactive receipts on the bounded Linux/static Oxigraph/vendored-RocksDB profile. [Recovery](../../lib/oxigraph/tests/upgrade_recovery.rs), [receipts](../../lib/oxigraph/tests/upgrade_receipts.rs). | Complete feature/subsystem/cursor identities and exact-receipt independent qualification, including fresh-process open/validate, tampering, crash/power-loss, path substitution and insufficient-disk checks. Old preparation/transformation workspaces are not made resumable. |
 | 4. Operational compatibility | Fresh, disjoint target activation is implemented; source, backup and sealed workspace remain preserved. [API](../../lib/oxigraph/tests/upgrade_activation.rs), [CLI](../../cli/tests/upgrade_activation.rs). | Complete backup → upgrade → explicit cutover → older-binary rollback to preserved source → restore drills; frozen size classes and supported-version windows; duration, peak disk, peak memory, read amplification and write amplification. Native activation is not service routing, automatic cutover or rollback qualification. |
 | Promotion | The native profile and its limitations are documented; no aggregate qualification is claimed. | ADR-0028's evaluator-only commit, pre-existing frozen fixtures, independent logical export comparison, default/RDF-1.2 and vendored/system-RocksDB matrix, exact receipts and predecessor upgrade/failure path. The recorded system lane lacks `rocksdb.pc >= 9.10.0`; do not count a vendored helper test as system qualification. |
-| Obtainable handoff | Local state-inspection CLI from `run-fIToOo`: 642,143,552 bytes, SHA-256 `ae953ef17471850c71aaafa1417430ea9b5a65e438b8b79576c73a4da2b6e055`; exact reviewed source hashes are in the evidence below. | Reproducible source/dependencies, an identified usable artifact for the declared milestone, all applicable gates, and exact publication authority. This local development binary is not a newly published release. |
+| Obtainable handoff | Upgrade-inspection build `run-v60JXW` identifies its CLI artifact; supplemental CLI journey `run-9o2aor` passes, but the observed post-test binary differs from that build identity. Both exact sizes/hashes are recorded in [ADR-0028](../adr/0028-safe-storage-schema-upgrades.md#verified-outer-upgrade-workspace-inspection-2026-09-11), without claiming they match. | Reproducible source/dependencies, an identified usable artifact for the declared milestone, all applicable gates, and exact publication authority. Local development artifacts are not newly published releases; do not substitute the post-test binary for an earlier build receipt. |
 
 Latest bounded implementation evidence:
-`programme-native-reviews/g43-state-inspection-sol-review-v2`.
-Six declared checks plus an identified CLI build and explicit malformed-state
-subprocess test support bounded state inspection, not full G4.3. Counts across configurations overlap;
+`programme-native-reviews/g43-upgrade-inspection-sol-v1`.
+Workflow `4e7df9b6-bd69-4f89-a223-1d02ec4306c5` completed its six declared
+checks, native independent review and exact MCP handoff. Formatting and
+default/RDF-1.2 inspection (3/4), API receipt/recovery (9+3), default CLI (3+5),
+and no-default CLI (2) passed. Supplemental CLI inspection passed three tests;
+its post-test artifact mismatch is recorded above. This supports bounded outer
+workspace inspection, not full G4.3. Counts across configurations overlap;
 child-process observations are not additional unique library tests. Clippy
 emits warnings. The earlier feature-inspection workflow timed out; recovered
 `run` checks and independent native review do not relabel it successful.
@@ -53,10 +57,11 @@ review is `programme-native-reviews/g43-formatting-sol-v1`. This resolves the
 recorded crate formatting failure, not a whole-programme gate; the prior failed
 record remains intact. No new CLI artifact was built for formatting-only edits.
 
-Next product step: define the remaining schema-envelope and interrupted-journal
-contract against existing receipt/upgrade formats and immutable evidence before
-changing stored formats. Existing lineage/guard observations do not replace
-those requirements. Do not repeat delivered feature/state reporting or expand
+Next product step: define the remaining schema-envelope contract against existing
+receipt/upgrade formats and immutable evidence before changing stored formats.
+Keep schema UUID distinct from receipt lineage; resolve RDF-profile and external
+derived-index semantics before freezing new envelope bytes. Existing inspection
+does not replace those requirements. Do not repeat delivered reporting or expand
 ordinary opens into a history scan. Full compatibility gates remain open.
 
 ## Programme boundaries beyond G4.3
