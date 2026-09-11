@@ -455,6 +455,9 @@ current-format live object indexes contain recognized RDF 1.2-only encodings.
 This bounded check does not certify historical outbox records or a whole-store
 feature profile; `inspect` still reports feature compatibility as unknown. See
 [the feature-refusal scope](docs/adr/0028-safe-storage-schema-upgrades.md#bounded-live-rdf-feature-refusal-2026-09-11).
+Bounded outbox reads now return the same typed feature error for valid retained
+RDF 1.2-only effects; malformed payloads still return corruption. This does not
+add an open-time history scan or whole-store feature admission.
 `Store::backup_legacy` now makes source-preserving physical copies of offline
 version-0/1 stores. Its separate `LegacyBackupReceipt` verifies both the exact
 package and, optionally, unchanged source ancestry. This requires an existing

@@ -6,8 +6,10 @@ use crate::model::{
 use crate::storage::CorruptionError;
 use sha2::{Digest, Sha256};
 
-#[cfg(feature = "rdf-12")]
 const MAX_TRIPLE_DEPTH: usize = 32;
+#[cfg(not(feature = "rdf-12"))]
+const RDF_DIR_LANG_STRING: &str =
+    "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString";
 
 pub(super) fn checksum(changes: &SemanticChangeSet) -> [u8; 32] {
     let mut hasher = Sha256::new();
@@ -182,7 +184,7 @@ impl<'a> Cursor<'a> {
             _ => Err(bad("invalid semantic-change presence byte")),
         }
     }
-    fn literal(&mut self) -> Result<Literal, StorageError> {
+    fn literal(&mut self, _triple_depth: usize) -> Result<Option<Literal>, StorageError> {
         let value = self.text()?.to_owned();
         let datatype = self.iri()?;
         let language = match self.byte()? {
@@ -190,50 +192,95 @@ impl<'a> Cursor<'a> {
             1 => Some(self.text()?.to_owned()),
             _ => return Err(bad("invalid language presence byte")),
         };
-        let direction = self.byte()?;
-        let result = match (language, direction) {
-            (None, 0) => Literal::try_new_typed_literal(value, datatype.clone())
-                .map_err(|_| bad("reserved datatype without language"))?,
-            (Some(language), 0) => Literal::new_language_tagged_literal(value, language)
-                .map_err(|_| bad("invalid language tag"))?,
-            #[cfg(feature = "rdf-12")]
-            (Some(language), direction @ (1 | 2)) => {
-                Literal::new_directional_language_tagged_literal(
-                    value,
-                    language,
-                    if direction == 1 {
-                        crate::model::BaseDirection::Ltr
-                    } else {
-                        crate::model::BaseDirection::Rtl
-                    },
-                )
-                .map_err(|_| bad("invalid directional language tag"))?
-            }
-            _ => return Err(bad("invalid or unsupported literal direction")),
-        };
-        if result.datatype() != &datatype {
-            return Err(bad("language and datatype disagree"));
-        }
-        Ok(result)
-    }
-    fn term(&mut self, depth: usize) -> Result<Term, StorageError> {
-        #[cfg(not(feature = "rdf-12"))]
-        let _: usize = depth;
         match self.byte()? {
-            1 => Ok(self.iri()?.into()),
-            2 => Ok(self.blank()?.into()),
-            3 => Ok(self.literal()?.into()),
-            #[cfg(feature = "rdf-12")]
+            0 => {
+                let result = if let Some(language) = language {
+                    let result =
+                        Literal::new_language_tagged_literal(value, language.clone())
+                            .map_err(|_| bad("invalid language tag"))?;
+                    if result.language() != Some(language.as_str()) {
+                        return Err(bad("noncanonical language tag"));
+                    }
+                    result
+                } else {
+                    #[cfg(not(feature = "rdf-12"))]
+                    if _triple_depth > 0 && datatype.as_str() == RDF_DIR_LANG_STRING {
+                        return Err(bad("reserved datatype without direction"));
+                    }
+                    Literal::try_new_typed_literal(value, datatype.clone())
+                        .map_err(|_| bad("reserved datatype without language"))?
+                };
+                if result.datatype() != &datatype {
+                    return Err(bad("language and datatype disagree"));
+                }
+                Ok(Some(result))
+            }
+            direction @ (1 | 2) => {
+                let language =
+                    language.ok_or_else(|| bad("literal direction requires a language tag"))?;
+                #[cfg(feature = "rdf-12")]
+                {
+                    let result = Literal::new_directional_language_tagged_literal(
+                        value,
+                        language.clone(),
+                        if direction == 1 {
+                            crate::model::BaseDirection::Ltr
+                        } else {
+                            crate::model::BaseDirection::Rtl
+                        },
+                    )
+                    .map_err(|_| bad("invalid directional language tag"))?;
+                    if result.language() != Some(language.as_str()) {
+                        return Err(bad("noncanonical language tag"));
+                    }
+                    if result.datatype() != &datatype {
+                        return Err(bad("language, datatype and direction disagree"));
+                    }
+                    Ok(Some(result))
+                }
+                #[cfg(not(feature = "rdf-12"))]
+                {
+                    drop(value);
+                    let _direction = direction;
+                    let checked = Literal::new_language_tagged_literal("", language.clone())
+                        .map_err(|_| bad("invalid directional language tag"))?;
+                    if checked.language() != Some(language.as_str()) {
+                        return Err(bad("noncanonical language tag"));
+                    }
+                    if datatype.as_str() != RDF_DIR_LANG_STRING {
+                        return Err(bad("language, datatype and direction disagree"));
+                    }
+                    Ok(None)
+                }
+            }
+            _ => Err(bad("invalid or unsupported literal direction")),
+        }
+    }
+    fn term(&mut self, depth: usize) -> Result<Option<Term>, StorageError> {
+        match self.byte()? {
+            1 => Ok(Some(self.iri()?.into())),
+            2 => Ok(Some(self.blank()?.into())),
+            3 => Ok(self.literal(depth)?.map(Into::into)),
             4 => {
                 if depth >= MAX_TRIPLE_DEPTH {
                     return Err(bad("semantic-change triple nesting exceeds 32"));
                 }
-                Ok(crate::model::Triple::new(
-                    self.subject()?,
-                    self.predicate()?,
-                    self.term(depth + 1)?,
-                )
-                .into())
+                let subject = self.subject()?;
+                let predicate = self.predicate()?;
+                let object = self.term(depth + 1)?;
+                #[cfg(feature = "rdf-12")]
+                {
+                    let object =
+                        object.ok_or_else(|| bad("unrepresentable nested semantic-change term"))?;
+                    Ok(Some(
+                        crate::model::Triple::new(subject, predicate, object).into(),
+                    ))
+                }
+                #[cfg(not(feature = "rdf-12"))]
+                {
+                    drop((subject, predicate, object));
+                    Ok(None)
+                }
             }
             _ => Err(bad("invalid or unsupported semantic-change term tag")),
         }
@@ -244,25 +291,26 @@ pub(super) fn decode(bytes: &[u8]) -> Result<SemanticChange, StorageError> {
     let mut input = Cursor { remaining: bytes };
     let change = match input.byte()? {
         tag @ (0 | 1) => {
-            let quad = Quad::new(
-                input.subject()?,
-                input.predicate()?,
-                input.term(0)?,
-                input.graph()?,
-            );
-            if tag == 0 {
-                SemanticChange::QuadAdded(quad)
-            } else {
-                SemanticChange::QuadRemoved(quad)
-            }
+            let subject = input.subject()?;
+            let predicate = input.predicate()?;
+            let object = input.term(0)?;
+            let graph = input.graph()?;
+            object.map(|object| {
+                let quad = Quad::new(subject, predicate, object, graph);
+                if tag == 0 {
+                    SemanticChange::QuadAdded(quad)
+                } else {
+                    SemanticChange::QuadRemoved(quad)
+                }
+            })
         }
-        2 => SemanticChange::NamedGraphCreated(input.subject()?),
-        3 => SemanticChange::GraphCleared(input.graph()?),
-        4 => SemanticChange::NamedGraphDropped(input.subject()?),
-        5 => SemanticChange::AllNamedGraphsCleared,
-        6 => SemanticChange::AllGraphsCleared,
-        7 => SemanticChange::AllNamedGraphsDropped,
-        8 => SemanticChange::DatasetCleared,
+        2 => Some(SemanticChange::NamedGraphCreated(input.subject()?)),
+        3 => Some(SemanticChange::GraphCleared(input.graph()?)),
+        4 => Some(SemanticChange::NamedGraphDropped(input.subject()?)),
+        5 => Some(SemanticChange::AllNamedGraphsCleared),
+        6 => Some(SemanticChange::AllGraphsCleared),
+        7 => Some(SemanticChange::AllNamedGraphsDropped),
+        8 => Some(SemanticChange::DatasetCleared),
         9 => {
             let prefix = NamespacePrefix::new(input.text()?.to_owned())
                 .map_err(|_| bad("invalid namespace prefix"))?;
@@ -271,18 +319,21 @@ pub(super) fn decode(bytes: &[u8]) -> Result<SemanticChange, StorageError> {
             if before == after {
                 return Err(bad("namespace record has no effect"));
             }
-            SemanticChange::NamespaceChanged {
+            Some(SemanticChange::NamespaceChanged {
                 prefix,
                 before,
                 after,
-            }
+            })
         }
-        10 => SemanticChange::NamespacesCleared,
+        10 => Some(SemanticChange::NamespacesCleared),
         _ => return Err(bad("unknown semantic-change operation")),
     };
     if !input.remaining.is_empty() {
         return Err(bad("trailing semantic-change bytes"));
     }
+    let Some(change) = change else {
+        return Err(StorageError::FeatureIncompatible { feature: "rdf-12" });
+    };
     let mut canonical = Vec::new();
     emit(&change, &mut |part| canonical.extend_from_slice(part));
     if canonical != bytes {
@@ -380,3 +431,12 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_assert_message,
+    clippy::panic_in_result_fn,
+    reason = "cross-feature logical payload assertions"
+)]
+#[path = "change_codec_feature_tests.rs"]
+pub(crate) mod feature_tests;

@@ -235,6 +235,20 @@ fn seal_record(identity: &StoreIdentity, position: u64, mut body: Vec<u8>) -> Ve
     body
 }
 
+#[cfg(all(test, not(feature = "rdf-12")))]
+pub(crate) fn seal_record_for_test(
+    identity: &StoreIdentity,
+    position: u64,
+    body: Vec<u8>,
+) -> Vec<u8> {
+    seal_record(identity, position, body)
+}
+
+#[cfg(all(test, not(feature = "rdf-12")))]
+pub(crate) fn rdf_12_payload_for_test() -> Vec<u8> {
+    super::change_codec::feature_tests::valid_single_triple_payload()
+}
+
 fn record_checksum(identity: &StoreIdentity, position: u64, body: &[u8]) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
@@ -713,6 +727,61 @@ mod tests {
         state.outbox.as_mut().unwrap().high_water = 1;
         assert!(page(Some(&state), &records, &receipts).is_err());
         Ok(())
+    }
+
+    #[cfg(not(feature = "rdf-12"))]
+    #[test]
+    fn record_envelope_errors_precede_deferred_payload_feature_classification() {
+        let identity = StoreIdentity::from_bytes([7; 16]);
+        let mut body = vec![1, 1];
+        body.extend_from_slice(&1_u64.to_be_bytes());
+        body.extend_from_slice(&0_u64.to_be_bytes());
+        body.extend_from_slice(&1_u64.to_be_bytes());
+        body.extend_from_slice(&[9; 32]);
+        body.extend_from_slice(&rdf_12_payload_for_test());
+        let record = seal_record(&identity, 2, body.clone());
+
+        assert!(matches!(
+            decode_record(&identity, 2, &record),
+            Err(StorageError::FeatureIncompatible { feature: "rdf-12" })
+        ));
+        for end in 0..record.len() {
+            assert!(matches!(
+                decode_record(&identity, 2, &record[..end]),
+                Err(StorageError::Corruption(_))
+            ));
+        }
+
+        let mut bad_checksum = record.clone();
+        *bad_checksum.last_mut().expect("record has a checksum") ^= 1;
+        assert!(matches!(
+            decode_record(&identity, 2, &bad_checksum),
+            Err(StorageError::Corruption(_))
+        ));
+        assert!(matches!(
+            decode_record(&identity, 3, &record),
+            Err(StorageError::Corruption(_))
+        ));
+
+        body[0] = 2;
+        let bad_version = seal_record(&identity, 2, body);
+        assert!(matches!(
+            decode_record(&identity, 2, &bad_version),
+            Err(StorageError::Corruption(_))
+        ));
+
+        let mut bad_payload = rdf_12_payload_for_test();
+        *bad_payload.last_mut().expect("payload has a graph tag") = 255;
+        let mut body = vec![1, 1];
+        body.extend_from_slice(&1_u64.to_be_bytes());
+        body.extend_from_slice(&0_u64.to_be_bytes());
+        body.extend_from_slice(&1_u64.to_be_bytes());
+        body.extend_from_slice(&[9; 32]);
+        body.extend_from_slice(&bad_payload);
+        assert!(matches!(
+            decode_record(&identity, 2, &seal_record(&identity, 2, body)),
+            Err(StorageError::Corruption(_))
+        ));
     }
 
     #[test]

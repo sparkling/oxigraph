@@ -1599,6 +1599,9 @@ encodings in current-format live object indexes. Nine ordinary-harness checks
 and independent Sol Medium review passed for the Terra Medium slice; this
 does not certify outbox history or change inspection's unknown feature status.
 See [the bounded feature-refusal contract](../adr/0028-safe-storage-schema-upgrades.md#bounded-live-rdf-feature-refusal-2026-09-11).
+Bounded outbox consumption now distinguishes valid retained RDF 1.2-only
+payloads from corruption, without scanning all history at open; see
+[the consumption-time contract](../adr/0028-safe-storage-schema-upgrades.md#bounded-retained-outbox-feature-errors-2026-09-11).
 Next: full feature-envelope/history admission, the frozen classifier,
 older-binary rollback and frozen acceptance gates. No qualification or
 publication is implied. See

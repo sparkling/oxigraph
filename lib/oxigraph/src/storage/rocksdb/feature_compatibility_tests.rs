@@ -1,17 +1,14 @@
 use super::*;
 #[cfg(feature = "rdf-12")]
 use crate::model::{BaseDirection, Literal, Triple};
-use crate::store::Store;
+use crate::store::{Store, TransactionKey, TransactionRequest, WritableDataset};
 #[cfg(not(feature = "rdf-12"))]
-use crate::store::StoreOptions;
+use crate::store::{OutboxReadError, StoreOptions};
 #[cfg(feature = "rdf-12")]
-use crate::store::{
-    OutboxRecord, SemanticChange, TransactionKey, TransactionRequest, WritableDataset,
-};
+use crate::store::{OutboxRecord, SemanticChange};
 use std::collections::BTreeMap;
 #[cfg(not(feature = "rdf-12"))]
 use std::io;
-#[cfg(feature = "rdf-12")]
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
@@ -173,6 +170,106 @@ fn safe_open_feature_refusal_checkpoint_adds_only_native_lock() -> Result {
     assert_eq!(std::fs::metadata(checkpoint.join("LOCK"))?.len(), 0);
     after.remove(Path::new("LOCK"));
     assert_eq!(after, before);
+    Ok(())
+}
+
+#[cfg(not(feature = "rdf-12"))]
+#[test]
+fn retained_only_rdf_12_outbox_payload_fails_on_consumption_without_source_changes() -> Result {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path();
+    let subject = NamedNode::new("urn:history:s")?;
+    let predicate = NamedNode::new("urn:history:p")?;
+    let object = NamedNode::new("urn:history:o")?;
+    let quad = Quad::new(
+        subject.clone(),
+        predicate.clone(),
+        object,
+        GraphName::DefaultGraph,
+    );
+
+    let store = Store::open(path)?;
+    let mut insert = store
+        .start_governed_transaction(
+            TransactionRequest::default(),
+            TransactionKey::new([11; 16]),
+        )?
+        .into_transaction();
+    insert.insert(quad.clone())?;
+    insert.commit()?;
+
+    let mut remove = store
+        .start_governed_transaction(
+            TransactionRequest::default(),
+            TransactionKey::new([12; 16]),
+        )?
+        .into_transaction();
+    remove.remove(&quad)?;
+    remove.commit()?;
+
+    store
+        .start_governed_transaction(
+            TransactionRequest::default(),
+            TransactionKey::new([13; 16]),
+        )?
+        .into_transaction()
+        .commit()?;
+    assert!(!store.contains(&quad)?);
+    let identity = store
+        .read_outbox(None, NonZeroUsize::MIN)?
+        .coverage()
+        .ok_or("missing outbox coverage")?
+        .store_identity()
+        .clone();
+    drop(store);
+
+    let compatible = Store::open_read_only(path)?;
+    assert_eq!(
+        compatible
+            .read_outbox(None, NonZeroUsize::new(5).expect("five is non-zero"))?
+            .records()
+            .len(),
+        5
+    );
+    drop(compatible);
+
+    {
+        let db =
+            Db::open_read_write(path, RocksDbStorage::column_families(), DbOptions::default())?;
+        let cf = db.column_family(DEFAULT_CF)?;
+        let key = outbox_record_key(2);
+        let record = db
+            .get(&cf, &key)?
+            .ok_or("missing first outbox event")?
+            .to_vec();
+        assert_eq!(&record[..2], &[1, 1]);
+        let mut body = record[..58].to_vec();
+        body.extend_from_slice(&crate::store::outbox::rdf_12_payload_for_test());
+        let record = crate::store::outbox::seal_record_for_test(&identity, 2, body);
+        db.insert(&cf, &key, &record)?;
+        db.flush()?;
+    }
+
+    // This is a raw, same-format retained-history fixture for replay error
+    // propagation. It does not claim a cross-binary writer journey or complete
+    // history admission.
+    let before = files(path)?;
+    let reopened = Store::open_read_only(path)?;
+    let header = reopened.read_outbox(None, NonZeroUsize::MIN)?;
+    assert!(matches!(
+        header.records(),
+        [crate::store::OutboxRecord::Commit { .. }]
+    ));
+    let error = reopened
+        .read_outbox(header.next_cursor(), NonZeroUsize::MIN)
+        .err()
+        .expect("the retained RDF 1.2 event must fail on consumption");
+    let OutboxReadError::Storage(error) = error else {
+        panic!("expected a storage feature error");
+    };
+    assert_feature_incompatible(error);
+    drop(reopened);
+    assert_eq!(files(path)?, before);
     Ok(())
 }
 

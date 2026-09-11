@@ -941,6 +941,9 @@ with the required feature enabled; do not change the stored version marker.
 This is not complete feature admission: removed RDF 1.2 data can remain in
 outbox history, and `inspect` still reports feature compatibility as unknown.
 See [the bounded feature check](../docs/adr/0028-safe-storage-schema-upgrades.md#bounded-live-rdf-feature-refusal-2026-09-11).
+The library's bounded outbox reads report a typed feature error when consuming
+valid retained RDF 1.2-only effects, while malformed payloads remain corruption;
+this is [consumption-time classification](../docs/adr/0028-safe-storage-schema-upgrades.md#bounded-retained-outbox-feature-errors-2026-09-11), not complete admission at open.
 
 **Compatibility change:** opening legacy data is no longer an upgrade command.
 Retain the original store, then use `backup-legacy`, `upgrade`, `verify-upgrade`

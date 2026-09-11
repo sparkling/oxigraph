@@ -15,6 +15,8 @@
   recognized version-0/1 layouts instead of starting migration.
   Builds without `rdf-12` also return typed `FeatureIncompatible` for recognized
   RDF 1.2-only encodings in current-format live object indexes.
+  Bounded outbox consumption distinguishes valid retained RDF 1.2-only effects
+  from malformed payloads without adding open-time history admission.
   Full compatibility rejection, schema envelopes, older-binary rollback and
   the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
@@ -739,6 +741,32 @@ The local development CLI is 641,730,720 bytes, SHA-256
 admission, the frozen classifier, older-binary rollback and frozen
 compatibility/crash/system-RocksDB gates remain open. G4.3 is incomplete and
 this ADR stays Proposed; no qualification or publication authority is added.
+
+## Bounded retained-outbox feature errors (2026-09-11)
+
+On builds without `rdf-12`, bounded outbox consumption now returns
+`StorageError::FeatureIncompatible { feature: "rdf-12" }` for valid triple-term
+and directional-literal logical v1 effects. The shared cursor validates the
+whole payload before reporting missing features: malformed or noncanonical
+fields, invalid nested datatypes, depth above 32, invalid graph and trailing
+bytes remain corruption. Existing top-level RDF-1.1 typed-literal behavior is
+preserved. Record version, position and checksum checks still precede payload
+decoding; this does not promise priority over unseen cross-record errors.
+
+Independent literal fixtures match the enabled production encoder and exercise
+both feature configurations, including every truncation and the depth boundary.
+A raw retained-only RocksDB fixture proves read-only restart, bounded paging
+before an incompatible middle event, error propagation and source preservation;
+it is not a cross-binary receipt-bound writer qualification. The ordinary
+workflow's independent review caught a nested-datatype classification gap even
+after its first ten checks passed; repaired-source checks and review are recorded
+in `programme-task-evidence/workflow-b4243508-36fa-4f93-ad1b-536d7394c875`.
+
+No storage bytes, emitter/checksum, marker, receipt, retention, page-bound or
+live-only preflight contract changes. This closes the misleading consumption
+error, not full feature-envelope/history admission, older-binary rollback or
+the frozen compatibility/crash/system-profile gates. G4.3 remains incomplete
+and this ADR remains Proposed; no qualification or publication is implied.
 
 ## Staged implementation and evaluator gates
 

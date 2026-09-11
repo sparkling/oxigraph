@@ -2,7 +2,7 @@
 
 - **Status**: Implemented (native G2.1–G2.3c scope below)
 - **Date**: 2026-08-24
-- Updated: 2026-09-07
+- Updated: 2026-09-11
 - Deciders: Oxigraph parity programme
 - Implementation status: G2.1 is implemented in `be08cf3b`. G2.2 now includes
   opt-in staged semantic-change capture and request/keyed integration.
@@ -284,6 +284,14 @@ historical audit: unvisited historical corruption is detected when that range
 is read. RDF 1.2 effects permit at most 32 nested triple terms; unrepresentable
 effects reject before commit. The general RDF API and infallible v1 checksum
 do not acquire this depth limit.
+
+The 2026-09-11 additive decoder repair distinguishes valid RDF 1.2-only effects
+from corruption on builds without `rdf-12`: bounded consumption returns
+`StorageError::FeatureIncompatible { feature: "rdf-12" }` only after validating
+the entire logical payload. Existing record-envelope checks still precede
+payload decoding; unseen history is not certified. Encoded bytes, checksums,
+retention and page bounds are unchanged. See
+[the bounded contract and tests](0028-safe-storage-schema-upgrades.md#bounded-retained-outbox-feature-errors-2026-09-11).
 
 G2.3b alone has no retention deletion. G2.3c supplies the explicit policy below;
 stores that do not opt in retain the previous growing-history behavior.
