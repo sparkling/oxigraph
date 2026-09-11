@@ -7,10 +7,12 @@
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
   shadow-copy preparation and explicit inactive transformation APIs/CLI implemented;
-  additive verified checkpoint/restart APIs and offline recovery CLI implemented.
+  additive verified checkpoint/restart APIs and offline recovery CLI implemented;
+  native build-bound inactive upgrade receipt APIs implemented for the bounded
+  Linux/static Oxigraph/vendored RocksDB profile below.
   Ordinary writable open still performs known version-0/1 migrations in place.
-  Full compatibility rejection, schema envelopes,
-  sealed upgrade receipts and explicit activation remain open
+  Full compatibility rejection, schema envelopes, receipt CLI exposure and
+  explicit activation remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
@@ -27,8 +29,9 @@ version 2, and calls migration from ordinary setup. The legacy version-0 and
 version-1 paths mutate column families and then advance the version. Read-only
 open rejects a required migration, but read-write open had no separate
 inspection or preflight at programme entry. The bounded slices below now add
-physical backup ancestry, inactive construction and verified checkpoint restart;
-a sealed upgrade receipt and operator-controlled cutover remain outstanding.
+physical backup ancestry, inactive construction, verified checkpoint restart
+and a bounded build-bound receipt API; operator-controlled cutover remains
+outstanding.
 Before the native preflight below, a missing
 version key was stamped as latest rather than classified independently.
 
@@ -474,9 +477,90 @@ Exact accepted workflow evidence is in Ruflo
 
 This closes recovery CLI exposure only. Old interrupted preparation workspaces
 are not converted, ordinary known in-place migration is retained, and no new
-dependency is introduced. The sealed exact-build receipt, activation/cutover/
-rollback, envelope/classifier and frozen compatibility/crash/system-RocksDB
-lanes remain open. ADR-0028 remains Proposed; full G4.3 is not complete.
+dependency is introduced. The subsequent slice below supplies the bounded
+native build-bound receipt API. Activation/cutover/rollback, envelope/classifier
+and frozen compatibility/crash/system-RocksDB lanes remain open.
+ADR-0028 remains Proposed; full G4.3 is not complete.
+
+## Build-bound inactive upgrade receipts (2026-09-11)
+
+The additive `Store::start_upgrade`, `Store::resume_upgrade`, `Store::upgrade`
+and `Store::verify_upgrade` APIs now construct and independently verify a
+sealed `UpgradeReceipt`. Each takes the unchanged source, completed legacy
+backup, outer destination and `&UpgradeOptions`. The start call returns a
+nested recovery observation; resume and verification still take the original
+outer destination, not that observation's `recovery/` directory.
+
+The outer workspace binds the executable before starting unchanged recovery-v1.
+Its checksummed `INITIAL -> RUNNING -> COMPLETED` progress chain admits
+`RUNNING` only after independently verifying the exact initial journal and
+checkpoint under retained native leases. A completed standalone recovery cannot
+be imported as this build's earlier work. Resume after `COMPLETED` reuses the
+validated evidence without rewriting the recovery journal or checkpoint files.
+Existing recovery/preparation/transformation formats and APIs are unchanged.
+
+The first receipt profile is **Linux with statically embedded Oxigraph and
+vendored static RocksDB**. A retained `/proc/self/exe` descriptor supplies the
+executable SHA-256 and length (maximum 1 GiB); an implementation anchor must
+resolve to that same executable. The preflight also binds the declared native
+backend/version/revision, RDF feature bit, content/attempt limits, absolute
+paths and exact legacy-backup receipt. A different executable cannot resume or
+verify this profile. Other platforms, dynamic-library embedding and system
+RocksDB are not supported by these new APIs; this does not remove support from
+the earlier APIs. Their refusal branches are not cross-platform qualification.
+
+The final receipt transitively binds source/backup ancestry, the recovery
+journal, transformed physical inventory, logical fingerprint and counts.
+Legacy metadata coverage includes version, required column families, namespaces,
+RDF and named graphs; governance, outbox and commit-receipt records are absent
+in this admitted profile. Source, backup, checkpoint, output and outer workspace
+leases span final verification and complete-last receipt synchronization.
+Paths remain an offline, unchanged, caller-exclusive precondition. Unsigned
+checksums establish content continuity, not authorship or resistance to an
+actor deliberately fabricating all matching records.
+
+Verification is read-only. Tested changed-input and malformed or unexpected
+evidence refusals preserve the source, backup and whole existing workspace.
+A torn record or pending receipt is retained, not repaired or overwritten;
+use a fresh destination when completed evidence cannot be established. A
+failure after receipt rename is indeterminate and requires independent
+verification. Timeouts/cancellation are cooperative call controls, not a hard
+global I/O deadline or total workspace disk/RSS limit.
+
+Ordinary workflow `513cd6e3-0239-4f66-8107-c5d00b4cd9f6` used native Sol
+High implementation, root-only application, deterministic checks, actual repair
+feedback and independent Astra High acceptance of the final six-file source.
+Ruflo read back the exact workflow evidence. Final native checks passed:
+default receipt integration (9), upgrade units (17), existing library/CLI
+recovery/transformation/legacy-backup compatibility (18), no-default receipts
+and recovery (12), and explicit `rdf-12` receipt integration (9).
+These overlapping lanes include helpers and platform guards, not distinct
+product behaviors or complete compatibility qualification.
+
+The checks cover both admitted legacy layouts, unchanged inputs, initial
+checkpoint tampering, copied completed-recovery refusal, exact-executable
+fresh-process verification, changed-executable refusal, held publication leases,
+COMPLETED reuse and retained pending/post-rename evidence. The RDF-1.2 lane
+actually seals the version-1 RDF-star fixture; default features alone do not.
+Review caught an initial-state refusal that appended RUNNING too early; it now
+verifies the full initial workspace under leases before appending. The
+whole-workspace no-write regression passes. Earlier failing attempts remain
+recorded, not relabelled as successful runs.
+
+Selected Clippy reports no diagnostic location in the changed upgrade targets;
+26 existing library warnings remain and strict warnings-denied CI was not run.
+The RDF-1.2 development library builds successfully. The observed local
+`target/debug/liboxigraph.rlib` is 109,887,012 bytes, SHA-256
+`c1acdfd8130ebbff869052c429c1921d408eabbe34a076276dc80264c6bc803c`.
+It requires matching Cargo dependencies; it is not a standalone executable,
+published release or runner compiler-artifact receipt.
+
+The output remains guarded, `active=false` and `upgrade_authorized=false`.
+This closes only the native build-bound receipt API slice. CLI exposure of
+these new APIs, explicit activation/cutover/rollback, complete compatibility
+rejection, the envelope/classifier and the frozen compatibility/crash/older-
+binary/system-RocksDB lanes remain open. Ordinary known in-place migration is
+retained. ADR-0028 remains Proposed; full G4.3 is not complete.
 
 ## Staged implementation and evaluator gates
 
@@ -527,5 +611,6 @@ The current version marker and in-place legacy migrations are in
 [`rocksdb.rs`](../../lib/oxigraph/src/storage/rocksdb.rs); public open and
 backup entry points are in [`store.rs`](../../lib/oxigraph/src/store.rs).
 ADR-0022 supplies backup/restore evidence and ADR-0020 supplies future durable
-metadata identities. This ADR remains Proposed until G4.3 implements a frozen
-legacy-fixture matrix and safe-upgrade receipt.
+metadata identities. The bounded receipt API does not close the remaining G4.3
+compatibility, activation/rollback and frozen legacy-fixture/crash gates; this
+ADR remains Proposed.

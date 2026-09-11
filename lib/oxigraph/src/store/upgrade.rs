@@ -14,7 +14,8 @@ use std::time::Instant;
 #[path = "upgrade_transform.rs"]
 mod transform;
 pub use transform::{
-    TransformedUpgrade, UpgradeRecovery, UpgradeRecoveryOptions, UpgradeTransformOptions,
+    TransformedUpgrade, UpgradeOptions, UpgradeReceipt, UpgradeRecovery, UpgradeRecoveryOptions,
+    UpgradeTransformOptions,
 };
 
 pub(crate) const UPGRADE_GUARD: &str = ".oxigraph-upgrade-incomplete";
@@ -75,7 +76,7 @@ impl PreparedUpgrade {
         started: Instant,
     ) -> Result<(Self, LegacyStoreSnapshot), BackupError> {
         check_options(options, started)?;
-        let directory = stable_directory(directory.as_ref())?;
+        let directory = stable_directory(directory)?;
         check_workspace(&directory)?;
         let receipt = decode(&read(&directory.join(COMPLETE), MAX_MANIFEST)?)?;
         if read(&directory.join(JOURNAL), 512)? != journal(&receipt) {
@@ -206,6 +207,10 @@ fn indeterminate(error: BackupError) -> BackupError {
     BackupError::CompletionIndeterminate(io::Error::other(error))
 }
 
+#[expect(
+    clippy::filetype_is_file,
+    reason = "the prepared inventory must reject symlinks and non-regular filesystem objects"
+)]
 fn check_workspace(directory: &Path) -> Result<(), BackupError> {
     let mut count = 0;
     for entry in fs::read_dir(directory)? {
@@ -227,6 +232,10 @@ fn check_workspace(directory: &Path) -> Result<(), BackupError> {
     Ok(())
 }
 
+#[expect(
+    clippy::filetype_is_file,
+    reason = "the copied store must contain only regular files, never symlinks or devices"
+)]
 fn verify_copy(
     store: &Path,
     receipt: &LegacyBackupReceipt,
@@ -268,7 +277,7 @@ fn verify_copy(
         || found
             .iter()
             .map(String::as_str)
-            .ne(receipt.files().iter().map(|file| file.path()))
+            .ne(receipt.files().iter().map(super::BackupFile::path))
     {
         return Err(BackupError::FileMismatch);
     }

@@ -1,4 +1,4 @@
-//! Explicit offline transformation. No activation, resume or UpgradeReceipt.
+//! Explicit offline transformation, restart and exact-build sealing. No activation.
 use super::*;
 use crate::store::BackupFile;
 use std::num::{NonZeroU64, NonZeroUsize};
@@ -8,8 +8,11 @@ const TRANSFORM_COMPLETE: &str = "oxigraph-upgrade-transformed.complete";
 const TRANSFORM_PENDING: &str = "oxigraph-upgrade-transformed.pending";
 const TRANSFORM_MAGIC: &[u8] = b"oxigraph.transformed-inactive.v1\0";
 
+#[path = "upgrade_receipt.rs"]
+mod receipt;
 #[path = "upgrade_resume.rs"]
 mod resume;
+pub use receipt::{UpgradeOptions, UpgradeReceipt};
 pub use resume::{UpgradeRecovery, UpgradeRecoveryOptions};
 
 /// Cooperative limits for an offline explicit transformation.
@@ -86,21 +89,12 @@ impl TransformedUpgrade {
         let package = stable_directory(completed_legacy_backup.as_ref())?;
         let directory = stable_directory(directory.as_ref())?;
         disjoint(&source, &package, &directory)?;
-        workspace(&directory)?;
-        let mut result = Self::decode(&read(&directory.join(TRANSFORM_COMPLETE), MAX_MANIFEST)?)?;
-        result.directory = directory.clone();
-        let (receipt, source_lease, _package_lease) = LegacyBackupReceipt::verify_ancestry_leased(
+        let (receipt, source_lease, package_lease) = LegacyBackupReceipt::verify_ancestry_leased(
             &source,
             &package,
             &options.backup,
             started,
         )?;
-        if result.receipt != receipt
-            || decode(&read(&directory.join(COMPLETE), MAX_MANIFEST)?)? != receipt
-            || read(&directory.join(JOURNAL), 512)? != journal(&receipt)
-        {
-            return Err(BackupError::InvalidManifest);
-        }
         let expected = source_lease
             .project_upgrade(options, started)
             .map_err(|error| {
@@ -108,40 +102,72 @@ impl TransformedUpgrade {
                     .err()
                     .unwrap_or(BackupError::Storage(error))
             })?;
-        if result.logical != expected.fingerprint()
-            || result.counts
-                != [
-                    expected.quad_count(),
-                    expected.graph_count(),
-                    expected.namespace_count(),
-                ]
+        let logical = expected.fingerprint();
+        let counts = [
+            expected.quad_count(),
+            expected.graph_count(),
+            expected.namespace_count(),
+        ];
+        let result = Self::verify_with_held_inputs(
+            &source, &package, &directory, options, started, &receipt, logical, counts, Ok,
+        )?;
+        drop(package_lease);
+        drop(source_lease);
+        Ok(result)
+    }
+
+    /// Verifies a transformed output without reacquiring already-held inputs.
+    ///
+    /// The callback runs while the final native output lease is retained. Its
+    /// caller owns the already-held source/package leases and projected identity.
+    pub(super) fn verify_with_held_inputs<T>(
+        source: &Path,
+        package: &Path,
+        directory: &Path,
+        options: &UpgradeTransformOptions,
+        started: Instant,
+        receipt: &LegacyBackupReceipt,
+        logical: [u8; 32],
+        counts: [u64; 3],
+        verified: impl FnOnce(Self) -> Result<T, BackupError>,
+    ) -> Result<T, BackupError> {
+        workspace(directory)?;
+        let mut result = Self::decode(&read(&directory.join(TRANSFORM_COMPLETE), MAX_MANIFEST)?)?;
+        directory.clone_into(&mut result.directory);
+        if &result.receipt != receipt
+            || result.logical != logical
+            || result.counts != counts
+            || &decode(&read(&directory.join(COMPLETE), MAX_MANIFEST)?)? != receipt
+            || read(&directory.join(JOURNAL), 512)? != journal(receipt)
         {
             return Err(BackupError::FileMismatch);
         }
-        let expected_journal = completed_journal(&receipt, &result.logical);
+        let expected_journal = completed_journal(receipt, &logical);
         if read(&directory.join(TRANSFORM_JOURNAL), 4096)? != expected_journal
             || result.journal != envelope_checksum(TRANSFORM_MAGIC, &expected_journal)
         {
             return Err(BackupError::InvalidManifest);
         }
         let store = stable_directory(&directory.join("store"))?;
-        // Validate bounded inventory and CURRENT before invoking the native reader.
         if physical_files(&store, &options.backup, started, false)? != result.files {
             return Err(BackupError::FileMismatch);
         }
-        let _output_lease =
-            LegacyStoreSnapshot::verify_transformed(&store, result.logical, options, started)
-                .map_err(|error| {
-                    check(&options.backup.control, started)
-                        .err()
-                        .unwrap_or(BackupError::Storage(error))
-                })?;
+        let output_lease = LegacyStoreSnapshot::verify_transformed(
+            &store, logical, options, started,
+        )
+        .map_err(|error| {
+            check(&options.backup.control, started)
+                .err()
+                .unwrap_or(BackupError::Storage(error))
+        })?;
         if physical_files(&store, &options.backup, started, false)? != result.files {
             return Err(BackupError::FileMismatch);
         }
-        recheck_inputs(&source, &package, &receipt, &options.backup, started)?;
+        recheck_inputs(source, package, receipt, &options.backup, started)?;
         check(&options.backup.control, started)?;
-        Ok(result)
+        let answer = verified(result);
+        drop(output_lease);
+        answer
     }
 
     fn encode(&self) -> Vec<u8> {
@@ -293,7 +319,11 @@ fn transform_inner(
                 sync_directory(&directory)?;
                 last = Some(edge);
             }
-            fault(1 + edge as u8).map_err(storage_error)
+            let phase = u8::try_from(edge)
+                .ok()
+                .and_then(|edge| edge.checked_add(1))
+                .ok_or_else(|| storage_error(BackupError::Limit))?;
+            fault(phase).map_err(storage_error)
         })
         .map_err(|error| {
             check(&options.backup.control, started)
@@ -388,6 +418,10 @@ fn transformed_native_name(name: &str) -> bool {
                 .iter()
                 .any(|suffix| name.strip_suffix(suffix).is_some_and(digits)))
 }
+#[expect(
+    clippy::filetype_is_file,
+    reason = "the transformed store must reject symlinks and non-regular filesystem objects"
+)]
 fn physical_files(
     path: &Path,
     options: &LegacyBackupOptions,
@@ -449,6 +483,10 @@ fn physical_files(
     }
     Ok(files)
 }
+#[expect(
+    clippy::filetype_is_file,
+    reason = "workspace manifests must be regular files and the store must be a directory"
+)]
 fn workspace(path: &Path) -> Result<(), BackupError> {
     let mut names = Vec::new();
     for entry in fs::read_dir(path)? {

@@ -1307,8 +1307,8 @@ checkpoints in a separate recovery workspace. Native interruption/cancellation
 tests cover both migration edges, publication boundaries, unchanged source/
 backup/checkpoints and explicit completed-edge reuse. Old interrupted
 preparation/transformation workspaces do not become resumable.
-Full compatibility rejection, the envelope/classifier,
-a sealed `UpgradeReceipt` and the cutover/crash/older-binary matrix remain open.
+Full compatibility rejection, the envelope/classifier and the
+cutover/crash/older-binary matrix remain open.
 Compatibility tests now migrate private temporary copies, preserving their
 original assertions and committed fixture bytes. Default/RDF-1.2/no-default
 store lanes and concurrent upgrade/store commands pass; the earlier shared-
@@ -1317,10 +1317,19 @@ fixture failure remains recorded. The additive `start-upgrade-recovery`,
 the existing recovery API. Native default/no-default journeys verify exact
 ancestry, incomplete/completed state, retained guards, matching custom limits,
 completed resume and refusal without input mutation. This closes the bounded
-CLI exposure gap, not G4.3. The next product step is a sealed exact-build
-upgrade receipt, followed by explicit activation/rollback and compatibility
-acceptance; no qualification or publication is implied.
-See [ADR-0028's recovery scope and limits](../adr/0028-safe-storage-schema-upgrades.md#verified-restartable-inactive-upgrades-2026-09-11).
+recovery CLI exposure gap, not G4.3. Native `Store::start_upgrade`,
+`Store::resume_upgrade`, `Store::upgrade` and `Store::verify_upgrade` now
+provide a sealed build-bound `UpgradeReceipt` for Linux/static Oxigraph with
+vendored static RocksDB. The exact executable is bound before construction;
+old completed recovery work cannot acquire that earlier provenance. Native
+default, explicit RDF-1.2, no-default, unit and existing compatibility checks
+pass, including whole-workspace no-write refusal, fresh-process verification,
+changed-executable refusal and completed-evidence reuse. Independent review
+accepted the exact source through the ordinary harness and Ruflo readback.
+This closes the bounded native receipt API, not activation or full G4.3.
+Next: expose these new APIs through the CLI, then explicit activation/rollback
+and remaining compatibility acceptance. No qualification or publication is
+implied. See [ADR-0028's receipt scope and limits](../adr/0028-safe-storage-schema-upgrades.md#build-bound-inactive-upgrade-receipts-2026-09-11).
 
 G4.1 native implementation is complete: the anonymous startup boundary requires explicit
 non-loopback consent before store open and binds the exact validated address

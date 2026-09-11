@@ -481,8 +481,19 @@ The CLI now exposes `start-upgrade-recovery`, `resume-upgrade-recovery` and
 `verify-upgrade-recovery`, including explicit cooperative limits and distinct
 incomplete/completed observations. See the
 [restartable operator journey](cli/README.md#offline-restartable-upgrade-recovery-fork).
-This does not add a sealed `UpgradeReceipt`, activation or the full compatibility
-and crash qualification matrix.
+Those recovery APIs and commands do not add a sealed `UpgradeReceipt`,
+activation or the full compatibility and crash qualification matrix.
+
+`Store::start_upgrade`, `Store::resume_upgrade`, `Store::upgrade` and
+`Store::verify_upgrade` now construct and independently verify a build-bound
+`UpgradeReceipt`. The first profile supports Linux executables with statically
+embedded Oxigraph and vendored static RocksDB. It binds the executable before
+construction and verifies ancestry, checkpoints and completed output; it cannot
+retrofit that provenance onto old completed recovery work. Resume and verification
+take the original outer workspace, not its nested `recovery/` directory.
+The output remains guarded and inactive. CLI exposure of these new APIs,
+activation/rollback and full compatibility qualification remain outstanding.
+See [the receipt contract and limits](docs/adr/0028-safe-storage-schema-upgrades.md#build-bound-inactive-upgrade-receipts-2026-09-11).
 
 ## Upstream Oxigraph
 

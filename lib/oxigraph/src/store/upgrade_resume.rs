@@ -426,7 +426,7 @@ fn start_inner(
     sync_directory(parent).map_err(BackupError::CompletionIndeterminate)?;
     fault(7, record.to).map_err(indeterminate)?;
     check(&options.transform.backup.control, started).map_err(indeterminate)?;
-    Ok(observation(destination, receipt, vec![record], None, 1))
+    observation(destination, receipt, std::slice::from_ref(&record), None, 1)
 }
 
 fn resume_inner(
@@ -580,7 +580,7 @@ fn resume_inner_at(
             limits: limits.clone(),
             files,
             transformed: [0; 32],
-            previous: records.last().map(Record::hash).unwrap_or([0; 32]),
+            previous: records.last().map_or([0; 32], Record::hash),
         };
         sync_directory(&store)?;
         sync_directory(&root)?;
@@ -694,7 +694,7 @@ fn resume_inner_at(
         limits,
         files: Vec::new(),
         transformed: transformed.fingerprint(),
-        previous: records.last().map(Record::hash).unwrap_or([0; 32]),
+        previous: records.last().map_or([0; 32], Record::hash),
     };
     fault(6, 2).map_err(indeterminate)?;
     check(&options.transform.backup.control, started).map_err(indeterminate)?;
@@ -704,13 +704,13 @@ fn resume_inner_at(
     check(&options.transform.backup.control, started).map_err(indeterminate)?;
     drop(output_lease);
     records.push(final_record);
-    Ok(observation(
+    observation(
         directory,
         receipt,
-        records,
+        &records,
         Some(transformed),
         used.len() + 1,
-    ))
+    )
 }
 
 fn verify_recovery(
@@ -720,32 +720,37 @@ fn verify_recovery(
     options: &UpgradeRecoveryOptions,
     started: Instant,
 ) -> Result<UpgradeRecovery, BackupError> {
+    verify_recovery_leased(
+        source,
+        package,
+        directory,
+        options,
+        started,
+        |recovery, _| Ok(recovery.clone()),
+    )
+}
+
+/// Runs independent recovery verification and invokes the callback while all
+/// source, package, completed-checkpoint and (when complete) final-output native
+/// leases are still held.
+pub(super) fn verify_recovery_leased<T>(
+    source: &Path,
+    package: &Path,
+    directory: &Path,
+    options: &UpgradeRecoveryOptions,
+    started: Instant,
+    verified: impl FnOnce(&UpgradeRecovery, &[u8]) -> Result<T, BackupError>,
+) -> Result<T, BackupError> {
     let limits = Limits::new(options, started)?;
     let source = stable_directory(source)?;
     let package = stable_directory(package)?;
     let directory = stable_directory(directory)?;
     disjoint(&source, &package, &directory)?;
     let attempts = scan_workspace(&directory, options, started)?;
-    let records = decode_journal(
-        &read(&directory.join(RECOVERY_JOURNAL), MAX_MANIFEST)?,
-        options,
-        started,
-    )?;
+    let journal = read(&directory.join(RECOVERY_JOURNAL), MAX_MANIFEST)?;
+    let records = decode_journal(&journal, options, started)?;
     validate_chain(&records, &limits)?;
-    let transformed = if let Some(record) = records.last().filter(|record| record.kind == FINAL) {
-        let output = final_output(&directory, record)?;
-        let verification_options = remaining_transform_options(options, started)?;
-        let transformed =
-            TransformedUpgrade::verify(&source, &package, &output, &verification_options)?;
-        check(&options.transform.backup.control, started)?;
-        if transformed.fingerprint() != record.transformed {
-            return Err(BackupError::FileMismatch);
-        }
-        Some(transformed)
-    } else {
-        None
-    };
-    let (receipt, source_lease, _package_lease) = LegacyBackupReceipt::verify_ancestry_leased(
+    let (receipt, source_lease, package_lease) = LegacyBackupReceipt::verify_ancestry_leased(
         &source,
         &package,
         &options.transform.backup,
@@ -760,13 +765,13 @@ fn verify_recovery(
         expected.namespace_count(),
     ];
     validate_identity(&records, &receipt, expected.fingerprint(), counts, &limits)?;
-    let mut leases = Vec::new();
+    let mut checkpoint_leases = Vec::new();
     for record in records.iter().filter(|record| record.kind == CHECKPOINT) {
         let store = checkpoint_store(&directory, record)?;
         if physical_files(&store, &options.transform.backup, started, false)? != record.files {
             return Err(BackupError::FileMismatch);
         }
-        leases.push(
+        checkpoint_leases.push(
             LegacyStoreSnapshot::verify_upgrade_checkpoint(
                 &store,
                 record.to,
@@ -785,9 +790,54 @@ fn verify_recovery(
         started,
     )?;
     check(&options.transform.backup.control, started)?;
-    let result = observation(directory, receipt, records, transformed, attempts.len());
-    drop(leases);
-    Ok(result)
+
+    let final_record = records
+        .last()
+        .filter(|record| record.kind == FINAL)
+        .cloned();
+    let finish = |transformed| {
+        recheck_inputs(
+            &source,
+            &package,
+            &receipt,
+            &options.transform.backup,
+            started,
+        )?;
+        check(&options.transform.backup.control, started)?;
+        let result = observation(
+            directory.clone(),
+            receipt.clone(),
+            &records,
+            transformed,
+            attempts.len(),
+        )?;
+        let answer = verified(&result, &journal);
+        drop(checkpoint_leases);
+        drop(package_lease);
+        drop(source_lease);
+        answer
+    };
+    if let Some(record) = final_record {
+        let output = final_output(&directory, &record)?;
+        TransformedUpgrade::verify_with_held_inputs(
+            &source,
+            &package,
+            &output,
+            &options.transform,
+            started,
+            &receipt,
+            expected.fingerprint(),
+            counts,
+            |transformed| {
+                if transformed.fingerprint() != record.transformed {
+                    return Err(BackupError::FileMismatch);
+                }
+                finish(Some(transformed))
+            },
+        )
+    } else {
+        finish(None)
+    }
 }
 
 fn validate_identity(
@@ -810,7 +860,8 @@ fn validate_identity(
 }
 
 fn validate_chain(records: &[Record], limits: &Limits) -> Result<(), BackupError> {
-    if records.is_empty() || records.len() > limits.max_attempts as usize {
+    let max_attempts = usize::try_from(limits.max_attempts).map_err(|_| BackupError::Limit)?;
+    if records.is_empty() || records.len() > max_attempts {
         return Err(BackupError::Limit);
     }
     let mut previous = [0; 32];
@@ -975,6 +1026,10 @@ fn copy_native_files(
     Ok(())
 }
 
+#[expect(
+    clippy::filetype_is_file,
+    reason = "recovery manifests must be regular files, never symlinks or devices"
+)]
 fn scan_workspace(
     directory: &Path,
     options: &UpgradeRecoveryOptions,
@@ -1059,6 +1114,10 @@ fn scan_attempt(
     Ok(())
 }
 
+#[expect(
+    clippy::filetype_is_file,
+    reason = "native checkpoint inventories admit regular files only"
+)]
 fn scan_partial_store(
     path: &Path,
     options: &UpgradeRecoveryOptions,
@@ -1093,6 +1152,10 @@ fn scan_partial_store(
     Ok(())
 }
 
+#[expect(
+    clippy::filetype_is_file,
+    reason = "partial output manifests must be regular files and its store a directory"
+)]
 fn scan_partial_output(
     path: &Path,
     options: &UpgradeRecoveryOptions,
@@ -1146,21 +1209,6 @@ fn incomplete_staging_name(name: &str) -> bool {
         && digits.parse::<u128>().is_ok()
 }
 
-fn remaining_transform_options(
-    options: &UpgradeRecoveryOptions,
-    started: Instant,
-) -> Result<UpgradeTransformOptions, BackupError> {
-    check(&options.transform.backup.control, started)?;
-    let mut result = options.transform.clone();
-    if let Some(timeout) = options.transform.backup.control.timeout() {
-        let remaining = timeout
-            .checked_sub(started.elapsed())
-            .ok_or(BackupError::TimedOut)?;
-        result.backup.control = result.backup.control.clone().with_timeout(remaining);
-    }
-    Ok(result)
-}
-
 fn next_attempt(
     attempts: &BTreeSet<u64>,
     options: &UpgradeRecoveryOptions,
@@ -1210,16 +1258,16 @@ fn controlled_error(
 fn observation(
     directory: PathBuf,
     receipt: LegacyBackupReceipt,
-    records: Vec<Record>,
+    records: &[Record],
     transformed: Option<TransformedUpgrade>,
     attempts: usize,
-) -> UpgradeRecovery {
+) -> Result<UpgradeRecovery, BackupError> {
     let last_checkpoint = records
         .iter()
         .rev()
         .find(|record| record.kind == CHECKPOINT)
-        .expect("validated recovery chain has a checkpoint");
-    UpgradeRecovery {
+        .ok_or(BackupError::InvalidManifest)?;
+    Ok(UpgradeRecovery {
         directory,
         receipt,
         storage_version: last_checkpoint.to,
@@ -1227,7 +1275,7 @@ fn observation(
         logical: last_checkpoint.logical,
         counts: last_checkpoint.counts,
         transformed,
-    }
+    })
 }
 
 #[cfg(all(test, unix))]
