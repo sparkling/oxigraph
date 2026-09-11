@@ -546,6 +546,43 @@ pub enum Command {
         max_attempts: Option<std::num::NonZeroUsize>,
 
     },
+    /// Activate a sealed exact-build upgrade into a fresh current-format store
+    ///
+    /// All input paths must remain offline, unchanged, and caller-controlled.
+    /// This never overwrites or swaps a directory, resumes or cleans up work, or
+    /// changes which store a server uses.
+    ActivateUpgrade {
+        /// Original offline version-0 or version-1 store
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        source: PathBuf,
+        /// Completed immutable legacy physical-backup package
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        backup: PathBuf,
+        /// Existing sealed outer upgrade workspace
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        location: PathBuf,
+        /// Fresh disjoint current-format store target
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        destination: PathBuf,
+        /// Maximum native files; omit to retain the API default
+        #[arg(long)]
+        max_files: Option<std::num::NonZeroUsize>,
+        /// Maximum aggregate native-file bytes; omit to retain the API default
+        #[arg(long)]
+        max_bytes: Option<std::num::NonZeroU64>,
+        /// Cooperative whole-operation timeout in milliseconds; omit for no deadline
+        #[arg(long)]
+        timeout_ms: Option<std::num::NonZeroU64>,
+        /// Maximum retained entries per logical projection; omit for the API default
+        #[arg(long)]
+        max_entries: Option<std::num::NonZeroUsize>,
+        /// Maximum retained bytes per logical projection; omit for the API default
+        #[arg(long)]
+        max_projection_bytes: Option<std::num::NonZeroU64>,
+        /// Maximum retained attempts; omit for the API default of 16, maximum 64
+        #[arg(long, value_parser = recovery_attempt_limit)]
+        max_attempts: Option<std::num::NonZeroUsize>,
+    },
     /// Restore a completed backup into a fresh root; serve its store/ subdirectory
     Restore {
         /// Immutable receipt-bearing backup package

@@ -51,6 +51,72 @@ pub struct UpgradeOptions {
     pub recovery: UpgradeRecoveryOptions,
 }
 
+/// An in-memory observation of a source-preserving fresh-target activation.
+///
+/// This value is not persisted and does not replace or mutate its originating
+/// inactive receipt. The source, backup, sealed workspace, and every path named
+/// by that evidence must remain offline, unchanged, and under the caller's
+/// exclusive control for verification and activation.
+///
+/// Activation never overwrites or swaps a directory, resumes incomplete work,
+/// cleans up a failed target, or changes server routing. Retaining the original
+/// source, backup, and workspace preserves rollback material; it does not
+/// qualify an older binary or a complete rollback procedure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpgradeActivation {
+    directory: PathBuf,
+    receipt: UpgradeReceipt,
+}
+
+impl UpgradeActivation {
+    /// Returns the canonical path of the fresh activated store.
+    pub fn directory(&self) -> &Path {
+        &self.directory
+    }
+
+    /// Returns the independently reverified inactive receipt used for the handoff.
+    pub const fn upgrade_receipt(&self) -> &UpgradeReceipt {
+        &self.receipt
+    }
+
+    /// Returns the fingerprint of the originating inactive receipt.
+    pub fn upgrade_receipt_fingerprint(&self) -> [u8; 32] {
+        self.receipt.fingerprint()
+    }
+
+    /// Returns the verified logical fingerprint copied into the target.
+    pub const fn logical_fingerprint(&self) -> [u8; 32] {
+        self.receipt.logical_fingerprint()
+    }
+
+    /// Returns the verified quad count at activation handoff.
+    pub const fn quad_count(&self) -> u64 {
+        self.receipt.quad_count()
+    }
+
+    /// Returns the verified named-graph count at activation handoff.
+    pub const fn named_graph_count(&self) -> u64 {
+        self.receipt.named_graph_count()
+    }
+
+    /// Returns the verified namespace count at activation handoff.
+    pub const fn namespace_count(&self) -> u64 {
+        self.receipt.namespace_count()
+    }
+
+    /// Returns true because this observation records a completed handoff.
+    ///
+    /// This is historical state, not a continuing integrity, availability,
+    /// routing, or production-readiness assertion about the target.
+    #[expect(
+        clippy::unused_self,
+        reason = "constructed only after the publication barrier"
+    )]
+    pub const fn active(&self) -> bool {
+        true
+    }
+}
+
 /// A complete, independently verifiable observation of an inactive upgrade.
 ///
 /// The receipt binds the exact running executable bytes, the declared RDF and
@@ -300,6 +366,34 @@ impl Store {
         let destination = destination.as_ref();
         Self::start_upgrade(source, package, destination, options)?;
         Self::resume_upgrade(source, package, destination, options)
+    }
+
+
+    /// Activates a verified sealed upgrade at a fresh disjoint target.
+    ///
+    /// Every input and evidence path must be offline, unchanged, and exclusively
+    /// controlled by the caller for the entire call. Source, backup, and the
+    /// complete sealed workspace are retained byte-for-byte. The destination is
+    /// never overwritten or swapped, incomplete work is never resumed, failures
+    /// are never cleaned up automatically, and server routing is not changed.
+    ///
+    /// Failure before guard removal leaves the target absent, empty, or guarded;
+    /// every fallible result after guard removal is completion-indeterminate.
+    pub fn activate_upgrade(
+        source: impl AsRef<Path>,
+        completed_legacy_backup: impl AsRef<Path>,
+        directory: impl AsRef<Path>,
+        destination: impl AsRef<Path>,
+        options: &UpgradeOptions,
+    ) -> Result<UpgradeActivation, BackupError> {
+        activate_upgrade_inner(
+            source.as_ref(),
+            completed_legacy_backup.as_ref(),
+            directory.as_ref(),
+            destination.as_ref(),
+            options,
+            activation_process_fault,
+        )
     }
 
     /// Independently verifies a sealed inactive upgrade.
@@ -883,6 +977,20 @@ fn verify_upgrade(
     directory: &Path,
     options: &UpgradeOptions,
 ) -> Result<UpgradeReceipt, BackupError> {
+    verify_upgrade_leased(source, package, directory, options, |receipt, _, _| Ok(receipt))
+}
+
+fn verify_upgrade_leased<T>(
+    source: &Path,
+    package: &Path,
+    directory: &Path,
+    options: &UpgradeOptions,
+    on_verified: impl FnOnce(
+        UpgradeReceipt,
+        &TransformedUpgrade,
+        Instant,
+    ) -> Result<T, BackupError>,
+) -> Result<T, BackupError> {
     let started = Instant::now();
     let build = BuildBinding::capture(options, started)?;
     let profile = ContentProfile::new(options)?;
@@ -952,11 +1060,155 @@ fn verify_upgrade(
             {
                 return Err(BackupError::FileMismatch);
             }
-            Ok(stored.clone())
+            on_verified(stored.clone(), transformed, started)
         },
     )?;
     drop(workspace_lease);
     Ok(result)
+}
+
+
+fn activate_upgrade_inner(
+    source: &Path,
+    package: &Path,
+    directory: &Path,
+    destination: &Path,
+    options: &UpgradeOptions,
+    mut fault: impl FnMut(u8) -> Result<(), BackupError>,
+) -> Result<UpgradeActivation, BackupError> {
+    verify_upgrade_leased(
+        source,
+        package,
+        directory,
+        options,
+        |receipt, transformed, started| {
+            let control = &options.recovery.transform.backup.control;
+            check(control, started)?;
+
+            // Validate the literal parent first: fresh_destination canonicalizes
+            // its parent and would otherwise follow a symlink ancestor.
+            let requested_parent = destination
+                .parent()
+                .filter(|path| !path.as_os_str().is_empty())
+                .unwrap_or(Path::new("."));
+            let parent = stable_directory(requested_parent)?;
+            let source = stable_directory(source)?;
+            let package = stable_directory(package)?;
+            let workspace = stable_directory(directory)?;
+            let transformed_store =
+                stable_directory(&transformed.directory().join("store"))?;
+            let target = fresh_destination(destination, &source)?;
+            if target.parent() != Some(parent.as_path())
+                || [&package, &workspace, &transformed_store]
+                    .into_iter()
+                    .any(|protected| {
+                        target.starts_with(protected) || protected.starts_with(&target)
+                    })
+            {
+                return Err(BackupError::InvalidPath);
+            }
+            check(control, started)?;
+
+            private_directory(&target)?;
+            // The earliest failure can retain only an empty private target:
+            // no native store byte has been copied.
+            fault(0)?;
+            write(&target.join(UPGRADE_GUARD), GUARD)?;
+            sync_directory(&target)?;
+            sync_directory(&parent)?;
+            fault(1)?;
+            check(control, started)?;
+
+            for file in transformed.files() {
+                if file.path() == UPGRADE_GUARD {
+                    continue;
+                }
+                let artifact = BackupArtifact::new(
+                    file.path().to_owned(),
+                    transformed_store.join(file.path()),
+                    file.size(),
+                    *file.sha256(),
+                )?;
+                copy_artifact(&artifact, &target.join(file.path()), control, started)?;
+                fault(2)?;
+            }
+            if physical_files(
+                &target,
+                &options.recovery.transform.backup,
+                started,
+                true,
+            )? != transformed.files()
+            {
+                return Err(BackupError::FileMismatch);
+            }
+            fault(3)?;
+            check(control, started)?;
+
+            let target_lease = LegacyStoreSnapshot::verify_transformed(
+                &target,
+                receipt.logical_fingerprint(),
+                &options.recovery.transform,
+                started,
+            )
+            .map_err(|error| {
+                check(control, started)
+                    .err()
+                    .unwrap_or(BackupError::Storage(error))
+            })?;
+            if physical_files(
+                &target,
+                &options.recovery.transform.backup,
+                started,
+                true,
+            )? != transformed.files()
+            {
+                return Err(BackupError::FileMismatch);
+            }
+            check(control, started)?;
+            sync_directory(&target)?;
+            sync_directory(&parent)?;
+            fault(4)?;
+            check(control, started)?;
+
+            let activation = UpgradeActivation {
+                directory: target.clone(),
+                receipt,
+            };
+            fs::remove_file(target.join(UPGRADE_GUARD))?;
+
+            // Guard unlink is the sole barrier. Never clean up or recreate it
+            // afterward, and classify every remaining failure as indeterminate.
+            fault(5).map_err(indeterminate)?;
+            check(control, started).map_err(indeterminate)?;
+            sync_directory(&target).map_err(BackupError::CompletionIndeterminate)?;
+            fault(6).map_err(indeterminate)?;
+            check(control, started).map_err(indeterminate)?;
+            sync_directory(&parent).map_err(BackupError::CompletionIndeterminate)?;
+            fault(7).map_err(indeterminate)?;
+            check(control, started).map_err(indeterminate)?;
+            drop(target_lease);
+            Ok(activation)
+        },
+    )
+}
+
+#[expect(
+    clippy::cfg_not_test,
+    clippy::unnecessary_wraps,
+    reason = "the test-only child exit hook shares the fallible activation callback signature"
+)]
+fn activation_process_fault(phase: u8) -> Result<(), BackupError> {
+    #[cfg(test)]
+    if std::env::var("OXIGRAPH_ACTIVATION_TEST_EXIT_AT")
+        .ok()
+        .and_then(|value| value.parse::<u8>().ok())
+        == Some(phase)
+    {
+        std::process::exit(73);
+    }
+    #[cfg(not(test))]
+    let _: u8 = phase;
+    Ok(())
 }
 
 fn verify_legacy(
@@ -1529,4 +1781,241 @@ mod tests {
         assert!(!result.active());
         Ok(())
     }
+    fn recovery_native_stores(workspace: &Path) -> Result<Vec<PathBuf>> {
+        let mut stores = Vec::new();
+        for entry in fs::read_dir(workspace.join("recovery/attempts"))? {
+            let attempt = entry?.path();
+            for store in [attempt.join("store"), attempt.join("output/store")] {
+                if store.is_dir() {
+                    stores.push(store);
+                }
+            }
+        }
+        if stores.is_empty() {
+            return Err("sealed workspace has no native recovery stores".into());
+        }
+        Ok(stores)
+    }
+
+    fn assert_activation_leases_held(
+        source: &Path,
+        backup: &Path,
+        workspace: &Path,
+        recovery_stores: &[PathBuf],
+        target: &Path,
+    ) {
+        assert!(WorkspaceLease::acquire(workspace).is_err());
+        assert!(!LegacyStoreSnapshot::upgrade_lease_available(source));
+        assert!(!LegacyStoreSnapshot::upgrade_lease_available(
+            &backup.join("store")
+        ));
+        for store in recovery_stores {
+            assert!(!LegacyStoreSnapshot::upgrade_lease_available(store));
+        }
+        assert!(!LegacyStoreSnapshot::upgrade_lease_available(target));
+    }
+
+    fn assert_activation_leases_released(
+        source: &Path,
+        backup: &Path,
+        workspace: &Path,
+        recovery_stores: &[PathBuf],
+        target: &Path,
+    ) {
+        assert!(WorkspaceLease::acquire(workspace).is_ok());
+        assert!(LegacyStoreSnapshot::upgrade_lease_available(source));
+        assert!(LegacyStoreSnapshot::upgrade_lease_available(
+            &backup.join("store")
+        ));
+        for store in recovery_stores {
+            assert!(LegacyStoreSnapshot::upgrade_lease_available(store));
+        }
+        assert!(LegacyStoreSnapshot::upgrade_lease_available(target));
+    }
+
+    #[test]
+    fn activation_faults_preserve_inputs_and_publish_only_at_guard_unlink() -> Result {
+        if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+            return Ok(());
+        }
+        let (root, source, backup, workspace, options) = setup()?;
+        Store::upgrade(&source, &backup, &workspace, &options)?;
+        let inputs = [
+            inventory(&source)?,
+            inventory(&backup)?,
+            inventory(&workspace)?,
+        ];
+
+        for phase in 0_u8..=7 {
+            let target = root.path().join(format!("fault-{phase}"));
+            let result = activate_upgrade_inner(
+                &source,
+                &backup,
+                &workspace,
+                &target,
+                &options,
+                |current| {
+                    if current == phase {
+                        Err(BackupError::Cancelled)
+                    } else {
+                        Ok(())
+                    }
+                },
+            );
+            if phase < 5 {
+                assert!(matches!(result, Err(BackupError::Cancelled)));
+                if phase == 0 {
+                    assert!(inventory(&target)?.is_empty());
+                } else {
+                    assert!(target.join(UPGRADE_GUARD).is_file());
+                }
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(BackupError::CompletionIndeterminate(_))
+                ));
+                Store::open_read_only(&target)?.validate()?;
+            }
+            assert_eq!(inventory(&source)?, inputs[0]);
+            assert_eq!(inventory(&backup)?, inputs[1]);
+            assert_eq!(inventory(&workspace)?, inputs[2]);
+        }
+
+        let target = root.path().join("cancel-after-unlink");
+        let control = options.recovery.transform.backup.control.clone();
+        let result = activate_upgrade_inner(
+            &source,
+            &backup,
+            &workspace,
+            &target,
+            &options,
+            |phase| {
+                if phase == 5 {
+                    control.cancel();
+                }
+                Ok(())
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(BackupError::CompletionIndeterminate(_))
+        ));
+        Store::open_read_only(target)?.validate()?;
+        Ok(())
+    }
+
+    #[test]
+    fn activation_phases_four_through_seven_hold_and_release_every_lease() -> Result {
+        if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+            return Ok(());
+        }
+        let (root, source, backup, workspace, options) = setup()?;
+        Store::upgrade(&source, &backup, &workspace, &options)?;
+        let recovery_stores = recovery_native_stores(&workspace)?;
+
+        for phase in 4_u8..=7 {
+            let target = root.path().join(format!("lease-phase-{phase}"));
+            let mut observed = false;
+            let result = activate_upgrade_inner(
+                &source,
+                &backup,
+                &workspace,
+                &target,
+                &options,
+                |current| {
+                    if current == phase {
+                        observed = true;
+                        assert_activation_leases_held(
+                            &source,
+                            &backup,
+                            &workspace,
+                            &recovery_stores,
+                            &target,
+                        );
+                        Err(BackupError::Cancelled)
+                    } else {
+                        Ok(())
+                    }
+                },
+            );
+            assert!(observed);
+            if phase == 4 {
+                assert!(matches!(result, Err(BackupError::Cancelled)));
+                assert!(target.join(UPGRADE_GUARD).is_file());
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(BackupError::CompletionIndeterminate(_))
+                ));
+                assert!(!target.join(UPGRADE_GUARD).exists());
+                Store::open_read_only(&target)?.validate()?;
+            }
+            assert_activation_leases_released(
+                &source,
+                &backup,
+                &workspace,
+                &recovery_stores,
+                &target,
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn activation_child_exits_immediately_before_and_after_guard_unlink() -> Result {
+        if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+            return Ok(());
+        }
+        let (root, source, backup, workspace, options) = setup()?;
+        Store::upgrade(&source, &backup, &workspace, &options)?;
+        let inputs = [
+            inventory(&source)?,
+            inventory(&backup)?,
+            inventory(&workspace)?,
+        ];
+
+        for phase in [4_u8, 5] {
+            let target = root.path().join(format!("exit-{phase}"));
+            let status = std::process::Command::new(std::env::current_exe()?)
+                .arg("--exact")
+                .arg("store::upgrade::transform::receipt::tests::activation_process_helper")
+                .env("OXIGRAPH_ACTIVATION_TEST_SOURCE", &source)
+                .env("OXIGRAPH_ACTIVATION_TEST_BACKUP", &backup)
+                .env("OXIGRAPH_ACTIVATION_TEST_WORKSPACE", &workspace)
+                .env("OXIGRAPH_ACTIVATION_TEST_TARGET", &target)
+                .env("OXIGRAPH_ACTIVATION_TEST_EXIT_AT", phase.to_string())
+                .status()?;
+            assert_eq!(status.code(), Some(73));
+            if phase == 4 {
+                assert!(target.join(UPGRADE_GUARD).is_file());
+            } else {
+                assert!(!target.join(UPGRADE_GUARD).exists());
+                Store::open_read_only(&target)?.validate()?;
+            }
+            assert_eq!(inventory(&source)?, inputs[0]);
+            assert_eq!(inventory(&backup)?, inputs[1]);
+            assert_eq!(inventory(&workspace)?, inputs[2]);
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::exit,
+        reason = "bounded child models an exact activation crash point"
+    )]
+    fn activation_process_helper() -> Result {
+        let Some(source) = std::env::var_os("OXIGRAPH_ACTIVATION_TEST_SOURCE") else {
+            return Ok(());
+        };
+        Store::activate_upgrade(
+            source,
+            std::env::var_os("OXIGRAPH_ACTIVATION_TEST_BACKUP").ok_or("backup")?,
+            std::env::var_os("OXIGRAPH_ACTIVATION_TEST_WORKSPACE").ok_or("workspace")?,
+            std::env::var_os("OXIGRAPH_ACTIVATION_TEST_TARGET").ok_or("target")?,
+            &UpgradeOptions::default(),
+        )?;
+        std::process::exit(74);
+    }
+
 }

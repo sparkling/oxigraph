@@ -12,7 +12,7 @@ const TRANSFORM_MAGIC: &[u8] = b"oxigraph.transformed-inactive.v1\0";
 mod receipt;
 #[path = "upgrade_resume.rs"]
 mod resume;
-pub use receipt::{UpgradeOptions, UpgradeReceipt};
+pub use receipt::{UpgradeActivation, UpgradeOptions, UpgradeReceipt};
 pub use resume::{UpgradeRecovery, UpgradeRecoveryOptions};
 
 /// Cooperative limits for an offline explicit transformation.

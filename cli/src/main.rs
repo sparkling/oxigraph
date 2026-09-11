@@ -464,6 +464,34 @@ pub fn main() -> anyhow::Result<()> {
             let receipt = Store::verify_upgrade(&source, &backup, &location, &upgrade::receipt_options(max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts))?;
             upgrade::print_upgrade_verified(&receipt)
         }
+        Command::ActivateUpgrade {
+            source,
+            backup,
+            location,
+            destination,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+            max_attempts,
+        } => {
+            let activation = Store::activate_upgrade(
+                &source,
+                &backup,
+                &location,
+                &destination,
+                &upgrade::receipt_options(
+                    max_files,
+                    max_bytes,
+                    timeout_ms,
+                    max_entries,
+                    max_projection_bytes,
+                    max_attempts,
+                ),
+            )?;
+            upgrade::print_upgrade_activated(&activation)
+        }
         Command::Restore {
             backup,
             destination,

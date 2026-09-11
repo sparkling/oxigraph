@@ -8,11 +8,12 @@
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
   shadow-copy preparation and explicit inactive transformation APIs/CLI implemented;
   additive verified checkpoint/restart APIs and offline recovery CLI implemented;
-  native build-bound inactive upgrade receipt APIs and CLI implemented for the bounded
-  Linux/static Oxigraph/vendored RocksDB profile below.
+  native build-bound inactive upgrade receipt APIs/CLI and explicit fresh-target
+  activation API/CLI implemented for the bounded Linux/static Oxigraph/vendored
+  RocksDB profile below.
   Ordinary writable open still performs known version-0/1 migrations in place.
-  Full compatibility rejection, schema envelopes and
-  explicit activation remain open
+  Full compatibility rejection, schema envelopes, older-binary rollback and
+  the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
@@ -29,9 +30,9 @@ version 2, and calls migration from ordinary setup. The legacy version-0 and
 version-1 paths mutate column families and then advance the version. Read-only
 open rejects a required migration, but read-write open had no separate
 inspection or preflight at programme entry. The bounded slices below now add
-physical backup ancestry, inactive construction, verified checkpoint restart
-and a bounded build-bound receipt API; operator-controlled cutover remains
-outstanding.
+physical backup ancestry, inactive construction, verified checkpoint restart,
+build-bound receipts and explicit fresh-target activation. Automated service
+cutover is not supplied; older-binary rollback qualification remains outstanding.
 Before the native preflight below, a missing
 version key was stamped as latest rather than classified independently.
 
@@ -605,6 +606,55 @@ gates, cross-platform/system-RocksDB qualification, full G4.3, or publication.
 ADR-0028 remains Proposed. See the
 [operator journey](../../cli/README.md#offline-build-bound-sealed-upgrades-fork).
 
+## Fresh-target upgrade activation API and CLI (2026-09-11)
+
+`Store::activate_upgrade(source, backup, workspace, fresh_target, options)` and
+`activate-upgrade` now produce an independently writable current-format store.
+They reverify the exact-build sealed receipt while retaining source, backup,
+checkpoint, completed-output and outer-workspace leases. A fresh disjoint target
+gets a durable guard before native bytes are copied. Physical inventories and
+native logical/storage validation are checked under the target lease, which
+remains held across syncing and removal of **only the new target's guard**.
+That unlink is the activation boundary; every later fallible result is
+`CompletionIndeterminate`. Earlier failures can retain an empty or guarded
+target. No directory is overwritten, swapped, resumed or cleaned up.
+
+The source, backup, complete sealed workspace and original inactive receipt
+remain unchanged. `UpgradeActivation` is an in-memory historical handoff
+observation, not a new persisted receipt or continuing readiness assertion.
+The target itself is the ordinary store path. There is no server routing or
+automatic rollback. Construction and activation require the same executable
+bytes; an earlier build's sealed workspace must not be retrofitted.
+
+Ordinary workflow `aa30fa31-0d6e-4afa-b27b-8f5620e8c688` used native Sol High
+implementation, root-only application and independent Astra High acceptance of
+the exact ten-file slice and actual evidence. All nine checks passed: library
+and CLI Clippy; upgrade units (25); default API activation (5); RDF-1.2 activation,
+receipt and recovery tests (5/9/3); default CLI compatibility (15); no-default
+CLI activation (4); option units (3); and the CLI build. Counts include helpers
+and overlapping coverage, not separate milestones. Tests exercise ordinary
+write/query/transaction rollback/reopen, source-existing namespaces and empty
+graphs, refusal without input mutation, held/released leases and process exits
+immediately before/after guard removal. No-default version-1 evidence is
+construction refusal, not activation of another executable's receipt.
+
+Ruflo exactly read back
+`programme-task-evidence/workflow-aa30fa31-0d6e-4afa-b27b-8f5620e8c688`.
+Earlier test-compilation and proposal-capture failures remain recorded; no
+expected results, fixture bytes, dependency locks or harness contracts changed.
+Selected Clippy passes with existing warnings; warnings-denied CI is not claimed.
+The build's Cargo compiler-artifact identifies local `target/debug/oxigraph`,
+641,710,056 bytes, SHA-256
+`986a3dcaa898dc80125e8e8914ce306677e2b349e9ae00843c8a871a1fe30ef3`
+(`cargoFresh=false`). This is a development executable, not a published release.
+
+This closes the bounded fresh-target activation API/CLI slice, not G4.3.
+Known in-place legacy opens, the remaining compatibility/envelope/classifier,
+older-binary rollback and frozen compatibility/crash/system-RocksDB gates
+remain outstanding. Bounded process exits are not power-loss qualification.
+ADR-0028 stays Proposed; no promotion or publication authority is conferred.
+See the [operator journey](../../cli/README.md#offline-fresh-target-upgrade-activation-fork).
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
@@ -654,6 +704,6 @@ The current version marker and in-place legacy migrations are in
 [`rocksdb.rs`](../../lib/oxigraph/src/storage/rocksdb.rs); public open and
 backup entry points are in [`store.rs`](../../lib/oxigraph/src/store.rs).
 ADR-0022 supplies backup/restore evidence and ADR-0020 supplies future durable
-metadata identities. The bounded receipt API does not close the remaining G4.3
-compatibility, activation/rollback and frozen legacy-fixture/crash gates; this
-ADR remains Proposed.
+metadata identities. The bounded activation API/CLI does not close the remaining
+G4.3 compatibility, older-binary rollback and frozen legacy-fixture/crash gates;
+this ADR remains Proposed.

@@ -737,6 +737,129 @@ mod tests {
         )
     }
 
+    #[cfg(all(feature = "rdf-12", target_os = "linux"))]
+    #[test]
+    fn activation_v1_preserves_nonempty_namespace_and_empty_named_graph() -> Result {
+        if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+            return Ok(());
+        }
+        let root = tempfile::tempdir()?;
+        let source = root.path().join("source");
+        let backup = root.path().join("backup");
+        let workspace = root.path().join("workspace");
+        let target = root.path().join("active");
+        let graph = NamedNode::new("urn:activation:graph")?;
+        let empty_graph = NamedNode::new("urn:activation:empty")?;
+        let namespace = Namespace::new(
+            NamespacePrefix::new("activation")?,
+            NamedNode::new("urn:activation:")?,
+        );
+        let quad = Quad::new(
+            NamedNode::new("urn:activation:subject")?,
+            NamedNode::new("urn:activation:predicate")?,
+            NamedNode::new("urn:activation:object")?,
+            graph.clone(),
+        );
+        {
+            let storage = RocksDbStorage::open(&source)?;
+            let mut transaction = storage.start_transaction()?;
+            transaction.insert(quad.clone());
+            transaction.insert_named_graph(empty_graph.clone().into());
+            transaction.set_namespace(namespace.clone());
+            transaction.commit()?;
+            storage.update_version(1)?;
+        }
+
+        let options = crate::store::UpgradeOptions::default();
+        Store::backup_legacy(&source, &backup, &options.recovery.transform.backup)?;
+        let receipt = Store::upgrade(&source, &backup, &workspace, &options)?;
+        assert_eq!(
+            receipt.quad_count(),
+            1,
+            "activation assertion failed at {}:{}",
+            file!(),
+            line!()
+        );
+        assert_eq!(
+            receipt.named_graph_count(),
+            2,
+            "activation assertion failed at {}:{}",
+            file!(),
+            line!()
+        );
+        assert_eq!(
+            receipt.namespace_count(),
+            1,
+            "activation assertion failed at {}:{}",
+            file!(),
+            line!()
+        );
+
+        let activation = Store::activate_upgrade(&source, &backup, &workspace, &target, &options)?;
+        assert_eq!(
+            activation.quad_count(),
+            1,
+            "activation assertion failed at {}:{}",
+            file!(),
+            line!()
+        );
+        assert_eq!(
+            activation.named_graph_count(),
+            2,
+            "activation assertion failed at {}:{}",
+            file!(),
+            line!()
+        );
+        assert_eq!(
+            activation.namespace_count(),
+            1,
+            "activation assertion failed at {}:{}",
+            file!(),
+            line!()
+        );
+
+        let store = Store::open(&target)?;
+        let graph_name = NamedOrBlankNode::NamedNode(graph.clone());
+        let empty_graph_name = NamedOrBlankNode::NamedNode(empty_graph.clone());
+        assert!(
+            store.contains(&quad)?,
+            "activation assertion failed at {}:{}",
+            file!(),
+            line!()
+        );
+        assert!(
+            store.contains_named_graph(&graph_name)?,
+            "activation assertion failed at {}:{}",
+            file!(),
+            line!()
+        );
+        assert!(
+            store.contains_named_graph(&empty_graph_name)?,
+            "activation assertion failed at {}:{}",
+            file!(),
+            line!()
+        );
+        assert_eq!(
+            store
+                .namespaces()
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+            vec![namespace],
+            "activation assertion failed at {}:{}",
+            file!(),
+            line!()
+        );
+        drop(store);
+
+        assert_eq!(
+            crate::store::UpgradeReceipt::verify(&source, &backup, &workspace, &options,)?,
+            receipt,
+            "activation assertion failed at {}:{}",
+            file!(),
+            line!()
+        );
+        Ok(())
+    }
+
     #[cfg(feature = "rdf-12")]
     #[test]
     fn upgrade_nested_repeated_triples_preserve_graph_local_reification() -> Result {

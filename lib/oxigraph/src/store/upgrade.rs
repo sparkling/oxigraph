@@ -14,8 +14,8 @@ use std::time::Instant;
 #[path = "upgrade_transform.rs"]
 mod transform;
 pub use transform::{
-    TransformedUpgrade, UpgradeOptions, UpgradeReceipt, UpgradeRecovery, UpgradeRecoveryOptions,
-    UpgradeTransformOptions,
+    TransformedUpgrade, UpgradeActivation, UpgradeOptions, UpgradeReceipt, UpgradeRecovery,
+    UpgradeRecoveryOptions, UpgradeTransformOptions,
 };
 
 pub(crate) const UPGRADE_GUARD: &str = ".oxigraph-upgrade-incomplete";

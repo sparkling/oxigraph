@@ -1579,9 +1579,19 @@ no-default (6, including version-1 refusal), existing CLI compatibility (16),
 option units (3), selected Clippy and an identified local executable build.
 Independent Sol Medium review accepted the exact Terra Medium implementation
 and MCP evidence readback completed. This closes receipt CLI exposure only.
-Next: explicit activation/cutover/rollback and remaining compatibility,
-envelope/classifier and frozen acceptance gates. No qualification or publication
-is implied. See [ADR-0028's CLI scope and limits](../adr/0028-safe-storage-schema-upgrades.md#build-bound-inactive-upgrade-receipt-cli-2026-09-11).
+Explicit `Store::activate_upgrade` and `activate-upgrade` now make a fresh,
+disjoint target usable while retaining source/backup/sealed-workspace bytes.
+The original receipt stays inactive; activation is a historical handoff, not
+server routing or older-binary rollback. The ordinary harness passed all nine
+checks: two Clippy lanes, native units (25), default API (5), RDF-1.2 API/receipt/
+recovery (5/9/3), default CLI compatibility (15), no-default CLI (4), option units
+(3) and the identified local CLI build. Native Sol High implementation received
+independent Astra High acceptance and exact MCP evidence readback. These counts
+overlap; they do not close full G4.3. Next: replace implicit legacy-open migration
+without losing existing logical assertions, then remaining compatibility,
+envelope/classifier, older-binary rollback and frozen acceptance gates. No
+qualification or publication is implied. See
+[ADR-0028's activation scope and limits](../adr/0028-safe-storage-schema-upgrades.md#fresh-target-upgrade-activation-api-and-cli-2026-09-11).
 
 The programme now records the named decisions admitted by this user:
 

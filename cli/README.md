@@ -1121,6 +1121,56 @@ happen after completion: retain all evidence and independently verify an
 uncertain outcome. Damaged or pending evidence is not rewritten into success.
 See [ADR-0028](../docs/adr/0028-safe-storage-schema-upgrades.md#build-bound-inactive-upgrade-receipt-cli-2026-09-11).
 
+## Offline fresh-target upgrade activation (fork)
+
+After sealing and verifying an upgrade above, `activate-upgrade` copies its
+verified native output into a **fresh, disjoint store directory**. Use an
+activation-capable executable with exactly the same bytes for construction,
+verification and activation. A workspace sealed by an earlier build cannot be
+retrofitted to this build: retain it and construct a fresh workspace from the
+original source and completed backup instead. The admitted profile remains
+Linux with statically embedded Oxigraph and vendored static RocksDB.
+
+```sh
+oxigraph activate-upgrade --source ./legacy-data \
+  --backup ./legacy-backup-new --location ./upgrade-work-new \
+  --destination ./activated-data-new
+oxigraph query --location ./activated-data-new \
+  --query 'ASK { ?s ?p ?o }' --format json
+```
+
+Pass the original outer workspace as `--location`. After successful activation,
+ordinary query/update/serve commands use the destination **itself**, not a
+`store/` subdirectory. Activation does not start a server or change its routing.
+Keep source, backup and the entire sealed workspace offline, unchanged and
+under exclusive caller control during the operation. Existing destinations,
+symlinked path components and overlap with any input are refused. Plan disk
+space for an additional independent copy; original inputs are never overwritten
+or removed.
+
+The six positive recovery limits are accepted with unchanged API defaults;
+content/attempt limits must match the sealed workspace, while timeout may
+change. The default CLI supports legacy version-0 and RDF-star version-1
+construction/activation. Without default features, version-0 works and
+version-1 construction is refused.
+
+Success reports `upgrade_activated=true stage=activated`, a JSON-escaped
+canonical `target`, the original workspace and receipt fingerprint, logical
+fingerprint and counts, and `active=true`. This is a historical in-memory
+handoff observation, not a persisted activation receipt or a continuing
+integrity/readiness assertion. The original sealed receipt remains inactive.
+`verify-upgrade` still verifies that original workspace, not subsequent writes
+to the activated target.
+
+Before the new target's guard is removed, failures retain an absent, empty or
+guarded target. After removal, failures are completion-indeterminate: the
+target may already be usable. A CLI output error may also follow completion.
+Retain and inspect uncertain results; never remove guards manually or retry
+into an existing target. There is no automatic cleanup, resume, directory swap
+or old-binary rollback. Preserved inputs are rollback material, not proof of a
+qualified rollback procedure or full G4.3 completion. See
+[ADR-0028's activation boundary](../docs/adr/0028-safe-storage-schema-upgrades.md#fresh-target-upgrade-activation-api-and-cli-2026-09-11).
+
 ## Using a Docker image
 
 ### Display the help menu

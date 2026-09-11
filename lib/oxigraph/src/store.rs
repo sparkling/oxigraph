@@ -151,8 +151,8 @@ pub use transaction_metrics::{
 pub use transactional::{TransactionalDataset, WritableDataset};
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 pub use upgrade::{
-    PreparedUpgrade, TransformedUpgrade, UpgradeOptions, UpgradeReceipt, UpgradeRecovery,
-    UpgradeRecoveryOptions, UpgradeTransformOptions,
+    PreparedUpgrade, TransformedUpgrade, UpgradeActivation, UpgradeOptions, UpgradeReceipt,
+    UpgradeRecovery, UpgradeRecoveryOptions, UpgradeTransformOptions,
 };
 
 /// Isolation provided between concurrent writers.

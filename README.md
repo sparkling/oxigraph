@@ -495,8 +495,16 @@ The output remains guarded and inactive. The CLI now exposes `start-upgrade`,
 `resume-upgrade`, `upgrade` and `verify-upgrade`, with distinct incomplete/sealed
 observations, canonical outer paths and exact executable/receipt fingerprints.
 See the [build-bound operator journey](cli/README.md#offline-build-bound-sealed-upgrades-fork).
-Activation/rollback and full compatibility qualification remain outstanding.
 See [the receipt contract and limits](docs/adr/0028-safe-storage-schema-upgrades.md#build-bound-inactive-upgrade-receipts-2026-09-11).
+
+`Store::activate_upgrade` and `activate-upgrade` now copy a verified sealed
+result into a fresh, disjoint current-format store. The target itself is
+usable through ordinary store APIs; the original source, backup and complete
+sealed workspace remain unchanged. Construction and activation require the
+same executable bytes. Activation does not switch a running service, overwrite
+an existing target or qualify older-binary rollback. Full compatibility and
+upgrade qualification remain outstanding. See the
+[fresh-target activation journey](cli/README.md#offline-fresh-target-upgrade-activation-fork).
 
 ## Upstream Oxigraph
 

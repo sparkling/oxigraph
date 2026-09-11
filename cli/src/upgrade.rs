@@ -1,6 +1,7 @@
 use oxigraph::store::{
-    LegacyBackupOptions, PreparedUpgrade, TransformedUpgrade, UpgradeRecovery,
-    UpgradeOptions, UpgradeReceipt, UpgradeRecoveryOptions, UpgradeTransformOptions,
+    LegacyBackupOptions, PreparedUpgrade, TransformedUpgrade, UpgradeActivation,
+    UpgradeOptions, UpgradeReceipt, UpgradeRecovery, UpgradeRecoveryOptions,
+    UpgradeTransformOptions,
 };
 use std::io::{Write, stdout};
 use std::num::{NonZeroU64, NonZeroUsize};
@@ -183,6 +184,27 @@ pub fn print_upgrade_completed(value: &UpgradeReceipt) -> anyhow::Result<()> {
 
 pub fn print_upgrade_verified(value: &UpgradeReceipt) -> anyhow::Result<()> {
     print_receipt(value, "upgrade_verified=true")
+}
+
+
+pub fn print_upgrade_activated(value: &UpgradeActivation) -> anyhow::Result<()> {
+    let receipt = value.upgrade_receipt();
+    writeln!(
+        stdout().lock(),
+        "upgrade_activated=true stage=activated target={} workspace={} profile={} upgrade_receipt_fingerprint={} transformed_fingerprint={} logical_fingerprint={} quads={} named_graphs={} namespaces={} output_files={} active={}",
+        serde_json::to_string(value.directory())?,
+        serde_json::to_string(receipt.directory())?,
+        receipt.profile(),
+        hex(value.upgrade_receipt_fingerprint()),
+        hex(receipt.transformed_fingerprint()),
+        hex(value.logical_fingerprint()),
+        value.quad_count(),
+        value.named_graph_count(),
+        value.namespace_count(),
+        receipt.output_file_count(),
+        value.active(),
+    )?;
+    Ok(())
 }
 
 fn hex(bytes: [u8; 32]) -> String {
