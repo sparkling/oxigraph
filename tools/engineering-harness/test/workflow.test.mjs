@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { checkFeedback, digest, runWorkflow, validateWorkflow } from "../src/workflow.mjs";
+import { checkFeedback, digest, jsonReference, readWorkflowFiles, runWorkflow, validateWorkflow, verifyJsonReference } from "../src/workflow.mjs";
 import { admitCommand } from "../src/delivery.mjs";
-import { stdioHost } from "../src/workflow-host.mjs";
+import { relayWorkflowHost, stdioHost } from "../src/workflow-host.mjs";
 import { PassThrough, Writable } from "node:stream";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -23,16 +23,35 @@ function fixture(options = {}) {
   let reviews = 0;
   const actions = [];
   const feedback = [];
+  const evidence = new Map();
+  let eventId = 0;
   const observe = () => ({ head: "a".repeat(40), branch: "main", trackedDiffSha256: digest(content), untracked: [] });
+  const putEvidence = (evidencePath, value, tampered = false) => {
+    const bytes = JSON.stringify(value, null, 2) + "\n";
+    evidence.set(evidencePath, { bytes, value });
+    return { path: evidencePath, sha256: tampered ? "0".repeat(64) : sha(bytes) };
+  };
   const io = {
     observe,
     outside: () => outside,
     files: () => [{ path, sha256: options.sha ? options.sha(content) : null, content }],
+    event: (event) => options.missingEventEvidence ? undefined :
+      putEvidence(`/evidence/event-${++eventId}.json`, event, options.tamperedEventEvidence),
+    checkReference: (run) => {
+      const { directory, ...record } = run;
+      return options.missingCheckEvidence ? undefined :
+        putEvidence(join(directory, "result.json"), record, options.tamperedCheckEvidence);
+    },
+    verifyReference: (reference, expected) => {
+      const stored = evidence.get(reference?.path);
+      return stored !== undefined && sha(stored.bytes) === reference.sha256 &&
+        (expected === undefined || digest(stored.value) === digest(expected));
+    },
     execute: async (check) => {
       checks++;
       const source = observe();
       const failed = options.failChecks === true || checks <= (options.failChecks ?? 0);
-      const run = { taskId: spec.taskId, source, sourceAfter: source, sourceStable: true,
+      const run = { directory: `/evidence/check-${checks}`, taskId: spec.taskId, source, sourceAfter: source, sourceStable: true,
         command: admitCommand(check.argv), plan: { completionCheck: check.completionCheck },
         status: failed ? "failed" : "command-passed", result: { passed: !failed, code: failed ? 1 : 0, durationMs: checks * 10 }, failure: failed ? "real check failure" : null };
       if (options.checkDrift) content += "drift";
@@ -84,7 +103,13 @@ test("workflow executes native edit, apply, deterministic check, independent rev
   assert.equal(result.mcpReadback, true);
   assert.equal(result.qualification, false);
   assert.equal(result.publication, false);
-  assert.equal(result.review.kernelReceiptsValid, true);
+  assert.equal(result.schema, "ordinary-workflow-v2");
+  assert.equal(result.review.verdict, "ACCEPT");
+  assert.equal(result.checks.length, 1);
+  assert.equal(Object.hasOwn(result.checks[0], "result"), false);
+  assert.ok(result.eventReferences.length > 0);
+  assert.match(result.handoffReference.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(JSON.stringify(result).includes('"request"'), false);
   assert.deepEqual(f.counters(), { checks: 1, implementations: 1, reviews: 1 });
   assert.deepEqual(f.actions.filter((action) => action !== "mcp-read"), ["native-worker", "root-apply", "native-worker", "mcp-handoff"]);
 });
@@ -117,6 +142,13 @@ test("owner hold prevents product workers and commands, but permits harness-only
   await assert.rejects(runWorkflow({ ...spec, scope: "product", paths: ["lib/oxigraph/src/store.rs"] }, f.host, f.io), /Owner review hold/);
   assert.deepEqual(f.actions, ["mcp-read"]);
   assert.equal(f.counters().checks, 0);
+});
+test("workflow source preflight fails before any host request or worker", async () => {
+  const f = setup();
+  f.io.files = () => { throw new Error("preflight source failure"); };
+  await assert.rejects(runWorkflow(spec, f.host, f.io), /preflight source failure/);
+  assert.deepEqual(f.actions, []);
+  assert.equal(f.counters().implementations, 0);
 });
 test("missing live task, cross-task response and stale native source fail before apply", async () => {
   for (const options of [{ missingTask: true }, { crossTask: true }, { proposalDrift: true }]) {
@@ -222,4 +254,156 @@ test("product workflow admits only the reviewed native lock adapter", () => {
     "oxrocksdb-sys/api/c.h", "oxrocksdb-sys/api/other.cc", "oxrocksdb-sys/vendor/rocksdb.cc",
     "oxrocksdb-sys/api/../api/c.cc", "/oxrocksdb-sys/api/c.cc", "lib/../oxrocksdb-sys/api/c.cc",
   ]) assert.throws(() => validateWorkflow({ ...spec, scope: "product", paths: [path], checks: [check] }));
+});
+
+test("mechanical relay refreshes MCP reads, preserves observations, and leaves native actions pending", async () => {
+  const mcp = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
+  const observations = [];
+  let taskReads = 0;
+  let controlReads = 0;
+  let controlStarted = false;
+  const request = {
+    schema: 1, runId: "run-relay", requestId: 1, taskId: spec.taskId,
+    specSha256: "a".repeat(64), sourceSha256: "b".repeat(64), action: "mcp-read",
+    payload: { namespace: "programme-controls", key: "control" },
+  };
+  const serialized = relayWorkflowHost.toString();
+  assert.equal(serialized.includes("import "), false);
+  const relay = Function(`"use strict"; return (${serialized});`)();
+  const callbacks = {
+    taskStatus: async function* ({ taskId }) {
+      taskReads++;
+      yield { type: "observation", taskReads };
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(controlStarted, true);
+      return mcp({ taskId, status: "in_progress" });
+    },
+    memoryRetrieve: async ({ namespace, key }) => {
+      controlStarted = true;
+      controlReads++;
+      return mcp({ namespace, key, found: true, value: { revision: controlReads } });
+    },
+    observation: async (value) => { observations.push(value); },
+  };
+  const first = await relay(request, callbacks);
+  const second = await relay({ ...request, requestId: 2 }, callbacks);
+  assert.equal(first.result.control.revision, 1);
+  assert.equal(second.result.control.revision, 2);
+  assert.deepEqual([taskReads, controlReads, observations.length], [2, 2, 2]);
+  for (const action of ["native-worker", "root-apply"]) {
+    const pending = { ...request, action };
+    assert.equal(await relayWorkflowHost(pending, callbacks), pending);
+  }
+});
+
+test("stdio host services injected MCP callbacks without creating a pending native request", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "oxigraph-workflow-relay-test-"));
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const mcp = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
+  const bridge = stdioHost(directory, input, output, {
+    taskStatus: async ({ taskId }) => mcp({ taskId, status: "in_progress" }),
+    memoryRetrieve: async () => mcp({ found: true, value: { active: true } }),
+  });
+  try {
+    const request = {
+      schema: 1, runId: "run-relay", requestId: 1, taskId: spec.taskId,
+      specSha256: "a".repeat(64), sourceSha256: "b".repeat(64), action: "mcp-read",
+      payload: { namespace: "programme-controls", key: "control" },
+    };
+    const response = await bridge.request(request);
+    assert.equal(response.result.task.taskId, spec.taskId);
+    assert.deepEqual(readdirSync(directory), []);
+    assert.equal(output.readableLength, 0);
+  } finally {
+    bridge.close();
+    input.destroy();
+    output.destroy();
+    rmSync(directory, { recursive: true });
+  }
+});
+
+test("mechanical handoff requires a real strict store and exact fresh readback", async () => {
+  const mcp = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
+  const evidence = { schema: "ordinary-workflow-v2", value: 7 };
+  const request = {
+    schema: 1, runId: "run-relay", requestId: 3, taskId: spec.taskId,
+    specSha256: "a".repeat(64), sourceSha256: "b".repeat(64), action: "mcp-handoff",
+    payload: { namespace: "evidence", key: "record", evidence },
+  };
+  let stored;
+  const response = await relayWorkflowHost(request, {
+    memoryStore: async (args) => { stored = args; return mcp({ success: true }); },
+    memoryRetrieve: async () => mcp({ found: true, value: evidence }),
+  });
+  assert.deepEqual(response.result.value, evidence);
+  assert.equal(stored.upsert, false);
+  assert.equal(stored.provenance_type, "tool_result");
+  await assert.rejects(relayWorkflowHost(request, {
+    memoryStore: async () => mcp({ success: true }),
+    memoryRetrieve: async () => mcp({ found: true, value: { forged: true } }),
+  }), /readback/);
+  await assert.rejects(relayWorkflowHost(request, {
+    memoryStore: async () => ({ isError: true, content: [] }),
+    memoryRetrieve: async () => mcp({ found: true, value: evidence }),
+  }), /memory_store failed/);
+  await assert.rejects(relayWorkflowHost(request, {
+    memoryStore: async () => mcp({ success: false }),
+    memoryRetrieve: async () => mcp({ found: true, value: evidence }),
+  }), /store was not confirmed/);
+  const legacy = { schema: "ordinary-workflow-v1", historical: true };
+  const legacyResponse = await relayWorkflowHost({
+    ...request, requestId: 4, payload: { ...request.payload, key: "legacy", evidence: legacy },
+  }, {
+    memoryStore: async () => mcp({ success: true }),
+    memoryRetrieve: async () => mcp({ found: true, value: legacy }),
+  });
+  assert.deepEqual(legacyResponse.result.value, legacy);
+});
+
+test("workflow refuses missing or tampered local evidence references", async () => {
+  for (const options of [
+    { missingEventEvidence: true }, { tamperedEventEvidence: true },
+    { missingCheckEvidence: true }, { tamperedCheckEvidence: true },
+  ]) {
+    const f = setup(options);
+    await assert.rejects(runWorkflow(spec, f.host, f.io), /evidence reference/);
+    assert.ok(!f.actions.includes("mcp-handoff"));
+  }
+});
+
+test("local JSON references are content-bound and fail after tampering", () => {
+  const root = mkdtempSync(join(tmpdir(), "oxigraph-workflow-reference-test-"));
+  const path = join(root, "event.json");
+  try {
+    const value = { event: 1 };
+    writeFileSync(path, JSON.stringify(value) + "\n");
+    const reference = jsonReference(path, value, root);
+    assert.equal(verifyJsonReference(reference, value, root), true);
+    writeFileSync(path, JSON.stringify({ event: 2 }) + "\n");
+    assert.throws(() => verifyJsonReference(reference, value, root), /tampered/);
+  } finally { rmSync(root, { recursive: true }); }
+});
+
+test("product manifests and nested new files are admitted without weakening parent checks", () => {
+  const check = { completionCheck: "valid native check", argv: ["cargo", "test", "--locked", "-p", "oxigraph"] };
+  for (const manifest of [
+    "Cargo.toml", "Cargo.lock", "cli/Cargo.toml", "testsuite/Cargo.toml",
+    "lib/oxrdf/Cargo.toml", "lib/oxrdf/Cargo.lock", "oxrocksdb-sys/Cargo.toml",
+  ]) {
+    assert.doesNotThrow(() => validateWorkflow({ ...spec, scope: "product", paths: [manifest], checks: [check] }));
+  }
+  for (const manifest of ["tools/Cargo.toml", "oxrocksdb-sys/vendor/Cargo.toml", "Cargo.toml/child"]) {
+    assert.throws(() => validateWorkflow({ ...spec, scope: "product", paths: [manifest], checks: [check] }));
+  }
+  const root = mkdtempSync(join(tmpdir(), "oxigraph-workflow-parent-test-"));
+  try {
+    mkdirSync(join(root, "real"));
+    writeFileSync(join(root, "real", "present.rs"), "fn present() {}\n");
+    assert.equal(readWorkflowFiles(["new/deep/file.rs"], root)[0].content, null);
+    assert.match(readWorkflowFiles(["real/present.rs"], root)[0].sha256, /^[a-f0-9]{64}$/);
+    symlinkSync(join(root, "real"), join(root, "linked"), "dir");
+    assert.throws(() => readWorkflowFiles(["linked/new/file.rs"], root), /parent/);
+    assert.throws(() => readWorkflowFiles(["../escape.rs"], root), /Unsafe source path/);
+  } finally { rmSync(root, { recursive: true }); }
 });

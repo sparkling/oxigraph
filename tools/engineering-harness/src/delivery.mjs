@@ -75,6 +75,11 @@ const nodeTests = new Set([
   "tools/engineering-harness/test/task-profile.test.mjs",
   "tools/agentic-qe/process-runner.test.mjs",
 ]);
+const fuzzTargets = new Set([
+  "nquads", "trig", "n3", "rdf_xml", "jsonld", "sparql_query",
+  "sparql_update", "sparql_query_eval", "sparql_update_eval",
+  "sparql_results_json", "sparql_results_tsv", "sparql_results_xml",
+]);
 
 // Extend this ordinary command surface with reviewed tests, never with an
 // arbitrary shell/Node/npm escape hatch. Existing G1 registries stay untouched.
@@ -84,6 +89,21 @@ export function admitCommand(argv) {
     throw new Error("Expected a literal executable and argument array");
   }
   const [program, command, ...args] = argv;
+  if (program === "cargo" && command === "fmt") {
+    const all = args.length === 3 && args[0] === "--all" && args[1] === "--" && args[2] === "--check";
+    const packageOnly = args.length === 4 && ["-p", "--package"].includes(args[0]) &&
+      /^[a-zA-Z0-9_+-]+$/.test(args[1]) && args[2] === "--" && args[3] === "--check";
+    if (!all && !packageOnly) throw new Error("Cargo fmt must be --all or one package, followed by -- --check");
+    return { program, args: [command, ...args], kind: "format" };
+  }
+  if (program === "cargo" && command === "fuzz") {
+    if (args.length !== 6 || args[0] !== "run" || !fuzzTargets.has(args[1]) ||
+        args[2] !== "--sanitizer" || args[3] !== "none" || args[4] !== "--" ||
+        args[5] !== "-max_total_time=60") {
+      throw new Error("Cargo fuzz must match one listed AGENTS target and the exact one-minute command");
+    }
+    return { program, args: [command, ...args], kind: "cargo-fuzz" };
+  }
   if (program === "cargo" && ["test", "build", "check", "clippy"].includes(command)) {
     if (!args.includes("--locked")) throw new Error("Cargo requires --locked");
     let filterSeen = false;
@@ -151,9 +171,23 @@ export function sourceObservation() {
   };
 }
 
-export function evaluateResult(command, result) {
+export function evaluateResult(command, result, capturedOutput) {
   if (command.kind === "cargo-test") {
     result = applyCommandSafeguards(result, { minimumPassedTests: 1 });
+  } else if (command.kind === "cargo-fuzz") {
+    const stdout = capturedOutput?.stdout?.toString("utf8") ?? result.stdoutTail ?? "";
+    const stderr = capturedOutput?.stderr?.toString("utf8") ?? result.stderrTail ?? "";
+    const output = `${stdout}\n${stderr}`.trimEnd();
+    const terminal = /(?:^|\n)Done ([1-9][0-9]*) runs in [1-9][0-9]* second\(s\)$/u.exec(output);
+    const observed = {
+      engine: /(?:^|\n)INFO: Running with .+ power schedule/u.test(output),
+      terminal: terminal !== null,
+      executedUnits: terminal === null ? 0 : Number(terminal[1]),
+    };
+    result = { ...result, fuzzSafeguard: observed, testSafeguard: {
+      format: "libfuzzer-terminal-v1", observed,
+      passed: observed.engine && observed.terminal && observed.executedUnits > 0,
+    } };
   } else if (command.kind === "node-test") {
     const observed = result.observedNodeTestSummary;
     result = {
@@ -240,7 +274,7 @@ export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1
     completeStdout = capturedOutput?.stdout.toString("utf8") ?? "";
     writeFileSync(join(directory, "stdout.log"), capturedOutput?.stdout ?? "", { flag: "wx" });
     writeFileSync(join(directory, "stderr.log"), capturedOutput?.stderr ?? "", { flag: "wx" });
-    result = evaluateResult(command, observation);
+    result = evaluateResult(command, observation, capturedOutput);
   }
   let after = null;
   let artifactIdentity = null;

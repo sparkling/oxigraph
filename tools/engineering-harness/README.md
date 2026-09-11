@@ -69,6 +69,20 @@ exact request and execute its action using real tools:
 | `root-apply` | Root applies the exact proposed contents using `apply_patch` | `{ "writer": "root", "applied": true }`, only after checking application |
 | `mcp-handoff` | Store the requested evidence through Ruflo MCP, retrieve it and inspect equality | `{ "value": <actual retrieved value> }`, never an echoed substitute |
 
+For the mechanical actions, use `relayWorkflowHost(request, callbacks)` from
+`src/workflow-host.mjs` inside the native host's tool turn. Supply real
+`taskStatus`, `memoryRetrieve` and `memoryStore` callbacks from the live MCP
+registry. The dependency-free function can be serialized into a host tool
+isolate; it does not create an MCP client or launch Ruflo through a shell.
+Service consecutive mechanical requests in the same bounded tool turn instead
+of asking a model to relay each JSON value. Task/control reads are fresh and
+concurrent; no cached control can suppress a new owner hold. Store must report
+success, followed by a fresh exact readback. Async-generator callbacks can yield
+observations without completing or abandoning their pending action.
+`native-worker` and `root-apply` are returned unchanged for the accountable host
+to execute. Hosts that directly embed the stdio bridge can inject the same
+callbacks as its fourth argument. The CLI alone still has no MCP transport.
+
 Return one JSON line to stdin containing the request's unchanged `schema`,
 `runId`, `requestId`, `taskId`, `specSha256`, `sourceSha256`, plus `result`.
 Do not copy `action` or `payload` into the response. A native result contains
@@ -96,6 +110,14 @@ The product inventory includes the specifically reviewed native lock adapter
 `oxrocksdb-sys/api/c.cc`; it does not admit sibling headers or vendored native
 sources. This exception supports ordinary ADR-0028 implementation/repair only.
 
+Root and declared crate `Cargo.toml`/`Cargo.lock` files are admitted source
+inputs, including the root `cli` and `testsuite` manifests. This does not admit
+arbitrary `--manifest-path` command overrides. New nested source files may have
+missing parents; preflight checks their nearest existing canonical parent and
+still rejects symlinks, traversal and nonregular inputs. CLI specification and
+source preflight run before allocating a workflow directory or dispatching a
+worker. Adding paths never grants publication or dependency-upgrade authority.
+
 Output lives in ignored `target/engineering-delivery/workflow-*/`: exact host
 requests, completed stage/check events and a final result or failure. These
 records do not implement crash-resume. A fresh controller requires fresh
@@ -103,6 +125,13 @@ source/control observations; it must not reuse old responses as a new run.
 An unchanged repeated source/failure stops for integrator judgment. No-op
 proposals cannot complete the task. Raw command output stays local; workers
 receive bounded feedback with evidence identities and inspectable log paths.
+
+New results use `ordinary-workflow-v2`: compact check/review summaries reference
+the full local event and command records by canonical path and SHA-256. The
+controller checks their content and rechecks the references at handoff. It does
+not recursively copy full event history into the final result or MCP evidence.
+Keep those local files to inspect a result; a missing or changed reference is
+not repaired by regenerating evidence. Historical v1 records remain unchanged.
 
 **Demonstrated boundary (2026-09-10):** a real Terra Medium worker proposed the
 host input-stream repair, root applied it, `run-WszUBB` passed 27 tests, a
@@ -138,7 +167,12 @@ lifecycle. Within `workflow`, the controller requests these transitions:
    link the actual native ID/model/effort to Ruflo through MCP. Keep one writer.
 3. Run **all** programme build/test commands through `run`, including repairs
    and reviewer-requested checks. Cargo build/check/clippy/test and the explicit
-   ordinary Node test inventory are admitted. Unregistered commands require a
+   ordinary Node test inventory are admitted. Non-writing `cargo fmt --all`
+   (or `-p PACKAGE`) followed by `-- --check` is also admitted, as is the exact
+   AGENTS one-minute command `cargo fuzz run TARGET --sanitizer none --
+   -max_total_time=60` for its listed targets. Fuzz success requires startup and
+   positive terminal execution evidence from the bounded complete process
+   capture, not exit zero or a retained tail alone. Unregistered commands require a
    small reviewed adapter and tests before use, not a direct-shell bypass.
 4. Inspect `target/engineering-delivery/run-*/result.json` and logs. It records
    the task ID, completion-check plan/hash, literal argv, Node/native versions,

@@ -3,7 +3,7 @@ import { routeDelivery, runDelivery } from "../src/delivery.mjs";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { repository } from "../src/delivery.mjs";
-import { runWorkflow } from "../src/workflow.mjs";
+import { jsonReference, preflightWorkflow, runWorkflow } from "../src/workflow.mjs";
 import { stdioHost } from "../src/workflow-host.mjs";
 import { ensureDirectoryInsideRepository } from "../../agentic-qe/path-policy.mjs";
 
@@ -47,12 +47,18 @@ try {
         reason: values["--reason"], selection: values["--selection"] }), null, 2) + "\n");
     } else if (action === "workflow" && split < 0 && values["--spec"]) {
       const spec = JSON.parse(readFileSync(values["--spec"], "utf8"));
+      const preflight = preflightWorkflow(spec);
       const directory = mkdtempSync(join(ensureDirectoryInsideRepository(join(repository, "target", "engineering-delivery")), "workflow-"));
       const bridge = stdioHost(directory);
       let eventId = 0;
       try {
         const result = await runWorkflow(spec, bridge.request, {
-          event: (event) => writeFileSync(join(directory, `event-${++eventId}.json`), JSON.stringify(event, null, 2) + "\n", { flag: "wx" }),
+          preflight,
+          event: (event) => {
+            const path = join(directory, `event-${++eventId}.json`);
+            writeFileSync(path, JSON.stringify(event, null, 2) + "\n", { flag: "wx" });
+            return jsonReference(path, event);
+          },
         });
         writeFileSync(join(directory, "result.json"), JSON.stringify(result, null, 2) + "\n", { flag: "wx" });
         process.stdout.write(JSON.stringify({ status: result.status, directory, taskId: result.taskId }) + "\n");

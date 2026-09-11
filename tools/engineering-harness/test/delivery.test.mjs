@@ -125,3 +125,60 @@ test("CLI route is inspectable without any model execution; invalid run rejects 
   assert.equal(route.nativeDispatch.model, "gpt-5.6-terra");
   assert.throws(() => execFileSync(process.execPath, [cli, "run", "--task", taskId, "--", "cargo", "publish", "--locked"], { stdio: "pipe" }));
 });
+
+test("reviewed format commands are exact check-only invocations", () => {
+  assert.equal(admitCommand(["cargo", "fmt", "--all", "--", "--check"]).kind, "format");
+  assert.equal(admitCommand(["cargo", "fmt", "-p", "oxrdf", "--", "--check"]).kind, "format");
+  assert.equal(admitCommand(["cargo", "fmt", "--package", "oxigraph-cli", "--", "--check"]).kind, "format");
+  for (const argv of [
+    ["cargo", "fmt", "--all"], ["cargo", "fmt", "--all", "--", "--check", "--verbose"],
+    ["cargo", "fmt", "-p", "oxrdf"], ["cargo", "fmt", "--all", "-p", "oxrdf", "--", "--check"],
+    ["cargo", "fmt", "--manifest-path", "elsewhere/Cargo.toml", "--", "--check"],
+  ]) assert.throws(() => admitCommand(argv), JSON.stringify(argv));
+});
+
+test("only listed exact one-minute libFuzzer commands are admitted", () => {
+  const targets = [
+    "nquads", "trig", "n3", "rdf_xml", "jsonld", "sparql_query",
+    "sparql_update", "sparql_query_eval", "sparql_update_eval",
+    "sparql_results_json", "sparql_results_tsv", "sparql_results_xml",
+  ];
+  for (const target of targets) {
+    assert.equal(admitCommand(["cargo", "fuzz", "run", target, "--sanitizer", "none", "--", "-max_total_time=60"]).kind, "cargo-fuzz");
+  }
+  for (const argv of [
+    ["cargo", "fuzz", "run", "unknown", "--sanitizer", "none", "--", "-max_total_time=60"],
+    ["cargo", "fuzz", "run", "nquads", "--sanitizer", "address", "--", "-max_total_time=60"],
+    ["cargo", "fuzz", "run", "nquads", "--sanitizer", "none", "--", "-max_total_time=30"],
+    ["cargo", "fuzz", "run", "nquads", "--sanitizer", "none", "--", "-max_total_time=60", "-runs=1"],
+  ]) assert.throws(() => admitCommand(argv), JSON.stringify(argv));
+});
+
+test("fuzz success requires positive terminal libFuzzer execution evidence", () => {
+  const base = {
+    code: 0, signal: null, spawnError: null, timedOut: false, cleanupUnconfirmed: false,
+    outputLimitExceeded: false, scanLimitExceeded: false, stdoutTail: "",
+  };
+  const good = evaluateResult({ kind: "cargo-fuzz" }, {
+    ...base,
+    stderrTail: "INFO: Running with entropic power schedule (0xFF, 100).\n#12 DONE cov: 7 ft: 9 corp: 1/1b lim: 4 exec/s: 12 rss: 20Mb\nDone 12 runs in 60 second(s)\n",
+  });
+  assert.equal(good.passed, true);
+  assert.equal(good.fuzzSafeguard.executedUnits, 12);
+  const terminal = "#8113101 DONE cov: 7 ft: 9 corp: 1/1b lim: 4 exec/s: 12 rss: 20Mb\nDone 8113101 runs in 61 second(s)\n";
+  const long = evaluateResult({ kind: "cargo-fuzz" }, {
+    ...base, stderrTail: `x${"x".repeat(65535)}\n${terminal}`,
+  }, {
+    stdout: Buffer.alloc(0),
+    stderr: Buffer.from(`INFO: Running with entropic power schedule (0xFF, 100).\n${"x".repeat(70000)}\n${terminal}`),
+  });
+  assert.equal(long.passed, true);
+  assert.equal(long.fuzzSafeguard.executedUnits, 8113101);
+  assert.equal(Object.hasOwn(long, "capturedOutput"), false);
+  for (const stderrTail of [
+    "", "Done 0 runs in 60 second(s)\n", "Done 12 runs in 60 second(s)\n",
+    "INFO: Running with entropic power schedule\nDone 12 runs in 60 second(s)\ntrailing",
+  ]) {
+    assert.equal(evaluateResult({ kind: "cargo-fuzz" }, { ...base, stderrTail }).passed, false);
+  }
+});

@@ -37,6 +37,10 @@ graph at `404 Not Found`; selector-less creation remains supported.
 
 ## Delivered recovery milestone and next product step
 
+See the [current delivery gates](docs/plans/oxigraph-delivery-gates.md) for the
+remaining acceptance checks and next product step. The two programme plans
+retain the full scope; historical delivery records are linked from the checklist.
+
 [ADR-0043](docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md)
 defines R1: the transactional write API already published in `1da47285`, the
 audited upstream integration, proportional tests, reproducible source, and a
@@ -590,8 +594,9 @@ command for builds/tests, following the explicit faster-worker policy in
 The host still executes tools; success means ready for owner review, not an
 autonomous release or durable crash-resume.
 This is development tooling, not a Node dependency of the Rust application.
-The owner requested a review stop after this harness repair; scheduled work
-must not resume the main build until that hold is explicitly lifted.
+The September 10 review hold was subsequently lifted by the owner's explicit
+approval. Always consult the latest owner instruction and live programme
+control: any new review hold stops product continuation, including timer turns.
 
 `tools/engineering-harness` is now the separate local-only G1-G3 application
 control plane accepted by ADR-0017. It consumes frozen evaluator commits,

@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { AgentPool, AlgorithmRouter, HarnessKernel, VerifierRegistry, predicateVerifier, hash } from "@metaharness/harness";
 import { scrubbedChildEnvironment } from "../../child-environment.mjs";
 import { admitCommand, repository, routeDelivery, runDelivery, sourceObservation } from "./delivery.mjs";
@@ -12,7 +12,9 @@ const bytesDigest = (value) => createHash("sha256").update(value).digest("hex");
 const equal = (a, b) => digest(a) === digest(b);
 const text = (value) => typeof value === "string" && value.trim().length > 0;
 const ordinaryHarnessPath = (path) => /^(?:tools\/engineering-harness\/(?:src\/(?:delivery|workflow|workflow-host)\.mjs|bin\/oxigraph-delivery\.mjs|test\/(?:delivery|workflow)\.test\.mjs))$/.test(path);
-const productPath = (path) => path === "oxrocksdb-sys/api/c.cc" || /^(?:lib|cli|testsuite)\/[a-zA-Z0-9_./-]+\.(?:rs|rq|ru|ttl|trig|nt|nq|json)$/.test(path);
+const manifestPath = (path) => /^(?:Cargo\.(?:toml|lock)|(?:cli|testsuite|oxrocksdb-sys)\/Cargo\.(?:toml|lock)|(?:lib|cli|testsuite)\/[a-zA-Z0-9_./-]+\/Cargo\.(?:toml|lock))$/.test(path);
+const productPath = (path) => path === "oxrocksdb-sys/api/c.cc" || manifestPath(path) ||
+  /^(?:lib|cli|testsuite)\/[a-zA-Z0-9_./-]+\.(?:rs|rq|ru|ttl|trig|nt|nq|json)$/.test(path);
 function ownKeys(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
       Object.keys(value).some((key) => !keys.includes(key))) throw new Error(`Invalid ${label}`);
@@ -42,10 +44,31 @@ export function validateWorkflow(spec) {
   return JSON.parse(JSON.stringify(spec));
 }
 
-export function readWorkflowFiles(paths) {
+function existingCanonicalParent(absolute, sourcePath) {
+  let parent = dirname(absolute);
+  while (true) {
+    try {
+      if (!lstatSync(parent).isDirectory() || realpathSync(parent) !== parent) {
+        throw new Error(`Symlinked or non-directory source parent: ${sourcePath}`);
+      }
+      return;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      const next = dirname(parent);
+      if (next === parent) throw new Error(`No existing source parent: ${sourcePath}`);
+      parent = next;
+    }
+  }
+}
+
+export function readWorkflowFiles(paths, root = repository) {
+  const canonicalRoot = realpathSync(root);
   return paths.map((path) => {
-    const absolute = join(repository, path);
-    if (realpathSync(dirname(absolute)) !== dirname(absolute)) throw new Error(`Symlinked source parent: ${path}`);
+    if (typeof path !== "string" || path.split("/").some((part) => !part || part === "." || part === "..")) {
+      throw new Error(`Unsafe source path: ${path}`);
+    }
+    const absolute = join(canonicalRoot, path);
+    existingCanonicalParent(absolute, path);
     try {
       if (!lstatSync(absolute).isFile() || realpathSync(absolute) !== absolute) throw new Error(`Nonregular source: ${path}`);
       const bytes = readFileSync(absolute);
@@ -64,6 +87,41 @@ export function outsideObservation(paths) {
     { cwd: repository, env: scrubbedChildEnvironment(), maxBuffer: 32 * 1024 * 1024 });
   const source = sourceObservation();
   return { head: source.head, diff: bytesDigest(diff), untracked: source.untracked.filter((file) => !paths.includes(file.path)) };
+}
+
+export function preflightWorkflow(rawSpec, io = {}) {
+  const spec = validateWorkflow(rawSpec);
+  const observe = io.observe ?? sourceObservation;
+  const files = () => (io.files ?? readWorkflowFiles)(spec.paths);
+  const outside = () => (io.outside ?? outsideObservation)(spec.paths);
+  return { spec, source: observe(), files: files(), outside: outside() };
+}
+
+export function jsonReference(path, expected, root = repository) {
+  const bytes = readFileSync(path);
+  const reference = { path, sha256: bytesDigest(bytes) };
+  verifyJsonReference(reference, expected, root);
+  return reference;
+}
+
+export function verifyJsonReference(reference, expected, root = repository) {
+  ownKeys(reference, ["path", "sha256"], "local evidence reference");
+  if (!text(reference.path) || !/^[a-f0-9]{64}$/.test(reference.sha256) || !isAbsolute(reference.path)) {
+    throw new Error("Local evidence reference is malformed");
+  }
+  const canonicalRoot = realpathSync(root);
+  const location = realpathSync(reference.path);
+  const rel = relative(canonicalRoot, location);
+  if (!rel || rel === ".." || rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) ||
+      !lstatSync(location).isFile() || location !== reference.path) {
+    throw new Error("Local evidence reference leaves the canonical repository");
+  }
+  const bytes = readFileSync(location);
+  if (bytes.length > 20 * 1024 * 1024 || bytesDigest(bytes) !== reference.sha256 ||
+      (expected !== undefined && !equal(JSON.parse(bytes.toString("utf8")), expected))) {
+    throw new Error("Local evidence reference is missing, stale or tampered");
+  }
+  return true;
 }
 
 export class NativeHostUnavailable extends Error {
@@ -95,7 +153,7 @@ export function checkFeedback(run) {
     timedOut: result.timedOut === true, cleanupUnconfirmed: result.cleanupUnconfirmed === true,
     passedTests: run.command?.kind === "node-test"
       ? result.observedNodeTestSummary?.pass ?? null
-      : result.observedPassedTests ?? null,
+      : run.command?.kind === "cargo-test" ? result.observedPassedTests ?? null : null,
     failedTests: result.observedNodeTestSummary?.fail ?? null,
     evidencePath: run.directory ? join(run.directory, "result.json") : null,
     logs: run.directory ? ["stdout.log", "stderr.log"].map((name) => join(run.directory, name)) : [],
@@ -108,7 +166,7 @@ async function nativeStage(route, payload, host) {
   const kernel = new HarnessKernel({
     router: new AlgorithmRouter({ ordinary: { intent: "ordinary", steps: [{ kind }] } }),
     pool: new AgentPool([{ id: `host-${kind}`, model: route.model, handles: [kind], run: async () => {
-      const output = workerOutput(await host("native-worker", { route, ...payload }), route);
+      const output = workerOutput((await host("native-worker", { route, ...payload })).result, route);
       return { output, quality: 0, confidence: 1, risk: 0, costUsd: 0, latencyMs: 0 };
     } }], { explore: 0, rng: () => 0 }),
     verifiers: new VerifierRegistry().register(predicateVerifier("host-result", "custom", (output) => output?.status === "completed", "Missing native completion")),
@@ -122,15 +180,35 @@ async function nativeStage(route, payload, host) {
 
 /** Host callbacks execute requested tools. This controller chooses transitions. */
 export async function runWorkflow(rawSpec, host, io = {}) {
+  const prepared = io.preflight ?? preflightWorkflow(rawSpec, io);
   const spec = validateWorkflow(rawSpec);
+  if (!equal(prepared.spec, spec)) throw new Error("Workflow preflight does not match the specification");
   const observe = io.observe ?? sourceObservation;
   const files = () => (io.files ?? readWorkflowFiles)(spec.paths);
   const outside = () => (io.outside ?? outsideObservation)(spec.paths);
   const execute = io.execute ?? runDelivery;
+  if (!equal(prepared.source, observe()) || !equal(prepared.files, files()) || !equal(prepared.outside, outside())) {
+    throw new Error("Source changed after workflow preflight");
+  }
+  const initialOutside = prepared.outside;
+  const initialFiles = prepared.files;
+  const verifyReference = io.verifyReference ?? verifyJsonReference;
+  const checkReference = io.checkReference ?? ((run) => {
+    const { directory, ...record } = run;
+    if (!text(directory)) throw new Error("Check result has no local evidence path");
+    return jsonReference(join(directory, "result.json"), record);
+  });
+  const eventReferences = [];
+  const allCheckReferences = [];
   const runId = randomUUID();
   const specSha256 = digest(spec);
-  const events = [];
   let sequence = 0;
+  const verify = (reference, expected) => {
+    if (reference === undefined || verifyReference(reference, expected) !== true) {
+      throw new Error("Local evidence reference was not verified");
+    }
+    return reference;
+  };
   const request = async (action, payload) => {
     const envelope = { schema: 1, runId, requestId: ++sequence, taskId: spec.taskId, specSha256,
       sourceSha256: digest(observe()), action, payload };
@@ -140,12 +218,14 @@ export async function runWorkflow(rawSpec, host, io = {}) {
     if (["schema", "runId", "requestId", "taskId", "specSha256", "sourceSha256"].some((key) => result[key] !== envelope[key])) {
       throw new Error("Stale or mismatched host response");
     }
-    events.push({ request: envelope, result: result.result });
-    io.event?.(events.at(-1));
-    return result.result;
+    const event = { request: envelope, result: result.result };
+    const reference = verify(io.event?.(event), event);
+    if (action === "mcp-handoff") return { result: result.result, reference };
+    eventReferences.push(reference);
+    return { result: result.result, reference };
   };
   const live = async () => {
-    const result = await request("mcp-read", { namespace: "programme-controls", key: "oxigraph-six-hour-delivery-course-correction-v1" });
+    const { result } = await request("mcp-read", { namespace: "programme-controls", key: "oxigraph-six-hour-delivery-course-correction-v1" });
     if (result?.task?.taskId !== spec.taskId || result.task.status !== "in_progress" ||
         typeof result.control?.ownerReviewHold?.active !== "boolean" ||
         (spec.scope === "harness" ? result.control.activeHarnessTaskId : result.control.activeDeliveryTaskId) !== spec.taskId) {
@@ -155,8 +235,6 @@ export async function runWorkflow(rawSpec, host, io = {}) {
   };
   const stable = (before) => { if (!equal(before, observe())) throw new Error("Source changed during a read-only stage"); };
   await live();
-  const initialOutside = outside();
-  const initialFiles = files();
   const workerIds = new Set();
   const failures = new Set();
   let feedback = null;
@@ -182,7 +260,7 @@ export async function runWorkflow(rawSpec, host, io = {}) {
     await live();
     stable(before);
     if (proposal.changes.length) {
-      const applied = await request("root-apply", { writer: "root", changes: proposal.changes, beforeFiles });
+      const { result: applied } = await request("root-apply", { writer: "root", changes: proposal.changes, beforeFiles });
       if (applied?.writer !== "root" || applied.applied !== true) throw new Error("Root application was not confirmed");
       const expectedFiles = beforeFiles.map((file) => {
         const change = proposal.changes.find((candidate) => candidate.path === file.path);
@@ -193,6 +271,7 @@ export async function runWorkflow(rawSpec, host, io = {}) {
     checkOutside();
     const candidate = observe();
     const checks = [];
+    const checkReferenceIndexes = [];
     for (const check of spec.checks) {
       await live();
       stable(candidate);
@@ -204,9 +283,11 @@ export async function runWorkflow(rawSpec, host, io = {}) {
           !equal(run.command, expectedCommand) || run.plan?.completionCheck !== check.completionCheck) {
         throw new Error("Check evidence is missing or stale");
       }
+      const { directory, ...record } = run;
+      const reference = verify(checkReference(run), record);
+      checkReferenceIndexes.push(allCheckReferences.length);
+      allCheckReferences.push(reference);
       checks.push(run);
-      events.push({ check: run, sha256: digest(run) });
-      io.event?.(events.at(-1));
       if (run.status === "command-passed" && run.result?.passed !== true) throw new Error("Inconsistent successful command evidence");
       if (run.status !== "command-passed") break;
     }
@@ -226,14 +307,31 @@ export async function runWorkflow(rawSpec, host, io = {}) {
         if (equal(initialFiles, files())) throw new Error("No source change was delivered");
         await live();
         stable(candidate);
-        const evidence = { schema: "ordinary-workflow-v1", runId, taskId: spec.taskId, specSha256,
-          status: "verified-local", source: candidate, checks, review, eventsSha256: digest(events),
+        for (const reference of [...eventReferences, ...allCheckReferences]) verify(reference);
+        const compactChecks = checks.map((run, index) => ({
+          completionCheck: run.plan.completionCheck, command: run.command, status: run.status,
+          code: run.result?.code ?? null, signal: run.result?.signal ?? null,
+          passedTests: checkFeedback(run).passedTests, failedTests: checkFeedback(run).failedTests,
+          sourceSha256: digest(run.source), resultSha256: digest(run),
+          referenceIndex: checkReferenceIndexes[index],
+        }));
+        const compactReview = {
+          client: review.client, workerId: review.workerId, model: review.model, effort: review.effort,
+          verdict: review.verdict, summary: review.summary, findings: review.findings,
+          resultSha256: digest(review),
+        };
+        const evidence = { schema: "ordinary-workflow-v2", runId, taskId: spec.taskId, specSha256,
+          status: "verified-local", source: candidate, checks: compactChecks, review: compactReview,
+          eventReferences, checkReferences: allCheckReferences,
+          eventsSha256: digest(eventReferences),
           qualification: false, publication: false, attribution: "native-host-supplied; inspected, not independently authenticated" };
-        const readback = await request("mcp-handoff", { namespace: "programme-task-evidence", key: `workflow-${runId}`, evidence,
+        const handoff = await request("mcp-handoff", { namespace: "programme-task-evidence", key: `workflow-${runId}`, evidence,
           instruction: "Store this exact evidence via Ruflo MCP, retrieve it, and return the actual retrieved value. Keep task in progress until root commits and completes the authorized task." });
         stable(candidate);
-        if (!equal(readback?.value, evidence)) throw new Error("MCP evidence readback is missing or mismatched");
-        return { ...evidence, status: "ready-for-owner-review", mcpReadback: true, events };
+        for (const reference of [...eventReferences, ...allCheckReferences, handoff.reference]) verify(reference);
+        if (!equal(handoff.result?.value, evidence)) throw new Error("MCP evidence readback is missing or mismatched");
+        return { ...evidence, status: "ready-for-owner-review", mcpReadback: true,
+          handoffReference: handoff.reference };
       }
       feedback = { kind: "review-rejected", review, reviewSha256: digest(review) };
     }

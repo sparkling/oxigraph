@@ -2,232 +2,14 @@
 
 - **Status**: Implemented
 - **Date**: 2026-09-07
-- Updated: 2026-09-10
+- Updated: 2026-09-11
 - Deciders: Oxigraph parity programme
-- Implementation status: the product and validation slice is implemented in
-  `eb0f0cc2`; the six-hour scheduler is installed and its wake-up path is
-  tested; N3 fetchability is resolved in `75f538e0` and the optimized binary
-  passes the persistent application journey. Recovery source and installation
-  instructions are published on `main` at `aa7128bb`; the programme Gist and
-  Ruflo delivery evidence were updated and read back. R1 is complete; the
-  wider programme has implemented G2.2 capture/request/keyed integration in
-  task `task-1788781295095-lrzbqi` and G2.3a native atomic receipts in
-  `task-1787670631130-9jlo3h` and G2.3b ordered outbox in
-  `task-1787670631321-dewzgm`, published in `58d3253c`. G2.3c retention/leases
-  and bounded governance health in `task-1787670631517-qjoyw1` are implemented
-  with native expiry, slow-consumer, backpressure, restart, compaction, backup,
-  and corruption tests. G2.4a staged-view SHACL commit validation in
-  `task-1787670631682-97ibi4` implements the native gate under the governed writer
-  permit. G2.4b adds bounded policy receipts in the atomic native outcome,
-  feature-independent lookup, expiry, and injected-failure closure in
-  `task-1787670631837-w5ac24`. G2.5 has native bounded readiness observations,
-  fixed gauges, canonical contributor validation, and opt-in loopback
-  observation endpoints, transaction terminal and Store-bound query/update
-  counters/duration histograms. Lazy evaluation is counted at EOF, first error,
-  or abandonment, without changing iteration or transaction semantics.
-  Denied attempts and returned SHACL commit-gate observations now close the
-  bounded G2.5/P1.4a contract in task `task-1787851231441-1gdfzd`.
-  G2.6 task `task-1787851232211-6fiarr` adds checkpoint-bound manifests, frozen
-  contributor file checksums, completion-last receipts, offline verification,
-  and the read-only WAL checkpoint repair. G2.7 task `task-1787851233022-antw51`
-  adds fresh-directory restore, full retained-outbox/storage validation,
-  contributor reconciliation and artifact-bound local recovery baselines.
-  G3.0 shared derived-index lifecycle is implemented natively: stable inputs,
-  bounded deltas, checksummed immutable generations, exact primary reconciliation,
-  atomic activation, crash recovery and G2 hooks. G3.3 now adds an optional
-  native Tantivy provider/Rust query API with scoped candidates, strict/eventual
-  semantics and exact document/posting reconciliation. G3.3 now also provides
-  opt-in local SPARQL text SERVICE joins on that same retained snapshot, with
-  row-independent eventual lag context, bounded caching and fatal cancellation.
-  G3.4 adds a native CRS84 envelope/exact-predicate provider with bounded ordered
-  catch-up, strict freshness and the same backup/restore lifecycle. Opt-in local
-  spatial SPARQL joins now share the retained snapshot and preserve fatal
-  cancellation, with explicit SERVICE SILENT success filtering. G3.3/G3.4
-  retain their separate performance/promotion gates. G3.1 now supplies the native
-  physical statistics provider, exact graph/predicate counts, bounded frequency
-  summaries and the shared lifecycle. Opt-in same-snapshot query costs and
-  term-free estimated/observed-row, completion and q-error feedback are now
-  implemented with dataset-aware heuristic fallback. G3.2 now adds opt-in native
-  bounded join planning with deterministic eight-leaf subset search and greedy
-  fallback. Its native differential tests and runnable statistics example do
-  not close the separate frozen-corpus performance/promotion gates; G3.2 stays
-  active for those requirements. No default-planner promotion is claimed.
-  A first BSBM pilot exposed per-query statistics reconstruction as a bottleneck;
-  explicit verified-snapshot reuse now avoids it only for an exact matching
-  physical checkpoint and private live-store identity, excluding copied-sibling
-  divergence. This is callable product progress, separate from the
-  diagnostic runner/docs. The pilot also found a bounded-without-statistics
-  regression and confirmed missing frozen corpus/threshold assets, so it closes
-  neither the full G3.2 performance gate nor the wider programme.
-  Explicit conditional cost model v2 now corrects the measured broad-scan
-  choice while retaining legacy v1 and the ordinary greedy default. Native
-  result/work regressions and a retained-parent pilot verify this opt-in slice;
-  representative corpus, resource/tail and promotion gates remain open.
-  A subsequent native lock-lifetime repair makes derived-index owner drop
-  explicitly unlock despite duplicated descriptors, while a copied foreign-PID
-  guard cannot unlock the live parent. The unchanged parallel recovery test and
-  deterministic ownership regressions validate this release-blocker correction.
-  Broader BSBM SELECT coverage then exposed Q8/Q5 scan-work regressions.
-  A separate opt-in correlated V3 profile now uses consistent probe/output
-  costs and conservative unhinted probe selection; the native Q8-shaped
-  red/green regression preserves results and avoids unrelated full scans.
-  V1/V2/defaults remain unchanged and full G3.2 acceptance remains open.
-  The first LDBC input then exposed per-named-graph full scans in query-time
-  materialization. Graph-prefix copying now removes that superlinear work while
-  retaining the existing materialization and topology contracts; a same-data
-  CLI comparison preserves all 12 result rows. Full performance acceptance is
-  still separate from this measured product repair.
-  CLI/HTTP Simple queries now use the native snapshot path without whole-store
-  materialization; the corresponding in-memory union-default exclusion defect
-  is fixed. Focused dataset/streaming tests and a retained-parent LDBC comparison
-  support this slice, not full G3.2 acceptance. Finite entailment is unchanged.
-  Subsequent BSBM/LDBC parent measurements and explicit N-Quads/query-only
-  diagnostic support are acceptance preparation, not new application behavior
-  or another closed documentation gate. Shared-host tail variation prevents
-  ratifying the proposed 5% gate from those observations; remaining scoped
-  acceptance work is tracked in ADR-0023 and the native comparison instructions.
-  The next native planner correction avoids constructing rejected candidate
-  trees while retaining exact costs, tie-breaks and search reports. Its native
-  regression and planner-only DP/fallback comparisons are distinct from broad
-  performance acceptance; no profile or default is promoted.
-  Native statistics-state and retained-snapshot determinism checks now close
-  focused acceptance gaps. Machine-checked input manifests add reproducibility
-  support. ADR-0023 corrects the extra manual pre-run approval invented in
-  `1771b64e`; baseline-first gates remain, with no new promotion authority.
-  The no-statistics WatDiv V3 run is result-equivalent but exposes a Q4 work
-  regression. A separate verified statistics lookup optimization removes linear
-  scope scans without changing estimates. The paired shared-statistics run
-  then preserved results but exposed much worse V3 Q2/Q4 work. ADR-0023 now
-  describes an explicit source-bound NDV/V4 candidate addressing join-domain
-  estimates, with a native 5,000-to-3,000 quad-row regression. Old profiles,
-  default planning and numerical gates are unchanged; corpus/resource/tail
-  acceptance remains open. No harness-evolution prerequisite is added.
-  Its first BSBM comparison passes all 960 oracle checks but regresses Q7
-  quad work; diagnose that ordering before the large WatDiv candidate rerun.
-  While that G3.2 performance gate remains open, G3.3 now removes the duplicate
-  text candidate scan and enforces cancellation/overflow during enumeration.
-  Native cursor-work and result checks support this bounded correction, not
-  completion of either provider's frozen performance/promotion gates.
-  The fixed native text baseline now supports an explicit retained RAM query
-  session for different queries on the same admitted view. It avoids repeated
-  payload hydration, not first strict admission; no implicit primary-scan cache
-  or broader performance promotion is introduced.
-  The 2026-09-09 literal-gate review closes native G3.3 at `e865c7aa` while
-  preserving separate performance/production promotion requirements. Keeping
-  that delivered task active for unspecified later promotion was process drift,
-  not a missing text feature. G4.1 now owns the next product delivery step under
-  ADR-0026; no text benchmark rerun or harness expansion gates its implementation.
-  G4.1's first native slice rejects anonymous non-loopback startup without
-  explicit development consent before store open and reuses the exact validated
-  socket set. Loopback serving is unchanged; request authorization remains open.
-  Its next native transport slice vendors the existing OxHTTP dependency and
-  adds socket-derived context plus per-request admission before Expect/body
-  decoding. Wire tests close this prerequisite, not full G4.1 authentication.
-  The native authenticated profile now adds trusted-peer assertions, complete
-  operation/direct Graph Store decisions, public embedding traits, protected
-  operator routes, bounded pseudonymous audit and atomic per-request reload.
-  Native denial/rollback/restart and compatibility tests verify this product
-  slice; ADR-0026's separate evaluator/promotion gates remain open. No G1.7,
-  provider-backed qualification or authorization advertisement is implied.
-  Evaluator-only `2d54ddfa` closes native G4.1: authenticated route decisions,
-  provider/time boundaries, allowed direct graph access and observable absence
-  of work under denial pass. The next native task is G4.2 workload admission;
-  separate promotion and future facade requirements remain on the roadmap.
-  G4.2 now adds opt-in bounded pre-body admission, queue cancellation/expiry,
-  a separate operator pool and response-flush lease ownership. Native admission
-  and HTTP tests support this slice, not full request-resource governance.
-  The native deadline slice adds absolute lease deadlines, typed timeout propagation,
-  pre-commit rollback and failed-stream checks for native Simple/transactional
-  paths; excluded materialization/bulk paths fail explicitly. ADR-0027 retains
-  resource accounting, queued disconnect and full acceptance as open work.
-  Finite RDF now shares request control across snapshot/FROM construction,
-  materialization and owned reads, with typed expiry and preserved topology.
-  The relative materialization budget still ends at successful preparation;
-  enclosing request deadlines do not. Finite RDFS now also admits request
-  deadlines after checked preflight/copies, sparse scans, consistency/output
-  assembly and memory estimation. Native tests preserve graph topology, results
-  and successful resource counters. Bounded OWL now also admits deadlines after
-  checked preparation, raw rule/list/key/equality/semantic/contradiction work
-  and output/accounting. Its native inverse-inference and persistent HTTP journey
-  pass. A shared controlled Dataset clone preserves interned IDs and iteration
-  order, correcting the preceding RDFS decoded-copy ordering defect. This is
-  native product progress, not refreshed semantic qualification. Queued socket
-  errors now release admission before timeout on both listeners, with valid
-  half-closed requests preserved and abandoned writes absent after restart.
-  FIN-only/silent loss still uses timeouts; active-work disconnect propagation
-  remains open. Declared encoded/decoded request-body caps now reject oversized
-  or expanded content before RDF work on both listeners, preserving trailers,
-  HEAD metadata, deadlines and valid persistent journeys. This is not an RSS
-  limit. Optional result caps now bound generated and transmitted entities;
-  buffered overflow returns empty 503 and late errors fail the stream without
-  successful EOF. HEAD/304 metadata and established request failures are preserved.
-  Optional cumulative inner-join build-row budgets now cover native Cartesian/hash
-  tables across each request, including multi-operation update rollback. Typed
-  sticky failure survives empty probes, EXISTS, ASK/UNION and shared SERVICE
-  handlers. Streaming joins, other buffers and RSS are explicitly outside this
-  counter. Broader resource/fairness/metrics acceptance remains open;
-  full G4.2 is not complete.
-  The subsequent unbudgeted query-fuzzer OOM is repaired by choosing the smaller
-  hash-build input in greedy joins, without changing nullable-path domains or
-  SERVICE binding order. Exact-input replay and fresh query/update fuzz lanes
-  pass; the expensive streamed fan-out and broader G4.2 work remain open.
-  An independent cumulative ORDER BY row cap now limits decoded sort-key/buffer
-  construction, preserving order, duplicates, shared failure and owned-update
-  rollback. Earlier expression work, comparator CPU and other buffers remain
-  outside it; full workload-governance and promotion gates stay open.
-  Native admission telemetry now adds 60 fixed-label operator metric samples
-  for pool occupancy, returned admission dispositions and queue waits, without
-  changing readiness or counting lease release as execution success. Default
-  and no-default unit/wire tests cover denial, overload and persistent journeys;
-  full G4.2 resource/fairness acceptance remains open.
-  An independent cumulative native DISTINCT retained-row cap now charges only
-  new tuples before cloning into each hash set, including planner-lowered
-  REDUCED. Nested sets and update operations share typed failure and owned
-  rollback; duplicates within one set do not recharge. Native feature tests,
-  bound/unbound mapping checks and query/update fuzz runs support this slice,
-  not aggregate contents or full G4.2 acceptance.
-  A native accumulator-group cap now charges new groups before construction,
-  including the implicit global group on runtime-empty input. Repeated keys
-  do not recharge; nested/prepared execution and all owned update operations
-  share the cap and sticky rollback behavior. Independent accumulator/read
-  probes and native HTTP journeys support this slice. Per-group DISTINCT sets,
-  GROUP_CONCAT contents, temporary keys and RSS remain outside the counter.
-  The owner explicitly selected Codex-only execution for this slice after the
-  Claude/Fable account pause; this does not assert restored Claude availability.
-  For the repair that followed, the owner explicitly selected native Opus
-  execution: Claude Code 2.1.261 reporting model `claude-opus-5` with
-  `apiKeySource` none, on the native subscription. That session reviewed the
-  inherited production patch, repaired and expanded the independent tests, and
-  completed the replay and fuzz verification; it did not author the production
-  change. That is one observed session, not a restored-account or
-  provider-availability claim. A model preference is not an automatic
-  safety-block bypass and not authority for an unannounced subscription or
-  model fallback.
-  The query-fuzzer property-path/DISTINCT OOM preserved under ADR-0027 is no
-  longer a release blocker. An
-  [empty-probe short-circuit](0023-statistics-and-bounded-join-planning.md#empty-probe-short-circuit-for-cartesian-joins-2026-09-09)
-  skips an unbudgeted native quad/path Cartesian build whose right-hand quad
-  predicate is absent, and the exact preserved input replays under its unchanged
-  memory limit with fresh query and update fuzz runs passing. Configured row
-  budgets, older term modes, `SERVICE` and keyed joins keep their previous
-  order. ADR-0023 and ADR-0027 remain Proposed; broader resource, fairness and
-  reload gates stay open, and no milestone or programme completion follows.
-  Native CLI subprocess tests now preserve their selected transport features,
-  avoiding a shared-binary overwrite that broke the combined integration run.
-  The next ADR-0027 product slice adds file-backed atomic workload-policy reload
-  through a new explicit loopback operator grant. One immutable policy snapshot
-  stays with each attempt, queued entry and lease; old work drains while new
-  prospective caps account for all outstanding occupancy. Candidate class
-  coverage is checked under a coherent access read guard, startup listener
-  transport envelopes cannot grow live, and invalid replacements preserve the
-  last good policy and telemetry. Default/no-default native controller and real
-  HTTP tests cover authorization, input rejection, cross-policy unknown classes
-  and live limit replacement. This is source delivery under the proportional
-  product boundary, not full G4.2 qualification or promotion.
-  The owner selected native `gpt-5.6-sol`; implementation used high reasoning,
-  followed by parent review, focused corrections and release validation, with
-  one source writer at a time and the parent as the only Git writer.
-  Local implementation is not publication or production recovery qualification
+- Implementation status: R1 source handoff `aa7128bb` is delivered. Ordinary
+  product work follows the implemented native-host workflow below; the wider
+  programme remains open. Current requirements and evidence are maintained in
+  [the delivery gates](../plans/oxigraph-delivery-gates.md), with the former
+  implementation narrative preserved in
+  [delivery history](../plans/oxigraph-delivery-history-2026-09-11.md#former-adr-0043-implementation-status-narrative)
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
   `programme-controls/oxigraph-six-hour-delivery-course-correction-v1`
@@ -627,9 +409,44 @@ training, or another calibration programme. A shell outside the entry point
 remains technically possible but violates the programme's build workflow.
 
 An explicit owner-review hold must stop both normal and scheduled product
-continuation. Finish and present the harness repair; do not resume G4.3 or the
-main build until the owner approves. Keep the timer available for review but
-make it respect the hold, rather than silently disabling the programme.
+continuation. The September 10 hold was subsequently lifted by explicit owner
+approval; consult the latest owner instruction and live control rather than
+treating that historical hold as permanent. Keep the timer available and make
+it respect any active hold, rather than silently disabling the programme.
+
+### 11. Remove mechanical overhead without weakening acceptance
+
+The September 11 adversarial review measured about 63% of one repaired
+ten-check window outside native commands. That is orchestration elapsed time
+for that window, not measured developer effort, model cost or kernel CPU time.
+It also found duplicated control/history payloads and ordinary format/fuzz and
+source-path gaps. The owner approved this bounded correction:
+
+- The native host services mechanical MCP requests through the existing
+  callback-injected `relayWorkflowHost` helper in one bounded tool turn. Fresh
+  task/control reads, current owner holds, root-only edits and independent
+  native review remain mandatory. No extra agent platform or MCP transport is
+  introduced; native-worker and root-apply requests remain real host actions.
+- Ordinary workflow v2 records compact summaries and content-bound local
+  references. Full event/check records stay inspectable and are verified before
+  handoff; historical v1 evidence is not rewritten or resealed.
+- Reviewed non-writing format checks, the literal one-minute fuzz lane, root
+  and crate manifests, and nested new-source paths remove routine admission
+  failures. Preflight rejects invalid source before runtime allocation or
+  worker dispatch. This does not broaden the frozen qualifier or vendor paths.
+- The live control is current state with an exact archived-history reference.
+  The [current delivery-gates checklist](../plans/oxigraph-delivery-gates.md)
+  projects the remaining work once; both scope catalogues link to it. The
+  [historical narrative](../plans/oxigraph-delivery-history-2026-09-11.md)
+  preserves the moved status text. Owning ADR contracts and literal acceptance
+  requirements remain authoritative.
+
+Validation requires the focused and ordinary Node contracts on current Node
+and Node 20, actual native format/fuzz observations, live MCP relay/readback,
+failure handling and independent review. Fixtures are not native worker
+execution; a passing harness does not close a product gate. Report a measured
+workflow improvement only after a comparable product run, not from code size,
+document reduction or this decision alone. Harness evolution stays inactive.
 
 ## Implemented R1 evidence
 

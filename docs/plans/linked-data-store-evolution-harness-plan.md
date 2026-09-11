@@ -35,7 +35,7 @@
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
-- Updated: 2026-09-10
+- Updated: 2026-09-11
 - Repository: `oxigraph/oxigraph` clone maintained by this fork
 - Previous programme baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
@@ -1277,92 +1277,13 @@ widens core RDF semantics implicitly.
 | G4.7 Incremental entailment projections        | G2.3c, G2.7                            |          XL | Insert/delete/clear/drop truth maintenance differentially matches full recomputation; unsupported recursion/deletion shapes rebuild or fail typed                       |
 | G4.8 Analytical and WCOJ research path         | G3.2; G4.2 for server/`Auto` promotion | Research/XL | A separate optional executor beats frozen cyclic workloads within resource ceilings while matching the ordinary evaluator exactly and preserving its fallback           |
 
-G4.3 now provides additive offline `Store::inspect` and the `inspect` CLI command
-for version markers and actual/missing/extra column families, without migration
-or source-file changes. Ordinary open now rejects unknown/newer markers and
-incomplete current layouts before writable setup, with a native lock held across
-preflight and open. A checkpoint missing `LOCK` gains an empty one even on
-refusal. Recognized version-0/1 layouts now return typed `UpgradeRequired` from
-writable/read-only opens; ordinary opens never migrate them. `Store::backup_legacy`
-and the separate `LegacyBackupReceipt` now
-provide source-preserving version-0/1 physical copies and exact package/source
-ancestry verification. Native interruption, cancellation and lock-release tests
-pass; the additive `backup-legacy` / `verify-legacy-backup` CLI journeys also
-pass alongside existing backup/restore and feature lanes. `Store::prepare_upgrade`
-now stages a verified inactive shadow copy while retaining source/backup leases;
-`PreparedUpgrade::verify` checks its exact files, metadata, journal and complete
-record. This binary refuses guarded copies through ordinary opens, including
-after moving the store directory. `Store::transform_prepared_upgrade` now
-transforms that copy through the version-0/1 migration edges, with continuous
-native leases, independent expected/output checks for quads, graph inventory and
-namespaces, and exact source/backup ancestry verification. The bounded Rust API
-and `TransformedUpgrade::verify` pass default/RDF-1.2 upgrade, backup/restore,
-safe-open and store regression lanes. The additive `prepare-upgrade`,
-`verify-upgrade-preparation`, `transform-upgrade` and
-`verify-upgrade-transformation` commands now expose this offline operator
-journey with explicit limits and inactive-stage output. The output remains
-guarded and inactive; this is not activation or upgrade qualification.
-The additive `Store::start_upgrade_recovery`, `Store::resume_upgrade_recovery`
-and `UpgradeRecovery::verify` APIs now provide verified restart from completed
-checkpoints in a separate recovery workspace. Native interruption/cancellation
-tests cover both migration edges, publication boundaries, unchanged source/
-backup/checkpoints and explicit completed-edge reuse. Old interrupted
-preparation/transformation workspaces do not become resumable.
-Full compatibility rejection, the envelope/classifier and the
-cutover/crash/older-binary matrix remain open.
-Compatibility tests now explicitly upgrade private temporary copies, preserving
-their
-original assertions and committed fixture bytes. Default/RDF-1.2/no-default
-store lanes and concurrent upgrade/store commands pass; the earlier shared-
-fixture failure remains recorded. The additive `start-upgrade-recovery`,
-`resume-upgrade-recovery` and `verify-upgrade-recovery` CLI commands now expose
-the existing recovery API. Native default/no-default journeys verify exact
-ancestry, incomplete/completed state, retained guards, matching custom limits,
-completed resume and refusal without input mutation. This closes the bounded
-recovery CLI exposure gap, not G4.3. Native `Store::start_upgrade`,
-`Store::resume_upgrade`, `Store::upgrade` and `Store::verify_upgrade` now
-provide a sealed build-bound `UpgradeReceipt` for Linux/static Oxigraph with
-vendored static RocksDB. The exact executable is bound before construction;
-old completed recovery work cannot acquire that earlier provenance. Native
-default, explicit RDF-1.2, no-default, unit and existing compatibility checks
-pass, including whole-workspace no-write refusal, fresh-process verification,
-changed-executable refusal and completed-evidence reuse. Independent review
-accepted the exact source through the ordinary harness and Ruflo readback.
-This closes the bounded native receipt API, not activation or full G4.3.
-The `start-upgrade`, `resume-upgrade`, `upgrade` and `verify-upgrade` CLI now
-expose it, with canonical outer paths, exact executable/receipt fingerprints,
-explicit incomplete/sealed observations and retained inactive guards. Ordinary
-harness checks pass: default CLI receipts (5, including real version-0/1),
-no-default (6, including version-1 refusal), existing CLI compatibility (16),
-option units (3), selected Clippy and an identified local executable build.
-Independent Sol Medium review accepted the exact Terra Medium implementation
-and MCP evidence readback completed. This closes receipt CLI exposure only.
-Explicit `Store::activate_upgrade` and `activate-upgrade` now make a fresh,
-disjoint target usable while retaining source/backup/sealed-workspace bytes.
-The original receipt stays inactive; activation is a historical handoff, not
-server routing or older-binary rollback. The ordinary harness passed all nine
-checks: two Clippy lanes, native units (25), default API (5), RDF-1.2 API/receipt/
-recovery (5/9/3), default CLI compatibility (15), no-default CLI (4), option units
-(3) and the identified local CLI build. Native Sol High implementation received
-independent Astra High acceptance and exact MCP evidence readback. These counts
-overlap; they do not close full G4.3. The ordinary-open migration gap is now
-closed by typed refusal, with unchanged logical assertions exercised after
-explicit activation. A separate test-only transformed-file copy retains the
-system-profile test path without changing production activation; its helper is exercised
-on vendored RocksDB, while actual system compilation is blocked by missing
-`rocksdb.pc`. Builds without `rdf-12` now also reject recognized unsupported
-encodings in current-format live object indexes. Nine ordinary-harness checks
-and independent Sol Medium review passed for the Terra Medium slice; this
-does not certify outbox history or change inspection's unknown feature status.
-See [the bounded feature-refusal contract](../adr/0028-safe-storage-schema-upgrades.md#bounded-live-rdf-feature-refusal-2026-09-11).
-Bounded outbox consumption now distinguishes valid retained RDF 1.2-only
-payloads from corruption, without scanning all history at open; see
-[the consumption-time contract](../adr/0028-safe-storage-schema-upgrades.md#bounded-retained-outbox-feature-errors-2026-09-11).
-Next: full feature-envelope/history admission, the frozen classifier,
-older-binary rollback and frozen acceptance gates. No qualification or
-publication is implied. See
-[the ordinary-open contract and checks](../adr/0028-safe-storage-schema-upgrades.md#ordinary-legacy-open-refusal-2026-09-11) and
-[ADR-0028's activation scope and limits](../adr/0028-safe-storage-schema-upgrades.md#fresh-target-upgrade-activation-api-and-cli-2026-09-11).
+G4.3 current status, exact test references and remaining acceptance gates are
+maintained once in [the delivery checklist](oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
+Bounded fresh-target activation is implemented; full feature-envelope/history
+admission, older-binary rollback and frozen compatibility/operational gates
+remain open. [ADR-0028](../adr/0028-safe-storage-schema-upgrades.md) remains
+Proposed and owns the contract. The former duplicated narrative is preserved
+in [delivery history](oxigraph-delivery-history-2026-09-11.md#former-duplicated-g43-plan-narrative).
 
 G4.1 native implementation is complete: the anonymous startup boundary requires explicit
 non-loopback consent before store open and binds the exact validated address

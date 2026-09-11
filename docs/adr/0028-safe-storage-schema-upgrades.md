@@ -20,6 +20,9 @@
   Full compatibility rejection, schema envelopes, older-binary rollback and
   the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
+- Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
+  This ADR owns the contract; both programme plans reference that one current
+  checklist. Historical native slices below do not independently close a full gate.
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
@@ -813,7 +816,7 @@ version cannot ship until its predecessor upgrade path and failure matrix pass.
 
 ## Evidence and task ownership
 
-The current version marker and in-place legacy migrations are in
+The current version marker, ordinary-open refusal and explicit legacy upgrade primitives are in
 [`rocksdb.rs`](../../lib/oxigraph/src/storage/rocksdb.rs); public open and
 backup entry points are in [`store.rs`](../../lib/oxigraph/src/store.rs).
 ADR-0022 supplies backup/restore evidence and ADR-0020 supplies future durable
