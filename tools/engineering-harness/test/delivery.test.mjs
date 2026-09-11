@@ -65,11 +65,17 @@ test("runs require a completion check and reject artifact/command mismatches bef
 });
 test("literal native commands are admitted; broad or protected entry points are rejected", () => {
   assert.equal(admitCommand(["cargo", "test", "--locked", "-p", "oxigraph", "--test", "store", "-j12"]).kind, "cargo-test");
+  assert.equal(admitCommand([
+    "cargo", "test", "--locked", "-p", "oxigraph", "--lib", "--features", "rdf-12",
+    "storage::rocksdb::format_inspection_tests::rdf_12_writer_retained_history_is_reported_unsupported_by_no_default_cli",
+    "-j", "12", "--", "--ignored", "--exact",
+  ]).kind, "cargo-test");
   assert.equal(admitCommand(["cargo", "build", "--locked", "--release", "-p", "oxigraph-cli"]).kind, "build");
   assert.equal(admitCommand(["node", "--test", "--test-reporter=tap", "tools/engineering-harness/test/delivery.test.mjs"]).kind, "node-test");
   for (const argv of [
     ["cargo", "test"], ["cargo", "publish", "--locked"], ["cargo", "test", "--locked", "--config", "x=y"],
-    ["cargo", "test", "--locked", "--", "--list"], ["cargo", "test", "--locked", "--manifest-path", "elsewhere/Cargo.toml"],
+    ["cargo", "test", "--locked", "--", "--list"], ["cargo", "test", "--locked", "--", "--unknown"],
+    ["cargo", "test", "--locked", "--ignored"], ["cargo", "test", "--locked", "--manifest-path", "elsewhere/Cargo.toml"],
     ["node", "--test", "--test-reporter=tap", "tools/engineering-harness/test/g17-qualification-cli.test.mjs"],
     ["node", "--eval", "process.exit(0)"], ["npm", "test"], ["sh", "-c", "true"], ["ruflo", "status"],
     ["cargo", "test", "--locked\n"],

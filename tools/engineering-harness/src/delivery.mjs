@@ -118,7 +118,7 @@ export function admitCommand(argv) {
       }
       if (command === "test" && arg === "--") {
         if (args.slice(i + 1).some((value) =>
-          !["--exact", "--nocapture", "--show-output"].includes(value) &&
+          !["--exact", "--ignored", "--nocapture", "--show-output"].includes(value) &&
           !/^--test-threads=[1-9][0-9]*$/.test(value))) {
           throw new Error("Unsupported libtest argument");
         }

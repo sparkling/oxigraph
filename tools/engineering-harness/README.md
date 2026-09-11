@@ -167,7 +167,9 @@ lifecycle. Within `workflow`, the controller requests these transitions:
    link the actual native ID/model/effort to Ruflo through MCP. Keep one writer.
 3. Run **all** programme build/test commands through `run`, including repairs
    and reviewer-requested checks. Cargo build/check/clippy/test and the explicit
-   ordinary Node test inventory are admitted. Non-writing `cargo fmt --all`
+   ordinary Node test inventory are admitted. Cargo test accepts `--ignored`
+   after its `--` separator for explicitly selected tests; unsupported libtest
+   flags remain rejected. Non-writing `cargo fmt --all`
    (or `-p PACKAGE`) followed by `-- --check` is also admitted, as is the exact
    AGENTS one-minute command `cargo fuzz run TARGET --sanitizer none --
    -max_total_time=60` for its listed targets. Fuzz success requires startup and
