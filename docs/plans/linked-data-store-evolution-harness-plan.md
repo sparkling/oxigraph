@@ -1282,8 +1282,9 @@ for version markers and actual/missing/extra column families, without migration
 or source-file changes. Ordinary open now rejects unknown/newer markers and
 incomplete current layouts before writable setup, with a native lock held across
 preflight and open. A checkpoint missing `LOCK` gains an empty one even on
-refusal. Known version-0/1 in-place migrations remain until a shadow replacement
-is ready. `Store::backup_legacy` and the separate `LegacyBackupReceipt` now
+refusal. Recognized version-0/1 layouts now return typed `UpgradeRequired` from
+writable/read-only opens; ordinary opens never migrate them. `Store::backup_legacy`
+and the separate `LegacyBackupReceipt` now
 provide source-preserving version-0/1 physical copies and exact package/source
 ancestry verification. Native interruption, cancellation and lock-release tests
 pass; the additive `backup-legacy` / `verify-legacy-backup` CLI journeys also
@@ -1309,7 +1310,8 @@ backup/checkpoints and explicit completed-edge reuse. Old interrupted
 preparation/transformation workspaces do not become resumable.
 Full compatibility rejection, the envelope/classifier and the
 cutover/crash/older-binary matrix remain open.
-Compatibility tests now migrate private temporary copies, preserving their
+Compatibility tests now explicitly upgrade private temporary copies, preserving
+their
 original assertions and committed fixture bytes. Default/RDF-1.2/no-default
 store lanes and concurrent upgrade/store commands pass; the earlier shared-
 fixture failure remains recorded. The additive `start-upgrade-recovery`,
@@ -1343,10 +1345,15 @@ checks: two Clippy lanes, native units (25), default API (5), RDF-1.2 API/receip
 recovery (5/9/3), default CLI compatibility (15), no-default CLI (4), option units
 (3) and the identified local CLI build. Native Sol High implementation received
 independent Astra High acceptance and exact MCP evidence readback. These counts
-overlap; they do not close full G4.3. Next: replace implicit legacy-open migration
-without losing existing logical assertions, then remaining compatibility,
-envelope/classifier, older-binary rollback and frozen acceptance gates. No
-qualification or publication is implied. See
+overlap; they do not close full G4.3. The ordinary-open migration gap is now
+closed by typed refusal, with unchanged logical assertions exercised after
+explicit activation. A separate test-only transformed-file copy retains the
+system-profile test path without changing production activation; its helper is exercised
+on vendored RocksDB, while actual system compilation is blocked by missing
+`rocksdb.pc`. Next: remaining feature compatibility, envelope/classifier,
+older-binary rollback and frozen acceptance gates. No qualification or
+publication is implied. See
+[the ordinary-open contract and checks](../adr/0028-safe-storage-schema-upgrades.md#ordinary-legacy-open-refusal-2026-09-11) and
 [ADR-0028's activation scope and limits](../adr/0028-safe-storage-schema-upgrades.md#fresh-target-upgrade-activation-api-and-cli-2026-09-11).
 
 G4.1 native implementation is complete: the anonymous startup boundary requires explicit

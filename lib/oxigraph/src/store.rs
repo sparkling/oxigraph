@@ -857,11 +857,12 @@ impl Store {
     /// Only one read-write [`Store`] can exist at the same time.
     /// If you want another [`Store`] handle in the same process, use [`Store::clone`].
     ///
-    /// Unknown or newer physical layouts return [`StorageError::SchemaUnknown`]
-    /// or [`StorageError::SchemaTooNew`] before writable database open. A
+    /// Unknown, newer, or recognized legacy physical layouts return
+    /// [`StorageError::SchemaUnknown`], [`StorageError::SchemaTooNew`], or
+    /// [`StorageError::UpgradeRequired`] before writable database open. A
     /// checkpoint without `LOCK` gains an empty native lock file even on refusal.
-    /// Known version-0/1 layouts still migrate in place; use [`Self::inspect`]
-    /// for non-mutating offline inspection, not this method.
+    /// Use [`Self::inspect`] for non-mutating offline inspection and the explicit
+    /// upgrade APIs for a recognized legacy layout.
     #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         let storage = Storage::open(path.as_ref())?;
@@ -877,7 +878,7 @@ impl Store {
     /// If you want another [`Store`] handle in the same process, use [`Store::clone`].
     ///
     /// Lower `max_open_files` values reduce open file descriptor usage but might increase read I/O and cache misses.
-    /// The format preflight and legacy-migration limits of [`Self::open`] apply.
+    /// The format preflight and explicit-upgrade requirement of [`Self::open`] apply.
     #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
     pub fn open_with_options(
         path: impl AsRef<Path>,
@@ -895,8 +896,9 @@ impl Store {
     /// Multiple read-only [`Store`] instances may coexist.
     /// Opening a writer in the same or another process while an ordinary read-only instance is open
     /// causes undefined behavior for that read-only instance.
-    /// Unknown or newer physical layouts return typed schema errors without
-    /// creating a lock file, initializing metadata, or migrating the store.
+    /// Unknown, newer, or recognized legacy physical layouts return typed schema
+    /// errors without creating a lock file, initializing metadata, or migrating
+    /// the store. Recognized legacy layouts return [`StorageError::UpgradeRequired`].
     #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
     pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         Ok(Self {

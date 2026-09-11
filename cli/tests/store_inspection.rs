@@ -100,6 +100,51 @@ fn inspection_failure_does_not_create_a_database() -> Result {
     Ok(())
 }
 
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little"
+))]
+fn copy_legacy_fixture(path: &str) -> Result<assert_fs::TempDir> {
+    let directory = assert_fs::TempDir::new()?;
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .ok_or("CLI manifest directory has no workspace parent")?
+        .join("lib")
+        .join("oxigraph")
+        .join("tests")
+        .join(path);
+    for entry in std::fs::read_dir(fixture)? {
+        let entry = entry?;
+        std::fs::copy(entry.path(), directory.path().join(entry.file_name()))?;
+    }
+    Ok(directory)
+}
+
+#[test]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little"
+))]
+fn writable_cli_refuses_legacy_fixtures_without_mutating_them() -> Result {
+    for fixture in ["rocksdb_bc_data", "rocksdb_bc_rdf_star_data"] {
+        let directory = copy_legacy_fixture(fixture)?;
+        let before = tree(directory.path())?;
+        let output = Command::cargo_bin("oxigraph")?
+            .args(["optimize", "--location"])
+            .arg(directory.path())
+            .assert()
+            .failure()
+            .get_output()
+            .stderr
+            .clone();
+        assert!(String::from_utf8(output)?.contains("requires an explicit upgrade"));
+        assert_eq!(tree(directory.path())?, before);
+    }
+    Ok(())
+}
+
 #[test]
 fn writable_cli_refuses_an_unknown_directory_without_initializing_it() -> Result {
     let directory = assert_fs::TempDir::new()?;

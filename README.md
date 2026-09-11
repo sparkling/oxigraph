@@ -445,8 +445,11 @@ physical metadata, not logical/feature compatibility or upgrade approval; see
 [inspection usage and limits](cli/README.md#offline-storage-inspection-fork).
 Ordinary opens now reject unknown/newer markers and incomplete current layouts
 before writable database setup. Writable preflight holds the native store lock;
-checkpoints without one gain an empty `LOCK` even on refusal. Known version-0/1
-migrations still run in place, so full safe-upgrade support remains outstanding.
+checkpoints without one gain an empty `LOCK` even on refusal. Recognized version-0/1
+layouts now return `StorageError::UpgradeRequired` from both writable and
+read-only opens; ordinary opens no longer migrate them in place. Use the explicit
+[backup, sealed upgrade and activation journey](cli/README.md#offline-fresh-target-upgrade-activation-fork).
+This is an intentional compatibility change, not full safe-upgrade qualification.
 `Store::backup_legacy` now makes source-preserving physical copies of offline
 version-0/1 stores. Its separate `LegacyBackupReceipt` verifies both the exact
 package and, optionally, unchanged source ancestry. This requires an existing

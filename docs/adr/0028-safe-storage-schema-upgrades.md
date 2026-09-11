@@ -11,7 +11,8 @@
   native build-bound inactive upgrade receipt APIs/CLI and explicit fresh-target
   activation API/CLI implemented for the bounded Linux/static Oxigraph/vendored
   RocksDB profile below.
-  Ordinary writable open still performs known version-0/1 migrations in place.
+  Ordinary writable/read-only opens now return typed `UpgradeRequired` for
+  recognized version-0/1 layouts instead of starting migration.
   Full compatibility rejection, schema envelopes, older-binary rollback and
   the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
@@ -25,11 +26,11 @@
 
 ## Context
 
-RocksDB storage records an `oxversion` integer, recognizes storage
-version 2, and calls migration from ordinary setup. The legacy version-0 and
-version-1 paths mutate column families and then advance the version. Read-only
-open rejects a required migration, but read-write open had no separate
-inspection or preflight at programme entry. The bounded slices below now add
+RocksDB storage records an `oxversion` integer and recognizes storage version 2.
+At programme entry, ordinary setup called migration: the legacy version-0 and
+version-1 paths mutated column families and then advanced the version. Read-only
+open rejected a required migration, but read-write open had no separate
+inspection or preflight. The bounded slices below now add legacy-open refusal,
 physical backup ancestry, inactive construction, verified checkpoint restart,
 build-bound receipts and explicit fresh-target activation. Automated service
 cutover is not supplied; older-binary rollback qualification remains outstanding.
@@ -654,6 +655,45 @@ older-binary rollback and frozen compatibility/crash/system-RocksDB gates
 remain outstanding. Bounded process exits are not power-loss qualification.
 ADR-0028 stays Proposed; no promotion or publication authority is conferred.
 See the [operator journey](../../cli/README.md#offline-fresh-target-upgrade-activation-fork).
+
+## Ordinary legacy-open refusal (2026-09-11)
+
+`Store::open`, `open_with_options` and `open_read_only` now return
+`StorageError::UpgradeRequired { found, supported: 2 }` for the existing admitted
+legacy inventories: version 0 missing only `graphs`, and version 1 with the
+complete required inventory. Malformed legacy/current inventories remain
+`SchemaUnknown`; newer markers remain `SchemaTooNew`. The new error converts to
+`io::ErrorKind::InvalidData`. Guard/lease checks and error priority are retained.
+Fresh/current stores still open normally; ordinary legacy opens cannot reach
+the retained explicit migration primitives. Writable refusal may still create
+an absent empty native `LOCK`; read-only refusal does not create one.
+
+The original Paris and RDF-star assertions and all 16 committed fixture files
+remain unchanged. Vendored Linux compatibility setup now uses backup, sealed
+upgrade, independent verification and fresh-target activation before its two
+ordinary opens. System-profile tests retain explicit preparation/transformation
+and a separate **test-only** verified native-file assertion copy: the guard is
+omitted only from that fresh copy, never removed from the verified workspace.
+This is not a production activation path. An additive vendored test executes
+that helper and checks unchanged source/backup/workspace bytes after reopening.
+
+Ordinary workflow `d51a52bd-cbe0-47f9-b00e-a523ec28fbef` passed all ten declared
+checks with stable source: safe-open units (17 plus 5 child observations),
+default store (29), RDF-1.2 store/activation (30/5), memory-only store (12),
+default/no-default CLI inspection/refusal (4 each), upgrade units (25), two
+Clippy checks and the CLI build. Counts overlap; they are not distinct milestones.
+Native Terra Medium implementation received independent Sol Medium acceptance
+and exact Ruflo readback under `programme-task-evidence/workflow-d51a52bd-cbe0-47f9-b00e-a523ec28fbef`.
+Clippy reports existing warnings and introduced test-style diagnostics;
+warnings-denied CI and zero-new-warning status are not claimed.
+
+The local CLI is 641,713,800 bytes, SHA-256
+`0baa56e8518e4c97785a14e7e33ed778e98376c15822bc96e894ab3d5bd851b3`
+(`cargoFresh=false`). A separate system-profile compilation check failed because
+`rocksdb.pc` was unavailable; no system runtime pass or qualification is claimed.
+Feature envelopes, the frozen classifier, older-binary rollback, the frozen
+compatibility/crash matrix and full G4.3 remain open. This ADR stays Proposed;
+receipt/activation contracts and publication boundaries are unchanged.
 
 ## Staged implementation and evaluator gates
 

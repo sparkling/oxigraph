@@ -1,6 +1,7 @@
 use super::*;
-use crate::store::Store;
+use crate::store::{Store, StoreOptions};
 use std::collections::BTreeMap;
+use std::io;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -51,6 +52,76 @@ fn safe_open_rejects_unknown_markers_without_source_changes() -> Result {
             ));
             assert_eq!(files(directory.path())?, before);
         }
+    }
+    Ok(())
+}
+
+#[test]
+fn upgrade_required_maps_to_invalid_data() {
+    let error = io::Error::from(StorageError::UpgradeRequired {
+        found: 1,
+        supported: 2,
+    });
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn safe_open_rejects_exact_legacy_layouts_without_source_changes() -> Result {
+    for (version, missing_graphs) in [(0_u64, true), (1_u64, false)] {
+        let directory = tempfile::tempdir()?;
+        fixture(
+            directory.path(),
+            Some(&version.to_be_bytes()),
+            missing_graphs,
+        )?;
+        let before = files(directory.path())?;
+        for _ in 0..2 {
+            assert!(matches!(
+                Store::open(directory.path()),
+                Err(StorageError::UpgradeRequired {
+                    found,
+                    supported: 2
+                }) if found == version
+            ));
+            assert!(matches!(
+                Store::open_with_options(directory.path(), StoreOptions::default()),
+                Err(StorageError::UpgradeRequired {
+                    found,
+                    supported: 2
+                }) if found == version
+            ));
+            assert!(matches!(
+                Store::open_read_only(directory.path()),
+                Err(StorageError::UpgradeRequired {
+                    found,
+                    supported: 2
+                }) if found == version
+            ));
+            assert_eq!(files(directory.path())?, before);
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn safe_open_rejects_malformed_legacy_inventories_without_source_changes() -> Result {
+    for (version, missing_graphs) in [(0_u64, false), (1_u64, true)] {
+        let directory = tempfile::tempdir()?;
+        fixture(
+            directory.path(),
+            Some(&version.to_be_bytes()),
+            missing_graphs,
+        )?;
+        let before = files(directory.path())?;
+        assert!(matches!(
+            Store::open(directory.path()),
+            Err(StorageError::SchemaUnknown)
+        ));
+        assert!(matches!(
+            Store::open_read_only(directory.path()),
+            Err(StorageError::SchemaUnknown)
+        ));
+        assert_eq!(files(directory.path())?, before);
     }
     Ok(())
 }
@@ -179,6 +250,30 @@ fn safe_open_unknown_checkpoint_adds_only_its_native_lock() -> Result {
     // An offline checkpoint has no native LOCK. Acquiring it must precede
     // inspection; it is retained even on refusal so concurrent openers cannot
     // lock two different inodes. No other file is created or changed.
+    assert_eq!(std::fs::metadata(checkpoint.join("LOCK"))?.len(), 0);
+    after.remove(Path::new("LOCK"));
+    assert_eq!(after, before);
+    Ok(())
+}
+
+#[test]
+fn safe_open_legacy_checkpoint_adds_only_its_native_lock() -> Result {
+    let directory = tempfile::tempdir()?;
+    let source = directory.path().join("source");
+    fixture(&source, Some(&1_u64.to_be_bytes()), false)?;
+    let db = Db::open_read_only(&source, RocksDbStorage::column_families())?;
+    let checkpoint = directory.path().join("checkpoint");
+    db.backup(&checkpoint)?;
+    let before = files(&checkpoint)?;
+    assert!(!checkpoint.join("LOCK").exists());
+    assert!(matches!(
+        Store::open(&checkpoint),
+        Err(StorageError::UpgradeRequired {
+            found: 1,
+            supported: 2
+        })
+    ));
+    let mut after = files(&checkpoint)?;
     assert_eq!(std::fs::metadata(checkpoint.join("LOCK"))?.len(), 0);
     after.remove(Path::new("LOCK"));
     assert_eq!(after, before);

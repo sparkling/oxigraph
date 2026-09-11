@@ -6,6 +6,15 @@ use oxigraph::model::vocab::{rdf, xsd};
 use oxigraph::model::*;
 use oxigraph::sparql::{QueryResults, SparqlEvaluator};
 use oxigraph::store::Store;
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    feature = "rocksdb"
+))]
+use oxigraph::store::{
+    PreparedUpgrade, TransformedUpgrade, UpgradeOptions, UpgradeTransformOptions,
+};
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use oxigraph::store::StoreOptions;
 use std::error::Error;
@@ -13,6 +22,13 @@ use std::error::Error;
 use std::fs::remove_dir_all;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::fs::{File, create_dir_all, read_dir, remove_dir};
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    feature = "rocksdb"
+))]
+use std::path::{Path, PathBuf};
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::io::Write;
 use std::iter::empty;
@@ -536,13 +552,243 @@ fn test_backup_on_in_memory() -> Result<(), Box<dyn Error>> {
     target_endian = "little",
     feature = "rocksdb"
 ))]
-fn copy_backward_compatibility_fixture(path: &str) -> Result<TempDir, Box<dyn Error>> {
-    let copy = TempDir::new()?;
+struct BackwardCompatibilityFixture {
+    directory: TempDir,
+    active: PathBuf,
+    source_before: std::collections::BTreeMap<PathBuf, Vec<u8>>,
+    backup_before: std::collections::BTreeMap<PathBuf, Vec<u8>>,
+    workspace_before: std::collections::BTreeMap<PathBuf, Vec<u8>>,
+}
+
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    feature = "rocksdb"
+))]
+impl AsRef<Path> for BackwardCompatibilityFixture {
+    fn as_ref(&self) -> &Path {
+        &self.active
+    }
+}
+
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    feature = "rocksdb"
+))]
+impl BackwardCompatibilityFixture {
+    fn assert_preserved(&self) -> Result<(), Box<dyn Error>> {
+        assert_eq!(tree(&self.directory.path().join("source"))?, self.source_before);
+        assert_eq!(
+            tree(&self.directory.path().join("backup"))?,
+            self.backup_before
+        );
+        assert_eq!(
+            tree(&self.directory.path().join("workspace"))?,
+            self.workspace_before
+        );
+        Ok(())
+    }
+}
+
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    feature = "rocksdb"
+))]
+fn tree(path: &Path) -> Result<std::collections::BTreeMap<PathBuf, Vec<u8>>, Box<dyn Error>> {
+    let mut files = std::collections::BTreeMap::new();
     for entry in read_dir(path)? {
         let entry = entry?;
-        std::fs::copy(entry.path(), copy.path().join(entry.file_name()))?;
+        if entry.file_type()?.is_dir() {
+            for (relative, bytes) in tree(&entry.path())? {
+                files.insert(PathBuf::from(entry.file_name()).join(relative), bytes);
+            }
+        } else {
+            assert!(entry.file_type()?.is_file());
+            files.insert(entry.file_name().into(), std::fs::read(entry.path())?);
+        }
     }
-    Ok(copy)
+    Ok(files)
+}
+
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    feature = "rocksdb"
+))]
+fn copy_verified_transformed_store(
+    transformed: &TransformedUpgrade,
+    destination: &Path,
+) -> Result<(), Box<dyn Error>> {
+    use sha2::{Digest, Sha256};
+    let source = transformed.directory().join("store");
+    std::fs::create_dir(destination)?;
+    let mut expected = std::collections::BTreeMap::new();
+    for file in transformed.files() {
+        if file.path() == PreparedUpgrade::guard_name() {
+            continue;
+        }
+        let source_file = source.join(file.path());
+        let destination_file = destination.join(file.path());
+        let bytes = std::fs::read(&source_file)?;
+        assert_eq!(bytes.len() as u64, file.size());
+        assert_eq!(Sha256::digest(&bytes).as_slice(), file.sha256());
+        assert_eq!(std::fs::copy(&source_file, &destination_file)?, file.size());
+        expected.insert(PathBuf::from(file.path()), bytes);
+    }
+    assert!(source.join(PreparedUpgrade::guard_name()).exists());
+    assert_eq!(tree(destination)?, expected);
+    Ok(())
+}
+
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    feature = "rocksdb"
+))]
+fn copy_backward_compatibility_fixture(
+    path: &str,
+    expected_version: u64,
+) -> Result<BackwardCompatibilityFixture, Box<dyn Error>> {
+    let directory = TempDir::new()?;
+    let source = directory.path().join("source");
+    std::fs::create_dir(&source)?;
+    for entry in read_dir(path)? {
+        let entry = entry?;
+        std::fs::copy(entry.path(), source.join(entry.file_name()))?;
+    }
+    let source_before = tree(&source)?;
+    for read_only in [false, true] {
+        let opened = if read_only {
+            Store::open_read_only(&source)
+        } else {
+            Store::open(&source)
+        };
+        assert!(matches!(
+            opened,
+            Err(oxigraph::store::StorageError::UpgradeRequired {
+                found,
+                supported: 2
+            }) if found == expected_version
+        ));
+        assert_eq!(tree(&source)?, source_before);
+    }
+    let backup = directory.path().join("backup");
+    let workspace = directory.path().join("workspace");
+    let active = directory.path().join("active");
+    let transform_options = UpgradeTransformOptions::default();
+    Store::backup_legacy(&source, &backup, &transform_options.backup)?;
+    let backup_before = tree(&backup)?;
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") == Some("vendored") {
+        let options = UpgradeOptions::default();
+        let receipt = Store::upgrade(&source, &backup, &workspace, &options)?;
+        assert_eq!(
+            receipt,
+            oxigraph::store::UpgradeReceipt::verify(&source, &backup, &workspace, &options)?
+        );
+        let workspace_before = tree(&workspace)?;
+        Store::activate_upgrade(&source, &backup, &workspace, &active, &options)?;
+        Ok(BackwardCompatibilityFixture {
+            source_before,
+            backup_before,
+            workspace_before,
+            directory,
+            active,
+        })
+    } else {
+        Store::prepare_upgrade(&source, &backup, &workspace, &transform_options.backup)?;
+        let transformed =
+            Store::transform_prepared_upgrade(&source, &backup, &workspace, &transform_options)?;
+        assert_eq!(
+            transformed,
+            TransformedUpgrade::verify(&source, &backup, &workspace, &transform_options)?
+        );
+        let workspace_before = tree(&workspace)?;
+        // TEST-ONLY: this fresh native-file copy demonstrates ordinary-open
+        // compatibility. It is not activation, a receipt, or upgrade authority.
+        copy_verified_transformed_store(&transformed, &active)?;
+        Ok(BackwardCompatibilityFixture {
+            source_before,
+            backup_before,
+            workspace_before,
+            directory,
+            active,
+        })
+    }
+}
+
+#[test]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    feature = "rocksdb"
+))]
+fn test_verified_transformed_copy_is_ordinary_openable() -> Result<(), Box<dyn Error>> {
+    let directory = TempDir::new()?;
+    let source = directory.path().join("source");
+    std::fs::create_dir(&source)?;
+    for entry in read_dir("tests/rocksdb_bc_data")? {
+        let entry = entry?;
+        std::fs::copy(entry.path(), source.join(entry.file_name()))?;
+    }
+    let source_before = tree(&source)?;
+    assert!(matches!(
+        Store::open(&source),
+        Err(oxigraph::store::StorageError::UpgradeRequired {
+            found: 0,
+            supported: 2
+        })
+    ));
+    assert!(matches!(
+        Store::open_read_only(&source),
+        Err(oxigraph::store::StorageError::UpgradeRequired {
+            found: 0,
+            supported: 2
+        })
+    ));
+    assert_eq!(tree(&source)?, source_before);
+    let backup = directory.path().join("backup");
+    let workspace = directory.path().join("workspace");
+    let active = directory.path().join("active");
+    let options = UpgradeTransformOptions::default();
+    Store::backup_legacy(&source, &backup, &options.backup)?;
+    let backup_before = tree(&backup)?;
+    Store::prepare_upgrade(&source, &backup, &workspace, &options.backup)?;
+    let transformed =
+        Store::transform_prepared_upgrade(&source, &backup, &workspace, &options)?;
+    assert_eq!(
+        transformed,
+        TransformedUpgrade::verify(&source, &backup, &workspace, &options)?
+    );
+    let workspace_before = tree(&workspace)?;
+    // TEST-ONLY: this fresh native-file copy demonstrates ordinary-open
+    // compatibility. It is not activation, a receipt, or upgrade authority.
+    copy_verified_transformed_store(&transformed, &active)?;
+    assert!(workspace
+        .join("store")
+        .join(PreparedUpgrade::guard_name())
+        .exists());
+    let store = Store::open(&active)?;
+    for q in quads(GraphName::DefaultGraph) {
+        assert!(store.contains(&q)?);
+    }
+    drop(store);
+    let reopened = Store::open_read_only(&active)?;
+    for q in quads(GraphName::DefaultGraph) {
+        assert!(reopened.contains(&q)?);
+    }
+    drop(reopened);
+    assert_eq!(tree(&source)?, source_before);
+    assert_eq!(tree(&backup)?, backup_before);
+    assert_eq!(tree(&workspace)?, workspace_before);
+    Ok(())
 }
 
 #[test]
@@ -553,7 +799,7 @@ fn copy_backward_compatibility_fixture(path: &str) -> Result<TempDir, Box<dyn Er
     feature = "rocksdb"
 ))]
 fn test_backward_compatibility() -> Result<(), Box<dyn Error>> {
-    let fixture = copy_backward_compatibility_fixture("tests/rocksdb_bc_data")?;
+    let fixture = copy_backward_compatibility_fixture("tests/rocksdb_bc_data", 0)?;
     // We run twice to check if data is properly saved and closed
     for _ in 0..2 {
         let store = Store::open(&fixture)?;
@@ -571,6 +817,7 @@ fn test_backward_compatibility() -> Result<(), Box<dyn Error>> {
             store.named_graphs().collect::<Result<Vec<_>, _>>()?
         );
     }
+    fixture.assert_preserved()?;
     Ok(())
 }
 
@@ -583,7 +830,7 @@ fn test_backward_compatibility() -> Result<(), Box<dyn Error>> {
     feature = "rdf-12"
 ))]
 fn test_rdf_star_backward_compatibility() -> Result<(), Box<dyn Error>> {
-    let fixture = copy_backward_compatibility_fixture("tests/rocksdb_bc_rdf_star_data")?;
+    let fixture = copy_backward_compatibility_fixture("tests/rocksdb_bc_rdf_star_data", 1)?;
     // We run twice to check if data is properly saved and closed
     let s = NamedNode::new_unchecked("http://example.com/s");
     let p = NamedNode::new_unchecked("http://example.com/p");
@@ -626,6 +873,7 @@ fn test_rdf_star_backward_compatibility() -> Result<(), Box<dyn Error>> {
             GraphName::DefaultGraph
         ))?);
     }
+    fixture.assert_preserved()?;
     Ok(())
 }
 

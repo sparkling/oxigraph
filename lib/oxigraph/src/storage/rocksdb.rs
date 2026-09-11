@@ -87,12 +87,8 @@ impl LegacyStoreSnapshot {
         let version = format
             .storage_version()
             .ok_or(StorageError::SchemaUnknown)?;
-        if !format.unexpected_column_families().is_empty()
-            || !match version {
-                0 => format.missing_column_families() == [GRAPHS_CF],
-                1 => format.missing_column_families().is_empty(),
-                _ => false,
-            }
+        if !legacy_layout(version, format.missing_column_families())
+            || !format.unexpected_column_families().is_empty()
         {
             return Err(StorageError::Other(
                 "legacy physical backup requires a supported version-0/1 layout".into(),
@@ -200,6 +196,14 @@ fn reject_incomplete_upgrade(path: &Path) -> Result<(), StorageError> {
     }
 }
 
+fn legacy_layout(version: u64, missing: &[String]) -> bool {
+    match version {
+        0 => missing == [GRAPHS_CF],
+        1 => missing.is_empty(),
+        _ => false,
+    }
+}
+
 impl RocksDbStorage {
     #[cfg(test)]
     pub(crate) fn corrupt_readiness_fixture(&self, field: u8) -> Result<(), StorageError> {
@@ -243,15 +247,17 @@ impl RocksDbStorage {
                 supported: LATEST_STORAGE_VERSION,
             });
         }
-        // Retain only the known v0 graph-index migration until explicit shadow
-        // upgrades replace both legacy migrations. Current stores are never
-        // repaired by silently creating a missing family.
-        if !info.unexpected_column_families().is_empty()
-            || info
-                .missing_column_families()
-                .iter()
-                .any(|name| version != 0 || name != GRAPHS_CF)
-        {
+        if !info.unexpected_column_families().is_empty() {
+            return Err(StorageError::SchemaUnknown);
+        }
+        if legacy_layout(version, info.missing_column_families()) {
+            return Err(StorageError::UpgradeRequired {
+                found: version,
+                supported: LATEST_STORAGE_VERSION,
+            });
+        }
+        // Current stores are never repaired by silently creating a missing family.
+        if version != LATEST_STORAGE_VERSION || !info.missing_column_families().is_empty() {
             return Err(StorageError::SchemaUnknown);
         }
         Ok(())

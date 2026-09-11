@@ -20,6 +20,14 @@ pub enum StorageError {
     /// Opening it does not initialize, repair, or migrate it.
     #[error("unknown storage schema; inspect the offline store before opening it")]
     SchemaUnknown,
+    /// The persisted storage schema is a recognized older layout.
+    #[error("storage schema {found} requires an explicit upgrade to supported version {supported}")]
+    UpgradeRequired {
+        /// Version read from the store.
+        found: u64,
+        /// Highest storage version supported by this binary.
+        supported: u64,
+    },
     /// The persisted storage version is newer than this binary supports.
     #[error("storage schema {found} is newer than supported version {supported}")]
     SchemaTooNew {
@@ -41,6 +49,7 @@ impl From<StorageError> for io::Error {
             StorageError::Corruption(error) => error.into(),
             error @ (StorageError::UpgradeIncomplete
             | StorageError::SchemaUnknown
+            | StorageError::UpgradeRequired { .. }
             | StorageError::SchemaTooNew { .. }) => Self::new(io::ErrorKind::InvalidData, error),
             StorageError::Other(error) => Self::other(error),
         }

@@ -926,13 +926,24 @@ RDF, feature compatibility, or absence of an interrupted upgrade; these checks
 are explicitly `unknown`/`not-checked`. No RDF terms are emitted.
 
 Keep the directory unchanged during inspection. This is not a concurrent
-inspection lease or an upgrade command. Ordinary writable open still retains
-legacy in-place migration behavior; do not use it to probe unknown stores.
-Ordinary open now rejects unknown/newer markers and incomplete current layouts
-before writable database setup. Writable preflight retains the native RocksDB
+inspection lease or an upgrade command. Ordinary writable and read-only opens
+now refuse recognized version-0/1 layouts with an explicit-upgrade diagnostic;
+they do not migrate the source. Unknown/newer markers and incomplete or malformed
+layouts are also rejected before writable database setup. Writable preflight
+retains the native RocksDB
 lock across inspection and open. A checkpoint without `LOCK` gains an empty
 native lock file even when rejected; existing data files are not changed by
 that refusal. Use `inspect` when no new file may be created.
+
+**Compatibility change:** opening legacy data is no longer an upgrade command.
+Retain the original store, then use `backup-legacy`, `upgrade`, `verify-upgrade`
+and `activate-upgrade` with the same supported executable and fresh destinations.
+Point ordinary commands at the activated destination, not the original source
+or guarded workspace. The admitted Linux/static Oxigraph/vendored RocksDB
+profile and RDF-feature requirements are unchanged; other profiles are not
+qualified by this refusal. See the
+[sealed upgrade requirements](#offline-build-bound-sealed-upgrades-fork) and
+[explicit activation instructions](#offline-fresh-target-upgrade-activation-fork).
 See [ADR-0028](../docs/adr/0028-safe-storage-schema-upgrades.md#native-metadata-inspection-slice-2026-09-10).
 
 ## Offline legacy physical backups (fork)
