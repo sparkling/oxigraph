@@ -23,10 +23,11 @@
   inspection API/CLI for verified incomplete, pending and sealed states.
   Checksummed schema-envelope decoding and metadata reporting are implemented;
   an explicit inactive marker-only v2-to-v3 shadow construction API/CLI-free
-  library slice is implemented, with a build-local (not executable-bound) sealed
-  receipt; envelope admission on ordinary open, activation/cutover for this path,
-  old/new-binary receipt compatibility, full compatibility rejection,
-  older-binary rollback and the frozen qualification gates remain open
+  library slice is implemented, with fail-closed rejection of a changed
+  executable on resume/verify (unproven by any test) but no operator-visible
+  build identity on the sealed receipt; envelope admission on ordinary open,
+  activation/cutover for this path, full compatibility rejection, older-binary
+  rollback and the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
   This ADR owns the contract; both programme plans reference that one current
@@ -979,13 +980,25 @@ a changed source/backup is rejected rather than patched. Independent
 reopen/recompare (`inputs.recheck`) revalidates unchanged source and backup
 ancestry before trusting any prior attempt.
 
-Unlike the version-0/1-to-2 receipt profile added earlier in this ADR,
-`SchemaUpgradeReceipt` carries no executable hash/length or native-backend
-binding: it records only the envelope, attempt number, backup fingerprint,
-primary logical fingerprint/record/byte counts and an overall content
-fingerprint. It establishes content continuity across an unchanged build, not
-cross-binary compatibility; **old/new binary compatibility is not addressed by
-this receipt** and remains a separate open gate.
+Correction to an initial reading of this slice: the sealed `SchemaUpgradeReceipt`
+struct itself carries no executable hash/length field and no public accessor
+for one, unlike the version-0/1-to-2 `UpgradeReceipt` profile added earlier in
+this ADR. But the underlying preflight (`plan_bytes`) already embeds a
+`BuildBinding` (the same private type the version-0/1-to-2 profile uses,
+reused here as a descendant module) capturing the running executable's exact
+length and SHA-256 from `/proc/self/exe`. Both `resume_schema_upgrade` and
+`SchemaUpgradeReceipt::verify` call `verify_workspace`, which unconditionally
+re-derives `plan_bytes` against whatever binary is currently running and
+rejects with `InvalidManifest` before trusting any stored attempt if it does
+not byte-for-byte match the persisted preflight. So resuming or independently
+verifying a v2-to-v3 workspace with a different executable **does** fail
+closed today, on the same mechanism as the sibling profile. What is missing is
+narrower than initially stated: no test in `schema_upgrade_tests.rs` exercises
+a changed-executable scenario (unlike the equivalent tamper test already
+present for `UpgradeReceipt`), so this fail-closed path is real by
+construction but unproven; and the sealed receipt exposes no public
+`executable_len()`/`executable_sha256()` accessor for an operator to inspect
+after the fact, unlike the sibling profile.
 
 This slice was applied to the working tree before this session without
 independent verification. Ordinary delivery workflows on Claude-only routes
@@ -1022,13 +1035,16 @@ repair is committed to `main` as `424e895b`; it is not pushed.
 This closes only the bounded repair-and-verify gap in the already-drafted
 marker-only construction slice. It does not add envelope admission to ordinary
 open, an activation/cutover API for this v2-to-v3 path (unlike the earlier
-version-0/1-to-2 profile's `activate_upgrade`), old/new-binary receipt
-compatibility, the operational gate (backup+upgrade+explicit
+version-0/1-to-2 profile's `activate_upgrade`), a tested and operator-visible
+old/new-binary receipt compatibility claim (the fail-closed mechanism exists
+and runs on every resume/verify call, but is unproven by any test and not
+exposed on the sealed receipt), the operational gate (backup+upgrade+explicit
 cutover+rollback+restore drills on frozen size classes with recorded duration
 and peak disk/memory), or the frozen compatibility/crash/system-RocksDB
 qualification matrix. G4.3's stated exit criteria of source-preserving cutover
-and old/new binary compatibility failing closed remain unimplemented for this
-path. ADR-0028 remains Proposed and full G4.3 is not complete.
+remains unimplemented for this path; old/new binary compatibility failing
+closed is implemented but untested for this path. ADR-0028 remains Proposed
+and full G4.3 is not complete.
 
 ## Staged implementation and evaluator gates
 
