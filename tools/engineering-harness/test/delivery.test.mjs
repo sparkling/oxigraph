@@ -15,18 +15,26 @@ test("source drift or missing process observation prevents command success", () 
   assert.equal(deliveryStatus(before, before, null, null).status, "failed");
   assert.equal(deliveryStatus(before, before, { passed: true }, "cannot read artifact").status, "failed");
 });
-test("routine role models are explicit and do not inherit coordinator Max", () => {
+test("routine role models are explicit Claude routes and do not inherit coordinator Max", () => {
   for (const [role, model, effort] of [
-    ["implement", "gpt-5.6-terra", "medium"], ["documentation", "gpt-5.6-luna", "low"],
-    ["review", "gpt-5.6-sol", "medium"], ["difficult", "gpt-5.6-sol", "high"],
-    ["decision", "gpt-6-astra", "high"],
+    ["implement", "claude-opus-5", "xhigh"], ["documentation", "claude-opus-5", "low"],
+    ["review", "claude-fable-5-1", "high"], ["difficult", "claude-fable-5-1", "xhigh"],
+    ["decision", "claude-fable-5-1", "max"],
   ]) {
     const route = routeDelivery({ role, taskId, completionCheck });
     assert.equal(route.model, model);
     assert.equal(route.effort, effort);
-    assert.equal(route.nativeDispatch.fork_turns, "none");
+    assert.deepEqual(route.nativeDispatch, { provider: "claude", model, effort });
     assert.equal(route.status, "planned-not-dispatched");
     assert.equal(route.ownerConversationChanged, false);
+  }
+});
+test("Codex models remain explicit overrides with their native dispatch shape; Claude has no ultra", () => {
+  const codex = routeDelivery({ role: "implement", taskId, completionCheck, model: "gpt-5.6-terra", effort: "medium", reason: "Codex subscription restored" });
+  assert.deepEqual(codex.nativeDispatch, { provider: "codex", model: "gpt-5.6-terra", reasoning_effort: "medium", fork_turns: "none" });
+  assert.throws(() => routeDelivery({ role: "review", taskId, completionCheck, model: "claude-fable-5-1", effort: "ultra", reason: "owner", selection: "owner" }));
+  for (const model of ["fable", "opus", "sonnet", "haiku", "claude-haiku-4-5"]) {
+    assert.throws(() => routeDelivery({ role: "implement", taskId, completionCheck, model, effort: "high", reason: "alias or effort-less model" }), model);
   }
 });
 test("builds and tests do not invoke a model; overrides require exact selection and reason", () => {
@@ -128,7 +136,7 @@ test("CLI route is inspectable without any model execution; invalid run rejects 
   const cli = "tools/engineering-harness/bin/oxigraph-delivery.mjs";
   const route = JSON.parse(execFileSync(process.execPath, [cli, "route", "--task", taskId,
     "--role", "implement", "--check", completionCheck], { encoding: "utf8" }));
-  assert.equal(route.nativeDispatch.model, "gpt-5.6-terra");
+  assert.equal(route.nativeDispatch.model, "claude-opus-5");
   assert.throws(() => execFileSync(process.execPath, [cli, "run", "--task", taskId, "--", "cargo", "publish", "--locked"], { stdio: "pipe" }));
 });
 

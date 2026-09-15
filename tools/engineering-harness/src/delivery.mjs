@@ -14,21 +14,28 @@ import { scrubbedChildEnvironment } from "../../child-environment.mjs";
 
 export const repository = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../.."));
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+// Claude-only defaults while the Codex subscription is unavailable (owner, 2026-09-15).
+// Exact model IDs, one model tier per route with effort by role; no cost cascade.
+// Codex models stay admissible as explicit overrides; unavailability is reported, never substituted.
 const roles = Object.freeze({
   build: [null, null],
   test: [null, null],
-  implement: ["gpt-5.6-terra", "medium"],
-  documentation: ["gpt-5.6-luna", "low"],
-  review: ["gpt-5.6-sol", "medium"],
-  difficult: ["gpt-5.6-sol", "high"],
-  decision: ["gpt-6-astra", "high"],
+  implement: ["claude-opus-5", "xhigh"],
+  documentation: ["claude-opus-5", "low"],
+  review: ["claude-fable-5-1", "high"],
+  difficult: ["claude-fable-5-1", "xhigh"],
+  decision: ["claude-fable-5-1", "max"],
 });
 const efforts = {
+  "claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
+  "claude-opus-5": ["low", "medium", "high", "xhigh", "max"],
+  "claude-fable-5-1": ["low", "medium", "high", "xhigh", "max"],
   "gpt-5.6-luna": ["low", "medium", "high", "xhigh", "max"],
   "gpt-5.6-terra": ["low", "medium", "high", "xhigh", "max", "ultra"],
   "gpt-5.6-sol": ["low", "medium", "high", "xhigh", "max", "ultra"],
   "gpt-6-astra": ["low", "medium", "high", "xhigh", "max", "ultra"],
 };
+const provider = (model) => (model.startsWith("gpt-") ? "codex" : "claude");
 
 export function routeDelivery({ role, taskId, completionCheck, model, effort, reason, selection }) {
   if (!Object.hasOwn(roles, role)) throw new Error("Unknown delivery role");
@@ -43,7 +50,7 @@ export function routeDelivery({ role, taskId, completionCheck, model, effort, re
   }
   const selectedModel = model ?? defaultModel;
   const selectedEffort = effort ?? defaultEffort;
-  if (["max", "ultra"].includes(selectedEffort) && !["owner", "unresolved"].includes(selection)) {
+  if (["max", "ultra"].includes(selectedEffort) && role !== "decision" && !["owner", "unresolved"].includes(selection)) {
     throw new Error("Max/Ultra need selection=owner or selection=unresolved, plus reason and completion check");
   }
   return {
@@ -51,10 +58,10 @@ export function routeDelivery({ role, taskId, completionCheck, model, effort, re
     model: selectedModel, effort: selectedEffort, reason: reason ?? "role default",
     selection: selection ?? "role-policy",
     status: "planned-not-dispatched", ownerConversationChanged: false,
-    nativeDispatch: selectedModel === null ? null : {
-      model: selectedModel, reasoning_effort: selectedEffort, fork_turns: "none",
-    },
-    instructions: "One writer on canonical main. Use the delivery entry point for every build/test. Native subscription only; no model fallback. Return exact findings and commands; a tracked agent is not proof of execution.",
+    nativeDispatch: selectedModel === null ? null : provider(selectedModel) === "claude"
+      ? { provider: "claude", model: selectedModel, effort: selectedEffort }
+      : { provider: "codex", model: selectedModel, reasoning_effort: selectedEffort, fork_turns: "none" },
+    instructions: "One writer on canonical main. Use the delivery entry point for every build/test. Native subscription only; no model fallback. A safety refusal or unavailable model is returned as status unavailable with the exact client, model and error. Return exact findings and commands; a tracked agent is not proof of execution.",
   };
 }
 

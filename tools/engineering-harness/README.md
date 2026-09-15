@@ -162,8 +162,8 @@ lifecycle. Within `workflow`, the controller requests these transitions:
 
 1. Retrieve the live task and programme control through structured Ruflo MCP;
    honor an owner-review hold before any product work. Define one completion check.
-2. Use `route` for each model-assisted subtask. It emits explicit native Codex
-   arguments, not a dispatched worker. Use the native agent tools to execute;
+2. Use `route` for each model-assisted subtask. It emits an explicit native
+   dispatch (`provider`, model, effort), not a dispatched worker. Use the native agent tools to execute;
    link the actual native ID/model/effort to Ruflo through MCP. Keep one writer.
 3. Run **all** programme build/test commands through `run`, including repairs
    and reviewer-requested checks. Cargo build/check/clippy/test and the explicit
@@ -200,21 +200,32 @@ sandbox or hostile-concurrency guarantee. Shell access is not globally
 intercepted: this is the required programme execution path, not an OS-wide ban.
 Legacy build instructions remain recipes to pass through this entry point.
 
-Model roles are executable policy in `src/delivery.mjs`: no model for build/test;
-Terra/Medium for bounded implementation, Luna/Low for documentation, Sol/Medium
-for routine review, owner-selected Astra/Low replacing Sol/High for programme implementation, and Astra/High for
-consequential decisions. An explicit supported model/effort override needs its
-reason and completion check; Max/Ultra also require `--selection owner` or
-`--selection unresolved` for that bounded exception. This does not switch the
-owner's active model. The September 12 owner override is explicit in ordinary
-workflow specifications (`model: "gpt-6-astra"`, `effort: "low"`,
-`selection: "owner"`); the generic Terra/Medium default and Sol/Medium reviewer
-remain unchanged. Superseded Sol-bound runs retain their own original identities.
-Native Claude alternatives remain allowed by ADR-0043 when specifically
-selected and available; this Codex dispatch planner does not claim to launch
-or probe them. Ruflo's Claude-only model-outcome enum cannot truthfully record
-Codex outcomes: store the actual native model and result in repository memory,
-without training under a false model name or claiming measured savings.
+Model roles are executable policy in `src/delivery.mjs`: no model for build/test.
+Since 2026-09-15 the Codex subscription is unavailable and the owner directed
+Claude-only routing. Following Anthropic's effort guidance (one model tier per
+route with effort by role, exact model IDs, no cost cascade — subscription use
+has no cost budget), the defaults are: `claude-opus-5`/xhigh for bounded
+implementation, `claude-opus-5`/low for documentation, `claude-fable-5-1`/high
+for independent review (never weaker than the implementer),
+`claude-fable-5-1`/xhigh for difficult implementation, and
+`claude-fable-5-1`/max for consequential decisions. Claude efforts are
+`low`..`max`; `ultra` is Codex-only orchestration. Aliases (`opus`, `fable`)
+and effort-less Haiku are not admitted. Codex models (`gpt-5.6-*`,
+`gpt-6-astra`) remain admissible only as explicit overrides with a reason, and
+their unavailability is reported with exact client/model/error, never
+substituted; a safety refusal is reported the same way. An explicit supported
+model/effort override needs its reason and completion check; Max/Ultra outside
+the decision role also require `--selection owner` or `--selection unresolved`
+for that bounded exception. This does not switch the owner's active model. The
+route's `nativeDispatch.provider` tells the host which native client to use
+(`claude -p --model M --effort E` for Claude; native Codex agent tools for
+Codex). Higher effort lengthens single worker turns; the 30-minute host action
+bound still applies, so split proposals that cannot complete in one turn.
+Superseded Codex-bound runs and the September 12 Astra/Low specification
+retain their own original identities.
+Ruflo's Claude-only model-outcome enum cannot truthfully record Codex outcomes:
+store the actual native model and result in repository memory, without
+training under a false model name or claiming measured savings.
 
 Focused self-checks (use the supported Node executable, then Node 20):
 

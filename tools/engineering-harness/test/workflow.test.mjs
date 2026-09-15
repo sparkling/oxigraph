@@ -77,7 +77,7 @@ function fixture(options = {}) {
       if (!review && options.badPath) result.changes[0].path = options.badPath;
       if (review && reviews <= (options.rejectReviews ?? 0)) { result.verdict = "REJECT"; result.findings = ["Fix the exact review finding"]; }
       if (review && options.reviewWrites) content += "unexpected review edit";
-      if (options.unavailable) result = { client: "Codex native collaboration", model: route.model, effort: route.effort, status: "unavailable", error: "fixture: requested model unavailable" };
+      if (options.unavailable) result = { client: "Claude Code native", model: route.model, effort: route.effort, status: "unavailable", error: "fixture: requested model unavailable" };
       if (options.proposalDrift) content += "concurrent edit";
     } else if (request.action === "root-apply") {
       content = request.payload.changes[0].content;
@@ -179,7 +179,7 @@ test("reviewer must be distinct, MCP readback must match, and no-op cannot compl
 });
 test("native unavailability reports exact client/model/error without substitution or repair", async () => {
   const f = setup({ unavailable: true });
-  await assert.rejects(runWorkflow(spec, f.host, f.io), /Codex native collaboration; model=gpt-5.6-terra; fixture: requested model unavailable/);
+  await assert.rejects(runWorkflow(spec, f.host, f.io), /Claude Code native; model=claude-opus-5; fixture: requested model unavailable/);
   assert.equal(f.counters().implementations, 1);
   assert.equal(f.counters().checks, 0);
 });
