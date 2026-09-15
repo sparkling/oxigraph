@@ -19,7 +19,8 @@
 //!
 //! This bounded v1 grammar only describes that exact inventory/profile. A new
 //! profile needs a separately reviewed format contract. Decoding grants no
-//! compatibility, upgrade, recovery or activation authority and has no writer.
+//! compatibility, upgrade, recovery or activation authority. The crate-private
+//! encoder is used only by explicit inactive schema upgrade construction.
 use sha2::{Digest, Sha256};
 use std::fmt;
 
@@ -86,6 +87,46 @@ pub struct StoreSchemaEnvelope {
 }
 
 impl StoreSchemaEnvelope {
+    pub(crate) fn create_upgrade(rdf_profile: SchemaRdfProfile) -> Self {
+        let mut uuid: [u8; 16] = rand::random();
+        uuid[6] = (uuid[6] & 0x0f) | 0x40;
+        uuid[8] = (uuid[8] & 0x3f) | 0x80;
+        Self {
+            envelope_version: 1,
+            logical_version: 3,
+            schema_uuid: SchemaUuid(uuid),
+            rdf_profile,
+            encoding_profile: 1,
+            codec_ceilings: CODEC_CEILINGS,
+            required_column_families: FAMILIES.iter().map(|name| (*name).to_owned()).collect(),
+        }
+    }
+
+    pub(crate) fn encode(&self) -> Vec<u8> {
+        let mut bytes = MAGIC.to_vec();
+        bytes.push(self.envelope_version);
+        bytes.extend_from_slice(&self.logical_version.to_be_bytes());
+        bytes.extend_from_slice(self.schema_uuid.as_bytes());
+        bytes.push(match self.rdf_profile {
+            SchemaRdfProfile::Rdf11 => 11,
+            SchemaRdfProfile::Rdf12 => 12,
+        });
+        bytes.extend_from_slice(&self.encoding_profile.to_be_bytes());
+        for ceiling in self.codec_ceilings {
+            bytes.extend_from_slice(&ceiling.to_be_bytes());
+        }
+        bytes.push(12);
+        for name in FAMILIES {
+            bytes.push(name.len() as u8);
+            bytes.extend_from_slice(name.as_bytes());
+        }
+        let mut hash = Sha256::new();
+        hash.update(DOMAIN);
+        hash.update(&bytes);
+        bytes.extend_from_slice(&hash.finalize());
+        bytes
+    }
+
     pub const fn envelope_version(&self) -> u8 {
         self.envelope_version
     }

@@ -35,7 +35,7 @@ pub mod numeric_encoder;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod rocksdb;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
-pub(crate) use rocksdb::LegacyStoreSnapshot;
+pub(crate) use rocksdb::{LegacyStoreSnapshot, SchemaUpgradeSnapshot};
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod rocksdb_wrapper;
 pub mod small_string;

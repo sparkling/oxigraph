@@ -23,6 +23,20 @@ Specification conformance and suite results support only the exact pinned
 revision, manifest, mode, and capability tested. They do not establish untested
 protocol, service, persistence, operational, or production claims.
 
+**ruflo-interface-contract:v2**
+
+## Ruflo Interface Contract
+
+- Use `search_ruvnet` for RuvNet source and capability claims when the Brain is installed; cite its source.
+- Use `guidance_brain` / `guidance_recommend` and the live MCP registry for this process's actual registered, configured, reachable, healthy, and authorized state.
+- Prefer a live structured Ruflo MCP tool for coordination, memory, routing, learning, and status. Discover deferred tools and schemas; never guess names or arguments.
+- For a genuine Ruflo CLI-only gap, use `ruvnet_cli_help({executable: "ruflo", argv: ["<group>", "<command>"]})`, then `ruvnet_cli_run({executable: "ruflo", argv: [...]})` with the exact literal arguments that help authorized. Never guess `claude-flow` as the executable merely because an old package or instruction used that name.
+- Direct shell is for bootstrap and administration that cannot depend on MCP: install/init, first MCP registration/start, diagnostics, and deliberate daemon work.
+- Native Claude/Codex agents execute. Ruflo tracks a swarm only after `swarm_init` and `agent_spawn` create records; a native agent alone is not proof.
+- Before generic testing or security agents, discover specialized installed QE or adversarial-security capabilities and disclose any fallback.
+
+This interface contract governs Ruflo use without weakening this fork's stricter evidence, protected-state, provider, qualification, or publication boundaries.
+
 ## Runtime and authority boundaries
 
 `tools/metaharness` is the semantic qualification harness.

@@ -47,6 +47,9 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 use std::{io, thread};
 
+mod schema_upgrade;
+pub(crate) use schema_upgrade::SchemaUpgradeSnapshot;
+
 const BATCH_SIZE: usize = 100_000;
 const LATEST_STORAGE_VERSION: u64 = 2;
 
