@@ -22,8 +22,11 @@
   Existing build-bound outer upgrade workspaces also have a non-mutating
   inspection API/CLI for verified incomplete, pending and sealed states.
   Checksummed schema-envelope decoding and metadata reporting are implemented;
-  envelope writing/admission, full compatibility rejection, older-binary rollback and
-  the frozen qualification gates remain open
+  an explicit inactive marker-only v2-to-v3 shadow construction API/CLI-free
+  library slice is implemented, with a build-local (not executable-bound) sealed
+  receipt; envelope admission on ordinary open, activation/cutover for this path,
+  old/new-binary receipt compatibility, full compatibility rejection,
+  older-binary rollback and the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
   This ADR owns the contract; both programme plans reference that one current
@@ -952,6 +955,80 @@ Next is the explicit envelope writer and v2-to-v3 shadow path, with UUID retaine
 through retries, receipt/backup binding, RDF-ceiling admission and failure tests.
 Default activation, frozen compatibility/rollback gates and full G4.3 remain
 open. The ADR remains Proposed.
+
+## Explicit inactive marker-only v2-to-v3 construction (2026-09-16)
+
+`Store::start_schema_upgrade`/`resume_schema_upgrade` and
+`SchemaUpgradeReceipt::verify` in
+[`schema_upgrade.rs`](../../lib/oxigraph/src/store/schema_upgrade.rs) build and
+independently verify a sealed, inactive version-3 copy from an unchanged source
+and its completed ADR-0022 backup. The module doc states the bound plainly:
+"Explicit marker-only v2-to-v3 construction. No ordinary admission or
+activation." Ordinary `Store::open`/`open_read_only` are unchanged by this
+slice; nothing reads or writes the new envelope on the normal path.
+
+The scope is exact primary equality: every column-family key/value must match
+the source except `default/oxversion`, while external contributor bytes
+(receipt-referenced files outside the primary column families, for example a
+`contributors/<provider>/...` subtree) are preserved byte-for-byte and never
+reconciled against a projection. A single checksummed schema UUID is stamped
+once and retained through every retry, resume and interruption. Interrupted or
+failed attempts are retained under `attempts/`, never repaired, rewritten, or
+reused as another attempt's input; a torn journal, a tampered sealed record, or
+a changed source/backup is rejected rather than patched. Independent
+reopen/recompare (`inputs.recheck`) revalidates unchanged source and backup
+ancestry before trusting any prior attempt.
+
+Unlike the version-0/1-to-2 receipt profile added earlier in this ADR,
+`SchemaUpgradeReceipt` carries no executable hash/length or native-backend
+binding: it records only the envelope, attempt number, backup fingerprint,
+primary logical fingerprint/record/byte counts and an overall content
+fingerprint. It establishes content continuity across an unchanged build, not
+cross-binary compatibility; **old/new binary compatibility is not addressed by
+this receipt** and remains a separate open gate.
+
+This slice was applied to the working tree before this session without
+independent verification. Ordinary delivery workflows on Claude-only routes
+(no Codex subscription available this week) found and fixed four real defects
+across five dispatches (`workflow-1C5CTQ`, `workflow-fhZej5`, `workflow-D8KQa5`,
+`workflow-eBoRBl`, `workflow-lXJvCC`): an `E0283` ambiguous-type compile error in
+the test suite; a naming bug in `resume_inner`'s contributor-copy loop that
+passed a receipt-relative path where a flat validated artifact name was
+required (`BackupError::InvalidPath`); a misapplied ADR-0022
+backup-package-specific directory-sync helper that assumed a fixed
+`store/`+`contributors/` layout and returned `BackupError::NotFound` against an
+attempt directory that only had `store/`; and, caught by independent review
+after all six deterministic checks had already passed, a durability regression
+in the narrow fix for that `NotFound` bug: it dropped `fsync` coverage for any
+`contributors/` subtree, which the contributor-preservation property above
+requires. The final fix is a general recursive `sync_tree` helper that fsyncs
+every directory `create_parents` may have created under an attempt, not a
+name-specific pair. Native Terra/Sol/Astra-family Claude implement roles
+proposed each fix; independent Claude review roles at matching or higher effort
+accepted or correctly rejected each proposal; root applied only reviewed
+changes and re-ran every check itself before commit.
+
+Final checks passed on the committed source: focused compile
+(`cargo check --tests`), `schema_upgrade` library tests (9/9, including the
+contributor-byte-preservation test that exposed the durability regression),
+the same tests with `rdf-12` enabled (10/10), `cargo fmt -p oxigraph --
+--check`, the existing `backup_receipts`+`restore_receipts` regressions (18/18),
+and the existing `upgrade_receipts` regression (9/9). Exact evidence for the
+final accepted increment is in Ruflo
+`programme-task-evidence/workflow-ee567fc4-9d09-4ee5-9e4f-33d177e13203`; earlier
+rejected/inconclusive dispatches remain recorded rather than discarded. The
+repair is committed to `main` as `424e895b`; it is not pushed.
+
+This closes only the bounded repair-and-verify gap in the already-drafted
+marker-only construction slice. It does not add envelope admission to ordinary
+open, an activation/cutover API for this v2-to-v3 path (unlike the earlier
+version-0/1-to-2 profile's `activate_upgrade`), old/new-binary receipt
+compatibility, the operational gate (backup+upgrade+explicit
+cutover+rollback+restore drills on frozen size classes with recorded duration
+and peak disk/memory), or the frozen compatibility/crash/system-RocksDB
+qualification matrix. G4.3's stated exit criteria of source-preserving cutover
+and old/new binary compatibility failing closed remain unimplemented for this
+path. ADR-0028 remains Proposed and full G4.3 is not complete.
 
 ## Staged implementation and evaluator gates
 
