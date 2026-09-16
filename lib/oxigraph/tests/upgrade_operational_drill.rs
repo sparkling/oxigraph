@@ -6,7 +6,8 @@
 )]
 
 use oxigraph::store::{
-    BackupOptions, LegacyBackupOptions, RestoreOptions, RestoreReceipt, Store, UpgradeOptions,
+    BackupFile, BackupOptions, LegacyBackupOptions, RestoreOptions, RestoreReceipt, Store,
+    UpgradeOptions,
 };
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -123,8 +124,14 @@ fn drill(version: u64) -> TestResult {
 
     let legacy_backup = root.path().join("legacy-backup");
     let started = Instant::now();
-    Store::backup_legacy(&source, &legacy_backup, &LegacyBackupOptions::default())?;
+    let legacy_backup_receipt =
+        Store::backup_legacy(&source, &legacy_backup, &LegacyBackupOptions::default())?;
     let backup_legacy_duration = started.elapsed();
+    let legacy_logical_bytes: u64 = legacy_backup_receipt
+        .files()
+        .iter()
+        .map(BackupFile::size)
+        .sum();
 
     let workspace = root.path().join("workspace");
     let options = UpgradeOptions::default();
@@ -154,8 +161,14 @@ fn drill(version: u64) -> TestResult {
 
     let with_receipt_backup = root.path().join("with-receipt-backup");
     let started = Instant::now();
-    activated.backup_with_receipt(&with_receipt_backup, &BackupOptions::default())?;
+    let with_receipt_backup_receipt =
+        activated.backup_with_receipt(&with_receipt_backup, &BackupOptions::default())?;
     let backup_with_receipt_duration = started.elapsed();
+    let with_receipt_logical_bytes: u64 = with_receipt_backup_receipt
+        .files()
+        .iter()
+        .map(BackupFile::size)
+        .sum();
 
     let restore_target = root.path().join("restored");
     let restored = Store::restore_backup(
@@ -168,25 +181,55 @@ fn drill(version: u64) -> TestResult {
     restored_store.validate()?;
     assert_eq!(restored_store.len()? as u64, activation.quad_count());
 
-    // Every directory the drill produced still exists, so this sum is a
-    // measured figure for this run rather than an estimate -- though see
+    // Every directory the drill produced still exists, so these are
+    // measured figures for this run rather than an estimate -- though see
     // directory_bytes's own doc comment: a file raced away by RocksDB's
     // background cleanup between listing and stat contributes zero, so the
-    // true figure can be marginally higher than what is reported here.
-    let total_disk_bytes = directory_bytes(&source)?
-        + directory_bytes(&legacy_backup)?
-        + directory_bytes(&workspace)?
-        + directory_bytes(&target)?
-        + directory_bytes(&with_receipt_backup)?
-        + directory_bytes(&restore_target)?;
+    // true figures can be marginally higher than what is reported below.
+    // Each directory is measured exactly once and reused in every total it
+    // contributes to, so the disk-bytes figure and the amplification
+    // ratios below can never disagree with each other over the same race.
+    let source_bytes = directory_bytes(&source)?;
+    let legacy_backup_bytes = directory_bytes(&legacy_backup)?;
+    let workspace_bytes = directory_bytes(&workspace)?;
+    let target_bytes = directory_bytes(&target)?;
+    let with_receipt_backup_bytes = directory_bytes(&with_receipt_backup)?;
+    let restore_target_bytes = directory_bytes(&restore_target)?;
+    let total_disk_bytes = source_bytes
+        + legacy_backup_bytes
+        + workspace_bytes
+        + target_bytes
+        + with_receipt_backup_bytes
+        + restore_target_bytes;
 
     // See peak_rss_kb's own doc comment: this is the whole test binary's
     // peak so far (best-effort, never fatal), not an isolated measurement
     // of this one drill.
     let peak_rss_kb = peak_rss_kb().map_or_else(|| "unknown".to_owned(), |kb| kb.to_string());
 
+    // Write amplification: physical bytes this leg of the drill wrote to
+    // disk, divided by the logical byte size the relevant backup receipt's
+    // own file manifest declares (BackupFile::size, a manifest-recorded
+    // length, not a filesystem stat). "Legacy" covers backup_legacy+
+    // upgrade+cutover against the legacy backup's manifest; "restore"
+    // covers the with-receipt backup+restore against that separate
+    // backup's own manifest. Instrumentation only: no threshold is
+    // asserted on either ratio.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "instrumentation ratio only, not an exact count; byte totals here are far below f64's exact-integer range"
+    )]
+    let legacy_write_amplification =
+        (legacy_backup_bytes + workspace_bytes + target_bytes) as f64 / legacy_logical_bytes as f64;
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "instrumentation ratio only, not an exact count; byte totals here are far below f64's exact-integer range"
+    )]
+    let restore_write_amplification = (with_receipt_backup_bytes + restore_target_bytes) as f64
+        / with_receipt_logical_bytes as f64;
+
     eprintln!(
-        "drill version={version} backup_legacy={backup_legacy_duration:?} upgrade={upgrade_duration:?} cutover={cutover_duration:?} rollback={rollback_duration:?} backup_with_receipt={backup_with_receipt_duration:?} restore={restore_duration:?} disk_bytes={total_disk_bytes} peak_rss_kb={peak_rss_kb}"
+        "drill version={version} backup_legacy={backup_legacy_duration:?} upgrade={upgrade_duration:?} cutover={cutover_duration:?} rollback={rollback_duration:?} backup_with_receipt={backup_with_receipt_duration:?} restore={restore_duration:?} disk_bytes={total_disk_bytes} peak_rss_kb={peak_rss_kb} legacy_write_amplification={legacy_write_amplification:.2} restore_write_amplification={restore_write_amplification:.2}"
     );
     Ok(())
 }
