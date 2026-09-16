@@ -60,7 +60,10 @@
   `inspect`/`open`/`open_read_only` are also now proven to refuse a
   physically corrupted MANIFEST (RocksDB's own checksum validation, not
   this crate's version logic) without further mutating the store, for
-  both a legacy and current declared version.
+  both a legacy and current declared version, and proven NOT to
+  misclassify genuine WAL loss the same way: a legacy store's own
+  version-marker refusal still fires correctly and the store is not
+  further mutated when its WAL is truncated.
   Envelope admission on ordinary open, full crash-matrix breadth beyond
   those five points, deeper corruption coverage beyond the MANIFEST, the
   RDF-feature-mismatch test's dependency on a separately-built
@@ -2107,6 +2110,61 @@ dependency on a separately-built no-default-features CLI, both larger,
 separately-scoped pieces of work. Envelope admission on ordinary open
 remains a deliberate product decision, not ordinary-delivery scope.
 ADR-0028 remains Proposed.
+
+## A truncated-WAL test that initially proved nothing, caught and fixed across two review rounds (2026-09-16)
+
+The natural complement to the corrupted-MANIFEST test is a corrupted-WAL
+test: WAL damage should not be misclassified as `Corruption`, nor should
+it block the ordinary legacy-marker refusal. The first version built a
+synthetic legacy store (the same `GRAPHS_CF`-omitted shape used
+elsewhere in this file), flushed it, truncated every `.log` file found,
+and asserted the usual three-way refusal plus non-mutation. It passed.
+
+Independent review rejected it. The truncated WAL segment was the one
+written *before* the flush; once that flush durably persists the data
+to an SST, RocksDB does not need that WAL segment for recovery, so
+truncating it plausibly discarded nothing load-bearing -- the test's
+central premise, that WAL damage was genuinely present, was very likely
+false, even though the file itself was non-empty (a printed byte count
+confirmed this directly: one flushed-and-superseded 95-byte segment, one
+empty new one). Review separately caught a real factual error in the
+doc comment: "never replaying the log" is wrong. RocksDB replays the WAL
+on every open, including read-only opens; a truncated tail is tolerated
+under the default point-in-time recovery mode, not skipped.
+
+Both were treated as real findings. The fix inserts one more key
+*after* the flush and drops the database without flushing again, so
+that key exists only in the post-flush WAL segment -- verified before
+relying on it that `Db` has no `Drop` implementation that forces a
+flush. Truncating that segment now genuinely discards recoverable data.
+A non-empty guard on every `.log` file before truncation was added,
+which would have caught the original defect had it been present. The
+doc comment was corrected to state the real mechanism. A second review
+round confirmed the fix against RocksDB's actual close and recovery
+semantics, with no blocking findings -- it did note, fairly, that the
+delivery description's "everything else unchanged" claim missed one
+small removed comment (four lines that had encoded the first version's
+now-invalid reasoning); worth recording here as a precision lapse in
+reporting the diff, not a code defect.
+
+Verified via `cargo check`; the targeted test passing with the new
+guard genuinely exercised (not vacuously true); the full
+`format_inspection_tests` module (9 passed, 1 pre-existing ignored test
+unrelated to this change); `cargo fmt --check` at full-crate scope.
+Committed to `main` as `0180d145`.
+
+This is the seventh increment this session where independent review
+surfaced something worth acting on, and the first where round 1 caught
+the delivered test proving nothing at all -- not an overclaim in prose,
+not a design gap around the edges, but a passing test whose central
+premise was false. It was caught the same way as everything else this
+session: verified empirically (the printed byte counts), fixed for the
+real reason, and re-reviewed before committing. Gate 1's compatibility
+matrix now covers both the "corruption is real damage" and "WAL loss
+isn't corruption" cases for the legacy layout. What remains genuinely
+unbuilt: SST-level corruption coverage and the RDF-feature-mismatch
+test's dependency on a separately-built no-default-features CLI, both
+larger, separately-scoped pieces of work. ADR-0028 remains Proposed.
 
 ## Staged implementation and evaluator gates
 
