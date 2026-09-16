@@ -24,10 +24,12 @@
   Checksummed schema-envelope decoding and metadata reporting are implemented;
   an explicit inactive marker-only v2-to-v3 shadow construction API/CLI-free
   library slice is implemented, with tested fail-closed rejection of a changed
-  executable on resume/verify but no operator-visible build identity on the
-  sealed receipt; envelope admission on ordinary open, activation/cutover for
-  this path, full compatibility rejection, older-binary rollback and the
-  frozen qualification gates remain open
+  executable on resume/verify (no operator-visible build identity on the
+  sealed receipt) and an explicit library-only fresh-target activation API
+  that publishes a source-preserving, byte-verified copy without promoting
+  version 3 to this binary's current schema; envelope admission on ordinary
+  open, CLI exposure for activation, full compatibility rejection,
+  older-binary rollback and the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
   This ADR owns the contract; both programme plans reference that one current
@@ -1049,10 +1051,82 @@ this v2-to-v3 path (unlike the earlier version-0/1-to-2 profile's
 sealed receipt, the operational gate (backup+upgrade+explicit
 cutover+rollback+restore drills on frozen size classes with recorded duration
 and peak disk/memory), or the frozen compatibility/crash/system-RocksDB
-qualification matrix. G4.3's stated exit criterion of source-preserving
-cutover remains unimplemented for this path; old/new binary compatibility
-failing closed is now implemented and tested for this path. ADR-0028 remains
-Proposed and full G4.3 is not complete.
+qualification matrix. Old/new binary compatibility failing closed is now
+implemented and tested for this path. ADR-0028 remains Proposed and full
+G4.3 is not complete.
+
+## Explicit fresh-target activation for the v2-to-v3 construction (2026-09-16)
+
+`Store::activate_schema_upgrade` in
+[`schema_upgrade.rs`](../../lib/oxigraph/src/store/schema_upgrade.rs) closes
+G4.3's remaining source-preserving-cutover exit criterion for this path. It
+mirrors the version-0/1-to-2 profile's `activate_upgrade`/`UpgradeActivation`
+exactly: it re-verifies the sealed receipt with every check
+`SchemaUpgradeReceipt::verify` performs (no relaxed subset), locates the
+single VALIDATED journal record for the receipt's winning attempt, copies
+only that attempt's `store/`-prefixed files into a fresh guarded target, and
+removes the target's guard as the sole activation boundary. Contributor and
+other external artifacts are never published to the target; they remain
+preserved in the retained workspace as receipt-bound evidence, unchanged from
+the marker-only construction slice above. Every failure after the guard
+unlink is reported `CompletionIndeterminate`, and the target is never cleaned
+up automatically. `SchemaUpgradeActivation` is an in-memory historical
+observation only, exactly like its sibling `UpgradeActivation`.
+
+**Activating a schema version does not promote it to current.**
+`LATEST_STORAGE_VERSION` is still 2, so ordinary `Store::open`/
+`open_read_only` on a freshly activated version-3 target correctly return
+`StorageError::SchemaTooNew { found: 3, supported: 2 }` -- the same typed
+refusal any newer-than-supported store gets. This was caught the hard way: an
+initial implementation dispatch (`workflow-WYzakl`) produced a correct
+`activate_schema_upgrade`, but its own tests wrongly asserted ordinary
+`Store::open` would succeed after activation and returned INCONCLUSIVE only
+because that read-only worker could not run `cargo test` to discover the
+failure itself. Root applied the diff directly, ran the real checks, found
+two tests failing with exactly that `SchemaTooNew` error, confirmed this was
+a test defect rather than an implementation defect, and corrected the two
+assertions to expect the (correct) typed refusal instead of success. Source-
+preserving cutover therefore means exactly what its name says: the source is
+preserved and a verified, byte-identical copy is published at a fresh target
+path, for a future version-3-aware binary to adopt once that separate,
+larger promotion decision is authorized -- not that this binary treats the
+result as its own current, ordinarily-usable schema today.
+
+The corrected diff was independently reviewed (`claude-fable-5-1`, high
+effort, ACCEPT) via a confirmation-only workflow (`workflow-dFfY8r`) after
+root's own direct verification of all six checks. The review's own `mcp-
+handoff` step did not complete: root edited one stale doc-comment line
+(the module header still read "No ordinary admission or activation",
+which the review correctly flagged as confusing now that explicit
+activation exists) between the review's ACCEPT and the handoff step, which
+correctly tripped the harness's own source-tamper detection and ended that
+workflow as incomplete. This was a process-timing mistake by root, not a
+finding about the code; root re-ran the affected checks directly after the
+comment edit (cargo check and the schema_upgrade library tests, 14/14) and
+recorded the evidence manually since the automatic handoff could not.
+Exact evidence, including this note, is in Ruflo
+`programme-reviews/oxigraph-schema-upgrade-activation-2026-09-16-v1`. Final
+checks: compile; schema_upgrade library tests 14/14; the same with `rdf-12`
+15/15; `cargo fmt -p oxigraph -- --check` clean; existing
+`backup_receipts`+`restore_receipts` 18/18; existing `upgrade_receipts` 9/9.
+Committed to `main` as `af7ea897`; not pushed.
+
+This closes only the activation API itself, library-only with no CLI
+exposure (a separate slice, matching every other section of this ADR's
+API-then-CLI delivery order). It does not add envelope admission on
+ordinary open, an operator-visible build-identity accessor on the sealed
+receipt, the operational gate (backup+upgrade+explicit
+cutover+rollback+restore drills on frozen size classes with recorded
+duration and peak disk/memory), or the frozen compatibility/crash/system-
+RocksDB qualification matrix -- and it does not and cannot promote version 3
+to `LATEST_STORAGE_VERSION`, which remains a separate, larger, not-yet-
+authorized decision. ADR-0028 remains Proposed. With this slice, G4.3's
+named exit criteria (read-only inspection, verified backup ancestry,
+resumable shadow copy, source-preserving cutover, and old/new binary
+compatibility fail closed) are each implemented and tested for the v2-to-v3
+marker-only path; the crash matrix's breadth and the frozen
+qualification/promotion gates remain the largest genuinely open items, and
+full G4.3 completion still requires those.
 
 ## Staged implementation and evaluator gates
 
