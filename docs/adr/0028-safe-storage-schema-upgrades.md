@@ -38,16 +38,17 @@
   backup-with-receipt/restore, timed per stage with on-disk bytes summed,
   peak resident-set-size sampled, and read/write amplification ratios
   computed against each leg's own backup-receipt manifest, against the
-  two checked-in legacy fixtures.
+  two checked-in legacy fixtures plus a synthetic 5,000-quad size class
+  for the restore leg (the legacy leg cannot be scaled the same way
+  without a legacy-format writer, which this codebase does not provide).
   The legacy path now has a real OS-level process-kill test for all three
   of its public entry points (start, resume, activation); the v2-to-v3
   draft has real process-kill tests for resume and activation but not its
   construction/start step (five total). Every other fault phase on both
   paths remains proven only under synthetic in-process fault injection.
   Envelope admission on ordinary open, full crash-matrix breadth beyond
-  those five points, additional operational-gate size classes beyond the
-  two checked-in fixtures, full compatibility rejection, older-binary
-  rollback and the frozen qualification gates remain open
+  those five points, full compatibility rejection, older-binary rollback
+  and the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
   This ADR owns the contract; both programme plans reference that one current
@@ -1768,6 +1769,78 @@ the v2-to-v3 draft's construction step's missing real-process-kill
 coverage (which needs a production-code change to `start_inner` to add a
 fault-injection hook, deliberately deferred as a bigger scope decision
 than ordinary test-only work), remain the open items. ADR-0028 remains
+Proposed.
+
+## A synthetic size class for restore-leg amplification, with a corrected ratio interpretation (2026-09-16)
+
+The previous increment's open item was additional synthetic size classes.
+This adds one, `SYNTHETIC_QUAD_COUNT = 5_000`, but only to the restore
+leg: it operates on an arbitrary current-format `Store`, reachable
+through the public `insert`/`extend` API, whereas the legacy leg
+(backup-legacy/upgrade/cutover) needs a legacy-format writer that this
+codebase deliberately does not provide -- nothing should intentionally
+produce new data in an obsolete physical layout. `drill()` now builds a
+`scaled` store holding a copy of `activated`'s quads plus 5,000 synthetic
+ones, and backs that up (instead of `activated` directly) for the
+restore leg. `legacy_write_amplification`'s four inputs are untouched by
+this change.
+
+Real observed values across three consecutive concurrent
+(`--features rdf-12`) runs: `legacy_write_amplification` held at
+40.86-40.88 (v0) / 6.72-6.73 (v1), a small but real shift from the prior
+40.6/6.71 baseline. Independent review traced this precisely rather than
+letting it stand as unexplained noise: the with-receipt backup's
+checkpoint now runs against `scaled_store` instead of `activated`, so
+`activated`'s own write-ahead log is no longer flushed by that checkpoint
+before `target_bytes` is measured -- arguably a purer legacy-leg
+measurement than before, not a regression. `restore_write_amplification`
+dropped from the prior increment's ~4.1 (tiny fixture) to a stable 2.11
+at the new ~5,000-quad scale.
+
+That 2.11 figure needed a correction before being recorded here.
+Root's working hypothesis, going in, was that the ratio should fall
+toward 1x as content grows, reading 2.11 as still meaningfully above
+that floor. Independent review caught that this framing does not match
+the ratio's own definition: its numerator is `with_receipt_backup_bytes
++ restore_target_bytes` -- two full physical copies of the data (the
+backup and the restored copy) -- divided by one logical copy in the
+denominator, so the ratio's structural floor is approximately 2x, not
+1x. Read against the correct floor, 2.11 is only about 5% above it,
+meaning RocksDB's fixed per-instance overhead is nearly fully diluted at
+5,000 quads -- a stronger confirmation of the fixed-overhead-dilution
+hypothesis from the previous increment than the original framing
+claimed, not a weaker one. This is corrected here rather than left as
+originally framed.
+
+Two more review-caught fixes were applied before committing, both small
+but real: a strengthening assertion,
+`scaled_quad_count == activation.quad_count() + SYNTHETIC_QUAD_COUNT`,
+makes the copy-plus-grow claim test-enforced rather than
+log-inferred (nothing had previously ruled out a silently-empty copy or
+a namespace collision); and `directory_bytes`'s doc comment, which had
+named only `target`/`restore_target` as directories scanned while their
+store is open, now also names `scaled`.
+
+This is the third consecutive increment on this one file where
+independent review caught something in root's own framing -- not a
+logic bug in the delivered code on any of the three occasions, but an
+unverified causal claim (peak-RSS), a redundant-measurement risk
+(amplification consolidation), or, this time, an incorrect ratio
+interpretation stated with more confidence than the definition
+supported. All three were treated as real findings and corrected, not
+softened or argued past. All four completion-check commands passed for
+real across this increment's re-verification passes (`cargo check`
+clean; three consecutive `--features rdf-12` concurrent drill runs, all
+reporting the same stable ratios and satisfying the new strengthening
+assertion; `cargo fmt --check` clean; the two directly relevant sibling
+suites at 14 passed combined). Committed to `main` as `955d5415`; not
+pushed.
+
+This closes the additional-size-class leg of the first operational-gate
+drill. The v2-to-v3 draft's construction step's missing real-process-kill
+coverage (needs a production-code change to `start_inner`, deliberately
+deferred as a bigger scope decision than ordinary test-only work) is the
+one remaining item from this stream of increments. ADR-0028 remains
 Proposed.
 
 ## Staged implementation and evaluator gates
