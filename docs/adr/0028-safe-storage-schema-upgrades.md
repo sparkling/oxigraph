@@ -1308,14 +1308,20 @@ smallest class proves the measurement plumbing end-to-end; committing large
 binary fixtures to the repository is itself a decision this section
 deliberately defers rather than making unreviewed.
 
-**What each stage measures, first increment:**
+**What each stage measures, first increment.** Tracing the existing
+`lib/oxigraph/tests/upgrade_activation.rs` fixture/setup helpers shows the
+legacy-upgrade and operational-backup/restore APIs use two genuinely
+different backup formats, not one: `Store::backup_legacy` produces the
+package `Store::start_upgrade`/`Store::upgrade` consume, while
+`Store::backup_with_receipt` (ADR-0022, G2.6) produces the package
+`Store::restore_backup` consumes. The drill therefore has two distinct
+backup legs, not one:
 
-- **Backup** — wall-clock duration of `Store::backup_with_receipt` on the
-  opened fixture, via `std::time::Instant`, matching the existing pattern in
-  `restore.rs`'s `RestoreReceipt::duration_ns`/`restore_duration()`.
+- **Backup (legacy, drives the upgrade)** — wall-clock duration of
+  `Store::backup_legacy` on the fixture, via `std::time::Instant`.
 - **Upgrade** — wall-clock duration of `Store::start_upgrade` followed by
-  `Store::resume_upgrade` (or the combined `Store::upgrade` convenience) into
-  a fresh destination.
+  `Store::resume_upgrade` (or the combined `Store::upgrade` convenience)
+  from the fixture and its legacy backup into a fresh destination.
 - **Explicit cutover** — wall-clock duration of `Store::activate_upgrade`
   into a fresh, disjoint target, plus confirmation the target opens
   ordinarily afterward (`Store::open` succeeds; unlike the v2-to-3 draft,
@@ -1332,17 +1338,21 @@ deliberately defers rather than making unreviewed.
   simulated failback procedure. This drill does not claim rollback to an
   older *binary* is qualified; that remains the frozen evaluator track named
   in "Alternatives rejected" and the top status block.
-- **Restore** — wall-clock duration of `Store::restore_backup` from the
-  backup created above into a third fresh directory, reading
-  `RestoreReceipt::restore_duration()` directly rather than re-timing it.
+- **Backup (with-receipt, drives the restore) and restore** — after
+  activation, `Store::backup_with_receipt` on the now-current, opened
+  activated store produces a second, ADR-0022-shaped package; wall-clock
+  duration of `Store::restore_backup` from that package into a third fresh
+  directory is read directly from `RestoreReceipt::restore_duration()`
+  rather than re-timed, proving the upgraded store is not just open but
+  operationally recoverable end-to-end.
 - **Peak disk (proxy)** — total on-disk byte size of every regular file under
-  each of the fixture, backup, upgrade-destination, activation-target and
-  restore-destination directories at the end of its stage, summed via a
-  directory-walk helper (`fs::metadata(..).len()` over `fs::read_dir`
-  recursion), the same style already used by this file's own `bytes()`-style
-  test helpers. This is a proxy for peak disk, not an instantaneous
-  high-water-mark sample; a true continuously-sampled peak (e.g. polling
-  `statvfs` on a timer during each stage) is deferred.
+  each of the fixture, legacy-backup, upgrade-destination, activation-target,
+  with-receipt-backup and restore-destination directories at the end of its
+  stage, summed via a directory-walk helper (`fs::metadata(..).len()` over
+  `fs::read_dir` recursion), the same style already used by this file's own
+  `bytes()`-style test helpers. This is a proxy for peak disk, not an
+  instantaneous high-water-mark sample; a true continuously-sampled peak
+  (e.g. polling `statvfs` on a timer during each stage) is deferred.
 - **Peak memory and read/write amplification** — explicitly deferred out of
   this first increment. Peak RSS sampling needs either a background sampling
   thread or an external subprocess wrapper (this repository's existing
