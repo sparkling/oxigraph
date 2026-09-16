@@ -13,9 +13,7 @@ fn loopback_admin_address(value: &str) -> ParseResult<SocketAddr, String> {
     Ok(address)
 }
 
-fn recovery_attempt_limit(
-    value: &str,
-) -> ParseResult<std::num::NonZeroUsize, String> {
+fn recovery_attempt_limit(value: &str) -> ParseResult<std::num::NonZeroUsize, String> {
     let value = value
         .parse::<std::num::NonZeroUsize>()
         .map_err(|_| "expected an integer in the range 1..=64")?;
@@ -47,6 +45,17 @@ pub enum EntailmentProfile {
     /// Sound bounded OWL 2 RL/RDF materialization
     #[value(name = "owl2-rl-rdf-bounded")]
     Owl2RlRdfBounded,
+}
+
+/// Explicit RDF write profile recorded in a schema-upgrade envelope
+///
+/// The library requires an explicit choice, so there is no default here.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub enum SchemaRdfProfileArg {
+    #[value(name = "rdf-11")]
+    Rdf11,
+    #[value(name = "rdf-12")]
+    Rdf12,
 }
 
 #[derive(Subcommand)]
@@ -464,7 +473,6 @@ pub enum Command {
         /// Maximum retained attempts; omit for the API default of 16, maximum 64
         #[arg(long, value_parser = recovery_attempt_limit)]
         max_attempts: Option<std::num::NonZeroUsize>,
-
     },
     /// Resume and seal an exact-build-bound inactive upgrade workspace
     ///
@@ -497,7 +505,6 @@ pub enum Command {
         /// Maximum retained attempts; omit for the API default of 16, maximum 64
         #[arg(long, value_parser = recovery_attempt_limit)]
         max_attempts: Option<std::num::NonZeroUsize>,
-
     },
     /// Start and seal an exact-build-bound inactive upgrade in one invocation
     ///
@@ -530,7 +537,6 @@ pub enum Command {
         /// Maximum retained attempts; omit for the API default of 16, maximum 64
         #[arg(long, value_parser = recovery_attempt_limit)]
         max_attempts: Option<std::num::NonZeroUsize>,
-
     },
     /// Independently verify a sealed exact-build-bound inactive upgrade workspace
     ///
@@ -563,7 +569,6 @@ pub enum Command {
         /// Maximum retained attempts; omit for the API default of 16, maximum 64
         #[arg(long, value_parser = recovery_attempt_limit)]
         max_attempts: Option<std::num::NonZeroUsize>,
-
     },
     /// Inspect a verified exact-build-bound outer upgrade workspace without changing it
     ///
@@ -617,6 +622,166 @@ pub enum Command {
         /// Fresh disjoint current-format store target
         #[arg(long, value_hint = ValueHint::DirPath)]
         destination: PathBuf,
+        /// Maximum native files; omit to retain the API default
+        #[arg(long)]
+        max_files: Option<std::num::NonZeroUsize>,
+        /// Maximum aggregate native-file bytes; omit to retain the API default
+        #[arg(long)]
+        max_bytes: Option<std::num::NonZeroU64>,
+        /// Cooperative whole-operation timeout in milliseconds; omit for no deadline
+        #[arg(long)]
+        timeout_ms: Option<std::num::NonZeroU64>,
+        /// Maximum retained entries per logical projection; omit for the API default
+        #[arg(long)]
+        max_entries: Option<std::num::NonZeroUsize>,
+        /// Maximum retained bytes per logical projection; omit for the API default
+        #[arg(long)]
+        max_projection_bytes: Option<std::num::NonZeroU64>,
+        /// Maximum retained attempts; omit for the API default of 16, maximum 64
+        #[arg(long, value_parser = recovery_attempt_limit)]
+        max_attempts: Option<std::num::NonZeroUsize>,
+    },
+    /// Start an exact-build-bound inactive version-2 to version-3 schema upgrade
+    ///
+    /// This persists an immutable schema UUID, RDF write profile and build-bound
+    /// preflight before copying anything. The source keeps and needs its existing
+    /// regular LOCK. Interrupted work is retained for resume, never deleted, and
+    /// this never activates output.
+    StartSchemaUpgrade {
+        /// Original offline version-2 store
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        source: PathBuf,
+        /// Completed immutable physical-backup package
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        backup: PathBuf,
+        /// Fresh outer inactive schema-upgrade workspace to create
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        workspace: PathBuf,
+        /// Explicit RDF write profile recorded in the schema envelope
+        #[arg(long, value_enum)]
+        rdf_profile: SchemaRdfProfileArg,
+        /// Maximum native files; omit to retain the API default
+        #[arg(long)]
+        max_files: Option<std::num::NonZeroUsize>,
+        /// Maximum aggregate native-file bytes; omit to retain the API default
+        #[arg(long)]
+        max_bytes: Option<std::num::NonZeroU64>,
+        /// Cooperative whole-operation timeout in milliseconds; omit for no deadline
+        #[arg(long)]
+        timeout_ms: Option<std::num::NonZeroU64>,
+        /// Maximum retained entries per logical projection; omit for the API default
+        #[arg(long)]
+        max_entries: Option<std::num::NonZeroUsize>,
+        /// Maximum retained bytes per logical projection; omit for the API default
+        #[arg(long)]
+        max_projection_bytes: Option<std::num::NonZeroU64>,
+        /// Maximum retained attempts; omit for the API default of 16, maximum 64
+        #[arg(long, value_parser = recovery_attempt_limit)]
+        max_attempts: Option<std::num::NonZeroUsize>,
+    },
+    /// Resume and seal an exact-build-bound inactive schema-upgrade workspace
+    ///
+    /// The workspace is the original outer workspace, not a nested directory.
+    /// The persisted schema UUID and RDF write profile are immutable, so the
+    /// supplied profile must match the one recorded at start. This never
+    /// activates output.
+    ResumeSchemaUpgrade {
+        /// Original offline version-2 store
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        source: PathBuf,
+        /// Completed immutable physical-backup package
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        backup: PathBuf,
+        /// Existing outer inactive schema-upgrade workspace
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        workspace: PathBuf,
+        /// Explicit RDF write profile recorded in the schema envelope
+        #[arg(long, value_enum)]
+        rdf_profile: SchemaRdfProfileArg,
+        /// Maximum native files; omit to retain the API default
+        #[arg(long)]
+        max_files: Option<std::num::NonZeroUsize>,
+        /// Maximum aggregate native-file bytes; omit to retain the API default
+        #[arg(long)]
+        max_bytes: Option<std::num::NonZeroU64>,
+        /// Cooperative whole-operation timeout in milliseconds; omit for no deadline
+        #[arg(long)]
+        timeout_ms: Option<std::num::NonZeroU64>,
+        /// Maximum retained entries per logical projection; omit for the API default
+        #[arg(long)]
+        max_entries: Option<std::num::NonZeroUsize>,
+        /// Maximum retained bytes per logical projection; omit for the API default
+        #[arg(long)]
+        max_projection_bytes: Option<std::num::NonZeroU64>,
+        /// Maximum retained attempts; omit for the API default of 16, maximum 64
+        #[arg(long, value_parser = recovery_attempt_limit)]
+        max_attempts: Option<std::num::NonZeroUsize>,
+    },
+    /// Independently verify a sealed inactive schema-upgrade workspace
+    ///
+    /// Verification is independent and read-only. It never creates a lock in the
+    /// source or the package, and never resumes, activates or seals anything.
+    VerifySchemaUpgrade {
+        /// Original offline version-2 store
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        source: PathBuf,
+        /// Completed immutable physical-backup package
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        backup: PathBuf,
+        /// Existing outer inactive schema-upgrade workspace
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        workspace: PathBuf,
+        /// Explicit RDF write profile recorded in the schema envelope
+        #[arg(long, value_enum)]
+        rdf_profile: SchemaRdfProfileArg,
+        /// Maximum native files; omit to retain the API default
+        #[arg(long)]
+        max_files: Option<std::num::NonZeroUsize>,
+        /// Maximum aggregate native-file bytes; omit to retain the API default
+        #[arg(long)]
+        max_bytes: Option<std::num::NonZeroU64>,
+        /// Cooperative whole-operation timeout in milliseconds; omit for no deadline
+        #[arg(long)]
+        timeout_ms: Option<std::num::NonZeroU64>,
+        /// Maximum retained entries per logical projection; omit for the API default
+        #[arg(long)]
+        max_entries: Option<std::num::NonZeroUsize>,
+        /// Maximum retained bytes per logical projection; omit for the API default
+        #[arg(long)]
+        max_projection_bytes: Option<std::num::NonZeroU64>,
+        /// Maximum retained attempts; omit for the API default of 16, maximum 64
+        #[arg(long, value_parser = recovery_attempt_limit)]
+        max_attempts: Option<std::num::NonZeroUsize>,
+    },
+    /// Publish a sealed schema upgrade as a fresh, verified version-3 copy
+    ///
+    /// Activating this schema version does NOT make it this binary's current,
+    /// ordinarily-usable schema. LATEST_STORAGE_VERSION is still 2, so ordinary
+    /// `oxigraph query`/`serve`/any Store::open on the published target correctly
+    /// refuses with a typed SchemaTooNew error until a future version-3-aware
+    /// binary is separately authorized to treat version 3 as current. This
+    /// command only publishes a verified, source-preserving copy for that future
+    /// binary to adopt.
+    ///
+    /// All input paths must remain offline, unchanged, and caller-controlled.
+    /// This never overwrites or swaps a directory and never changes which store
+    /// a server uses.
+    ActivateSchemaUpgrade {
+        /// Original offline version-2 store
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        source: PathBuf,
+        /// Completed immutable physical-backup package
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        backup: PathBuf,
+        /// Existing sealed outer schema-upgrade workspace
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        workspace: PathBuf,
+        /// Fresh disjoint destination for the published copy
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        target: PathBuf,
+        /// Explicit RDF write profile recorded in the schema envelope
+        #[arg(long, value_enum)]
+        rdf_profile: SchemaRdfProfileArg,
         /// Maximum native files; omit to retain the API default
         #[arg(long)]
         max_files: Option<std::num::NonZeroUsize>,

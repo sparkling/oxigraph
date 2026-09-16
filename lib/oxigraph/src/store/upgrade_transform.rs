@@ -13,8 +13,9 @@ mod receipt;
 #[path = "upgrade_resume.rs"]
 mod resume;
 pub use receipt::{
-    SchemaUpgradeOptions, SchemaUpgradeReceipt, SchemaUpgradeState, UpgradeActivation,
-    UpgradeOptions, UpgradeReceipt, UpgradeWorkspaceInspection, UpgradeWorkspaceState,
+    SchemaUpgradeActivation, SchemaUpgradeOptions, SchemaUpgradeReceipt, SchemaUpgradeState,
+    UpgradeActivation, UpgradeOptions, UpgradeReceipt, UpgradeWorkspaceInspection,
+    UpgradeWorkspaceState,
 };
 pub use resume::{UpgradeRecovery, UpgradeRecoveryOptions};
 

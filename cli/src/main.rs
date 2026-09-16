@@ -62,6 +62,7 @@ mod operations;
 mod protocol_wire_tests;
 mod rdf_response;
 mod result_body;
+mod schema_upgrade;
 mod server_access;
 mod service_description;
 #[cfg(test)]
@@ -278,8 +279,7 @@ pub fn main() -> anyhow::Result<()> {
         }
         Command::InspectState { location } => {
             use oxigraph::store::{
-                GovernanceStateInspectionStatus, StoreVersionStatus,
-                UpgradeGuardInspectionStatus,
+                GovernanceStateInspectionStatus, StoreVersionStatus, UpgradeGuardInspectionStatus,
             };
 
             let report = Store::inspect_state(location)?;
@@ -559,20 +559,108 @@ pub fn main() -> anyhow::Result<()> {
             )?;
             upgrade::print_recovery_verified(recovery)
         }
-        Command::StartUpgrade { source, backup, destination, max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts } => {
-            let recovery = Store::start_upgrade(&source, &backup, &destination, &upgrade::receipt_options(max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts))?;
+        Command::StartUpgrade {
+            source,
+            backup,
+            destination,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+            max_attempts,
+        } => {
+            let recovery = Store::start_upgrade(
+                &source,
+                &backup,
+                &destination,
+                &upgrade::receipt_options(
+                    max_files,
+                    max_bytes,
+                    timeout_ms,
+                    max_entries,
+                    max_projection_bytes,
+                    max_attempts,
+                ),
+            )?;
             upgrade::print_upgrade_started(&recovery, &destination)
         }
-        Command::ResumeUpgrade { source, backup, location, max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts } => {
-            let receipt = Store::resume_upgrade(&source, &backup, &location, &upgrade::receipt_options(max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts))?;
+        Command::ResumeUpgrade {
+            source,
+            backup,
+            location,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+            max_attempts,
+        } => {
+            let receipt = Store::resume_upgrade(
+                &source,
+                &backup,
+                &location,
+                &upgrade::receipt_options(
+                    max_files,
+                    max_bytes,
+                    timeout_ms,
+                    max_entries,
+                    max_projection_bytes,
+                    max_attempts,
+                ),
+            )?;
             upgrade::print_upgrade_resumed(&receipt)
         }
-        Command::Upgrade { source, backup, destination, max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts } => {
-            let receipt = Store::upgrade(&source, &backup, &destination, &upgrade::receipt_options(max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts))?;
+        Command::Upgrade {
+            source,
+            backup,
+            destination,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+            max_attempts,
+        } => {
+            let receipt = Store::upgrade(
+                &source,
+                &backup,
+                &destination,
+                &upgrade::receipt_options(
+                    max_files,
+                    max_bytes,
+                    timeout_ms,
+                    max_entries,
+                    max_projection_bytes,
+                    max_attempts,
+                ),
+            )?;
             upgrade::print_upgrade_completed(&receipt)
         }
-        Command::VerifyUpgrade { source, backup, location, max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts } => {
-            let receipt = Store::verify_upgrade(&source, &backup, &location, &upgrade::receipt_options(max_files, max_bytes, timeout_ms, max_entries, max_projection_bytes, max_attempts))?;
+        Command::VerifyUpgrade {
+            source,
+            backup,
+            location,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+            max_attempts,
+        } => {
+            let receipt = Store::verify_upgrade(
+                &source,
+                &backup,
+                &location,
+                &upgrade::receipt_options(
+                    max_files,
+                    max_bytes,
+                    timeout_ms,
+                    max_entries,
+                    max_projection_bytes,
+                    max_attempts,
+                ),
+            )?;
             upgrade::print_upgrade_verified(&receipt)
         }
         Command::InspectUpgrade {
@@ -628,6 +716,106 @@ pub fn main() -> anyhow::Result<()> {
                 ),
             )?;
             upgrade::print_upgrade_activated(&activation)
+        }
+        Command::StartSchemaUpgrade {
+            source,
+            backup,
+            workspace,
+            rdf_profile,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+            max_attempts,
+        } => {
+            let options = schema_upgrade::schema_upgrade_options(
+                rdf_profile,
+                max_files,
+                max_bytes,
+                timeout_ms,
+                max_entries,
+                max_projection_bytes,
+                max_attempts,
+            );
+            let state = Store::start_schema_upgrade(&source, &backup, &workspace, &options)?;
+            schema_upgrade::print_schema_upgrade_started(&state, &workspace)
+        }
+        Command::ResumeSchemaUpgrade {
+            source,
+            backup,
+            workspace,
+            rdf_profile,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+            max_attempts,
+        } => {
+            let options = schema_upgrade::schema_upgrade_options(
+                rdf_profile,
+                max_files,
+                max_bytes,
+                timeout_ms,
+                max_entries,
+                max_projection_bytes,
+                max_attempts,
+            );
+            let state = Store::resume_schema_upgrade(&source, &backup, &workspace, &options)?;
+            schema_upgrade::print_schema_upgrade_resumed(&state)
+        }
+        Command::VerifySchemaUpgrade {
+            source,
+            backup,
+            workspace,
+            rdf_profile,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+            max_attempts,
+        } => {
+            let options = schema_upgrade::schema_upgrade_options(
+                rdf_profile,
+                max_files,
+                max_bytes,
+                timeout_ms,
+                max_entries,
+                max_projection_bytes,
+                max_attempts,
+            );
+            let receipt = oxigraph::store::SchemaUpgradeReceipt::verify(
+                &source, &backup, &workspace, &options,
+            )?;
+            schema_upgrade::print_schema_upgrade_verified(&receipt)
+        }
+        Command::ActivateSchemaUpgrade {
+            source,
+            backup,
+            workspace,
+            target,
+            rdf_profile,
+            max_files,
+            max_bytes,
+            timeout_ms,
+            max_entries,
+            max_projection_bytes,
+            max_attempts,
+        } => {
+            let options = schema_upgrade::schema_upgrade_options(
+                rdf_profile,
+                max_files,
+                max_bytes,
+                timeout_ms,
+                max_entries,
+                max_projection_bytes,
+                max_attempts,
+            );
+            let activation =
+                Store::activate_schema_upgrade(&source, &backup, &workspace, &target, &options)?;
+            schema_upgrade::print_schema_upgrade_activated(&activation)
         }
         Command::Restore {
             backup,
@@ -6960,7 +7148,9 @@ mod tests {
 }
 
 // The inspect command and its focused tests share this exact JSON projection.
-fn schema_envelope_json(envelope: Option<&oxigraph::store::StoreSchemaEnvelope>) -> serde_json::Value {
+fn schema_envelope_json(
+    envelope: Option<&oxigraph::store::StoreSchemaEnvelope>,
+) -> serde_json::Value {
     envelope.map_or(serde_json::Value::Null, |envelope| {
         serde_json::json!({
             "envelope_version": envelope.envelope_version(),

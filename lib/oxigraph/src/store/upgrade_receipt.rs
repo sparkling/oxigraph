@@ -22,7 +22,9 @@ use std::time::Instant;
 
 #[path = "schema_upgrade.rs"]
 mod schema_upgrade;
-pub use schema_upgrade::{SchemaUpgradeOptions, SchemaUpgradeReceipt, SchemaUpgradeState};
+pub use schema_upgrade::{
+    SchemaUpgradeActivation, SchemaUpgradeOptions, SchemaUpgradeReceipt, SchemaUpgradeState,
+};
 
 const PREFLIGHT_FILE: &str = "oxigraph-upgrade.preflight";
 const PROGRESS_FILE: &str = "oxigraph-upgrade.progress";
