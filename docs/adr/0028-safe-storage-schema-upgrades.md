@@ -3179,6 +3179,73 @@ What remains open: the v2-to-v3 draft's construction/resume/activation
 disk-exhaustion coverage from this technique -- three entry points now,
 not the whole matrix.
 
+## A fourth entry point, chosen by first ruling out two already-covered boundaries (2026-09-16)
+
+`activate_inner` (`Store::activate_schema_upgrade`, the v2-to-v3
+draft's activation step) was picked as the fourth disk-exhaustion
+target only after reading its *two existing tests* first, specifically
+to confirm the new injection point would not be a near-duplicate of
+either: `schema_upgrade_activation_faults_never_leave_a_usable_target`
+injects synthetic `Cancelled` errors at every integer phase 0..5, and
+`schema_upgrade_activation_child_exits_before_and_after_guard_unlink`
+real-kills the process at phases 4/5 -- the guard *unlink* boundary at
+the very end of activation. Neither touches the guard *write* at the
+very start (`write(&target.join(UPGRADE_GUARD), GUARD)?`, strictly
+between `fault(0)` and `fault(1)`), which is where the new test
+injects instead. A real `ENOSPC` there produces a zero-byte guard file
+-- a state neither existing test can produce, since a synthetic
+`Cancelled` never touches the write itself and a process kill either
+happens before the guard exists at all or after it is fully written.
+
+The new test
+(`disk_exhaustion_on_the_activation_guard_write_preserves_every_input`,
+[`schema_upgrade_tests.rs`](../../lib/oxigraph/src/store/schema_upgrade_tests.rs))
+reuses this file's own existing `fixture`/`sealed` setup helpers
+unmodified -- the same real commit, outbox retention, namespace and
+sealed-workspace state `schema_upgrade_activation_faults_never_leave_a_
+usable_target` already builds, not a new fixture. Its assertions mirror
+that same test's own established invariant (`if
+target.join(UPGRADE_GUARD).exists() { assert!(Store::open(&target).is_err()); }`)
+rather than inventing a new one, adding only the two pinning checks
+this technique's own established discipline requires: the guard file
+exists (positive evidence of real activation work, doubling as the
+vacuous-pass guard) and is exactly zero bytes (pinning the fault to
+that first write, not a later one). Source, package *and* the sealed
+workspace itself are all checked byte-identical afterward, matching the
+existing test's exact three-way comparison.
+
+The error-path assumption (`BackupError::Io` directly) was not carried
+over from the first two entry points without checking -- precisely
+because the third entry point (`transform_inner`) already proved that
+assumption unsafe in general. It was independently re-verified instead:
+`schema_upgrade.rs` has no local `fn write`, and its `use super::*`
+chain (`schema_upgrade.rs` -> `upgrade_receipt.rs` -> `upgrade_transform.rs`
+-> `upgrade.rs`) resolves to `upgrade.rs`'s own `write()` helper, the
+exact same one already proven (for `backup_legacy` and `prepare_upgrade`)
+to convert a real `ENOSPC` into `BackupError::Io` directly, not wrapped
+in `BackupError::Storage(...)`.
+
+Single review round (`xhigh`, `claude-fable-5-1`): **ACCEPT**,
+confirming the injection point's novelty against both existing tests,
+the vacuous-pass guards' soundness (a corrupted helper name, an inert
+shim, or the wrong error variant each fail the parent deterministically),
+and artifact-name isolation across all four shim files now in the
+same `target/debug/deps` directory. One real, cheap, non-blocking
+finding was applied afterward: the child helper was missing the
+`OXIGRAPH_ROCKSDB_BUILD_KIND == "vendored"` gate its three sibling
+helpers in this same file all carry -- harmless in practice (the
+absent env var already makes an ordinary run a no-op), but worth
+aligning for consistency. Committed `c6beeb5e`.
+
+What remains open: the `copy_artifact` loop inside this same
+`activate_inner` function (between `fault(1)` and `fault(2)`/`(3)`,
+copying validated attempt-store files into the target) remains
+untested by this technique -- only the guard-write boundary is
+covered. `start_inner` (`schema_upgrade.rs`'s construction path) and
+`resume_inner`'s remaining fault phases beyond the two already covered
+by real-process-kill tests also remain open. Four entry points are
+covered crate-wide now, not the complete crash/fault matrix.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
