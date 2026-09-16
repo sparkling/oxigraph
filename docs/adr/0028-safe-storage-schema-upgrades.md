@@ -37,13 +37,13 @@
   backup-legacy/upgrade/explicit-cutover/source-preservation-rollback/
   backup-with-receipt/restore, timed per stage with on-disk bytes summed,
   against the two checked-in legacy fixtures.
-  The legacy path's activation and resume steps, and the v2-to-v3 draft's
-  activation and resume steps, each have a real OS-level process-kill test
-  (four total); every other fault phase on both paths, and the legacy
-  path's `start_upgrade` step, remain proven only under synthetic
-  in-process fault injection.
+  The legacy path now has a real OS-level process-kill test for all three
+  of its public entry points (start, resume, activation); the v2-to-v3
+  draft has real process-kill tests for resume and activation but not its
+  construction/start step (five total). Every other fault phase on both
+  paths remains proven only under synthetic in-process fault injection.
   Envelope admission on ordinary open, full crash-matrix breadth beyond
-  those four points, additional operational-gate size classes and
+  those five points, additional operational-gate size classes and
   peak-memory/amplification measurement, full compatibility rejection,
   older-binary rollback and the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
@@ -1557,6 +1557,68 @@ earlier crash-matrix section above). The legacy path's `start_upgrade`
 step, and every fault phase on both paths not exercised by one of these
 four tests, remain proven only under synthetic in-process injection.
 ADR-0028 remains Proposed.
+
+## Real OS-level process-kill coverage for the legacy upgrade start step (2026-09-16)
+
+This completes real-process-kill coverage for all three of the legacy
+version-0/1-to-2 path's public entry points: activation (pre-existing),
+resume (previous section), and now `start_upgrade`.
+
+`start_upgrade_inner`'s fault call sites, traced directly from source:
+fault(0) right after the preflight file is written and synced, before the
+nested `start_upgrade_recovery` call begins; fault(1) right after that
+nested call completes, before the `INITIAL` progress record is computed;
+fault(2) right after the `INITIAL` record is appended and the destination
+directory is synced, immediately before the function returns.
+
+The new test, `start_child_exits_immediately_before_and_after_initial_
+progress_is_synced`, targets the fault(1)/fault(2) boundary -- the moment
+the workspace either does or does not yet carry the durable `INITIAL`
+progress marker `resume_upgrade_inner` needs to know where recovery left
+off. Learning directly from the rdf-12 mistake earlier this session (an
+unverified assumption caused a real runtime failure that had to be
+diagnosed after the fact), root verified both phases' behavior empirically
+by actually running the test rather than reasoning from source alone:
+
+- **Phase 1** (killed after the nested `start_upgrade_recovery` call
+  completes, before the `INITIAL` record is appended): a real kill leaves
+  `PROGRESS_FILE` absent, and a subsequent `Store::resume_upgrade` on the
+  same destination genuinely fails -- confirmed by running it. Independent
+  review corrected root's own stated mechanism for this: root's goal text
+  claimed `resume_upgrade_inner` fails via its later direct read of
+  `PROGRESS_FILE`, but the reviewer traced it precisely to the earlier
+  `scan_outer` call, which lists `PROGRESS_FILE` among its required files
+  and returns `Err(InvalidManifest)` before the receipt/pending
+  short-circuit is even reached. Same outcome the test correctly asserts;
+  root's narrative description of *why* was imprecise, now corrected here.
+- **Phase 2** (killed right after the `INITIAL` record is appended and
+  synced): a real kill leaves a workspace indistinguishable from an
+  ordinary completed `start_upgrade` call (the in-memory `workspace_lease`
+  drop is skipped, but the underlying `flock` is released by the kernel on
+  process exit either way); a subsequent `Store::resume_upgrade` completes
+  the upgrade normally, confirmed by running it end to end to a sealed,
+  independently verified receipt.
+
+Root wrote this directly (same file as the previous section, ~2100 lines)
+and ran every completion-check command for real: `cargo check` clean; the
+receipt module's own test filter at 13 passed (11 prior plus the 2 new);
+`cargo fmt --check` clean after one direct `cargo fmt` pass (one line
+needed wrapping); the three sibling integration suites at 15 passed
+combined. Independent review (`claude-fable-5-1`, high effort), again
+dispatched as a standalone hand-assembled request, returned ACCEPT with
+the mechanism correction above and confirmation the helper cannot pass
+vacuously; `git status --short`/`git diff --stat` were checked directly
+afterward and confirmed exactly one file changed, purely additive (83
+insertions). Committed to `main` as `37e3f59d`; not pushed.
+
+There are now **five** real-process-kill crash tests across both
+schema-transition paths: the legacy path's activation, resume and start
+(all three of its public entry points), and the v2-to-v3 draft's
+activation and resume. Every fault phase on both paths not exercised by
+one of these five tests remains proven only under synthetic in-process
+injection -- most notably the v2-to-v3 draft's own `start`-equivalent step
+(construction) has no real-process-kill test yet, unlike the legacy path
+which now has full entry-point coverage. ADR-0028 remains Proposed.
 
 ## Staged implementation and evaluator gates
 
