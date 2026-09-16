@@ -3100,6 +3100,85 @@ the v2-to-v3 draft's construction/resume/activation, and
 `activate_upgrade` still have no disk-exhaustion coverage from this
 technique -- two entry points now, not the whole matrix.
 
+## A third entry point, a genuinely different error path, and a transient dispatch failure diagnosed directly (2026-09-16)
+
+`transform_inner`'s own write call sites were read directly before
+picking it as the third disk-exhaustion target, not assumed to match
+`prepare_inner`'s shape. Its first real write is architecturally
+distinct from both prior injection points: it sits *inside* the RDF
+mutation loop itself, not in pre-copy setup. The closure passed to
+`copy_lease.transform_upgrade(&expected, options, started, |edge| {
+... })` opens the transform journal with `create_new(true)` on the
+first edge (`last == None`) and calls `file.write_all(&frame)?`,
+strictly between `fault(0)` (fires before `transform_upgrade` starts
+at all) and `fault(1)` (fires only after the first edge's frame is
+written, synced, and the directory synced) -- a moment while real
+quad-projection work is already in flight, not before it starts.
+
+The new test
+(`disk_exhaustion_on_the_first_transform_journal_frame_preserves_inputs`,
+[`upgrade_transform.rs`](../../lib/oxigraph/src/store/upgrade_transform.rs))
+builds a real backup and a real prepared workspace first (this entry
+point's own public API, `Store::transform_prepared_upgrade`, requires
+both), then injects the fault. Its assertions double up on purpose:
+the transform journal file's mere existence is both the vacuous-pass
+guard (nothing before the mutation loop creates that name) and half of
+the injection-point pin, with the other half being its exact zero
+length (a non-empty frame would prove the write got further before
+failing). This mirrors the same "prove the claim with a post-condition,
+not just a plausible-sounding assertion" discipline the `prepare_upgrade`
+review round required explicitly.
+
+A genuine bug surfaced by actually running the test, not by assuming
+the prior two entry points' shape would carry over: the first draft's
+child helper expected `Err(BackupError::Io(_))`, exactly matching
+`backup_legacy`'s and `prepare_upgrade`'s own pattern, and the test
+failed with a real, informative panic:
+`Error: "expected a StorageFull BackupError::Io, got Err(Storage(Io(Os
+{ code: 28, kind: StorageFull, message: \"No space left on device\"
+})))"`. Reading `transform_inner`'s code explained why: the journal
+write happens inside a closure whose error type is `StorageError`, not
+`BackupError` -- `file.write_all(&frame)?` converts through
+`From<io::Error> for StorageError`, and only the *outer*
+`.map_err(|error| ... BackupError::Storage(error))` wraps that into a
+`BackupError` afterward. Fixed by matching
+`Err(BackupError::Storage(crate::storage::StorageError::Io(error)))`
+instead, confirming `StorageError::Io(#[from] io::Error)` has the exact
+same faithful-preservation shape as `BackupError::Io`. Re-ran the full
+suite after the fix: 8/8 green. This is exactly the kind of thing this
+session's own standing discipline exists to catch -- an assumption
+that looked safe because it had worked twice before, disproven by
+actually executing the test rather than reasoning it through.
+
+Native review dispatch failed once with an error that looked, at
+first glance, like it could be another rate limit or subscription
+outage: `status: "unavailable"`, `error: "dispatch failed: Unexpected
+token 'T', \"There's an\"... is not valid JSON"`. Diagnosed directly,
+per this session's own established practice, rather than assumed: a
+manual `claude -p "reply with exactly: PONG" --model
+"cc/claude-fable-5-1[1m]"` reproduction returned `PONG` correctly --
+native subscription auth and the model itself were never the problem
+-- but printed two extra lines around it: a one-time warning that
+`ANTHROPIC_API_KEY` being set takes precedence over claude.ai
+connectors (unrelated to which auth serves the actual completion), and
+a broken `SessionEnd` hook failing because `/home/claude/.local/bin/ruflo`
+does not exist on this host. Either line landing in `worker.mjs`'s
+strict JSON-only expectation was enough to break the parse. A plain
+retry of the same dispatch succeeded cleanly, confirming this was a
+one-off, not a persistent block; no environment or hook change was
+made to work around it, since the underlying model dispatch itself was
+never impaired.
+
+Single review round (`xhigh`, `claude-fable-5-1`): **ACCEPT**,
+independently re-tracing the error-conversion path, the injection-point
+pin, and confirming the artifact-name collision-avoidance across all
+three shim files by name comparison. Committed `0a345409`.
+
+What remains open: the v2-to-v3 draft's construction/resume/activation
+(`schema_upgrade.rs`) and `activate_upgrade` still have no
+disk-exhaustion coverage from this technique -- three entry points now,
+not the whole matrix.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
