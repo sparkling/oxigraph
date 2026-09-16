@@ -41,11 +41,13 @@
   two checked-in legacy fixtures plus a synthetic 5,000-quad size class
   for the restore leg (the legacy leg cannot be scaled the same way
   without a legacy-format writer, which this codebase does not provide).
-  The legacy path now has a real OS-level process-kill test for all three
-  of its public entry points (start, resume, activation); the v2-to-v3
-  draft has real process-kill tests for resume and activation but not its
-  construction/start step (five total). Every other fault phase on both
-  paths remains proven only under synthetic in-process fault injection.
+  Both upgrade paths' entry points now all have real OS-level process-kill
+  coverage for at least one meaningful before/after durability boundary:
+  the legacy path's start, resume and activation, and the v2-to-v3
+  draft's construction/start (added this session, mirroring resume's and
+  activation's existing fault-injection hook shape), resume and
+  activation (five total). Every other fault phase on both paths remains
+  proven only under synthetic in-process fault injection.
   Envelope admission on ordinary open, full crash-matrix breadth beyond
   those five points, full compatibility rejection, older-binary rollback
   and the frozen qualification gates remain open
@@ -1842,6 +1844,80 @@ coverage (needs a production-code change to `start_inner`, deliberately
 deferred as a bigger scope decision than ordinary test-only work) is the
 one remaining item from this stream of increments. ADR-0028 remains
 Proposed.
+
+## Real process-kill coverage for the v2-to-v3 construction step, closing the crash-matrix stream (2026-09-16)
+
+The one item deferred from every earlier increment in this stream is
+closed here: `start_inner` (the v2-to-v3 draft's construction/start step)
+gains a fault-injection hook, mirroring the exact shape already used by
+`resume_inner` and `activate_inner` in the same file
+(`mut fault: impl FnMut(u8) -> Result<(), BackupError>` as the last
+parameter) and by the legacy path's `start_upgrade_inner`
+(`37e3f59d`, earlier this session). Two `fault()` calls bracket the
+function's one durability-relevant write: `fault(0)` after the workspace
+directory, its lease and its `attempts/` subdirectory are created but
+before the `PLAN`/`JOURNAL` files are written; `fault(1)` after both
+files are written and all three `sync_directory` calls complete,
+immediately before the final recheck. `start_schema_upgrade`'s call site
+gains one new trailing argument, `|_| Ok(())`, matching
+`resume_schema_upgrade`'s own no-op default -- no other production
+behavior changed.
+
+A new real-process-kill test verifies both phases empirically, not from
+reading source alone: killed before the plan is synced (phase 0), a
+subsequent resume fails closed, traced precisely to `verify_workspace`'s
+first step reading the not-yet-existent `PLAN` file; killed immediately
+after (phase 1), an ordinary fresh resume completes the same upgrade to
+a sealed, independently verifiable receipt. Both outcomes matched the
+design on the first attempt, with no correction needed to make the
+assertions fit reality -- consistent with the asymmetric crash-phase
+pattern established earlier in this session (killing immediately before
+vs. after a durability boundary produces genuinely different, both
+individually correct outcomes).
+
+Independent review (ACCEPT, 9 findings) caught one worth fixing before
+committing: the phase-0 assertion checked only that resume returned an
+error, not that the half-built workspace was left byte-unchanged,
+unlike this file's other crash tests' identity-check convention. Fixed
+by capturing the workspace's bytes right after the crash and asserting
+them unchanged after the failed resume attempt; reverified (21/21 in
+the full module).
+
+The review also caught something in root's own framing, not the code: a
+flake surfaced once, out of three full-module runs (21 tests,
+`--features rdf-12`, run concurrently under `-j12`) --
+`schema_upgrade_resume_child_exit_mid_copy_retains_a_resumable_attempt`
+(a pre-existing test from an earlier commit, `518ccf16`, whose code path
+this increment never touches) failed once with `Error: InvalidPath`,
+then passed cleanly in isolation and on two full-module reruns with no
+code changes in between. Root's goal text called this "definitively not
+caused by this increment." Review correctly pointed out that this
+overstates what was actually established: the exact call site producing
+`InvalidPath` was never root-caused, and the same flake was never run
+against the pre-change tree under identical concurrent load to rule out
+a pre-existing timing sensitivity independent of this increment. What
+*is* established is narrower and is the accurate claim: the failing
+test's own code path was not modified by this change, and the flake did
+not recur across two further full-module runs. This is the fourth
+increment this session where independent review caught root's own
+framing overclaiming what the evidence actually supported, rather than
+a defect in the delivered code -- again treated as a real finding and
+corrected in this record, not argued past.
+
+Reported check results across this increment's verification: `cargo
+check` clean; the new test passed in isolation (both phases genuinely
+exercised); the full 21-test module passed three times total (one
+unrelated flake, two clean runs); `cargo fmt --check` clean. Committed
+to `main` as `c7e30451`; not pushed.
+
+This closes the crash-matrix stream begun with the legacy path's three
+public entry points and the v2-to-v3 draft's resume/activation: all five
+of this session's schema-transition entry points across both upgrade
+paths now have real OS-level process-kill coverage for at least one
+meaningful before/after durability boundary. Full crash-matrix breadth
+beyond these five points, the frozen compatibility/crash/system-RocksDB
+qualification matrix, and older-binary rollback remain separately
+tracked, out of ordinary-delivery scope. ADR-0028 remains Proposed.
 
 ## Staged implementation and evaluator gates
 
