@@ -2472,6 +2472,64 @@ real-process-kill coverage -- only that the specific gap this session's
 audit found (a function with production fault-injection hooks and zero
 real-kill test) is now closed for both functions identified.
 
+## Auditing gate 3 for the next tractable slice, and why disk-exhaustion testing is deferred (2026-09-16)
+
+With both functions from the previous two sections' `current_exe` audit
+closed, this tick searched for a new well-scoped, low-risk slice by
+reading gate 3's actual current test coverage rather than assuming its
+"still required" wording was accurate -- the same audit-before-building
+discipline that found gate 1's stale text earlier this session.
+
+Checked each of gate 3's four named sub-items against the real test
+suite, not from memory: **fresh-process open/validate** is covered
+(`fresh_process_verifies_same_executable_and_rejects_appended_copy` in
+`lib/oxigraph/tests/upgrade_receipts.rs`); **tampering** is covered
+extensively across receipt/journal/manifest/extra-file cases; **crash/
+power-loss** is covered extensively -- `lib/oxigraph/src/store/
+upgrade_resume.rs`'s own `spawn_cut` helper already re-invokes the test
+binary across many phases, edges and occurrences for both the recovery
+workflow's start and resume paths, well beyond this session's two new
+single-boundary tests for `prepare_inner`/`transform_inner`; **path
+substitution** is covered where it matters most -- `activate_upgrade`'s
+own production code (`lib/oxigraph/src/store/upgrade_receipt.rs`)
+explicitly canonicalizes the destination's parent specifically because
+`fresh_destination` would otherwise follow a symlink ancestor, and
+`lib/oxigraph/tests/upgrade_activation.rs` tests exactly this. None of
+these four is claimed as an exhaustive per-entry-point matrix; each has
+concrete, real coverage this tick confirmed by reading the tests
+directly, not by inference.
+
+The one item confirmed to have zero coverage, **insufficient-disk
+checks**, was investigated as this tick's own candidate increment. A
+real disk-exhaustion test needs a size-bounded filesystem the operation
+can genuinely fill; the standard unprivileged approach (a small tmpfs
+mounted inside a user+mount namespace, requiring no root) was tried
+directly in this session's own container and failed closed: `unshare
+--user --mount --map-root-user ...` returns `write failed
+/proc/self/uid_map: Operation not permitted`, meaning unprivileged user
+namespaces are disabled here. This rules out the standard approach
+without inventing an untested, riskier alternative (an `RLIMIT_FSIZE`-
+based child helper would need a new `libc`/`rlimit` dependency this
+crate does not currently have, a larger and less surgical change than
+anything else this session has done). Confirmed empirically, not
+assumed, before deciding not to pursue it this tick.
+
+Rather than force a speculative test into gate 3's territory or spend
+further tick time chasing an infrastructure-blocked target, this tick's
+concrete output is a corrected delivery-gates row: gate 3's "still
+required" column previously implied all four named sub-items were
+substantially open, which this audit found inaccurate for three of the
+four (they have real, if not exhaustive, coverage); the accurate
+remaining gaps are the evaluator-authority-scoped "complete feature/
+subsystem/cursor identities and exact-receipt independent
+qualification" (an independent re-implementation comparison, not an
+ordinary-delivery test) and insufficient-disk checks specifically,
+now with the infrastructure blocker recorded rather than left silently
+absent. This mirrors gate 1's own earlier correction this session: a
+"still required" column can drift stale exactly like a "proven"
+column can, and both need re-verification against the real test suite
+before being trusted.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
