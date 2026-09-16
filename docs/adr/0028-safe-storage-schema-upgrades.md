@@ -35,8 +35,9 @@
   A first operational-gate drill for the legacy version-0/1-to-2 path is
   implemented (`lib/oxigraph/tests/upgrade_operational_drill.rs`):
   backup-legacy/upgrade/explicit-cutover/source-preservation-rollback/
-  backup-with-receipt/restore, timed per stage with on-disk bytes summed,
-  against the two checked-in legacy fixtures.
+  backup-with-receipt/restore, timed per stage with on-disk bytes summed
+  and peak resident-set-size sampled, against the two checked-in legacy
+  fixtures.
   The legacy path now has a real OS-level process-kill test for all three
   of its public entry points (start, resume, activation); the v2-to-v3
   draft has real process-kill tests for resume and activation but not its
@@ -1618,7 +1619,83 @@ activation and resume. Every fault phase on both paths not exercised by
 one of these five tests remains proven only under synthetic in-process
 injection -- most notably the v2-to-v3 draft's own `start`-equivalent step
 (construction) has no real-process-kill test yet, unlike the legacy path
-which now has full entry-point coverage. ADR-0028 remains Proposed.
+which now has full entry-point coverage.
+
+Adding this would need a production-code change, unlike every crash test
+so far this session: tracing `start_inner` in `schema_upgrade.rs` directly
+found it accepts no injectable fault closure at all (unlike its siblings
+`resume_inner`/`activate_inner`, and unlike the legacy path's own
+`start_upgrade_inner`), so exercising it under a real kill would require
+first adding fault-injection hooks to production code, not just a new
+test. This is a legitimate future increment but a larger scope decision
+than the test-only work completed so far, and is deferred rather than
+folded into this run.
+
+## Peak-memory sampling for the operational-gate drill, with a review-driven correction (2026-09-16)
+
+The operational-gate design explicitly deferred peak-memory sampling out
+of the first drill increment. This increment adds it: `peak_rss_kb()` in
+`lib/oxigraph/tests/upgrade_operational_drill.rs` reads `/proc/self/
+status`'s `VmHWM` (the kernel-tracked peak resident set size since process
+start) after each drill run, printed alongside the existing duration and
+disk-bytes measurements. It is deliberately best-effort (`Option<u64>`,
+`"unknown"` on any read/parse failure) rather than using `?`, since this is
+pure instrumentation with no threshold asserted anywhere -- a read failure
+must never fail the drill's own correctness assertions.
+
+That design choice was not precautionary boilerplate; it was earned during
+development. Iterating with `--features rdf-12` (which runs both fixture
+versions as concurrent test threads in one process) hit an intermittent
+failure, roughly 1 run in 6: `Error: Os { code: 2, kind: NotFound }`.
+Isolating the same test alone (`--test-threads=1`) never reproduced it.
+Root's first hypothesis attributed this to the new `peak_rss_kb` read and
+made it best-effort, which appeared to resolve it (nine further consecutive
+runs all passed). Independent review accepted the change but raised a
+well-reasoned, unresolved caveat: the isolation experiment showed only that
+the failure was concurrency-dependent, not that `peak_rss_kb` specifically
+was the cause, and a more plausible pre-existing mechanism was sitting in
+the same file, unrelated to this increment -- `directory_bytes()` scans
+`target`/`restore_target` via `read_dir` while their `Store` handles are
+still open, and RocksDB may delete an obsolete WAL/OPTIONS file in a
+background thread between a file being *listed* and *stat'd*: a classic
+list-then-stat race, present since the first drill commit (`dab6050e`) and
+unrelated to the memory-sampling code.
+
+Root treated this as the real finding it was rather than a stylistic nit:
+`directory_bytes()` now tolerates `NotFound` at exactly the two points
+where that race would surface (`entry.file_type()` and `entry.metadata()`,
+each contributing zero bytes for a raced-away file), while every other
+`io::Error` at those points still propagates -- a permission or corruption
+fault is not silently swallowed. The `peak_rss_kb` doc comment was
+corrected to state only its best-effort design rationale, not an unverified
+causal claim, and a nearby comment claiming the disk-bytes sum is always a
+complete "measured peak" was softened to note it can now be marginally
+understated when a file races away mid-scan. Root reverified with five more
+consecutive concurrent runs (ten individual test passes) with no
+recurrence, then dispatched a second review round specifically on the
+adequacy of this response; it returned ACCEPT, correctly noting that five
+(then a stated nine) additional clean runs are weak statistical evidence
+against a roughly-1-in-6 flake on their own -- the fix is justified by the
+race's own code-level plausibility, not proven by reruns, and the ADR
+states it that way rather than as a confirmed root cause.
+
+This is the second consecutive increment this session where independent
+review caught something root's own framing got wrong -- not a logic bug in
+the delivered code, but an unverified causal claim stated with more
+confidence than the evidence supported. Both times, review returned ACCEPT
+for the underlying change while still surfacing the issue, and root acted
+on it as a real finding rather than a nitpick to argue past. All four
+completion-check commands passed for real (`cargo check` clean; the
+concurrent drill 5x with real `peak_rss_kb` values each run; `cargo fmt
+--check` clean; the two directly relevant sibling suites at 14 passed
+combined). Committed to `main` as `4e7aed1f`; not pushed.
+
+This closes the peak-memory leg of the first operational-gate drill.
+Read/write amplification and additional synthetic size classes beyond the
+two checked-in fixtures remain the open operational-gate work; the
+v2-to-v3 draft's construction step remains the one schema-transition entry
+point without real-process-kill coverage (previous section). ADR-0028
+remains Proposed.
 
 ## Staged implementation and evaluator gates
 
