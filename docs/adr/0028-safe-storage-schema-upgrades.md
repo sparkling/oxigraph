@@ -66,10 +66,12 @@
   further mutated when its WAL is truncated. A corrupted SST footer
   (its fixed table magic number) is refused the same way as a
   corrupted MANIFEST, completing the physical-corruption trio.
+  CI now exercises the RDF-feature-mismatch test (a no-default-features
+  build correctly reports retained RDF 1.2 history as unsupported
+  rather than misbehaving), closing gate 1's compatibility-rejection
+  matrix in full.
   Envelope admission on ordinary open, full crash-matrix breadth beyond
-  those five points, the RDF-feature-mismatch test's dependency on a
-  separately-built no-default-features CLI, and the frozen
-  qualification gates remain open
+  those five points, and the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
   This ADR owns the contract; both programme plans reference that one current
@@ -2216,6 +2218,67 @@ mutating the store. What remains in gate 1's compatibility matrix: the
 RDF-feature-mismatch test's dependency on a separately-built
 no-default-features CLI (build/CI infrastructure, not test-writing).
 ADR-0028 remains Proposed.
+
+## Wiring the RDF-feature-mismatch test into CI (2026-09-16)
+
+The last remaining item in gate 1's compatibility matrix was not
+another fixture or corruption case, but build/CI orchestration: a test,
+`rdf_12_writer_retained_history_is_reported_unsupported_by_no_default_cli`,
+already existed and already proved the right thing -- an operator
+running a build without `rdf-12` support, against a store containing
+data only a build with `rdf-12` could have written, gets an honest
+`FeatureIncompatible`-style report rather than silent misbehavior --
+but it was `#[ignore]`d, requiring a separately-built no-default-features
+CLI that nothing in ordinary CI produced.
+
+The subtlety, worth stating plainly: the test function is itself
+`#[cfg(feature = "rdf-12")]`, because it needs to *construct* RDF-1.2
+data in-process before checking that a *different* binary can't
+understand it. That means two different feature sets for two different
+build artifacts sharing one workspace `target/` directory -- the test
+binary compiled *with* `rdf-12`, and the separate `target/debug/oxigraph`
+CLI binary it subprocess-invokes compiled *without* it. This was
+verified locally, command by command, before touching CI: build the CLI
+with `--no-default-features`, then run the ignored test with
+`--features rdf-12`, and confirm the second command does not rebuild or
+otherwise disturb the artifact the first one left behind. It didn't.
+
+Two steps were added to the end of CI's existing `test_rdf_no_default_features`
+job, replaying that exact verified sequence. Independent review (round
+1, REJECT) caught a real editing mistake: an `Edit` call meant to be a
+pure append had silently relocated the pre-existing CLI step's
+`working-directory: ./cli` key onto the new final step instead, both
+changing that pre-existing step's behavior (it would have run from the
+repository root instead of `./cli`) and running the new step from the
+wrong directory -- a class of mistake a syntactic YAML-validity check
+cannot catch, since the result still parsed cleanly. Confirmed directly
+with `git diff` against the last committed version before accepting the
+finding. Fixed by restoring the key to its original step and leaving
+the two new steps with no override; a second `git diff` confirmed the
+whole changeset was then a genuinely pure four-line append. Round 2 of
+review (ACCEPT, no blocking findings) confirmed the fix. The test's own
+`#[ignore]` attribute is unchanged -- ordinary, non-CI runs still
+correctly skip it -- only its message was extended to note where it is
+now exercised.
+
+Verified via two full local runs of the exact CI sequence from the
+repository root; `cargo check`; the full `format_inspection_tests`
+module (10 passed, 1 still correctly ignored in the ordinary
+invocation); `cargo fmt --check`; YAML syntax validation. Committed to
+`main` as `223b3096`.
+
+This closes gate 1's compatibility-rejection matrix in full: current,
+missing, too-new, corrupt (MANIFEST/WAL/SST), and RDF-feature-mismatch
+are all now proven, the two real checked-in legacy fixtures are
+hash-pinned, and `Store::inspect` is covered against them for the first
+time. Ninth consecutive increment this session where independent review
+surfaced something worth acting on, and the second (after the WAL test)
+where the finding was a real defect in root's own delivered work rather
+than a framing overclaim -- this time in build orchestration rather than
+test logic. Envelope admission on ordinary open remains a deliberate
+product decision, out of ordinary-delivery scope; the frozen
+compatibility/crash/system-RocksDB qualification and promotion matrix
+remains a separate evaluator-authority track. ADR-0028 remains Proposed.
 
 ## Staged implementation and evaluator gates
 
