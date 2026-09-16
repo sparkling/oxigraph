@@ -715,4 +715,199 @@ mod tests {
         }
         Ok(())
     }
+
+    /// The libtest filter of one helper `#[test]`, which never names the crate.
+    fn enospc_helper(name: &str) -> String {
+        let module = module_path!();
+        let path = module.split_once("::").map_or(module, |(_, rest)| rest);
+        format!("{path}::{name}")
+    }
+    /// Reads one path that the parent test passed to a re-invoked helper.
+    fn enospc_variable(name: &str) -> TestResult<PathBuf> {
+        let Some(value) = std::env::var_os(name) else {
+            return Err("the parent test passed no such path".into());
+        };
+        Ok(value.into())
+    }
+
+    /// Compiles a `/proc/self/fd`-scoped `ENOSPC`-injection shim, or `None`
+    /// when no C compiler is available: this fault is opt-in test
+    /// infrastructure, never a dependency of the crate's own build. Once
+    /// `LD_PRELOAD`ed into a fresh process, the shim intercepts the `write`
+    /// libc symbol Rust's `write_all` calls, for descriptors whose resolved
+    /// path starts with `ENOSPC_SHIM_PREFIX`, injecting a real `ENOSPC` once
+    /// a single write exceeds the remaining `ENOSPC_SHIM_BUDGET_BYTES`;
+    /// every other descriptor, and every other process on the machine,
+    /// passes through to the real `dlsym`-resolved libc function unmodified.
+    /// A `pwrite` symbol is defined too, but positioned writes on Linux
+    /// resolve to `pwrite64`, which this shim does not intercept.
+    /// `/proc/self/fd` and `LD_PRELOAD`-honoring dynamic linking are both
+    /// Linux-specific: the caller must skip this on any other OS. Compiled
+    /// next to the test binary itself, not into a temporary directory, since
+    /// a `noexec` mount there would silently make `LD_PRELOAD` a no-op.
+    fn compile_enospc_shim(directory: &Path) -> TestResult<Option<PathBuf>> {
+        const SOURCE: &str = r#"
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+static long budget = -1;
+static char prefix[4096];
+static int prefix_len = 0;
+static int initialized = 0;
+
+static void init_once(void) {
+    if (initialized) return;
+    const char *b = getenv("ENOSPC_SHIM_BUDGET_BYTES");
+    const char *p = getenv("ENOSPC_SHIM_PREFIX");
+    budget = b ? atol(b) : -1;
+    if (p) {
+        size_t n = strlen(p);
+        if (n >= sizeof(prefix)) n = sizeof(prefix) - 1;
+        memcpy(prefix, p, n);
+        prefix[n] = '\0';
+        prefix_len = (int)n;
+    }
+    initialized = 1;
+}
+
+static int fd_in_scope(int fd) {
+    if (prefix_len == 0) return 0;
+    char linkpath[64];
+    char target[4096];
+    int n = snprintf(linkpath, sizeof(linkpath), "/proc/self/fd/%d", fd);
+    if (n <= 0 || (size_t)n >= sizeof(linkpath)) return 0;
+    ssize_t len = readlink(linkpath, target, sizeof(target) - 1);
+    if (len <= 0) return 0;
+    target[len] = '\0';
+    return strncmp(target, prefix, (size_t)prefix_len) == 0;
+}
+
+static int should_inject(int fd, size_t count) {
+    init_once();
+    if (budget < 0 || !fd_in_scope(fd)) return 0;
+    if ((long)count > budget) return 1;
+    budget -= (long)count;
+    return 0;
+}
+
+typedef ssize_t (*write_fn)(int, const void *, size_t);
+typedef ssize_t (*pwrite_fn)(int, const void *, size_t, off_t);
+
+ssize_t write(int fd, const void *buf, size_t count) {
+    static write_fn real = NULL;
+    if (!real) real = (write_fn)dlsym(RTLD_NEXT, "write");
+    if (should_inject(fd, count)) { errno = ENOSPC; return -1; }
+    return real(fd, buf, count);
+}
+
+ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
+    static pwrite_fn real = NULL;
+    if (!real) real = (pwrite_fn)dlsym(RTLD_NEXT, "pwrite");
+    if (should_inject(fd, count)) { errno = ENOSPC; return -1; }
+    return real(fd, buf, count, offset);
+}
+"#;
+        let source_path = directory.join("oxigraph_legacy_backup_enospc_shim.c");
+        fs::write(&source_path, SOURCE)?;
+        let shared_object = directory.join("oxigraph_legacy_backup_enospc_shim.so");
+        let status = match std::process::Command::new("cc")
+            .arg("-shared")
+            .arg("-fPIC")
+            .arg("-O2")
+            .arg("-o")
+            .arg(&shared_object)
+            .arg(&source_path)
+            .arg("-ldl")
+            .status()
+        {
+            Ok(status) => status,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                eprintln!("skipping disk-exhaustion coverage: no `cc` on this host");
+                return Ok(None);
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if !status.success() {
+            return Err(format!("cc exited with {status}").into());
+        }
+        Ok(Some(shared_object))
+    }
+
+    /// A real `ENOSPC` from the OS, not a synthetic phase callback, injected
+    /// on the first byte `copy_artifact` ever writes into the destination.
+    /// Unlike the phase-injected tests above, this proves the production
+    /// `BackupError::Io` conversion actually preserves `io::ErrorKind`
+    /// through a genuine ENOSPC, not just that some `Err` variant surfaces.
+    /// Linux-only: `LD_PRELOAD`-honoring dynamic linking and `/proc/self/fd`
+    /// are both Linux-specific, so on any other Unix the shim would compile
+    /// but do nothing, and the backup would silently succeed instead of
+    /// failing with `ENOSPC` -- a loud, wrong failure, not a skip.
+    #[test]
+    fn disk_exhaustion_during_copy_preserves_source_and_leaves_destination_incomplete() -> TestResult
+    {
+        if !cfg!(target_os = "linux") {
+            return Ok(());
+        }
+        let shim_directory = std::env::current_exe()?
+            .parent()
+            .ok_or("test binary has no parent directory")?
+            .to_owned();
+        let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+            return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+        };
+        let directory = tempfile::tempdir()?;
+        let root = directory.path().canonicalize()?;
+        let source = root.join("source");
+        let destination = root.join("package");
+        copy_fixture(0, &source)?;
+        let before = source_inventory(&source)?;
+        let mut command = std::process::Command::new(std::env::current_exe()?);
+        command
+            .arg("--exact")
+            .arg(enospc_helper("backup_legacy_enospc_process_helper"));
+        command.env("LD_PRELOAD", shim);
+        command.env("ENOSPC_SHIM_BUDGET_BYTES", "0");
+        command.env("ENOSPC_SHIM_PREFIX", destination.join("store"));
+        command.env("OXIGRAPH_LEGACY_BACKUP_ENOSPC_TEST_SOURCE", &source);
+        command.env(
+            "OXIGRAPH_LEGACY_BACKUP_ENOSPC_TEST_DESTINATION",
+            &destination,
+        );
+        let status = command.status()?;
+        assert!(status.success(), "child helper failed: {status:?}");
+        // Only `backup_inner`'s pre-copy-loop setup creates this directory,
+        // and no failure path removes it: this is positive evidence the
+        // child actually reached and entered the copy loop, not just that
+        // the child process happened to exit 0 (an `--exact` filter typo or
+        // an env-var name drift would also exit 0, with nothing copied).
+        assert!(
+            destination.join("store").is_dir(),
+            "the child never reached backup_inner's copy loop"
+        );
+        assert_eq!(source_inventory(&source)?, before);
+        assert!(!destination.join(COMPLETE).exists());
+        assert!(
+            LegacyBackupReceipt::verify(&destination, &TransactionStartControl::new()).is_err()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn backup_legacy_enospc_process_helper() -> TestResult {
+        let Some(source) = std::env::var_os("OXIGRAPH_LEGACY_BACKUP_ENOSPC_TEST_SOURCE") else {
+            return Ok(()); // An ordinary run: only the parent test re-invokes this.
+        };
+        let source = PathBuf::from(source);
+        let destination = enospc_variable("OXIGRAPH_LEGACY_BACKUP_ENOSPC_TEST_DESTINATION")?;
+        let result = Store::backup_legacy(&source, &destination, &LegacyBackupOptions::default());
+        match result {
+            Err(BackupError::Io(error)) if error.kind() == io::ErrorKind::StorageFull => Ok(()),
+            other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
+        }
+    }
 }
