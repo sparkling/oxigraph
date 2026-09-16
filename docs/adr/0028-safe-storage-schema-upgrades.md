@@ -57,10 +57,14 @@
   them for the first time (byte-preservation and expected legacy
   version/status); `Store::open`/`open_read_only` refusal and
   non-mutation on these two fixtures were already covered.
+  `inspect`/`open`/`open_read_only` are also now proven to refuse a
+  physically corrupted MANIFEST (RocksDB's own checksum validation, not
+  this crate's version logic) without further mutating the store, for
+  both a legacy and current declared version.
   Envelope admission on ordinary open, full crash-matrix breadth beyond
-  those five points, the remaining current/missing/corrupt/too-new/
-  RDF-feature-mismatch/interrupted fixture types in gate 1's
-  compatibility matrix, and the frozen qualification gates remain open
+  those five points, deeper corruption coverage beyond the MANIFEST, the
+  RDF-feature-mismatch test's dependency on a separately-built
+  no-default-features CLI, and the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
   This ADR owns the contract; both programme plans reference that one current
@@ -2036,6 +2040,73 @@ this: the current/missing/corrupt/too-new/RDF-feature-mismatch/
 interrupted fixture types named in the same requirement are not yet
 built, and remain a larger, separately-scoped piece of work. ADR-0028
 remains Proposed.
+
+## Proving corrupted-MANIFEST refusal, with an xhigh-effort review of RocksDB's own on-disk format (2026-09-16)
+
+Gate 1 names "corrupt" as a required fixture type. Auditing existing
+coverage first (as scoped in the prior increment) found every existing
+test exercises marker-level or column-family-level irregularities via a
+synthetic store -- none damages actual physical file bytes, a distinct
+failure surface from this crate's own version-classification logic.
+
+Rather than assume what error that surfaces as, a disposable, untracked
+exploration test (never committed) copied the real `rocksdb_bc_data`
+fixture and corrupted it several ways, printing the actual
+`StorageError` returned. Findings: flipping or truncating a fresh
+store's MANIFEST makes `Store::inspect`/`open`/`open_read_only` all
+return `Err(StorageError::Corruption(_))`, for both a legacy and
+current declared version, since RocksDB's own MANIFEST validation runs
+before any column family or key is reachable -- this crate's version
+logic cannot run at all. By contrast, truncating the WAL alone left
+`inspect` unaffected and `open` still correctly refusing a legacy
+layout with `UpgradeRequired`, since WAL replay is not part of the
+preflight path these APIs take.
+
+The new test, following this file's own synthetic-fixture convention
+rather than the real checked-in fixture (the property under test --
+RocksDB's own checksum validation -- doesn't depend on real fixture
+content), corrupts a fresh store's MANIFEST for both a legacy and
+current version and proves all three APIs refuse it with
+`StorageError::Corruption(_)` while leaving the store byte-unchanged.
+
+Following the standing instruction from earlier this session to use
+higher review effort for anything touching a new design or correctness
+property, this was the first review dispatched at `xhigh` rather than
+`high`. The difference was visible in the result: the review worked out
+RocksDB's own MANIFEST log-record format (length-prefixed records, each
+CRC32C-protected, a single sub-32-KiB block for a fresh store) to verify
+from first principles that a mid-file byte flip would necessarily land
+on checksummed bytes -- reasoning a shallower pass would not have
+attempted. It returned ACCEPT with no blocking findings, but surfaced a
+real, if dormant, test-fragility risk: a short flip could in principle
+land entirely inside a record's length-prefix field, which RocksDB's
+tail-tolerant log reader can absorb as a truncated tail instead of
+reporting corruption -- the review confirmed this would make the test
+fail loudly rather than pass falsely, and that the flip's current
+position already avoided it, but recommended removing the dependency on
+exact record boundaries. Treated as worth fixing rather than noting:
+widened the flip from 20 bytes to the entire second half of the file,
+guaranteeing the corruption overlaps multiple records regardless of
+where their boundaries fall. Reverified after the change.
+
+All completion-check commands passed for real: `cargo check` clean; the
+new test passing both before and after the widening; the full
+`format_inspection_tests` module (8 passed, 1 pre-existing ignored test
+unrelated to this change) twice; `cargo fmt --check` at full-crate
+scope. Committed to `main` as `1d6aa2d1`.
+
+This is the sixth increment this session where independent review
+surfaced something worth acting on. Gate 1's compatibility-rejection
+matrix remains open beyond this: current, missing, too-new and
+RDF-feature-mismatch already have solid synthetic coverage found during
+this stream's own auditing (not new gaps); the interrupted-workspace
+case is covered elsewhere (crash-matrix work, `upgrade_inspection_tests.rs`);
+what remains genuinely unbuilt is deeper corruption coverage beyond the
+MANIFEST (WAL, SST-level corruption) and the RDF-feature-mismatch test's
+dependency on a separately-built no-default-features CLI, both larger,
+separately-scoped pieces of work. Envelope admission on ordinary open
+remains a deliberate product decision, not ordinary-delivery scope.
+ADR-0028 remains Proposed.
 
 ## Staged implementation and evaluator gates
 
