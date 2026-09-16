@@ -1277,6 +1277,95 @@ cutover+rollback+restore drills on frozen size classes with recorded
 duration/peak disk/memory), which remain the largest genuinely open pieces
 of G4.3. ADR-0028 remains Proposed.
 
+## Operational gate: scope and first drill increment (design, 2026-09-16)
+
+The operational gate (item 4 below) is the largest remaining genuinely open
+G4.3 piece and has no implementation yet anywhere in this codebase; this
+section fixes its concrete shape before any code lands, so a harness
+increment can be dispatched against an unambiguous specification rather than
+an implement worker guessing at "frozen size classes" or "peak disk/memory."
+
+**Which upgrade path.** The drill targets the version-0/1-to-2 legacy path
+(`Store::start_upgrade`/`resume_upgrade`/`activate_upgrade` in
+`upgrade_receipt.rs`), not the v2-to-3 draft. The legacy path is the one real
+operators actually run today: it produces a store this binary's
+`LATEST_STORAGE_VERSION` (2) treats as current and openable after
+`activate_upgrade`. The v2-to-3 draft cannot yet be operationally drilled
+end-to-end, since activating it deliberately does not promote version 3 to
+current (no binary in this repository can open the result ordinarily yet);
+an operational drill against it would have no real "cutover" to measure.
+
+**Frozen size classes, first increment.** This codebase already carries two
+checked-in, byte-frozen legacy fixtures used by the existing compatibility
+tests: `lib/oxigraph/tests/rocksdb_bc_data` (version 0) and
+`lib/oxigraph/tests/rocksdb_bc_rdf_star_data` (version 1). The first drill
+increment reuses these two as its initial (smallest) size classes rather
+than inventing new ones, since they are already frozen, already checked in,
+and already exercise both supported legacy source versions. Additional,
+larger synthetic size classes (generated fixtures at fixed, documented quad
+counts, e.g. small/medium/large) are explicit follow-up work once the
+smallest class proves the measurement plumbing end-to-end; committing large
+binary fixtures to the repository is itself a decision this section
+deliberately defers rather than making unreviewed.
+
+**What each stage measures, first increment:**
+
+- **Backup** — wall-clock duration of `Store::backup_with_receipt` on the
+  opened fixture, via `std::time::Instant`, matching the existing pattern in
+  `restore.rs`'s `RestoreReceipt::duration_ns`/`restore_duration()`.
+- **Upgrade** — wall-clock duration of `Store::start_upgrade` followed by
+  `Store::resume_upgrade` (or the combined `Store::upgrade` convenience) into
+  a fresh destination.
+- **Explicit cutover** — wall-clock duration of `Store::activate_upgrade`
+  into a fresh, disjoint target, plus confirmation the target opens
+  ordinarily afterward (`Store::open` succeeds; unlike the v2-to-3 draft,
+  this is the live, current-schema path).
+- **Rollback to the preserved source** — not a data-movement operation to
+  time in this design: because the whole chain is source-preserving (the
+  original fixture directory is never opened for writing, and its bytes are
+  asserted unchanged after every stage, exactly as the existing crash-matrix
+  and activation tests already prove), rollback for an operator is pointing
+  traffic back at that untouched directory. Its measured "duration" is
+  therefore reported as the byte-identity check itself (near-instant,
+  dominated by directory-tree comparison, not data recovery) with an
+  explicit note that this is a property of source preservation, not a
+  simulated failback procedure. This drill does not claim rollback to an
+  older *binary* is qualified; that remains the frozen evaluator track named
+  in "Alternatives rejected" and the top status block.
+- **Restore** — wall-clock duration of `Store::restore_backup` from the
+  backup created above into a third fresh directory, reading
+  `RestoreReceipt::restore_duration()` directly rather than re-timing it.
+- **Peak disk (proxy)** — total on-disk byte size of every regular file under
+  each of the fixture, backup, upgrade-destination, activation-target and
+  restore-destination directories at the end of its stage, summed via a
+  directory-walk helper (`fs::metadata(..).len()` over `fs::read_dir`
+  recursion), the same style already used by this file's own `bytes()`-style
+  test helpers. This is a proxy for peak disk, not an instantaneous
+  high-water-mark sample; a true continuously-sampled peak (e.g. polling
+  `statvfs` on a timer during each stage) is deferred.
+- **Peak memory and read/write amplification** — explicitly deferred out of
+  this first increment. Peak RSS sampling needs either a background sampling
+  thread or an external subprocess wrapper (this repository's existing
+  process-crash tests already re-invoke the test binary via
+  `std::process::Command`, which is the natural mechanism to extend for this
+  later); amplification needs a physical-bytes-written counter compared
+  against the already-available `primary_bytes()` on the relevant receipts.
+  Neither blocks proving the duration/disk plumbing end-to-end first.
+
+**No zero-downtime claim.** Every stage above is measured as an isolated,
+offline, single-writer operation on a fixture nobody else is touching,
+exactly as every existing test in this file operates. The recorded numbers
+describe this drill's own environment and fixture size; they are not service
+availability numbers and must never be read as a general upgrade-time SLA
+without the frozen, multi-machine qualification this ADR explicitly places
+outside ordinary delivery.
+
+**Deferred to later increments:** additional synthetic size classes beyond
+the two checked-in fixtures; peak memory sampling; read/write amplification;
+promoting the drill from an ad hoc integration test to a `cli` subcommand or
+persisted receipt schema, which is only worth designing once the numbers
+above are proven to exist and be trustworthy at all.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
