@@ -745,6 +745,10 @@ mod tests {
     /// Linux-specific: the caller must skip this on any other OS. Compiled
     /// next to the test binary itself, not into a temporary directory, since
     /// a `noexec` mount there would silently make `LD_PRELOAD` a no-op.
+    #[expect(
+        clippy::print_stderr,
+        reason = "diagnostic for a CI host missing a C compiler, opt-in test infrastructure only"
+    )]
     fn compile_enospc_shim(directory: &Path) -> TestResult<Option<PathBuf>> {
         const SOURCE: &str = r#"
 #define _GNU_SOURCE
