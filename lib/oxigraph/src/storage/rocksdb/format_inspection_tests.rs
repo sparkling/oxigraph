@@ -209,6 +209,84 @@ fn inspect_does_not_create_a_missing_store() -> Result {
     Ok(())
 }
 
+/// Physical file damage, not a marker/column-family classification: a
+/// corrupted MANIFEST is refused by `inspect`/`open`/`open_read_only`
+/// without leaving the source further mutated, for both a legacy and a
+/// current declared version. This is RocksDB's own checksum validation,
+/// not this crate's version-status logic, so it fires regardless of what
+/// the store's `oxversion` marker claims -- confirmed empirically before
+/// writing this test (not assumed): a standalone exploration flipped bytes
+/// in a fresh store's MANIFEST and observed `StorageError::Corruption` from
+/// all three calls for both a legacy (0) and current (2) marker, while a
+/// truncated WAL alone left `inspect` unaffected and `open` still correctly
+/// refusing the legacy layout with `UpgradeRequired` -- MANIFEST integrity,
+/// not WAL integrity, is what preflight actually depends on.
+#[test]
+fn inspect_and_open_refuse_a_corrupted_manifest_without_source_changes() -> Result {
+    for version in [0_u64, 2_u64] {
+        let directory = tempfile::tempdir()?;
+        let db = Db::open_read_write(
+            directory.path(),
+            RocksDbStorage::column_families(),
+            DbOptions::default(),
+        )?;
+        let default = db.column_family(DEFAULT_CF)?;
+        db.insert(&default, b"corruption-fixture", b"preserve")?;
+        db.insert(&default, b"oxversion", &version.to_be_bytes())?;
+        db.flush()?;
+        drop(default);
+        drop(db);
+
+        let manifest = std::fs::read_dir(directory.path())?
+            .filter_map(std::result::Result::ok)
+            .find(|entry| entry.file_name().to_string_lossy().starts_with("MANIFEST-"))
+            .ok_or("no MANIFEST file in a freshly written store")?
+            .path();
+        // Flip every byte from the midpoint to the end, not just a handful:
+        // a short flip could in principle land entirely inside one record's
+        // length-prefix bytes, which RocksDB's log reader can interpret as a
+        // truncated tail (tolerated, not reported as corruption) rather than
+        // a checksum failure. Flipping the whole second half guarantees the
+        // corruption overlaps multiple records' checksummed payload bytes
+        // regardless of exactly where record boundaries fall.
+        let mut bytes = std::fs::read(&manifest)?;
+        let middle = bytes.len() / 2;
+        for byte in &mut bytes[middle..] {
+            *byte ^= 0xFF;
+        }
+        std::fs::write(&manifest, &bytes)?;
+
+        let before = tree(directory.path())?;
+        assert!(
+            matches!(
+                Store::inspect(directory.path()),
+                Err(StorageError::Corruption(_))
+            ),
+            "inspect should refuse a corrupted MANIFEST: version {version}"
+        );
+        assert!(
+            matches!(
+                Store::open(directory.path()),
+                Err(StorageError::Corruption(_))
+            ),
+            "open should refuse a corrupted MANIFEST: version {version}"
+        );
+        assert!(
+            matches!(
+                Store::open_read_only(directory.path()),
+                Err(StorageError::Corruption(_))
+            ),
+            "open_read_only should refuse a corrupted MANIFEST: version {version}"
+        );
+        assert_eq!(
+            tree(directory.path())?,
+            before,
+            "a refused corrupted store must not be further mutated: version {version}"
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn repeated_feature_inspection_does_not_create_a_native_lock() -> Result {
     let directory = tempfile::tempdir()?;
