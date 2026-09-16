@@ -3246,6 +3246,58 @@ covered. `start_inner` (`schema_upgrade.rs`'s construction path) and
 by real-process-kill tests also remain open. Four entry points are
 covered crate-wide now, not the complete crash/fault matrix.
 
+## Auditing gate 2's "full logical/subsystem comparison" before extending the crash matrix a fifth time (2026-09-16)
+
+After four consecutive disk-exhaustion extensions, this tick opened
+with the question the last one deliberately deferred: is a fifth
+extension of the same technique still the best available ordinary-
+delivery slice, or does something else in G4.3 now offer more real
+value? Rather than answer that by feel, gate 2's own "still required"
+column was investigated directly, since it names something this
+programme has never actually classified: "Full required logical/
+subsystem comparison, including metadata/receipt/outbox/index state
+where applicable."
+
+Direct reading answers this. `LegacyStoreSnapshot`
+(`storage/rocksdb.rs`), the only native type that opens a legacy
+(v0/v1) store for offline observation, exposes exactly four fields --
+`version`, `database_id`, `sequence`, `column_families` -- and its own
+doc comment states plainly: "Raw offline physical observations, not
+logical classification or upgrade admission." There is no existing
+internal capability anywhere in this crate to read actual quad content
+out of a legacy store and compare it, term for term, against a
+transformed v2 store's own content. The existing transformation tests
+(`upgrade_v0_transforms_and_preserves_all_inputs` and its v1 sibling,
+in `upgrade_transformation.rs`) already check `quad_count()`,
+`named_graph_count()` and `namespace_count()` -- aggregate counts,
+proving nothing was silently dropped or duplicated in bulk -- but nothing
+compares individual quads.
+
+This is not an oversight to fix with a quick new test; it matches the
+crate's own stated design intent. `SchemaUpgradeReceipt::contributor_scope()`
+returns the literal string `"byte-preserved-not-reconciled"`
+(`schema_upgrade.rs`), and the underlying magic constant is explicit:
+`"all-primary-cf-key-values-except-oxversion;contributors=byte-preserved-not-reconciled"`.
+The v2-to-v3 schema-upgrade receipt's own documented contract is byte
+preservation of specific known structures, not semantic reconciliation
+of arbitrary RDF content -- the same distinction gate 3's own row
+already draws for "exact-receipt independent qualification" ("a
+separate evaluator-authority requirement... an independent
+re-implementation comparison, not closeable by an ordinary-delivery
+test"). Gate 2's "full logical/subsystem comparison" is the same kind
+of requirement, just never labeled that way before: closing it for
+real would mean building a new legacy quad-reading capability (not a
+test, a capability) and then an independent comparison harness on top
+of it -- squarely evaluator-authority-track work, not a bounded
+ordinary-delivery slice.
+
+This audit itself is the tick's deliverable where it matters most: it
+answers "is there a better use of this tick than a fifth disk-
+exhaustion extension?" with a verified no for this particular
+candidate, rather than either assuming yes (and wasting the tick
+chasing untenable new tooling) or assuming no without checking. See
+the corresponding correction to gate 2's own checklist row.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
