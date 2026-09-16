@@ -22,14 +22,14 @@
   Existing build-bound outer upgrade workspaces also have a non-mutating
   inspection API/CLI for verified incomplete, pending and sealed states.
   Checksummed schema-envelope decoding and metadata reporting are implemented;
-  an explicit inactive marker-only v2-to-v3 shadow construction API/CLI-free
-  library slice is implemented, with tested fail-closed rejection of a changed
+  an explicit inactive marker-only v2-to-v3 shadow construction API/CLI
+  slice is implemented, with tested fail-closed rejection of a changed
   executable on resume/verify (no operator-visible build identity on the
-  sealed receipt) and an explicit library-only fresh-target activation API
-  that publishes a source-preserving, byte-verified copy without promoting
+  sealed receipt) and an explicit fresh-target activation API/CLI that
+  publishes a source-preserving, byte-verified copy without promoting
   version 3 to this binary's current schema; envelope admission on ordinary
-  open, CLI exposure for activation, full compatibility rejection,
-  older-binary rollback and the frozen qualification gates remain open
+  open, full compatibility rejection, older-binary rollback and the frozen
+  qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
   This ADR owns the contract; both programme plans reference that one current
@@ -1127,6 +1127,72 @@ compatibility fail closed) are each implemented and tested for the v2-to-v3
 marker-only path; the crash matrix's breadth and the frozen
 qualification/promotion gates remain the largest genuinely open items, and
 full G4.3 completion still requires those.
+
+## CLI exposure for the v2-to-v3 construction and activation (2026-09-16)
+
+`start-schema-upgrade`, `resume-schema-upgrade`, `verify-schema-upgrade` and
+`activate-schema-upgrade` expose the library API above, mirroring the
+sibling version-0/1-to-2 CLI commands exactly. Every command requires an
+explicit `--rdf-profile rdf-11|rdf-12` flag, since `SchemaUpgradeOptions` has
+no `Default` by design. `activate-schema-upgrade`'s help text and printed
+output both state plainly that activation does not promote version 3 to
+this binary's current schema: `LATEST_STORAGE_VERSION` is still 2, so
+ordinary `Store::open`/`open_read_only` on the published target continue to
+return the typed `SchemaTooNew { found: 3, supported: 2 }` refusal until a
+future version-3-aware binary is separately authorized to treat version 3
+as current.
+
+Two implement dispatches correctly declined to guess rather than fabricate:
+an initial spec omitted needed reference files and the worker returned
+INCONCLUSIVE with zero changes; a corrected, fully self-contained respec
+produced correct `cli/src/cli.rs`, `cli/src/schema_upgrade.rs` and
+`cli/tests/schema_upgrade.rs` content but deliberately withheld
+`cli/src/main.rs` (roughly 4000 lines) to avoid risking corruption from full
+re-transcription, handing root the exact two hunks to apply instead. Root
+applied them, then found and fixed two further real, pre-existing gaps this
+CLI work was the first to expose: `SchemaUpgradeActivation` (added in the
+previous section's commit) was never added to the `pub use` re-export chain
+at any of its four levels (`store.rs`, `store/upgrade.rs`,
+`store/upgrade_transform.rs`, `store/upgrade_receipt.rs`), making it
+unreachable from outside the `oxigraph` crate; and `cli/Cargo.toml` never
+listed `tempfile` as a dev-dependency despite it already being a workspace
+dependency. Both are one-line-per-file fixes with no behavior change beyond
+making an existing type nameable externally.
+
+Independent review (`claude-fable-5-1`, high effort, ACCEPT) ran inside a
+confirmation-only workflow (`workflow-FhGmwP`) against the already-applied,
+already-verified diff. All six deterministic checks passed for real inside
+that workflow's own execution: CLI compile, the 5 new CLI integration tests,
+the 3 existing `upgrade_activation` CLI tests unchanged, library compile,
+the 14 library `schema_upgrade` tests unchanged, and library `cargo fmt
+--check`. Root additionally ran the CLI crate's own `clap_debug` structural
+test after review (a cheap gap the reviewer flagged): it passed.
+`cargo fmt -p oxigraph-cli -- --check` fails only in six pre-existing files
+this diff does not touch (confirmed pre-existing on `main` before this
+change); the four files this diff actually changes or adds are individually
+fmt-clean.
+
+This workflow's own automatic evidence handoff did not complete -- a
+structural property of this harness, not a code defect. Its `mcp-handoff`
+step only fires when the workflow's own tracked run actually delivered a
+source diff (`initialFiles !== files()` at that point); since root had
+already applied every fix to disk before launching this confirmation-only
+workflow, that condition was never true even though genuine independent
+review had already run and accepted. Root recorded the evidence manually
+from the workflow's own genuine check-run results and the genuine review
+verdict, in Ruflo
+`programme-reviews/oxigraph-schema-upgrade-cli-exposure-2026-09-16-v1`. The
+lesson for future increments: a confirmation-only dispatch against
+already-applied changes cannot reach a clean handoff in this harness; to get
+one, let the workflow's own implement step deliver the change via its own
+`root-apply`, rather than pre-applying and asking for a rubber-stamp
+confirmation. Committed to `main` as `1300fb0d`; not pushed.
+
+This closes CLI exposure for the v2-to-v3 path only. It adds no new library
+behavior, does not touch `cli/README.md`'s operator-journey documentation
+(a separate follow-up), and does not affect the crash-matrix breadth or
+operational-gate items that remain the largest genuinely open pieces of
+G4.3. ADR-0028 remains Proposed.
 
 ## Staged implementation and evaluator gates
 
