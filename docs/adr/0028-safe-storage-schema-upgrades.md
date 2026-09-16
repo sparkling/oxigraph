@@ -2741,6 +2741,51 @@ increments in the same proven pattern, not a single remaining task.
 The frozen qualification/promotion matrix remains a separate
 evaluator-authority track.
 
+## Resolving the operational drill's upgrade/cutover correlation with direct evidence (2026-09-16)
+
+An earlier section disclosed, without resolving, why the operational
+drill's `upgrade` and `cutover` legs show correlated ~20-second
+durations and correlated large logical-read ratios: two distinct,
+unruled-out explanations were offered (a synchronous copy/validate
+step inside `activate_upgrade` itself, or a shared background
+mechanism such as RocksDB's flush/compaction pool), and deciding
+between them was explicitly left for a future increment that would
+need to read `activate_upgrade`'s own implementation.
+
+That reading is now done, directly, not assumed. `activate_upgrade`
+(`lib/oxigraph/src/store/upgrade_receipt.rs`'s `activate_upgrade_inner`,
+the exact function the drill's `cutover` leg calls) copies every
+expected file with `copy_artifact`, then calls `physical_files` twice
+-- once immediately after the copy loop, once again after
+`LegacyStoreSnapshot::verify_transformed` -- and `physical_files`
+itself (`upgrade_transform.rs`) calls `hash_file` on every file,
+computing a real SHA-256 over the actual file bytes, not a metadata-
+only check. So a single `activate_upgrade` call reads every file's
+full contents at least three times: once to copy it, twice more to
+hash it for verification. The `upgrade` leg (`Store::upgrade`, `start_
+upgrade`+`resume_upgrade`) is architecturally the same shape:
+`resume_upgrade_inner` drives `Store::resume_upgrade_recovery`, the
+same copy-and-verify recovery machinery this session's own crash-test
+work (`upgrade_resume.rs`) already established does substantial,
+multi-attempt file copying and checksum verification.
+
+This is sufficient on its own to explain the observation. Both legs
+independently perform substantial, synchronous, single-threaded
+`O(data size)` work -- copying and re-hashing comparable amounts of the
+same underlying legacy-fixture data -- so both legs taking similar
+wall-clock time and reading similar (large, multiple-times-the-
+logical-size) amounts of data is the expected outcome of that
+architecture, not evidence of some third, shared mechanism. The
+"shared background pool" explanation is not disproven -- RocksDB's own
+background threads still contribute some I/O to the same process-wide
+counters, exactly as `proc_self_io_field`'s own doc comment already
+says -- but it is no longer needed to explain the correlation: the
+synchronous copy/verify work each leg already performs is enough by
+itself. No code or test changed for this; this is a documentation
+resolution of a previously-disclosed open question, based on reading
+the two functions the drill actually calls rather than speculating
+about them.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
