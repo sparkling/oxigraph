@@ -223,6 +223,18 @@ fn drill(version: u64) -> TestResult {
     let legacy_backup_receipt =
         Store::backup_legacy(&source, &legacy_backup, &LegacyBackupOptions::default())?;
     let backup_legacy_duration = started.elapsed();
+    // Sub-legs, not a fourth counter: each of the three following samples
+    // ends the previous call's own window and starts the next one's, so
+    // the three windows' own byte deltas sum exactly to the whole leg's
+    // delta (the samples telescope: nothing outside these three windows
+    // touches `logical_read_bytes` between the leg's own start and end).
+    // backup_legacy_logical_read_ratio + upgrade_logical_read_ratio +
+    // cutover_logical_read_ratio therefore sums to the whole-leg
+    // legacy_logical_read_ratio below up to each ratio's own independent
+    // `{:.2}` display rounding, not for any other reason -- this
+    // decomposes that figure's unexplained magnitude rather than adding
+    // an unrelated measurement.
+    let backup_legacy_logical_read_end = logical_read_bytes();
     let legacy_logical_bytes: u64 = legacy_backup_receipt
         .files()
         .iter()
@@ -234,6 +246,7 @@ fn drill(version: u64) -> TestResult {
     let started = Instant::now();
     Store::upgrade(&source, &legacy_backup, &workspace, &options)?;
     let upgrade_duration = started.elapsed();
+    let upgrade_logical_read_end = logical_read_bytes();
 
     let target = root.path().join("active");
     let started = Instant::now();
@@ -407,7 +420,7 @@ fn drill(version: u64) -> TestResult {
     // in the same window is not detected and is not reported as
     // "unknown" -- it silently inflates the delta instead, per
     // `proc_self_io_field`'s own doc comment. Instrumentation only: no
-    // threshold is asserted on any of these four ratios.
+    // threshold is asserted on any of these ratios.
     let legacy_physical_read_ratio = ratio(
         legacy_leg_physical_read_start,
         legacy_leg_physical_read_end,
@@ -415,6 +428,25 @@ fn drill(version: u64) -> TestResult {
     );
     let legacy_logical_read_ratio = ratio(
         legacy_leg_logical_read_start,
+        legacy_leg_logical_read_end,
+        legacy_logical_bytes,
+    );
+    // Sub-leg decomposition of legacy_logical_read_ratio (see the sampling
+    // comment above): which of backup_legacy/upgrade/cutover the legacy
+    // leg's own large, fixture-dependent logical-read figure actually
+    // comes from, not a new or different measurement.
+    let backup_legacy_logical_read_ratio = ratio(
+        legacy_leg_logical_read_start,
+        backup_legacy_logical_read_end,
+        legacy_logical_bytes,
+    );
+    let upgrade_logical_read_ratio = ratio(
+        backup_legacy_logical_read_end,
+        upgrade_logical_read_end,
+        legacy_logical_bytes,
+    );
+    let cutover_logical_read_ratio = ratio(
+        upgrade_logical_read_end,
         legacy_leg_logical_read_end,
         legacy_logical_bytes,
     );
@@ -430,7 +462,7 @@ fn drill(version: u64) -> TestResult {
     );
 
     eprintln!(
-        "drill version={version} backup_legacy={backup_legacy_duration:?} upgrade={upgrade_duration:?} cutover={cutover_duration:?} rollback={rollback_duration:?} backup_with_receipt={backup_with_receipt_duration:?} restore={restore_duration:?} disk_bytes={total_disk_bytes} peak_rss_kb={peak_rss_kb} legacy_write_amplification={legacy_write_amplification:.2} restore_write_amplification={restore_write_amplification:.2} legacy_physical_read_ratio={legacy_physical_read_ratio} legacy_logical_read_ratio={legacy_logical_read_ratio} restore_physical_read_ratio={restore_physical_read_ratio} restore_logical_read_ratio={restore_logical_read_ratio} restore_source_quads={scaled_quad_count}"
+        "drill version={version} backup_legacy={backup_legacy_duration:?} upgrade={upgrade_duration:?} cutover={cutover_duration:?} rollback={rollback_duration:?} backup_with_receipt={backup_with_receipt_duration:?} restore={restore_duration:?} disk_bytes={total_disk_bytes} peak_rss_kb={peak_rss_kb} legacy_write_amplification={legacy_write_amplification:.2} restore_write_amplification={restore_write_amplification:.2} legacy_physical_read_ratio={legacy_physical_read_ratio} legacy_logical_read_ratio={legacy_logical_read_ratio} backup_legacy_logical_read_ratio={backup_legacy_logical_read_ratio} upgrade_logical_read_ratio={upgrade_logical_read_ratio} cutover_logical_read_ratio={cutover_logical_read_ratio} restore_physical_read_ratio={restore_physical_read_ratio} restore_logical_read_ratio={restore_logical_read_ratio} restore_source_quads={scaled_quad_count}"
     );
     Ok(())
 }
