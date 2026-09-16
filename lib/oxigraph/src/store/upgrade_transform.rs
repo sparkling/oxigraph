@@ -766,4 +766,110 @@ mod tests {
         ));
         Ok(())
     }
+
+    /// The libtest filter of one helper `#[test]`, which never names the crate.
+    fn helper(name: &str) -> String {
+        let module = module_path!();
+        let path = module.split_once("::").map_or(module, |(_, rest)| rest);
+        format!("{path}::{name}")
+    }
+    /// Re-invokes this same test binary at one helper, which exits 73 at `stop`.
+    fn crash(name: &str, paths: &[(&str, &Path)], stop: u8) -> Result<std::process::ExitStatus> {
+        let mut command = std::process::Command::new(std::env::current_exe()?);
+        command.arg("--exact").arg(helper(name));
+        command.env("OXIGRAPH_UPGRADE_TRANSFORM_TEST_EXIT_AT", stop.to_string());
+        for (variable, path) in paths {
+            command.env(variable, path);
+        }
+        Ok(command.status()?)
+    }
+    /// Reads one path that the parent test passed to a re-invoked helper.
+    fn variable(name: &str) -> Result<PathBuf> {
+        let Some(value) = std::env::var_os(name) else {
+            return Err("the parent test passed no such path".into());
+        };
+        Ok(value.into())
+    }
+
+    #[test]
+    fn transform_child_exits_before_and_after_the_completion_rename() -> Result {
+        for stop in [5_u8, 6] {
+            let dir = tempfile::tempdir()?;
+            let source = dir.path().join("source");
+            let package = dir.path().join("backup");
+            let prepared = dir.path().join(format!("prepared-{stop}"));
+            fixture(&source)?;
+            let before_source = hashes(&source)?;
+            let options = UpgradeTransformOptions::default();
+            Store::backup_legacy(&source, &package, &options.backup)?;
+            Store::prepare_upgrade(&source, &package, &prepared, &options.backup)?;
+            let before_package = hashes(&package.join("store"))?;
+            let paths = [
+                ("OXIGRAPH_UPGRADE_TRANSFORM_TEST_SOURCE", source.as_path()),
+                ("OXIGRAPH_UPGRADE_TRANSFORM_TEST_PACKAGE", package.as_path()),
+                (
+                    "OXIGRAPH_UPGRADE_TRANSFORM_TEST_PREPARED",
+                    prepared.as_path(),
+                ),
+            ];
+            let status = crash("transform_process_helper", &paths, stop)?;
+            assert_eq!(status.code(), Some(73), "the child did not reach {stop}");
+            // The child's exclusive native leases are released by the kernel on
+            // process exit, whether or not any in-process destructor ran.
+            for path in [&source, &package.join("store"), &prepared.join("store")] {
+                assert!(LegacyStoreSnapshot::upgrade_lease_available(path));
+            }
+            if stop == 5 {
+                // Killed after TRANSFORM_PENDING is written and synced but
+                // before the atomic rename to TRANSFORM_COMPLETE: the same
+                // refused, verify-failing outcome as an in-process fault at
+                // the same phase, because the rename never happened.
+                assert!(!prepared.join(TRANSFORM_COMPLETE).exists());
+                assert!(
+                    TransformedUpgrade::verify(&source, &package, &prepared, &options).is_err()
+                );
+            } else {
+                // Killed immediately after the rename: the marker is already
+                // visible in the directory even though the process died
+                // before the final directory fsync could run, matching the
+                // existing synthetic stop-6 case, but now proven against a
+                // real kernel-level process death.
+                assert!(prepared.join(TRANSFORM_COMPLETE).exists());
+                TransformedUpgrade::verify(&source, &package, &prepared, &options)?;
+            }
+            // Transformation completing does not activate the workspace: an
+            // ordinary open still refuses it, regardless of stop, exactly as
+            // the existing synthetic test asserts unconditionally too.
+            assert!(matches!(
+                Store::open(prepared.join("store")),
+                Err(crate::storage::StorageError::UpgradeIncomplete)
+            ));
+            assert_eq!(hashes(&source)?, before_source);
+            assert_eq!(hashes(&package.join("store"))?, before_package);
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::exit,
+        reason = "bounded child models an exact transform crash point"
+    )]
+    fn transform_process_helper() -> Result {
+        let Some(source) = std::env::var_os("OXIGRAPH_UPGRADE_TRANSFORM_TEST_SOURCE") else {
+            return Ok(()); // An ordinary run: only the parent test re-invokes this.
+        };
+        let source = PathBuf::from(source);
+        let package = variable("OXIGRAPH_UPGRADE_TRANSFORM_TEST_PACKAGE")?;
+        let prepared = variable("OXIGRAPH_UPGRADE_TRANSFORM_TEST_PREPARED")?;
+        let stop = std::env::var("OXIGRAPH_UPGRADE_TRANSFORM_TEST_EXIT_AT")?.parse::<u8>()?;
+        let options = UpgradeTransformOptions::default();
+        transform_inner(&source, &package, &prepared, &options, |phase| {
+            if phase == stop {
+                std::process::exit(73);
+            }
+            Ok(())
+        })?;
+        Err("the child returned instead of exiting at its crash point".into())
+    }
 }
