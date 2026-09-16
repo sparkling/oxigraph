@@ -2665,6 +2665,82 @@ Committed to `main` as `9a124cff`; not pushed. The choice between the
 two explanations for the upgrade/cutover correlation remains a
 genuinely open question, disclosed rather than resolved.
 
+## Correcting a stale "next product step" claim, and closing the largest remaining crash-matrix gap (2026-09-16)
+
+A fresh audit of the delivery-gates plan document's own "Next product
+step" paragraph -- not assuming it was still accurate, following this
+session's own repeated audit-before-building discipline -- found it
+badly out of date. It described implementing the envelope writer and
+explicit v2-to-v3 shadow upgrade as work still to be built. That work
+is done: `lib/oxigraph/src/store/schema_upgrade.rs` already implements
+`Store::start_schema_upgrade`/`resume_schema_upgrade`/
+`activate_schema_upgrade` with a distinct schema UUID generated once at
+start and retained (not regenerated) across resume -- directly verified
+by confirming `create_upgrade` is called exactly once, in `start_inner`,
+never in `resume_inner` -- an explicit, caller-chosen RDF write ceiling
+(`SchemaUpgradeOptions::new` takes no default), a bound receipt format,
+CLI exposure for all four operations, and real process-kill coverage
+this session already added to all three entry points. This ADR's own
+status block already described all of this accurately; the staleness
+was isolated to the delivery-gates plan document, corrected there
+(`main` commit `b712e042`) rather than here.
+
+That same audit surfaced a genuine, well-scoped next increment instead:
+`resume_inner` (the v2-to-v3 draft's own resume step) has ten fault
+phases (0 through 9), already covered exhaustively but only
+synthetically by `schema_upgrade_every_interruption_retains_uuid_and_
+prior_attempt_bytes`, and covered by a real process kill only once, at
+phase 2 (mid-copy). This was the largest remaining gap left by this
+session's own `current_exe` audit -- `prepare_inner` and
+`transform_inner` each already had real-kill coverage at their single
+most consequential boundary, but `resume_inner`'s own equivalent
+boundary had none. `fault(8)` fires after `PENDING` is written and
+synced but strictly before `fs::rename(PENDING, COMPLETE)`; `fault(9)`
+fires strictly after that rename has already returned, mapped through
+`indeterminate()` -- the identical asymmetric completion-rename boundary
+already proven with a real kill for `prepare_inner` and
+`transform_inner` earlier this session.
+
+The new test needed no new crash-test infrastructure:
+`schema_upgrade_tests.rs` already has the `helper()`/`crash()`/
+`variable()` trio and an already-generic
+`schema_upgrade_resume_process_helper` (reads its target phase from an
+env var, not hardcoded to phase 2), reused unchanged from the existing
+phase-2 test. Unlike `prepare_inner`/`transform_inner` (explicitly not
+resumable), `resume_schema_upgrade` is designed to be resumable, so
+both new phases assert the same outcome the adjacent phase-2 test and
+the existing synthetic every-interruption test already prove: a fresh,
+in-process resume after the kill reaches the same schema UUID and a
+valid receipt, independently verified, with source/package bytes
+unchanged throughout.
+
+Independent review (`claude-fable-5-1`, high effort): **ACCEPT on the
+first round** -- `claude-fable-5-1` was available again after the
+previous section's roughly hour-long rate-limit incident, confirming
+that was transient and scoped as diagnosed. One optional, non-blocking
+wording nit was applied before commit anyway: a doc-comment phrase
+referencing "this session" was replaced with a reference to the actual
+sibling tests, since a session-relative phrase means nothing to a
+future reader of the persisted source.
+
+`cargo test --locked -p oxigraph --lib -- "store::upgrade::transform::
+receipt::schema_upgrade::tests" --test-threads=1` passes all 21 tests
+in the module (20 pre-existing plus this one new test; this module's
+tests are individually RocksDB-heavy, so the full run took roughly 21
+minutes and was run in the background); `cargo fmt -p oxigraph --
+--check` genuinely exits 0; `git diff ... | grep -c '^-[^-]'` == 0, a
+pure append. Committed to `main` as `b8665a5e`; not pushed.
+
+Both product-level open items this stream now has are precisely
+scoped, not a single next feature: envelope admission on ordinary
+`Store::open` (a deliberate, explicit non-goal, not a pending step),
+and further crash-matrix breadth beyond the boundaries now covered on
+all three v2-to-v3 entry points plus the legacy path's prepare/
+transform/start/resume/activation -- individually tractable, low-risk
+increments in the same proven pattern, not a single remaining task.
+The frozen qualification/promotion matrix remains a separate
+evaluator-authority track.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
