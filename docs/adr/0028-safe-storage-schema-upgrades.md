@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-12
+- Updated: 2026-09-16
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
@@ -27,9 +27,14 @@
   executable on resume/verify (no operator-visible build identity on the
   sealed receipt) and an explicit fresh-target activation API/CLI that
   publishes a source-preserving, byte-verified copy without promoting
-  version 3 to this binary's current schema; envelope admission on ordinary
-  open, full compatibility rejection, older-binary rollback and the frozen
-  qualification gates remain open
+  version 3 to this binary's current schema, with CLI exposure for all four
+  operations (`start-schema-upgrade`, `resume-schema-upgrade`,
+  `verify-schema-upgrade`, `activate-schema-upgrade`) and real OS-level
+  process-kill crash-matrix coverage for the mid-copy-resume and
+  pre/post-guard-unlink-activation points; envelope admission on ordinary
+  open, full crash-matrix breadth, the operational gate, full compatibility
+  rejection, older-binary rollback and the frozen qualification gates remain
+  open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
   This ADR owns the contract; both programme plans reference that one current
@@ -1189,10 +1194,88 @@ one, let the workflow's own implement step deliver the change via its own
 confirmation. Committed to `main` as `1300fb0d`; not pushed.
 
 This closes CLI exposure for the v2-to-v3 path only. It adds no new library
-behavior, does not touch `cli/README.md`'s operator-journey documentation
-(a separate follow-up), and does not affect the crash-matrix breadth or
-operational-gate items that remain the largest genuinely open pieces of
-G4.3. ADR-0028 remains Proposed.
+behavior; the operator-journey documentation follow-up landed separately
+(`cli/README.md`, next commit `1727e6e4`), and this slice does not itself
+affect the crash-matrix breadth or operational-gate items that remain the
+largest genuinely open pieces of G4.3. ADR-0028 remains Proposed.
+
+## Real process-kill crash-matrix coverage for the v2-to-v3 construction (2026-09-16)
+
+Every fault-injection test for this draft up to this point (`schema_upgrade_
+every_interruption_retains_uuid_and_prior_attempt_bytes`,
+`schema_upgrade_activation_faults_never_leave_a_usable_target`) only injects
+a synthetic `Err` from an in-process closure at each numbered fault
+call-site inside `resume_inner`/`activate_inner`. That proves the code
+handles a `?`-propagated logical failure at every phase, but it does not
+prove behavior survives an actual killed process: dropped destructors,
+unflushed buffers and OS-level file-descriptor/lock release differ from an
+ordinary Rust unwind. The sibling version-0/1-to-2 profile already carries
+exactly this class of test for its own activation
+(`activation_child_exits_immediately_before_and_after_guard_unlink` in
+`upgrade_receipt.rs`), using `std::process::Command::new(std::env::
+current_exe()?)` with `--exact <test path>` to re-invoke the same test
+binary at one helper `#[test]` that calls the real API with a fault closure
+invoking `std::process::exit(73)` at a requested phase, then inspecting the
+child's exit code from the parent.
+
+`lib/oxigraph/src/store/schema_upgrade_tests.rs` gained the mirrored pair,
+entirely test-only (`resume_inner`/`activate_inner` already accept an
+injectable fault closure; no change to `schema_upgrade.rs` was needed):
+
+- `schema_upgrade_resume_child_exit_mid_copy_retains_a_resumable_attempt`
+  kills a real child process mid per-file-copy (fault phase 2), asserts exit
+  code 73, then calls `Store::resume_schema_upgrade` fresh and in-process on
+  the same workspace and asserts it completes to a sealed receipt with the
+  same schema UUID, with source/backup bytes unchanged throughout.
+- `schema_upgrade_activation_child_exits_before_and_after_guard_unlink`
+  kills a real child immediately before (phase 4) and immediately after
+  (phase 5) the guard-file unlink. Phase 4 leaves the target guarded and
+  still refused by `Store::open`. Phase 5 leaves the target published
+  (`storage_version` `Some(3)`) and still correctly refused by ordinary
+  `Store::open` with `SchemaTooNew { found: 3, supported: 2 }` -- the test
+  deliberately does not assert ordinary `open` success, matching the
+  `af7ea897` fix rather than reintroducing that defect.
+
+The implement worker, lacking a read tool to confirm the exact module
+nesting for the `--exact` filter, derived the libtest path at runtime from
+`module_path!()` with the leading crate segment stripped, rather than
+hardcoding the inferred literal. Root independently confirmed this resolves
+to `oxigraph::store::upgrade::transform::receipt::schema_upgrade::tests` by
+tracing the actual `mod` chain, matching the runtime-derived value; the
+approach is strictly more robust than a hardcoded string; a wrong name
+would run zero tests, exit `0`, and fail the parent's `Some(73)` assertion
+rather than pass vacuously.
+
+All six deterministic checks passed for real inside the workflow's own
+execution, with real, non-fabricated counts: `cargo check --tests`;
+`cargo test --lib schema_upgrade` (18 passed, up from the pre-existing 14
+matching that filter); the same with `--features rdf-12` (19 passed, up
+from 15); `cargo fmt --check`; the `backup_receipts`+`restore_receipts`
+regression suite (18 passed); and the legacy `upgrade_receipts` regression
+suite (9 passed). Independent review (`claude-fable-5-1`, high effort)
+returned ACCEPT with two minor, non-blocking findings (the resume test
+could additionally snapshot the crashed attempt's own bytes; the helper's
+`variable()` fails loudly rather than no-ops on a missing secondary path,
+which is harmless since the parent always supplies every variable).
+
+Unlike the previous (CLI-exposure) increment, this workflow's implement
+step delivered the change via its own tracked `root-apply` rather than a
+pre-applied confirmation-only dispatch, so the harness's own diff-delivered
+gate was satisfied and `mcp-handoff` completed cleanly on the first attempt
+(`workflow-cicRkY`, run `11090a7e-61c0-4477-b9b6-fe53e22ea0f2`), recorded in
+Ruflo `programme-task-evidence/workflow-11090a7e-61c0-4477-b9b6-fe53e22ea0f2`
+and byte-for-byte confirmed by a genuine `memory_retrieve` before
+acknowledgement. Test-only; no production code changed. Committed to `main`
+as `518ccf16`; not pushed.
+
+This closes crash-point coverage for the two highest-value real
+interruption points on the v2-to-v3 path (mid-copy resume, pre/post-unlink
+activation). It does not close full crash-matrix breadth (every numbered
+fault phase re-proven under a real process kill, not just synthetic
+injection) or the operational gate (backup+upgrade+explicit
+cutover+rollback+restore drills on frozen size classes with recorded
+duration/peak disk/memory), which remain the largest genuinely open pieces
+of G4.3. ADR-0028 remains Proposed.
 
 ## Staged implementation and evaluator gates
 
