@@ -233,6 +233,7 @@ impl Store {
             completed_backup.as_ref(),
             workspace.as_ref(),
             options,
+            |_| Ok(()),
         )
     }
 
@@ -483,6 +484,7 @@ fn start_inner(
     package: &Path,
     destination: &Path,
     options: &SchemaUpgradeOptions,
+    mut fault: impl FnMut(u8) -> Result<(), BackupError>,
 ) -> Result<SchemaUpgradeState, BackupError> {
     let started = Instant::now();
     let source = stable_directory(source)?;
@@ -502,11 +504,13 @@ fn start_inner(
     private_directory(&directory)?;
     let _lease = WorkspaceLease::create(&directory)?;
     private_directory(&directory.join("attempts"))?;
+    fault(0)?;
     write(&directory.join(PLAN), &plan)?;
     write(&directory.join(JOURNAL), &[])?;
     sync_directory(&directory.join("attempts"))?;
     sync_directory(&directory)?;
     sync_directory(directory.parent().ok_or(BackupError::InvalidPath)?)?;
+    fault(1)?;
     inputs.recheck(&source, &package, options, started)?;
     Ok(SchemaUpgradeState {
         directory,

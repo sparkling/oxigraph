@@ -848,3 +848,78 @@ fn schema_upgrade_activation_process_helper() -> TestResult {
     })?;
     Err("the child returned instead of exiting at its crash point".into())
 }
+
+#[test]
+fn schema_upgrade_start_child_exits_before_and_after_the_initial_plan_is_synced() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let root = tempfile::tempdir()?;
+    let (source, package) = fixture(root.path())?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    for phase in [0_u8, 1] {
+        // A fresh destination per phase: start_inner requires a not-yet-existing
+        // directory, so the phase-0 crash's half-built workspace cannot be
+        // reused for phase 1's own start attempt.
+        let workspace = root.path().join(format!("start-crash-{phase}"));
+        let paths = [
+            ("OXIGRAPH_SCHEMA_UPGRADE_TEST_SOURCE", source.as_path()),
+            ("OXIGRAPH_SCHEMA_UPGRADE_TEST_PACKAGE", package.as_path()),
+            (
+                "OXIGRAPH_SCHEMA_UPGRADE_TEST_WORKSPACE",
+                workspace.as_path(),
+            ),
+        ];
+        let status = crash("schema_upgrade_start_process_helper", &paths, phase)?;
+        assert_eq!(status.code(), Some(73), "the child did not reach {phase}");
+        if phase == 0 {
+            // Killed before the plan/journal are written and synced: the
+            // directory exists (lease acquired, attempts/ created) but resume
+            // has no durable plan to verify against, so it fails closed rather
+            // than treating an unwritten plan as an empty one. The half-built
+            // workspace is also left untouched by the failed resume attempt,
+            // matching this file's other crash tests' byte-identity checks.
+            let before_workspace = bytes(&workspace)?;
+            assert!(Store::resume_schema_upgrade(&source, &package, &workspace, &options).is_err());
+            assert_eq!(bytes(&workspace)?, before_workspace);
+        } else {
+            // Killed immediately after the plan/journal are synced: an
+            // ordinary, fresh, in-process resume still completes the same
+            // upgrade from that durable plan.
+            let state = Store::resume_schema_upgrade(&source, &package, &workspace, &options)?;
+            assert!(state.receipt().is_some());
+            SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options)?;
+        }
+        assert_eq!(bytes(&source)?, before_source);
+        assert_eq!(bytes(&package)?, before_package);
+    }
+    Ok(())
+}
+
+#[test]
+#[expect(
+    clippy::exit,
+    reason = "bounded child models an exact schema-upgrade crash point"
+)]
+fn schema_upgrade_start_process_helper() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let Some(source) = std::env::var_os("OXIGRAPH_SCHEMA_UPGRADE_TEST_SOURCE") else {
+        return Ok(()); // An ordinary run: only the parent test re-invokes this.
+    };
+    let source = PathBuf::from(source);
+    let package = variable("OXIGRAPH_SCHEMA_UPGRADE_TEST_PACKAGE")?;
+    let workspace = variable("OXIGRAPH_SCHEMA_UPGRADE_TEST_WORKSPACE")?;
+    let stop = std::env::var("OXIGRAPH_SCHEMA_UPGRADE_TEST_EXIT_AT")?.parse::<u8>()?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    start_inner(&source, &package, &workspace, &options, |phase| {
+        if phase == stop {
+            std::process::exit(73);
+        }
+        Ok(())
+    })?;
+    Err("the child returned instead of exiting at its crash point".into())
+}
