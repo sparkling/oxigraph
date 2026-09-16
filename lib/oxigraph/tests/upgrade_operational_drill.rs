@@ -57,17 +57,59 @@ fn inventory(path: &Path) -> TestResult<BTreeMap<PathBuf, [u8; 32]>> {
     Ok(output)
 }
 
+/// Sums the bytes on disk under `path`.
+///
+/// `target`/`restore_target` are scanned while `activated`/`restored_store`
+/// are still open, so a file `read_dir` lists can legitimately be gone by
+/// the time it is stat'd: RocksDB may delete an obsolete WAL/OPTIONS file in
+/// a background thread between the two calls. A `NotFound` at either the
+/// file-type or metadata step is therefore not a real error for this
+/// disk-usage proxy -- it contributes zero bytes, since the file is gone by
+/// the time this measurement completes either way. Every other I/O error
+/// still propagates.
 fn directory_bytes(path: &Path) -> TestResult<u64> {
     let mut total = 0_u64;
     for entry in fs::read_dir(path)? {
         let entry = entry?;
-        if entry.file_type()?.is_dir() {
+        let is_dir = match entry.file_type() {
+            Ok(file_type) => file_type.is_dir(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        if is_dir {
             total += directory_bytes(&entry.path())?;
         } else {
-            total += entry.metadata()?.len();
+            match entry.metadata() {
+                Ok(metadata) => total += metadata.len(),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
         }
     }
     Ok(total)
+}
+
+/// The kernel-tracked peak resident set size of this process, in KiB, since
+/// it started, or `None` if `/proc/self/status` could not be read or parsed.
+/// This is a whole-process high-water mark, not a measurement isolated to
+/// this one drill: `cargo test` runs every test in this binary (this file
+/// has one ungated test plus one more gated behind the `rdf-12` feature) as
+/// threads in one process, and libtest may run them concurrently.
+/// Reading it after a drill therefore reports the peak RSS observed by that
+/// point across whichever of this binary's tests have run so far, not this
+/// drill's isolated contribution.
+///
+/// Best-effort and never fatal: this is pure instrumentation (no threshold
+/// is asserted on it anywhere), so a read or parse failure here must never
+/// fail the drill's own correctness assertions, whatever its cause.
+fn peak_rss_kb() -> Option<u64> {
+    let status = fs::read_to_string("/proc/self/status").ok()?;
+    for line in status.lines() {
+        if let Some(value) = line.strip_prefix("VmHWM:") {
+            return value.split_whitespace().next()?.parse().ok();
+        }
+    }
+    None
 }
 
 /// Runs the legacy-upgrade-then-operational-recovery journey once, measuring each
@@ -126,8 +168,11 @@ fn drill(version: u64) -> TestResult {
     restored_store.validate()?;
     assert_eq!(restored_store.len()? as u64, activation.quad_count());
 
-    // Every directory the drill produced still exists, so this sum is a measured
-    // peak for this run rather than an estimate.
+    // Every directory the drill produced still exists, so this sum is a
+    // measured figure for this run rather than an estimate -- though see
+    // directory_bytes's own doc comment: a file raced away by RocksDB's
+    // background cleanup between listing and stat contributes zero, so the
+    // true figure can be marginally higher than what is reported here.
     let total_disk_bytes = directory_bytes(&source)?
         + directory_bytes(&legacy_backup)?
         + directory_bytes(&workspace)?
@@ -135,8 +180,13 @@ fn drill(version: u64) -> TestResult {
         + directory_bytes(&with_receipt_backup)?
         + directory_bytes(&restore_target)?;
 
+    // See peak_rss_kb's own doc comment: this is the whole test binary's
+    // peak so far (best-effort, never fatal), not an isolated measurement
+    // of this one drill.
+    let peak_rss_kb = peak_rss_kb().map_or_else(|| "unknown".to_owned(), |kb| kb.to_string());
+
     eprintln!(
-        "drill version={version} backup_legacy={backup_legacy_duration:?} upgrade={upgrade_duration:?} cutover={cutover_duration:?} rollback={rollback_duration:?} backup_with_receipt={backup_with_receipt_duration:?} restore={restore_duration:?} disk_bytes={total_disk_bytes}"
+        "drill version={version} backup_legacy={backup_legacy_duration:?} upgrade={upgrade_duration:?} cutover={cutover_duration:?} rollback={rollback_duration:?} backup_with_receipt={backup_with_receipt_duration:?} restore={restore_duration:?} disk_bytes={total_disk_bytes} peak_rss_kb={peak_rss_kb}"
     );
     Ok(())
 }
