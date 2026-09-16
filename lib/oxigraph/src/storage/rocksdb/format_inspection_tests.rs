@@ -379,6 +379,89 @@ fn a_truncated_wal_does_not_mask_legacy_refusal_or_mutate_the_source() -> Result
     Ok(())
 }
 
+/// A corrupted SST, the third physical-file case alongside the MANIFEST and
+/// WAL tests above, completing the trio. Confirmed empirically before
+/// writing this test (not assumed) that corruption placement matters here in
+/// a way it did not for the MANIFEST: flipping arbitrary mid-file bytes in
+/// an SST produced no error at all from `inspect`, `open`, `open_read_only`,
+/// or even a full scan of every quad -- RocksDB's default block-level
+/// checksum verification did not happen to cover the corrupted bytes for
+/// that data. Flipping the last 60 bytes instead -- the table footer, which
+/// always encodes a fixed magic number and is read and validated by every
+/// table open regardless of which column family the caller explicitly
+/// requests -- reliably produced `StorageError::Corruption` with a "Bad
+/// table magic number" message from all three APIs, including `inspect`,
+/// even though `inspect` opens with an empty explicit column-family list.
+#[test]
+fn inspect_and_open_refuse_a_corrupted_sst_footer_without_source_changes() -> Result {
+    for version in [0_u64, 2_u64] {
+        let directory = tempfile::tempdir()?;
+        let definitions = if version == 0 {
+            RocksDbStorage::column_families()
+                .into_iter()
+                .filter(|definition| definition.name != GRAPHS_CF)
+                .collect()
+        } else {
+            RocksDbStorage::column_families()
+        };
+        let db = Db::open_read_write(directory.path(), definitions, DbOptions::default())?;
+        let default = db.column_family(DEFAULT_CF)?;
+        db.insert(&default, b"corruption-fixture", b"preserve")?;
+        db.insert(&default, b"oxversion", &version.to_be_bytes())?;
+        db.flush()?;
+        drop(default);
+        drop(db);
+
+        let mut corrupted_any = false;
+        for entry in std::fs::read_dir(directory.path())? {
+            let entry = entry?;
+            if entry.file_name().to_string_lossy().ends_with(".sst") {
+                let path = entry.path();
+                let mut bytes = std::fs::read(&path)?;
+                let start = bytes.len().saturating_sub(60);
+                for byte in &mut bytes[start..] {
+                    *byte ^= 0xFF;
+                }
+                std::fs::write(&path, &bytes)?;
+                corrupted_any = true;
+            }
+        }
+        assert!(
+            corrupted_any,
+            "no SST file in a freshly flushed store: version {version}"
+        );
+
+        let before = tree(directory.path())?;
+        assert!(
+            matches!(
+                Store::inspect(directory.path()),
+                Err(StorageError::Corruption(_))
+            ),
+            "inspect should refuse a corrupted SST footer: version {version}"
+        );
+        assert!(
+            matches!(
+                Store::open(directory.path()),
+                Err(StorageError::Corruption(_))
+            ),
+            "open should refuse a corrupted SST footer: version {version}"
+        );
+        assert!(
+            matches!(
+                Store::open_read_only(directory.path()),
+                Err(StorageError::Corruption(_))
+            ),
+            "open_read_only should refuse a corrupted SST footer: version {version}"
+        );
+        assert_eq!(
+            tree(directory.path())?,
+            before,
+            "a refused corrupted store must not be further mutated: version {version}"
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn repeated_feature_inspection_does_not_create_a_native_lock() -> Result {
     let directory = tempfile::tempdir()?;
