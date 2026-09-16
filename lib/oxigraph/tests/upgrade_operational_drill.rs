@@ -130,6 +130,79 @@ fn peak_rss_kb() -> Option<u64> {
     None
 }
 
+/// One kernel-tracked cumulative counter from this process's own
+/// `/proc/self/io`, or `None` if the file could not be read, the named
+/// field is missing, or it fails to parse.
+///
+/// Like `peak_rss_kb`, this is whole-process and shared by every test in
+/// this binary; unlike a peak, each counter is monotonic, so a caller can
+/// sample before and after one span to get that span's own delta. That
+/// delta is contaminated by any other concurrently running thread's I/O
+/// in the same window: besides this file's own sibling test (ungated, or
+/// gated behind the `rdf-12` feature), RocksDB's shared, lazily-created,
+/// per-`Env` background flush/compaction thread pool services every
+/// `Store` this drill opens, and that pool's I/O lands in the same
+/// process-wide counters regardless of `--test-threads=1`. Best-effort
+/// and never fatal: pure instrumentation, no threshold asserted on either
+/// counter anywhere.
+fn proc_self_io_field(field: &str) -> Option<u64> {
+    let io = fs::read_to_string("/proc/self/io").ok()?;
+    for line in io.lines() {
+        if let Some(value) = line.strip_prefix(field) {
+            return value.split_whitespace().next()?.parse().ok();
+        }
+    }
+    None
+}
+
+/// Bytes this process has actually fetched from block storage (Linux's
+/// `read_bytes:` in `/proc/self/io`). Every input this drill's own legs
+/// read was itself written or copied by this same process moments
+/// earlier (the legacy fixture is copied, then immediately backed up;
+/// the scaled store is populated, then immediately backed up), so those
+/// reads are ordinary Linux page-cache hits that never reach the block
+/// layer -- this counter reports near zero for such a leg regardless of
+/// how many logical bytes it actually read, and would be expected to
+/// stay at zero throughout if the temporary directory were on `tmpfs`
+/// (not strictly guaranteed even then: a page tmpfs has swapped out is
+/// read back through the block layer on the next access). A low or zero
+/// delta here is therefore evidence the working set stayed cache-
+/// resident, not evidence the leg read little data; see
+/// `logical_read_bytes` for the complementary, cache-inclusive figure
+/// that does reflect a leg's actual read volume.
+fn physical_read_bytes() -> Option<u64> {
+    proc_self_io_field("read_bytes:")
+}
+
+/// Bytes this process has passed through `read`/`pread`-family and
+/// `copy_file_range` calls (Linux's `rchar:` in `/proc/self/io`),
+/// counting a page-cache hit exactly like a genuine disk read. Read this
+/// alongside `physical_read_bytes`: a leg with a high `rchar` delta but a
+/// near-zero `read_bytes` delta genuinely read that much logical data,
+/// just not from the block device this run.
+fn logical_read_bytes() -> Option<u64> {
+    proc_self_io_field("rchar:")
+}
+
+/// A before/after `/proc/self/io` sample pair, divided by `denominator`, or
+/// `"unknown"` if either sample is `None` (see `proc_self_io_field`'s own
+/// doc comment for why a sample can be missing).
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "instrumentation ratio only, not an exact count; byte totals here are far below f64's exact-integer range"
+)]
+fn ratio(start: Option<u64>, end: Option<u64>, denominator: u64) -> String {
+    match (start, end) {
+        (Some(start), Some(end)) => {
+            format!(
+                "{:.2}",
+                end.saturating_sub(start) as f64 / denominator as f64
+            )
+        }
+        _ => "unknown".to_owned(),
+    }
+}
+
 /// Runs the legacy-upgrade-then-operational-recovery journey once, measuring each
 /// stage. The measurements are instrumentation only: no baseline exists yet, so
 /// nothing here asserts a duration or a byte count.
@@ -143,6 +216,8 @@ fn drill(version: u64) -> TestResult {
     fixture(version, &source)?;
     let source_before = inventory(&source)?;
 
+    let legacy_leg_physical_read_start = physical_read_bytes();
+    let legacy_leg_logical_read_start = logical_read_bytes();
     let legacy_backup = root.path().join("legacy-backup");
     let started = Instant::now();
     let legacy_backup_receipt =
@@ -165,6 +240,8 @@ fn drill(version: u64) -> TestResult {
     let activation =
         Store::activate_upgrade(&source, &legacy_backup, &workspace, &target, &options)?;
     let cutover_duration = started.elapsed();
+    let legacy_leg_physical_read_end = physical_read_bytes();
+    let legacy_leg_logical_read_end = logical_read_bytes();
     assert!(activation.active());
     let activated = Store::open(&target)?;
     activated.validate()?;
@@ -234,6 +311,8 @@ fn drill(version: u64) -> TestResult {
         "scaled store should hold exactly the activated quads plus the synthetic ones"
     );
 
+    let restore_leg_physical_read_start = physical_read_bytes();
+    let restore_leg_logical_read_start = logical_read_bytes();
     let with_receipt_backup = root.path().join("with-receipt-backup");
     let started = Instant::now();
     let with_receipt_backup_receipt =
@@ -252,6 +331,8 @@ fn drill(version: u64) -> TestResult {
         &RestoreOptions::default(),
     )?;
     let restore_duration: Duration = restored.restore_duration();
+    let restore_leg_physical_read_end = physical_read_bytes();
+    let restore_leg_logical_read_end = logical_read_bytes();
     let restored_store = Store::open(restore_target.join(RestoreReceipt::store_directory()))?;
     restored_store.validate()?;
     assert_eq!(restored_store.len()? as u64, scaled_quad_count);
@@ -309,8 +390,47 @@ fn drill(version: u64) -> TestResult {
     let restore_write_amplification = (with_receipt_backup_bytes + restore_target_bytes) as f64
         / with_receipt_logical_bytes as f64;
 
+    // Read ratios: the same two legs and the same logical-byte denominators
+    // as write amplification above, but on the read side. Two counters are
+    // reported, not one, because they answer different questions and
+    // neither alone is an honest "read amplification": `physical` (Linux's
+    // `read_bytes`) is bytes actually fetched from the block device, but
+    // every leg here reads data this same process wrote or copied moments
+    // earlier, so ordinary page-cache locality keeps `physical` near zero
+    // regardless of how much a leg logically read -- see
+    // `physical_read_bytes`'s own doc comment. `logical` (Linux's `rchar`)
+    // is bytes passed through read/pread/copy_file_range regardless of
+    // cache hit or miss, so it reflects a leg's actual read volume even
+    // when `physical` cannot. "unknown" only if a sample itself could not
+    // be read (see `proc_self_io_field`'s own doc comment); a concurrently
+    // running sibling test or RocksDB's own background threads doing I/O
+    // in the same window is not detected and is not reported as
+    // "unknown" -- it silently inflates the delta instead, per
+    // `proc_self_io_field`'s own doc comment. Instrumentation only: no
+    // threshold is asserted on any of these four ratios.
+    let legacy_physical_read_ratio = ratio(
+        legacy_leg_physical_read_start,
+        legacy_leg_physical_read_end,
+        legacy_logical_bytes,
+    );
+    let legacy_logical_read_ratio = ratio(
+        legacy_leg_logical_read_start,
+        legacy_leg_logical_read_end,
+        legacy_logical_bytes,
+    );
+    let restore_physical_read_ratio = ratio(
+        restore_leg_physical_read_start,
+        restore_leg_physical_read_end,
+        with_receipt_logical_bytes,
+    );
+    let restore_logical_read_ratio = ratio(
+        restore_leg_logical_read_start,
+        restore_leg_logical_read_end,
+        with_receipt_logical_bytes,
+    );
+
     eprintln!(
-        "drill version={version} backup_legacy={backup_legacy_duration:?} upgrade={upgrade_duration:?} cutover={cutover_duration:?} rollback={rollback_duration:?} backup_with_receipt={backup_with_receipt_duration:?} restore={restore_duration:?} disk_bytes={total_disk_bytes} peak_rss_kb={peak_rss_kb} legacy_write_amplification={legacy_write_amplification:.2} restore_write_amplification={restore_write_amplification:.2} restore_source_quads={scaled_quad_count}"
+        "drill version={version} backup_legacy={backup_legacy_duration:?} upgrade={upgrade_duration:?} cutover={cutover_duration:?} rollback={rollback_duration:?} backup_with_receipt={backup_with_receipt_duration:?} restore={restore_duration:?} disk_bytes={total_disk_bytes} peak_rss_kb={peak_rss_kb} legacy_write_amplification={legacy_write_amplification:.2} restore_write_amplification={restore_write_amplification:.2} legacy_physical_read_ratio={legacy_physical_read_ratio} legacy_logical_read_ratio={legacy_logical_read_ratio} restore_physical_read_ratio={restore_physical_read_ratio} restore_logical_read_ratio={restore_logical_read_ratio} restore_source_quads={scaled_quad_count}"
     );
     Ok(())
 }
