@@ -2589,6 +2589,82 @@ disagreement, sampling around `backup_legacy`, `upgrade` and
 `activate_upgrade` separately, is a real, disclosed open question for a
 future increment, not folded into this one.
 
+## Decomposing the legacy leg's read ratio by sub-stage, and a native review-worker outage worked around by model substitution (2026-09-16)
+
+The previous section's own disclosed open question -- a roughly 8.6x
+disagreement between the two legacy fixtures' own
+`legacy_logical_read_ratio` figures, for similarly-sized inputs, with
+no attempted explanation -- was picked up directly rather than treated
+as closed. `backup_legacy`, `upgrade` and `activate_upgrade` are the
+three calls inside the legacy leg's own existing start/end sampling
+boundaries; three new samples decompose the single whole-leg figure
+into one ratio per call, reusing those same boundaries (each new
+sample doubles as one call's own end and the next call's own start, so
+no new sampling infrastructure was needed) and the same
+`legacy_logical_bytes` denominator the whole-leg figure already uses,
+so the three sub-leg ratios sum to it by construction.
+
+Result: `backup_legacy_logical_read_ratio` is small and similar
+between fixture versions (4.47 vs 4.03) -- ruled out as the source of
+the disagreement. `upgrade_logical_read_ratio` and
+`cutover_logical_read_ratio` are both large and both track the same
+~8.6x disagreement, narrowing the anomaly to those two calls. An
+unplanned second observation from the same run: `upgrade_duration` and
+`cutover_duration` both land anomalously close to ~20 seconds despite
+very different architectural shapes (a shadow-copy transform versus a
+metadata-level activation), correlating with the read-ratio
+disagreement. Root's first draft stated this correlation as evidence
+of a shared asynchronous background cause (most plausibly RocksDB's
+own flush/compaction thread pool, already documented as contributing
+to these same process-wide counters); independent review correctly
+declined to accept that as proven and required presenting it as one of
+at least two distinct, unruled-out explanations instead -- the other
+being a synchronous copy/validate step inside `activate_upgrade`
+itself, which would deterministically explain both the duration and
+the read correlation without needing any background mechanism at all,
+and which nothing in this change's own diff rules out. Deciding
+between them would need reading `activate_upgrade`'s own
+implementation and/or RocksDB's compaction statistics, neither of
+which this change does.
+
+Review round 1 caught a real comment defect, not just a wording
+preference: the sub-leg sum's own approximation was attributed in
+comment text to "the `ratio()` calls' own reads", but `ratio()` is
+pure arithmetic and formatting over two already-captured samples and
+performs no I/O at all -- the sample windows telescope exactly, so the
+only genuine source of imprecision is each ratio's own independent
+`{:.2}` display rounding. Fixed, and confirmed empirically rather than
+just asserted: both fixture versions' sub-leg sums land within 0.01 of
+their own whole-leg figure, exactly the scale three independent
+two-decimal roundings can produce and far too small to be a real extra
+read. Round 1 also required dropping the unsupported "metadata-level
+activation" characterization from the narrative, corrected as above.
+Round 2: **ACCEPT**.
+
+Round 2 needed a native-worker adaptation worth recording on its own:
+the review model this session has used throughout, `claude-fable-5-1`,
+began returning a persistent `429 rate_limit_error` starting around
+18:24 and continuing for roughly an hour across many retries spanning
+several session ticks. Diagnosed directly rather than assumed --
+confirmed via manual reproduction of the exact native-worker
+invocation, ruling out a broken model, a broken account, or a stray
+`ANTHROPIC_API_KEY` interfering with subscription auth (the harness's
+own `worker.mjs` already strips that variable deliberately) -- and
+confirmed the constraint was scoped to that one specific model rather
+than account-wide: a `claude-opus-5` invocation under the identical
+native subscription auth completed normally in seconds. Round 2 was
+dispatched with `claude-opus-5` substituted for `claude-fable-5-1` for
+this one review only, still native subscription auth, still
+Claude-only, no API keys, no transport change beyond the model
+selection itself -- consistent with the standing model-execution
+policy, which requires reporting an unavailable native model rather
+than falling back to a non-subscription transport, not requires
+refusing any substitution among native subscription models.
+
+Committed to `main` as `9a124cff`; not pushed. The choice between the
+two explanations for the upgrade/cutover correlation remains a
+genuinely open question, disclosed rather than resolved.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
