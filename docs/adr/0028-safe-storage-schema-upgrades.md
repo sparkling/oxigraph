@@ -52,9 +52,15 @@
   activation's existing fault-injection hook shape), resume and
   activation (five total). Every other fault phase on both paths remains
   proven only under synthetic in-process fault injection.
+  The two real checked-in version-0/1 fixtures are now hash-pinned
+  against a recorded constant, and `Store::inspect` is proven against
+  them for the first time (byte-preservation and expected legacy
+  version/status); `Store::open`/`open_read_only` refusal and
+  non-mutation on these two fixtures were already covered.
   Envelope admission on ordinary open, full crash-matrix breadth beyond
-  those five points, full compatibility rejection, older-binary rollback
-  and the frozen qualification gates remain open
+  those five points, the remaining current/missing/corrupt/too-new/
+  RDF-feature-mismatch/interrupted fixture types in gate 1's
+  compatibility matrix, and the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
   This ADR owns the contract; both programme plans reference that one current
@@ -1971,6 +1977,65 @@ rejection (needing hash-pinned v0/v1/current/missing/corrupt/too-new/
 RDF-feature-mismatch/interrupted fixtures) and envelope admission on
 ordinary open remain open, larger, more foundational pieces of work.
 ADR-0028 remains Proposed.
+
+## Hash-pinning the real legacy fixtures, with a collision-resistance correction (2026-09-16)
+
+Gate 1's compatibility-rejection matrix names "hash-pin version-0,
+version-1... fixtures" as still required. Before writing anything, the
+existing coverage of the two real checked-in legacy fixtures
+(`rocksdb_bc_data`, version 0; `rocksdb_bc_rdf_star_data`, version 1)
+was read rather than assumed: `Store::open`/`open_read_only` refusal
+(`UpgradeRequired`) and non-mutation were already proven against both,
+by the existing `copy_backward_compatibility_fixture` helper in
+`lib/oxigraph/tests/store.rs`. Two things were genuinely missing, found
+by grep: `Store::inspect` (the format-inspection metadata API) was
+tested nowhere against these two real fixtures, only against synthetic
+directories elsewhere; and neither fixture's exact bytes were pinned
+against a recorded constant, so silent corruption or replacement of a
+checked-in fixture would only be caught if it happened to also break
+some other content assertion.
+
+This adds `fixture_hash()`, a deterministic hash over each fixture's
+sorted `(path, content)` file pairs, and two recorded hash-pin
+constants computed by a standalone throwaway program implementing the
+same scheme against the current checked-in fixture bytes. One new test
+copies each fixture fresh, asserts its hash-pin first, calls
+`Store::inspect` and asserts the expected legacy `storage_version` and
+`version_status`, then re-hashes and asserts the fixture is still
+byte-identical -- closing the `Store::inspect` gap in the same test
+that adds the pin.
+
+The first implementation separated each `(path, content)` pair with a
+single NUL byte and no length information. Independent review caught
+that this is not strictly injective: RocksDB's binary SST/MANIFEST/
+OPTIONS file content routinely contains NUL bytes, so a NUL inside one
+file's content could in principle be read back as a path/content
+boundary under a different split, letting two different file sets hash
+identically -- exactly the property a hash-pin exists to rule out. This
+was treated as a real finding, not a theoretical nit to wave past:
+fixed by writing each path's and content's byte length as an 8-byte
+little-endian `u64` before its bytes, with no separators at all, which
+a second review round confirmed is genuinely unambiguous for any byte
+values. Both hash-pin constants were regenerated under the corrected
+scheme via the same throwaway program, run again against the current
+fixture bytes.
+
+Verified via `cargo check`; the new test passing alongside
+`test_verified_transformed_copy_is_ordinary_openable` (the hash-pin
+assertion runs first per fixture, so a transcription error in either
+regenerated constant would fail immediately, not pass silently); and
+`cargo fmt --check` at full-crate scope. Committed to `main` as
+`c186936f`.
+
+This is the fifth increment this session where independent review
+caught something worth fixing in root's own delivered work rather than
+just noting it -- this time a genuine, if narrow, correctness gap in
+the hash-pin's own design (an encoding collision), not an overclaim in
+prose. Gate 1's compatibility-rejection matrix remains open beyond
+this: the current/missing/corrupt/too-new/RDF-feature-mismatch/
+interrupted fixture types named in the same requirement are not yet
+built, and remain a larger, separately-scoped piece of work. ADR-0028
+remains Proposed.
 
 ## Staged implementation and evaluator gates
 
