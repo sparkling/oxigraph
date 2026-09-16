@@ -2011,4 +2011,89 @@ mod tests {
         )?;
         std::process::exit(74);
     }
+
+    #[test]
+    fn resume_child_exits_immediately_before_and_after_receipt_publication() -> Result {
+        if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+            return Ok(());
+        }
+        // Phase 3: killed right after the PENDING receipt is written and
+        // synced, before the atomic rename to the final receipt file. A real
+        // process death here leaves the same deliberately non-resumable
+        // state a synthetic in-process fault leaves at the same phase (see
+        // pending_receipt_is_retained_and_never_overwritten): the dangling
+        // PENDING file is retained untouched, and neither an ordinary
+        // resume nor verify silently completes or repairs it.
+        {
+            let (_root, source, backup, upgrade, options) = setup()?;
+            Store::start_upgrade(&source, &backup, &upgrade, &options)?;
+            let inputs = [inventory(&source)?, inventory(&backup)?];
+            let status = std::process::Command::new(std::env::current_exe()?)
+                .arg("--exact")
+                .arg("store::upgrade::transform::receipt::tests::resume_process_helper")
+                .env("OXIGRAPH_RESUME_TEST_SOURCE", &source)
+                .env("OXIGRAPH_RESUME_TEST_BACKUP", &backup)
+                .env("OXIGRAPH_RESUME_TEST_UPGRADE", &upgrade)
+                .env("OXIGRAPH_RESUME_TEST_EXIT_AT", "3")
+                .status()?;
+            assert_eq!(status.code(), Some(73));
+            let pending = fs::read(upgrade.join(RECEIPT_PENDING))?;
+            assert!(!upgrade.join(RECEIPT_FILE).exists());
+            assert!(UpgradeReceipt::verify(&source, &backup, &upgrade, &options).is_err());
+            assert!(Store::resume_upgrade(&source, &backup, &upgrade, &options).is_err());
+            assert_eq!(fs::read(upgrade.join(RECEIPT_PENDING))?, pending);
+            assert_eq!(inventory(&source)?, inputs[0]);
+            assert_eq!(inventory(&backup)?, inputs[1]);
+        }
+        // Phase 4: killed immediately after the atomic rename to the final
+        // receipt file. The publication is complete, and an ordinary resume
+        // or verify on a fresh process finds the sealed receipt.
+        {
+            let (_root, source, backup, upgrade, options) = setup()?;
+            Store::start_upgrade(&source, &backup, &upgrade, &options)?;
+            let inputs = [inventory(&source)?, inventory(&backup)?];
+            let status = std::process::Command::new(std::env::current_exe()?)
+                .arg("--exact")
+                .arg("store::upgrade::transform::receipt::tests::resume_process_helper")
+                .env("OXIGRAPH_RESUME_TEST_SOURCE", &source)
+                .env("OXIGRAPH_RESUME_TEST_BACKUP", &backup)
+                .env("OXIGRAPH_RESUME_TEST_UPGRADE", &upgrade)
+                .env("OXIGRAPH_RESUME_TEST_EXIT_AT", "4")
+                .status()?;
+            assert_eq!(status.code(), Some(73));
+            assert!(upgrade.join(RECEIPT_FILE).is_file());
+            UpgradeReceipt::verify(&source, &backup, &upgrade, &options)?;
+            Store::resume_upgrade(&source, &backup, &upgrade, &options)?;
+            assert_eq!(inventory(&source)?, inputs[0]);
+            assert_eq!(inventory(&backup)?, inputs[1]);
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::exit,
+        reason = "bounded child models an exact resume crash point"
+    )]
+    fn resume_process_helper() -> Result {
+        let Some(source) = std::env::var_os("OXIGRAPH_RESUME_TEST_SOURCE") else {
+            return Ok(());
+        };
+        let backup = std::env::var_os("OXIGRAPH_RESUME_TEST_BACKUP").ok_or("backup")?;
+        let upgrade = std::env::var_os("OXIGRAPH_RESUME_TEST_UPGRADE").ok_or("upgrade")?;
+        let stop = std::env::var("OXIGRAPH_RESUME_TEST_EXIT_AT")?.parse::<u8>()?;
+        resume_upgrade_inner(
+            Path::new(&source),
+            Path::new(&backup),
+            Path::new(&upgrade),
+            &UpgradeOptions::default(),
+            |phase| {
+                if phase == stop {
+                    std::process::exit(73);
+                }
+                Ok(())
+            },
+        )?;
+        std::process::exit(74);
+    }
 }
