@@ -35,18 +35,19 @@
   A first operational-gate drill for the legacy version-0/1-to-2 path is
   implemented (`lib/oxigraph/tests/upgrade_operational_drill.rs`):
   backup-legacy/upgrade/explicit-cutover/source-preservation-rollback/
-  backup-with-receipt/restore, timed per stage with on-disk bytes summed
-  and peak resident-set-size sampled, against the two checked-in legacy
-  fixtures.
+  backup-with-receipt/restore, timed per stage with on-disk bytes summed,
+  peak resident-set-size sampled, and read/write amplification ratios
+  computed against each leg's own backup-receipt manifest, against the
+  two checked-in legacy fixtures.
   The legacy path now has a real OS-level process-kill test for all three
   of its public entry points (start, resume, activation); the v2-to-v3
   draft has real process-kill tests for resume and activation but not its
   construction/start step (five total). Every other fault phase on both
   paths remains proven only under synthetic in-process fault injection.
   Envelope admission on ordinary open, full crash-matrix breadth beyond
-  those five points, additional operational-gate size classes and
-  peak-memory/amplification measurement, full compatibility rejection,
-  older-binary rollback and the frozen qualification gates remain open
+  those five points, additional operational-gate size classes beyond the
+  two checked-in fixtures, full compatibility rejection, older-binary
+  rollback and the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
   This ADR owns the contract; both programme plans reference that one current
@@ -1696,6 +1697,78 @@ two checked-in fixtures remain the open operational-gate work; the
 v2-to-v3 draft's construction step remains the one schema-transition entry
 point without real-process-kill coverage (previous section). ADR-0028
 remains Proposed.
+
+## Read/write amplification for the operational-gate drill (2026-09-16)
+
+The remaining open leg of the first drill increment was read/write
+amplification. This adds two ratios to `drill()` in
+`lib/oxigraph/tests/upgrade_operational_drill.rs`: physical bytes written
+to disk for a leg of the journey, divided by the logical byte size the
+relevant backup receipt's own file manifest declares
+(`BackupFile::size()`, exposed via `LegacyBackupReceipt::files()` and
+`BackupReceipt::files()` -- a manifest-recorded length, not a filesystem
+stat). `legacy_write_amplification` covers backup-legacy + upgrade +
+explicit-cutover against the legacy backup's manifest;
+`restore_write_amplification` covers the with-receipt backup + restore
+against that separate backup's own manifest. An earlier design note in
+this ADR had assumed a `primary_bytes()` accessor existed "on the
+relevant receipts" for this purpose; a direct check before writing any
+code found that accessor only exists on the unrelated v2-to-v3
+`SchemaUpgradeReceipt`/`SchemaUpgradeActivation` types, so `BackupFile`
+manifests were used instead.
+
+Repeated runs produced stable but sharply different ratios by fixture:
+`legacy_write_amplification` is roughly 40.6x for the tiny plain fixture
+(version 0) but only roughly 6.71x for the larger RDF-star fixture
+(version 1), while `restore_write_amplification` holds at roughly 4.1x
+for both. This is a real, plausible measurement, not a bug: the restore
+leg's denominator is a checkpoint of a freshly built store, so it already
+carries RocksDB's fixed per-instance overhead (OPTIONS/MANIFEST/LOG/WAL
+files that exist regardless of content), whereas the legacy leg's
+denominator is only the tiny fixture's own declared content -- so a fixed
+overhead dominates a small fixture's ratio far more than a larger one's.
+As with every other figure this drill reports, these are instrumentation
+only: no threshold is asserted on either ratio, and the absolute values
+are not claimed to be production-representative for real-sized stores.
+
+Independent review of the first implementation (round 3 on this file)
+returned ACCEPT but raised two findings worth fixing rather than noting
+and moving on: `directory_bytes()` was being called twice per directory
+(once building the existing `total_disk_bytes` figure, once building the
+two new ratio numerators), which could let the two printed figures
+disagree by a few bytes under the same RocksDB background-deletion race
+`directory_bytes()` already tolerates (previous section); and the two new
+`u64 as f64` casts could trip `clippy::cast_precision_loss` under a
+stricter lint profile than this task's completion-check gate runs. Both
+were treated as real findings: each of the six drill directories
+(`source`, `legacy-backup`, `workspace`, `active`, `with-receipt-backup`,
+`restored`) is now measured by `directory_bytes()` exactly once, bound to
+a local, with both `total_disk_bytes` and the two ratios built purely
+from those six bindings -- so the disk-bytes total and the amplification
+ratios can never disagree with each other over the same race in a single
+run. Each cast site now carries
+`#[expect(clippy::cast_precision_loss, reason = "instrumentation ratio
+only, not an exact count; byte totals here are far below f64's
+exact-integer range")]`, matching this file's existing lint-suppression
+convention. A fourth, focused review round on just this consolidation
+confirmed it as a behavior-preserving refactor (same measurement point in
+the sequence, same directory membership per total, no timer or assertion
+moved) and returned ACCEPT with no blocking findings.
+
+All four completion-check commands passed for real across this
+increment's several re-verification passes (`cargo check` clean; three
+more consecutive `--features rdf-12` concurrent drill runs after the
+consolidation fix, all reporting the same stable ratios; `cargo fmt
+--check` clean; the two directly relevant sibling suites at 14 passed
+combined). Committed to `main` as `55fef554`; not pushed.
+
+This closes the amplification leg of the first operational-gate drill.
+Additional synthetic size classes beyond the two checked-in fixtures, and
+the v2-to-v3 draft's construction step's missing real-process-kill
+coverage (which needs a production-code change to `start_inner` to add a
+fault-injection hook, deliberately deferred as a bigger scope decision
+than ordinary test-only work), remain the open items. ADR-0028 remains
+Proposed.
 
 ## Staged implementation and evaluator gates
 
