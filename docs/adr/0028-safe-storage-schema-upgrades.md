@@ -3009,6 +3009,97 @@ matching this file's own established preference for graceful runtime
 degradation (see `proc_self_io_field` in the operational drill) over
 narrowing what compiles.
 
+## Extending disk-exhaustion coverage to a second entry point: `prepare_upgrade` (2026-09-16)
+
+The just-accepted `backup_legacy` disk-exhaustion test's own text named
+what remained open: `prepare_inner`, `transform_inner`, the v2-to-v3
+draft's construction/resume/activation, and `activate_upgrade` still
+had no disk-exhaustion coverage. Before picking a second target, both
+`prepare_inner`'s and `transform_inner`'s own write call sites were
+read directly, not assumed to carry `backup_legacy`'s shape over
+unchanged. `prepare_inner`'s first real write is the journal metadata
+write (`write(&destination.join(JOURNAL), &journal(&receipt))?`),
+strictly between `phase(0)` (fires right after the two `mkdir`-only
+`private_directory` calls) and `phase(1)` (fires only after both the
+journal and guard writes, plus directory syncs, complete) -- a moment
+neither the file's own existing synthetic phase-callback test (which
+can only fail exactly at an integer phase boundary) nor its existing
+real-process-kill test (which targets the later PENDING-to-COMPLETE
+rename) can reach. This is architecturally distinct from
+`backup_legacy`'s mid-copy fault, not a restatement of it.
+
+The new test (`disk_exhaustion_before_the_journal_write_preserves_both_inputs`,
+[`upgrade.rs`](../../lib/oxigraph/src/store/upgrade.rs)) reuses the
+file's own pre-existing `helper`/`crash`/`variable`/`fixture`/`hashes`
+test infrastructure unmodified, duplicates the already-reviewed
+`compile_enospc_shim` file-local (matching this session's established
+convention for crash-test infrastructure), and asserts: the child
+reached `prepare_inner`'s setup (`output/store` exists); the injected
+`ENOSPC` landed exactly on the journal write and nowhere else (the
+journal file exists at zero bytes, and the guard write that would
+follow it never ran); no `COMPLETE` marker; `PreparedUpgrade::verify`
+fails; and -- since `prepare_upgrade` takes an already-completed
+legacy backup as an input, unlike `backup_legacy` -- *both* upstream
+inputs remain untouched: the legacy source's own bytes, and the
+already-completed backup package's own bytes and receipt validity.
+
+Two review rounds (`xhigh`, `claude-fable-5-1`). Round 1 was
+**INCONCLUSIVE**, not REJECT: that worker had no shell or file tools
+available, so it could not execute the completion check at all, but
+said explicitly that nothing in the code itself blocked ACCEPT once
+the listed commands passed. It did raise one real, substantive
+**SHOULD-FIX**: the parent's assertions (no `COMPLETE`, `verify`
+fails, both inputs untouched) would hold identically whether the fault
+landed on the journal write, the guard write, or inside the copy loop
+-- so the test's claimed injection point was established only by
+*code reading*, not by its own post-conditions. Fixed by adding the
+two pinning assertions described above
+(`assert_eq!(fs::metadata(output.join(JOURNAL))?.len(), 0)` and
+`assert!(!output.join("store").join(UPGRADE_GUARD).exists())`),
+mirroring the same "prove the claim with a post-condition, not just an
+assertion that some later invariant holds" discipline the vacuous-pass
+fix used for `backup_legacy`. A doc-comment NIT (a stale cross-file
+function-name reference) was also fixed.
+
+Round 1 also surfaced a genuine, previously-unverified risk: whether
+`clippy::print_stderr` fires on the `eprintln!` the earlier round added
+for the cc-missing skip. This was resolved by actually running the
+isolated lint check (`cargo clippy -p oxigraph --lib --tests --no-deps
+-- --warn=clippy::print_stderr`, deliberately without `-D warnings`,
+since a full `-D warnings` pass on this crate fails to even reach the
+test module -- 41 pre-existing, unrelated lint findings in the lib
+crate alone, e.g. `partial_pub_fields` on `storage/rocksdb.rs`, block
+it first, and `--all-targets -D warnings` fails even earlier on an
+unrelated `oxhttp` `wrong_self_convention` finding two calls deep in a
+different crate -- confirming a full strict clippy pass has never been
+part of this project's actual completion-check contract, and that
+fixing 41 unrelated findings would be out of scope for this increment).
+The narrower, real question had a real answer: `clippy::print_stderr`
+did fire, on both this file's and `backup_legacy`'s own `eprintln!`
+inside `compile_enospc_shim`. Both fixed with
+`#[expect(clippy::print_stderr, reason = "...")]`, mirroring the same
+file's own existing `#[expect(clippy::exit, ...)]` pattern for the
+same kind of deliberate, test-only exception; re-running the isolated
+check afterward confirmed zero remaining hits in either shim and no
+"unfulfilled lint expectation" complaint. The `legacy_backup.rs` half
+of this fix, being a small, mechanical, zero-behavior-change addition
+to already-accepted code (verified directly by running clippy before
+and after), was committed separately without a fresh review round
+(`5d6f49d5`); round 2 confirmed this was reasonable but recommended
+the orchestrator spot-check its scope, which was done directly
+(`git show 5d6f49d5 --stat`: one file, four insertions, attribute-only).
+
+Round 2 ACCEPTed, independently re-tracing the injection point against
+`prepare_inner`'s real write order (`mkdir`/`open`/`fsync` are not
+intercepted by the shim; only `write`/`pwrite` are, so the journal
+write genuinely is the first in-scope call) and re-confirming the
+mutation-test round-trip's shape. Committed `cfca0e25`.
+
+What remains open, unchanged from the prior section: `transform_inner`,
+the v2-to-v3 draft's construction/resume/activation, and
+`activate_upgrade` still have no disk-exhaustion coverage from this
+technique -- two entry points now, not the whole matrix.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
