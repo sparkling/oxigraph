@@ -2096,4 +2096,87 @@ mod tests {
         )?;
         std::process::exit(74);
     }
+
+    #[test]
+    fn start_child_exits_immediately_before_and_after_initial_progress_is_synced() -> Result {
+        if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+            return Ok(());
+        }
+        // Phase 1: killed right after the nested start_upgrade_recovery call
+        // completes, before the INITIAL progress record is computed and
+        // appended. No PROGRESS_FILE exists yet, so a fresh resume cannot
+        // establish where recovery left off and correctly refuses rather
+        // than guessing.
+        {
+            let (_root, source, backup, upgrade, options) = setup()?;
+            let inputs = [inventory(&source)?, inventory(&backup)?];
+            let status = std::process::Command::new(std::env::current_exe()?)
+                .arg("--exact")
+                .arg("store::upgrade::transform::receipt::tests::start_process_helper")
+                .env("OXIGRAPH_START_TEST_SOURCE", &source)
+                .env("OXIGRAPH_START_TEST_BACKUP", &backup)
+                .env("OXIGRAPH_START_TEST_DESTINATION", &upgrade)
+                .env("OXIGRAPH_START_TEST_EXIT_AT", "1")
+                .status()?;
+            assert_eq!(status.code(), Some(73));
+            assert!(upgrade.join(PREFLIGHT_FILE).is_file());
+            assert!(!upgrade.join(PROGRESS_FILE).exists());
+            assert!(Store::resume_upgrade(&source, &backup, &upgrade, &options).is_err());
+            assert_eq!(inventory(&source)?, inputs[0]);
+            assert_eq!(inventory(&backup)?, inputs[1]);
+        }
+        // Phase 2: killed right after the INITIAL progress record is
+        // appended and synced. The workspace now carries the durable marker
+        // an ordinary resume needs, and completes the upgrade normally.
+        {
+            let (_root, source, backup, upgrade, options) = setup()?;
+            let inputs = [inventory(&source)?, inventory(&backup)?];
+            let status = std::process::Command::new(std::env::current_exe()?)
+                .arg("--exact")
+                .arg("store::upgrade::transform::receipt::tests::start_process_helper")
+                .env("OXIGRAPH_START_TEST_SOURCE", &source)
+                .env("OXIGRAPH_START_TEST_BACKUP", &backup)
+                .env("OXIGRAPH_START_TEST_DESTINATION", &upgrade)
+                .env("OXIGRAPH_START_TEST_EXIT_AT", "2")
+                .status()?;
+            assert_eq!(status.code(), Some(73));
+            assert!(upgrade.join(PROGRESS_FILE).is_file());
+            let receipt = Store::resume_upgrade(&source, &backup, &upgrade, &options)?;
+            assert_eq!(
+                UpgradeReceipt::verify(&source, &backup, &upgrade, &options)?,
+                receipt
+            );
+            assert_eq!(inventory(&source)?, inputs[0]);
+            assert_eq!(inventory(&backup)?, inputs[1]);
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::exit,
+        reason = "bounded child models an exact start crash point"
+    )]
+    fn start_process_helper() -> Result {
+        let Some(source) = std::env::var_os("OXIGRAPH_START_TEST_SOURCE") else {
+            return Ok(());
+        };
+        let backup = std::env::var_os("OXIGRAPH_START_TEST_BACKUP").ok_or("backup")?;
+        let destination =
+            std::env::var_os("OXIGRAPH_START_TEST_DESTINATION").ok_or("destination")?;
+        let stop = std::env::var("OXIGRAPH_START_TEST_EXIT_AT")?.parse::<u8>()?;
+        start_upgrade_inner(
+            Path::new(&source),
+            Path::new(&backup),
+            Path::new(&destination),
+            &UpgradeOptions::default(),
+            |phase| {
+                if phase == stop {
+                    std::process::exit(73);
+                }
+                Ok(())
+            },
+        )?;
+        std::process::exit(74);
+    }
 }
