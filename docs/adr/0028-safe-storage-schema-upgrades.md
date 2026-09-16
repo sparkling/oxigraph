@@ -50,12 +50,15 @@
   the legacy path's start, resume and activation, and the v2-to-v3
   draft's construction/start (added this session, mirroring resume's and
   activation's existing fault-injection hook shape), resume and
-  activation (five total, unchanged). A sixth real-process-kill test was
-  added this session for a distinct step upstream of those three legacy
-  entry points: `prepare_upgrade`, the offline shadow-copy preparation
-  this crate's own doc comment describes as establishing no
-  transformation, resume, or activation of its own. Every other fault
-  phase on both paths remains proven only under synthetic in-process
+  activation (five total, unchanged). Two more real-process-kill tests
+  were added this session, closing a gap a fresh `current_exe` audit
+  found: `prepare_upgrade` (the legacy path's offline shadow-copy
+  preparation, upstream of and distinct from its three entry points) and
+  `transform_inner` (the legacy path's explicit v0/v1 transformation,
+  distinct from the combined `Store::upgrade` wrapper), both of which
+  already had production fault-injection hooks but no real-process-kill
+  test before this session. Every other fault phase on both paths
+  remains proven only under synthetic in-process
   fault injection.
   The two real checked-in version-0/1 fixtures are now hash-pinned
   against a recorded constant, and `Store::inspect` is proven against
@@ -2381,9 +2384,93 @@ ADR's own offline shadow-copy step, distinct from `backup_legacy`
 crash-matrix stream) and from the combined `Store::upgrade` convenience
 wrapper (which only composes the already-covered `start_upgrade` and
 `resume_upgrade`, adding no new durability boundary of its own). The
-v2-to-v3 draft's `transform_inner` and the frozen qualification/crash
-matrix beyond these six points remain open, tracked separately below
-and in the delivery-gates checklist.
+legacy path's own explicit v0/v1 `transform_inner` (a distinct step
+from `Store::upgrade`'s combined start/resume pair, addressed next) and
+the frozen qualification/crash matrix beyond these six points remain
+open, tracked separately below and in the delivery-gates checklist.
+
+## Real OS-level process-kill coverage for legacy transformation, closing the pair (2026-09-16)
+
+`transform_inner` (the legacy version-0/1 explicit transformation step,
+distinct from the combined `Store::upgrade` wrapper, which only
+composes the already-covered `start_upgrade` and `resume_upgrade`) was
+the second function this session's `current_exe` audit identified with
+production fault-injection hooks and zero real-process-kill coverage --
+the same grep, re-run after the previous section's `prepare_inner`
+change, confirmed it as the one remaining gap of this specific kind.
+
+Its structure is an exact architectural mirror of `prepare_inner`, one
+phase index higher: 7 numbered fault phases (0 through 6), already
+exhaustively covered synthetically by this module's own existing
+`upgrade_fault_boundaries_preserve_inputs_and_keep_all_leases_until_return`
+test (`stop in 0..=6`). `fault(5)` fires after `TRANSFORM_PENDING` is
+written and fsync'd but strictly before `fs::rename(TRANSFORM_PENDING,
+TRANSFORM_COMPLETE)`; `fault(6)` fires strictly after that rename has
+already returned, mapped through `indeterminate()` exactly like
+`prepare_inner`'s `fault(4)`.
+
+The new test, `transform_child_exits_before_and_after_the_completion_
+rename`, applies the identical pattern just reviewed and accepted for
+`prepare_inner`: re-invoke this same test binary via
+`std::process::Command::new(std::env::current_exe()?)` targeting one
+helper `#[test]` that calls the real private `transform_inner` with a
+fault closure calling `std::process::exit(73)` at a requested phase.
+Fresh file-local `helper()`/`crash()`/`variable()` trio, with a
+distinct `OXIGRAPH_UPGRADE_TRANSFORM_TEST_` env var prefix (this
+crate's `--lib` test binary now carries three such prefixes across
+three files, none colliding). A real kill at stop=5 leaves the
+workspace exactly as refused and verify-failing as the existing
+synthetic test already proves at the same phase; a real kill at stop=6
+leaves `TRANSFORM_COMPLETE` already visible in the directory, matching
+that same test's own stop=6 case. Both stops also assert the
+unconditional `Store::open(prepared.join("store"))` =>
+`UpgradeIncomplete` check the existing test makes regardless of stop --
+transformation completing does not activate the workspace -- and that
+every native lease (source, package/store, prepared/store) is available
+again after the real process death, since the kernel releases an
+`flock` on exit whether or not any Rust destructor ran.
+
+Learning directly from the previous section's own round-1 mistake
+(a hardcoded `echo "FMT EXIT: 0"` standing in for a real `$?` capture),
+every completion-check command this time redirected output to a file
+first and read `$?` separately, never piped into `head`/`tail`/`grep`
+before reading the exit status, and a direct `awk 'length($0) > 100'`
+line-length check was run before ever claiming `cargo fmt --check`
+passed, learning from that same round's specific 101-column defect.
+`cargo test --locked -p oxigraph --lib -- "store::upgrade::transform::
+tests" --test-threads=1` passes all six tests in the module (four
+pre-existing plus the two new ones); `cargo fmt -p oxigraph -- --check`
+genuinely exits 0 with zero lines over 100 columns; `git diff
+lib/oxigraph/src/store/upgrade_transform.rs | grep -c '^-[^-]'`
+confirms zero lines removed, a pure append; the two new tests trip the
+same pre-existing clippy lint pattern as this module's four pre-existing
+tests, not a new category.
+
+Independent review (`claude-fable-5-1`, xhigh effort): **ACCEPT on the
+first round**, the first single-round accept for a real-process-kill
+test this session (every prior one needed at least one REJECT/fix
+cycle). The review traced production code directly to confirm phases 5
+and 6 are only reachable at their exact `fault(5)`/`fault(6)` call
+sites -- the `transform_upgrade` callback's own phase range (`edge + 1`
+for `edge` in the receipt's starting version through 2) can only yield
+phases 1 through 3, so a real exit-73 at stop=5 or stop=6 cannot be a
+false positive from an earlier, unrelated crash point. Two minor,
+non-blocking prose inaccuracies were noted in root's own goal text (a
+miscounted "five pre-existing tests" where the module has four, and an
+imprecise description of which baseline the package-hash comparison
+uses) -- neither affecting correctness, both left as reported since the
+review itself judged them non-blocking.
+
+Committed to `main` as `7554a79c`; not pushed. This closes the pair of
+fault-injection-hooks-but-zero-real-kill-coverage gaps this session's
+`current_exe` audit identified (`prepare_inner`, previous section, and
+now `transform_inner`); the frozen qualification/crash matrix beyond
+what these real-process-kill tests cover remains open, tracked
+separately below and in the delivery-gates checklist. This is not a
+claim that every fault phase on either schema-transition path now has
+real-process-kill coverage -- only that the specific gap this session's
+audit found (a function with production fault-injection hooks and zero
+real-kill test) is now closed for both functions identified.
 
 ## Staged implementation and evaluator gates
 
