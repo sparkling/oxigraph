@@ -2832,6 +2832,79 @@ actionable next design step (`/proc/self/fd` path-scoped interception,
 tested in isolation before any integration) for whichever future
 increment picks this up.
 
+## Following through on the `LD_PRELOAD` design step: a validated, working shim, and two real bugs found along the way (2026-09-16)
+
+The previous section's own concrete next step -- `/proc/self/fd`
+path-scoped interception, tested in isolation before any integration
+-- was picked up directly, in the same session, rather than left for
+an unspecified future increment. Two real, distinct bugs were found
+and fixed in the process, neither of them assumed away.
+
+Writing the fd-scoped shim (checking `readlink("/proc/self/fd/<N>")`
+against a configured prefix, only injecting `ENOSPC` for writes inside
+it, passing every other write straight through) and testing it against
+a trivial, unrelated Python process no longer crashed anything -- a
+genuine improvement over the previous section's unscoped attempt. But
+a further test, a small Rust program writing into the scoped
+directory, did not receive the injected `ENOSPC` at all: the write
+silently succeeded despite the budget being smaller than the write.
+
+Rather than assume this away, it was debugged directly. The root cause
+was a real logic bug in the budget check: an `atomic_fetch_sub`-based
+implementation subtracted the write's byte count from the remaining
+budget and then inspected the *remainder* to decide whether to reject,
+but mishandled the case where a single write's count exceeds the
+*entire* remaining budget in one shot -- exactly the shape of every
+test case tried, since a test wants the very first over-budget write
+to fail, not a later one. The fix is a plain, readable comparison
+(`if (count > budget) reject`) instead of a subtract-then-inspect
+dance.
+
+A second, more consequential bug surfaced while adding temporary debug
+logging to chase the first one: the debug helper called `write()` by
+its own name to emit a diagnostic line. Within the same shared object,
+an unqualified call to a symbol this file itself defines binds to
+*that* definition, not to the real libc function reached via `dlsym`
+-- so the debug helper's own logging call recursed into the shim's own
+interposed `write()`, which (depending on scope and budget state)
+could call the debug helper again, and crashed with a real segfault.
+This is very likely the same class of bug behind the previous
+section's own unexplained crash of an unrelated Python process under
+the first, unscoped shim, though that specific prototype was not kept
+around to confirm it retroactively. The fix, applied throughout: never
+call an interposed function by name from inside its own translation
+unit; route anything that must not itself be subject to interception
+through a raw `syscall(SYS_write, ...)`, never through the libc
+wrapper.
+
+With both fixes applied, a five-case verification suite passed
+cleanly: an unrelated Python process and an unrelated `cargo
+--version` invocation both ran unaffected with the shim loaded and the
+budget already exhausted; a small Rust program (`std::fs::File::
+write_all`, the same API family `oxigraph`'s own storage code uses)
+writing outside the scoped prefix succeeded regardless of budget; the
+same program writing inside the scoped prefix failed with a genuine
+`os error 28` (`ENOSPC`, surfaced through Rust's ordinary
+`std::io::Error`) when the write exceeded the budget, and succeeded
+normally when it did not. `os error 28` is exactly the error a real
+disk-full condition produces and exactly what `StorageError::
+StorageFull`'s own existing mapping (`storage/rocksdb_wrapper.rs`)
+already expects to classify -- this was not designed against an
+invented error shape.
+
+This resolves the feasibility question the previous section left open:
+a correctly-scoped `LD_PRELOAD` shim genuinely works and is safe for
+the processes tested. What remains is a separate, larger increment,
+deliberately not attempted in this same sitting: designing the actual
+Rust integration test (deciding how the shim gets built and made
+available to `cargo test`, choosing which real `oxigraph` operation to
+target, and going through this session's own established build-test-
+review-commit cycle for new test infrastructure, not just a new test
+case). The experimental shim, probe binary and their build artifacts
+were removed after this verification, exactly as after the previous
+section's own experiment; nothing from this investigation was left in
+the tree.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
