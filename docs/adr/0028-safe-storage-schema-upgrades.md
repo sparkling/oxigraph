@@ -37,10 +37,15 @@
   backup-legacy/upgrade/explicit-cutover/source-preservation-rollback/
   backup-with-receipt/restore, timed per stage with on-disk bytes summed,
   against the two checked-in legacy fixtures.
-  Envelope admission on ordinary open, full crash-matrix breadth, additional
-  operational-gate size classes and peak-memory/amplification measurement,
-  full compatibility rejection, older-binary rollback and the frozen
-  qualification gates remain open
+  The legacy path's activation and resume steps, and the v2-to-v3 draft's
+  activation and resume steps, each have a real OS-level process-kill test
+  (four total); every other fault phase on both paths, and the legacy
+  path's `start_upgrade` step, remain proven only under synthetic
+  in-process fault injection.
+  Envelope admission on ordinary open, full crash-matrix breadth beyond
+  those four points, additional operational-gate size classes and
+  peak-memory/amplification measurement, full compatibility rejection,
+  older-binary rollback and the frozen qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
   This ADR owns the contract; both programme plans reference that one current
@@ -1470,8 +1475,88 @@ Committed to `main` as `dab6050e` (test) and this section as a following
 commit; not pushed. This closes the first operational-gate drill for the
 legacy version-0/1-to-2 path. It does not close additional size classes,
 peak-memory sampling, read/write amplification, or the broader crash-matrix
-breadth beyond the two already-proven real-process-kill points, which
-remain the largest genuinely open pieces of G4.3. ADR-0028 remains Proposed.
+breadth beyond the real-process-kill points already proven at the time of
+writing (three -- see the next section for the count and where each one
+lives), which remain the largest genuinely open pieces of G4.3. ADR-0028
+remains Proposed.
+
+## Real OS-level process-kill coverage for the legacy upgrade resume step (2026-09-16)
+
+`lib/oxigraph/src/store/upgrade_receipt.rs` (the legacy version-0/1-to-2
+path) already carried a real-process-kill test for its *activation* step
+(`activation_child_exits_immediately_before_and_after_guard_unlink`,
+predating this ADR's work this session) but none for *resume* -- only
+synthetic in-process fault injection (`pending_receipt_is_retained_and_
+never_overwritten`, `completed_progress_resumes_without_rewriting_
+recovery_evidence`, and others). An earlier note in this ADR's own
+programme-control record incorrectly stated the legacy path had *no* real-
+process-kill coverage at all; tracing the file directly (rather than
+trusting that note) found the pre-existing activation test and corrected
+the record before this slice was scoped.
+
+`resume_upgrade_inner`'s fault call sites, traced directly from source:
+fault(0) right after the nested `resume_upgrade_recovery` completes;
+fault(1) inside the leased verification closure, right after the
+transformed result is obtained; fault(2) right after the `COMPLETED`
+progress record is appended/verified; fault(3) right after the `PENDING`
+receipt file is written and synced, before the atomic rename to the final
+receipt file; fault(4) right after that rename, mapped through
+`indeterminate()`; fault(5) terminal, after directory syncs.
+
+The new test, `resume_child_exits_immediately_before_and_after_receipt_
+publication`, targets the fault(3)/fault(4) atomic-rename boundary,
+mirroring the existing activation test's own before/after-atomic-operation
+shape and its `current_exe()`/`--exact` re-invocation technique. The two
+phases are **asymmetric by design, not by oversight**, and the test's
+assertions reflect that:
+
+- **Phase 3** (killed after the `PENDING` file is written+synced, before
+  the rename): the pre-existing `pending_receipt_is_retained_and_never_
+  overwritten` test already establishes, via synthetic fault injection at
+  the same phase, that a subsequent ordinary `Store::resume_upgrade` call
+  returns `Err` (not a successful completion) and `UpgradeReceipt::verify`
+  also errs -- a deliberate fail-closed design: a dangling `PENDING` file
+  with unknown fsync-durability status is never silently trusted or
+  resumed. The new test proves this holds after a *real* process kill too:
+  `PENDING` bytes retained exactly, the final receipt file absent,
+  `resume`/`verify` both correctly refuse, source/backup bytes unchanged.
+- **Phase 4** (killed immediately after the rename): the publication is
+  complete. The new test asserts the final receipt file exists, `verify`
+  succeeds, and a fresh `resume_upgrade` call succeeds too (taking the
+  early `if state.receipt { return verify_upgrade(...) }` path).
+
+Because resume mutates a persistent workspace (unlike activation, which
+always targets a fresh directory per phase), the new test uses two fully
+independent `setup()` + `start_upgrade()` workspaces, one per phase, rather
+than reusing one workspace across both phases in a loop the way the
+activation test does.
+
+Root wrote this change directly rather than dispatching a native worker:
+the file is roughly 2000 lines, well past the point where a prior increment
+this session found a worker correctly declining to re-transcribe a large
+file rather than risk corruption, and root already had complete, exact
+knowledge of the fix from tracing the fault call sites and the sibling
+test's conventions directly. Root ran every completion-check command for
+real before dispatching review: `cargo check` clean; the receipt module's
+own test filter (`transform::receipt::tests`) at 11 passed (9 pre-existing
+plus the 2 new); `cargo fmt --check` clean on the first attempt; the three
+sibling integration suites that exercise the same public API
+(`upgrade_activation`, `upgrade_receipts`, `upgrade_operational_drill`) at
+15 passed combined. Independent review (`claude-fable-5-1`, high effort),
+dispatched as a standalone hand-assembled request rather than through the
+full workflow state machine, returned ACCEPT, correctly flagging that it
+had no diff/shell access to independently confirm no other file changed;
+`git status --short`/`git diff --stat` were checked directly and confirmed
+exactly one file changed, purely additive (85 insertions). Committed to
+`main` as `4b9c0218`; not pushed.
+
+There are now four real-process-kill crash tests across both
+schema-transition paths: the legacy path's activation (pre-existing) and
+resume (this slice), and the v2-to-v3 draft's activation and resume (the
+earlier crash-matrix section above). The legacy path's `start_upgrade`
+step, and every fault phase on both paths not exercised by one of these
+four tests, remain proven only under synthetic in-process injection.
+ADR-0028 remains Proposed.
 
 ## Staged implementation and evaluator gates
 
