@@ -228,6 +228,46 @@ fn schema_upgrade_sealed_tampering_is_not_repaired() -> TestResult {
 }
 
 #[test]
+fn schema_upgrade_rejects_preflight_built_by_a_different_binary() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let (source, package) = fixture(root.path())?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let control = root.path().join("same-build");
+    Store::start_schema_upgrade(&source, &package, &control, &options)?;
+    assert!(
+        Store::resume_schema_upgrade(&source, &package, &control, &options)?
+            .receipt()
+            .is_some()
+    );
+    SchemaUpgradeReceipt::verify(&source, &package, &control, &options)?;
+    let workspace = root.path().join("changed-build");
+    Store::start_schema_upgrade(&source, &package, &workspace, &options)?;
+    let plan = workspace.join(PLAN);
+    let mut stored = fs::read(&plan)?;
+    let mut binding = Vec::new();
+    BuildBinding::capture(&options.build_options(), std::time::Instant::now())?
+        .encode(&mut binding);
+    let offsets = stored
+        .windows(binding.len())
+        .enumerate()
+        .filter(|(_, window)| *window == binding.as_slice())
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        offsets.len(),
+        1,
+        "the running build identity must be embedded exactly once in the preflight"
+    );
+    let last = offsets[0] + binding.len() - 1;
+    stored[last] ^= 1;
+    fs::write(&plan, &stored)?;
+    let before = bytes(&workspace)?;
+    assert!(Store::resume_schema_upgrade(&source, &package, &workspace, &options).is_err());
+    assert_eq!(bytes(&workspace)?, before);
+    Ok(())
+}
+
+#[test]
 fn schema_upgrade_rejects_changed_source_and_overlapping_paths() -> TestResult {
     let root = tempfile::tempdir()?;
     let (source, package) = fixture(root.path())?;
