@@ -50,8 +50,13 @@
   the legacy path's start, resume and activation, and the v2-to-v3
   draft's construction/start (added this session, mirroring resume's and
   activation's existing fault-injection hook shape), resume and
-  activation (five total). Every other fault phase on both paths remains
-  proven only under synthetic in-process fault injection.
+  activation (five total, unchanged). A sixth real-process-kill test was
+  added this session for a distinct step upstream of those three legacy
+  entry points: `prepare_upgrade`, the offline shadow-copy preparation
+  this crate's own doc comment describes as establishing no
+  transformation, resume, or activation of its own. Every other fault
+  phase on both paths remains proven only under synthetic in-process
+  fault injection.
   The two real checked-in version-0/1 fixtures are now hash-pinned
   against a recorded constant, and `Store::inspect` is proven against
   them for the first time (byte-preservation and expected legacy
@@ -2279,6 +2284,106 @@ test logic. Envelope admission on ordinary open remains a deliberate
 product decision, out of ordinary-delivery scope; the frozen
 compatibility/crash/system-RocksDB qualification and promotion matrix
 remains a separate evaluator-authority track. ADR-0028 remains Proposed.
+
+## Real OS-level process-kill coverage for legacy offline preparation (2026-09-16)
+
+With gate 1 (inventory and inspection) closed, this increment moved into
+gate 2's territory: not the "still required" frozen full-matrix language
+in the delivery-gates checklist, which is not directly closeable in one
+ordinary-delivery increment, but a concrete, well-precedented, low-risk
+slice within it. A fresh code-level audit (not assumption) of
+`prepare_inner` and `transform_inner`, both already carrying
+production-code fault-injection hooks with public wrappers passing
+`|_| Ok(())`, found zero existing real-process-kill test for either,
+confirmed by grepping every use of `current_exe` in
+`lib/oxigraph/src/store/*.rs` and `lib/oxigraph/tests/*.rs`. This is the
+same category of gap this session already closed for the legacy path's
+three public entry points and the v2-to-v3 draft's construction/start
+and resume: a fault phase proven only by an injected Rust-level `Err`,
+never by an actual OS process death.
+
+`prepare_inner` (the offline shadow-copy preparation this crate's own
+doc comment distinguishes from transformation, resume and activation)
+has five numbered fault phases. Its own inline `#[cfg(all(test, unix))]
+mod tests` submodule -- the only place with access to the private
+function, unlike the external `lib/oxigraph/tests/upgrade_preparation.rs`
+integration test -- already exhaustively covers all five phases with
+synthetic in-process closures, but none with a real kill. The most
+consequential single boundary is phase(3)/phase(4): phase(3) fires
+after the PENDING marker is written and fsync'd but strictly before
+`fs::rename(PENDING, COMPLETE)`; phase(4) fires strictly after that
+rename has already returned.
+
+The new test,
+`preparation_child_exits_before_and_after_the_completion_rename`,
+re-invokes the same test binary via `std::process::Command::new(
+std::env::current_exe()?)` targeting one helper `#[test]` that calls
+the real private `prepare_inner` with a fault closure that calls
+`std::process::exit(73)` at a requested phase -- the exact pattern
+already established and reviewed this session in
+`schema_upgrade_tests.rs`, with a fresh file-local, non-colliding copy
+of the `helper()`/`crash()`/`variable()` trio (distinct
+`OXIGRAPH_UPGRADE_PREPARE_TEST_` env var prefix, since both files
+compile into the same `--lib` test binary). A real kill at phase(3)
+leaves the workspace exactly as refused, unopenable and verify-failing
+as this same module's own existing synthetic test already proves at
+the same phase (`failures_before_completion_preserve_both_inputs_and_
+refuse_preparation`, `stop == 3`). A real kill at phase(4) leaves
+`COMPLETE` already visible in the directory -- the rename already
+returned before phase(4) is invoked in production code -- matching the
+existing synthetic `post_marker_failure_or_cancellation_is_
+indeterminate_and_verifiable` test's own phase-4 case, but now proven
+against a genuine kernel-level process death rather than an early
+Rust return.
+
+The phase-4 comment is worded carefully to claim only what a process
+kill actually proves: the marker is visible in the directory, not that
+it is durable across a further power loss. That distinction matters --
+it is exactly why `prepare_inner` maps any failure in that window to
+`BackupError::CompletionIndeterminate` rather than treating the visible
+rename as fully complete, and the production doc comment already says
+so. An earlier draft of this test's comment overclaimed "durable"/"on
+disk"; independent review caught this and it is corrected here before
+it was ever committed.
+
+Independent review (`claude-fable-5-1`, xhigh effort, two rounds) caught
+one real, confirmed defect: the new `crash()` function signature was
+101 columns, one over rustfmt's default `max_width = 100`, so `cargo fmt
+-p oxigraph -- --check` should have reported a diff. It did -- and root's
+own round-1 completion-check claim of "FMT EXIT: 0" was itself wrong: a
+hardcoded echo string, not an actual `$?` capture from the piped `cargo
+fmt` invocation, so the check had never really been run. This is the
+tenth consecutive increment this session where independent review
+surfaced something worth acting on, and the third (after the WAL test
+and the CI-wiring working-directory mistake) where the finding was a
+real defect in root's own delivered work or its own verification claim,
+not a framing overclaim. Fixed by running `cargo fmt -p oxigraph`
+directly and re-checking its exit code correctly (redirecting to a file
+before reading `$?`, never piping first). Round 1 also flagged the test
+name implying a directory fsync that phase 4 never waits for (renamed
+to `..._completion_rename`) and an unverified "zero clippy warnings"
+claim; the corrected account confirmed the two new tests trip the same
+pre-existing lint pattern (`tests_outside_test_module`, likely because
+that lint only recognizes a bare `cfg(test)`, not `cfg(all(test,
+unix))`) as all four pre-existing tests in the same module already do,
+not a new category or regression, and confirmed a genuinely unrelated,
+pre-existing `oxhttp` dependency clippy failure via a `git stash`/pop
+comparison against the unmodified baseline. Round 2: ACCEPT.
+
+`cargo test --locked -p oxigraph --lib -- "store::upgrade::tests"
+--test-threads=1` passes all six tests in the module (four pre-existing
+plus the two new ones); `cargo fmt -p oxigraph -- --check` genuinely
+exits 0; `git diff lib/oxigraph/src/store/upgrade.rs | grep -c '^-[^-]'`
+confirms zero lines removed from the last commit, a pure append.
+Committed to `main` as `f78de51a`; not pushed. `prepare_upgrade` is this
+ADR's own offline shadow-copy step, distinct from `backup_legacy`
+(covered under ADR-0022's separate backup/restore evidence, not this
+crash-matrix stream) and from the combined `Store::upgrade` convenience
+wrapper (which only composes the already-covered `start_upgrade` and
+`resume_upgrade`, adding no new durability boundary of its own). The
+v2-to-v3 draft's `transform_inner` and the frozen qualification/crash
+matrix beyond these six points remain open, tracked separately below
+and in the delivery-gates checklist.
 
 ## Staged implementation and evaluator gates
 
