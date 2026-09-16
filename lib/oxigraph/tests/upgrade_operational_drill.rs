@@ -5,6 +5,7 @@
     reason = "operational-gate drill instrumentation"
 )]
 
+use oxigraph::model::{GraphName, Literal, NamedNode, Quad};
 use oxigraph::store::{
     BackupFile, BackupOptions, LegacyBackupOptions, RestoreOptions, RestoreReceipt, Store,
     UpgradeOptions,
@@ -16,6 +17,22 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// Quads added on top of the freshly-activated store before the restore
+/// leg's backup, so `restore_write_amplification` reflects a size class
+/// larger than the two checked-in fixtures. Only the restore leg can be
+/// scaled this way: it operates on an arbitrary current-format `Store`,
+/// reachable through the public `insert`/`extend` API. The legacy leg
+/// (backup-legacy/upgrade/cutover) cannot be scaled the same way, because
+/// this codebase does not provide a legacy-format writer -- nothing
+/// should intentionally produce new data in an obsolete physical layout
+/// -- so `legacy_write_amplification` remains reported only against the
+/// two checked-in fixtures' own size. 5,000 was chosen to plausibly
+/// dilute RocksDB's fixed per-instance overhead (previously measured at
+/// roughly 140-160 KiB across OPTIONS/MANIFEST/LOG/WAL) while keeping
+/// the drill's wall-clock cost modest: all 5,000 quads are added in one
+/// `extend` call (one transaction), not one transaction per quad.
+const SYNTHETIC_QUAD_COUNT: u64 = 5_000;
 
 fn supported() -> bool {
     cfg!(target_os = "linux") && option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") == Some("vendored")
@@ -60,14 +77,14 @@ fn inventory(path: &Path) -> TestResult<BTreeMap<PathBuf, [u8; 32]>> {
 
 /// Sums the bytes on disk under `path`.
 ///
-/// `target`/`restore_target` are scanned while `activated`/`restored_store`
-/// are still open, so a file `read_dir` lists can legitimately be gone by
-/// the time it is stat'd: RocksDB may delete an obsolete WAL/OPTIONS file in
-/// a background thread between the two calls. A `NotFound` at either the
-/// file-type or metadata step is therefore not a real error for this
-/// disk-usage proxy -- it contributes zero bytes, since the file is gone by
-/// the time this measurement completes either way. Every other I/O error
-/// still propagates.
+/// `target`/`scaled`/`restore_target` are scanned while `activated`/
+/// `scaled_store`/`restored_store` are still open, so a file `read_dir`
+/// lists can legitimately be gone by the time it is stat'd: RocksDB may
+/// delete an obsolete WAL/OPTIONS file in a background thread between the
+/// two calls. A `NotFound` at either the file-type or metadata step is
+/// therefore not a real error for this disk-usage proxy -- it contributes
+/// zero bytes, since the file is gone by the time this measurement
+/// completes either way. Every other I/O error still propagates.
 fn directory_bytes(path: &Path) -> TestResult<u64> {
     let mut total = 0_u64;
     for entry in fs::read_dir(path)? {
@@ -116,6 +133,10 @@ fn peak_rss_kb() -> Option<u64> {
 /// Runs the legacy-upgrade-then-operational-recovery journey once, measuring each
 /// stage. The measurements are instrumentation only: no baseline exists yet, so
 /// nothing here asserts a duration or a byte count.
+///
+/// The restore leg backs up and restores a second, larger synthetic size
+/// class rather than the freshly-activated store directly: see
+/// `SYNTHETIC_QUAD_COUNT`'s doc comment for why only this leg can be scaled.
 fn drill(version: u64) -> TestResult {
     let root = tempfile::tempdir()?;
     let source = root.path().join("source");
@@ -159,10 +180,43 @@ fn drill(version: u64) -> TestResult {
     );
     let rollback_duration = started.elapsed();
 
+    // See SYNTHETIC_QUAD_COUNT's doc comment: the restore leg backs up and
+    // restores this larger synthetic store, a copy of `activated` plus
+    // SYNTHETIC_QUAD_COUNT additional quads, instead of `activated` itself.
+    let scaled = root.path().join("scaled");
+    let scaled_store = Store::open(&scaled)?;
+    let synthetic_quads = (0..SYNTHETIC_QUAD_COUNT).map(|index| {
+        Quad::new(
+            NamedNode::new_unchecked(format!(
+                "http://example.com/upgrade-operational-drill/synthetic/{index}"
+            )),
+            NamedNode::new_unchecked(
+                "http://example.com/upgrade-operational-drill/synthetic-predicate",
+            ),
+            Literal::new_simple_literal(format!(
+                "synthetic operational-drill scale-out value {index}"
+            )),
+            GraphName::DefaultGraph,
+        )
+    });
+    scaled_store.extend(
+        activated
+            .iter()
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .chain(synthetic_quads),
+    )?;
+    let scaled_quad_count = scaled_store.len()? as u64;
+    assert_eq!(
+        scaled_quad_count,
+        activation.quad_count() + SYNTHETIC_QUAD_COUNT,
+        "scaled store should hold exactly the activated quads plus the synthetic ones"
+    );
+
     let with_receipt_backup = root.path().join("with-receipt-backup");
     let started = Instant::now();
     let with_receipt_backup_receipt =
-        activated.backup_with_receipt(&with_receipt_backup, &BackupOptions::default())?;
+        scaled_store.backup_with_receipt(&with_receipt_backup, &BackupOptions::default())?;
     let backup_with_receipt_duration = started.elapsed();
     let with_receipt_logical_bytes: u64 = with_receipt_backup_receipt
         .files()
@@ -179,7 +233,7 @@ fn drill(version: u64) -> TestResult {
     let restore_duration: Duration = restored.restore_duration();
     let restored_store = Store::open(restore_target.join(RestoreReceipt::store_directory()))?;
     restored_store.validate()?;
-    assert_eq!(restored_store.len()? as u64, activation.quad_count());
+    assert_eq!(restored_store.len()? as u64, scaled_quad_count);
 
     // Every directory the drill produced still exists, so these are
     // measured figures for this run rather than an estimate -- though see
@@ -193,12 +247,14 @@ fn drill(version: u64) -> TestResult {
     let legacy_backup_bytes = directory_bytes(&legacy_backup)?;
     let workspace_bytes = directory_bytes(&workspace)?;
     let target_bytes = directory_bytes(&target)?;
+    let scaled_bytes = directory_bytes(&scaled)?;
     let with_receipt_backup_bytes = directory_bytes(&with_receipt_backup)?;
     let restore_target_bytes = directory_bytes(&restore_target)?;
     let total_disk_bytes = source_bytes
         + legacy_backup_bytes
         + workspace_bytes
         + target_bytes
+        + scaled_bytes
         + with_receipt_backup_bytes
         + restore_target_bytes;
 
@@ -211,10 +267,12 @@ fn drill(version: u64) -> TestResult {
     // disk, divided by the logical byte size the relevant backup receipt's
     // own file manifest declares (BackupFile::size, a manifest-recorded
     // length, not a filesystem stat). "Legacy" covers backup_legacy+
-    // upgrade+cutover against the legacy backup's manifest; "restore"
-    // covers the with-receipt backup+restore against that separate
-    // backup's own manifest. Instrumentation only: no threshold is
-    // asserted on either ratio.
+    // upgrade+cutover against the legacy backup's manifest, sized to the
+    // two checked-in fixtures. "Restore" covers the with-receipt backup+
+    // restore against that separate backup's own manifest, sized to the
+    // larger SYNTHETIC_QUAD_COUNT size class instead (see that constant's
+    // doc comment). Instrumentation only: no threshold is asserted on
+    // either ratio.
     #[expect(
         clippy::cast_precision_loss,
         reason = "instrumentation ratio only, not an exact count; byte totals here are far below f64's exact-integer range"
@@ -229,7 +287,7 @@ fn drill(version: u64) -> TestResult {
         / with_receipt_logical_bytes as f64;
 
     eprintln!(
-        "drill version={version} backup_legacy={backup_legacy_duration:?} upgrade={upgrade_duration:?} cutover={cutover_duration:?} rollback={rollback_duration:?} backup_with_receipt={backup_with_receipt_duration:?} restore={restore_duration:?} disk_bytes={total_disk_bytes} peak_rss_kb={peak_rss_kb} legacy_write_amplification={legacy_write_amplification:.2} restore_write_amplification={restore_write_amplification:.2}"
+        "drill version={version} backup_legacy={backup_legacy_duration:?} upgrade={upgrade_duration:?} cutover={cutover_duration:?} rollback={rollback_duration:?} backup_with_receipt={backup_with_receipt_duration:?} restore={restore_duration:?} disk_bytes={total_disk_bytes} peak_rss_kb={peak_rss_kb} legacy_write_amplification={legacy_write_amplification:.2} restore_write_amplification={restore_write_amplification:.2} restore_source_quads={scaled_quad_count}"
     );
     Ok(())
 }
