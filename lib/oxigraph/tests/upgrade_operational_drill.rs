@@ -170,13 +170,34 @@ fn drill(version: u64) -> TestResult {
     activated.validate()?;
     assert_eq!(activated.len()? as u64, activation.quad_count());
 
-    // Rollback here means source preservation: the untouched legacy directory is
-    // still byte-identical, so an operator can fall back to it.
+    // Rollback means an operator can fall back to the preserved legacy source
+    // after cutover. Two things are verified, not just one: the source's
+    // bytes are unchanged (inventory, a plain file-path/SHA-256 listing), and
+    // it remains genuinely usable by legacy-aware tooling, not merely
+    // untouched on disk -- Store::backup_legacy is the same operation an
+    // operator falling back to an older, legacy-only binary would run.
+    // Re-running it here and comparing the resulting receipt's fingerprint
+    // (a hash over storage_version, database_id, rocksdb_sequence,
+    // column_families and every file's name/length/SHA-256) against the
+    // pre-drill backup's own fingerprint proves that operation still
+    // succeeds and still reaches byte-for-byte the same result, after the
+    // full upgrade+cutover+restore journey has run.
     let started = Instant::now();
     let source_after = inventory(&source)?;
     assert_eq!(
         source_after, source_before,
         "the preserved source changed during the drill"
+    );
+    let rollback_legacy_backup = root.path().join("rollback-legacy-backup");
+    let rollback_legacy_backup_receipt = Store::backup_legacy(
+        &source,
+        &rollback_legacy_backup,
+        &LegacyBackupOptions::default(),
+    )?;
+    assert_eq!(
+        rollback_legacy_backup_receipt.fingerprint(),
+        legacy_backup_receipt.fingerprint(),
+        "the preserved source no longer backs up identically to an older binary"
     );
     let rollback_duration = started.elapsed();
 
@@ -250,13 +271,15 @@ fn drill(version: u64) -> TestResult {
     let scaled_bytes = directory_bytes(&scaled)?;
     let with_receipt_backup_bytes = directory_bytes(&with_receipt_backup)?;
     let restore_target_bytes = directory_bytes(&restore_target)?;
+    let rollback_legacy_backup_bytes = directory_bytes(&rollback_legacy_backup)?;
     let total_disk_bytes = source_bytes
         + legacy_backup_bytes
         + workspace_bytes
         + target_bytes
         + scaled_bytes
         + with_receipt_backup_bytes
-        + restore_target_bytes;
+        + restore_target_bytes
+        + rollback_legacy_backup_bytes;
 
     // See peak_rss_kb's own doc comment: this is the whole test binary's
     // peak so far (best-effort, never fatal), not an isolated measurement
