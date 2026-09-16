@@ -1289,6 +1289,56 @@ or old-binary rollback. Preserved inputs are rollback material, not proof of a
 qualified rollback procedure or full G4.3 completion. See
 [ADR-0028's activation boundary](../docs/adr/0028-safe-storage-schema-upgrades.md#fresh-target-upgrade-activation-api-and-cli-2026-09-11).
 
+## Offline v2-to-v3 schema-upgrade construction and activation (fork)
+
+`start-schema-upgrade`, `resume-schema-upgrade`, `verify-schema-upgrade` and
+`activate-schema-upgrade` are a separate, additive command set for the
+explicit inactive v2-to-v3 marker-only schema construction, distinct from the
+version-0/1-to-2 upgrade commands above. Every command requires an explicit
+`--rdf-profile rdf-11|rdf-12`; there is deliberately no default, since the
+operator must choose the RDF write ceiling.
+
+```sh
+oxigraph start-schema-upgrade --source ./v2-data --backup ./v2-backup \
+  --workspace ./schema-upgrade-work --rdf-profile rdf-11
+oxigraph resume-schema-upgrade --source ./v2-data --backup ./v2-backup \
+  --workspace ./schema-upgrade-work --rdf-profile rdf-11
+oxigraph verify-schema-upgrade --source ./v2-data --backup ./v2-backup \
+  --workspace ./schema-upgrade-work --rdf-profile rdf-11
+oxigraph activate-schema-upgrade --source ./v2-data --backup ./v2-backup \
+  --workspace ./schema-upgrade-work --target ./schema-upgrade-activated \
+  --rdf-profile rdf-11
+```
+
+**Activating this schema version does not make it usable.** This build's
+`LATEST_STORAGE_VERSION` is 2, so ordinary `oxigraph query`/`serve`/`inspect`
+and any other command that opens a store will correctly refuse the published
+target with a typed `SchemaTooNew` error, exactly as they would for any
+store newer than this binary supports. `activate-schema-upgrade` only
+publishes a verified, byte-identical, source-preserving copy of the sealed
+construction for a future version-3-aware binary to adopt; it is not a
+cutover an operator can put into service today, and it confers no
+qualification, promotion or publication authority. Its printed output
+carries `current_schema=false` and `upgrade_authorized=false` for exactly
+this reason.
+
+Keep source, the completed ADR-0022 backup, the workspace and (for
+activation) the target offline, stable, disjoint and under exclusive caller
+control throughout. `start-schema-upgrade` persists an immutable UUID/
+profile/build-bound preflight before copying; `resume-schema-upgrade`
+revalidates it and either continues an interrupted attempt or finishes
+sealing an already-validated one -- interrupted work is retained, never
+discarded, and a torn or tampered workspace fails closed rather than being
+repaired. `verify-schema-upgrade` independently re-checks a sealed
+workspace read-only. `activate-schema-upgrade` re-runs every check
+`verify-schema-upgrade` performs before publishing only the winning
+attempt's store files (not external contributor artifacts, which remain
+preserved in the retained workspace) to the fresh `--target`; the target's
+guard removal is the sole activation boundary, and every failure after it is
+completion-indeterminate rather than automatically cleaned up. See
+[ADR-0028's activation section](../docs/adr/0028-safe-storage-schema-upgrades.md#explicit-fresh-target-activation-for-the-v2-to-v3-construction-2026-09-16)
+for the full construction and activation contract.
+
 ## Using a Docker image
 
 ### Display the help menu
