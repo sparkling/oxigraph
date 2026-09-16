@@ -69,6 +69,20 @@ fn bytes(root: &Path) -> TestResult<BTreeMap<PathBuf, Vec<u8>>> {
     visit(root, root, &mut out)?;
     Ok(out)
 }
+/// Starts and seals one workspace, returning its receipt.
+fn sealed(
+    source: &Path,
+    package: &Path,
+    workspace: &Path,
+    options: &SchemaUpgradeOptions,
+) -> TestResult<SchemaUpgradeReceipt> {
+    Store::start_schema_upgrade(source, package, workspace, options)?;
+    let state = Store::resume_schema_upgrade(source, package, workspace, options)?;
+    Ok(state
+        .receipt()
+        .ok_or("the workspace was not sealed")?
+        .clone())
+}
 
 #[test]
 fn schema_upgrade_preserves_governance_retention_namespaces_and_topology() -> TestResult {
@@ -463,5 +477,209 @@ fn schema_upgrade_holds_source_lease_and_detects_primary_output_mutation() -> Te
     let before = bytes(&workspace)?;
     assert!(SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options).is_err());
     assert_eq!(bytes(&workspace)?, before);
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_activation_publishes_a_source_preserving_copy() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let (source, package) = fixture(root.path())?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let workspace = root.path().join("workspace");
+    let receipt = sealed(&source, &package, &workspace, &options)?;
+    let attempt_store = bytes(&receipt.store_directory())?;
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    let before_workspace = bytes(&workspace)?;
+    let target = root.path().join("activated");
+    let activation =
+        Store::activate_schema_upgrade(&source, &package, &workspace, &target, &options)?;
+    assert!(activation.active());
+    assert!(activation.directory().ends_with("activated"));
+    assert_eq!(activation.schema_upgrade_receipt(), &receipt);
+    assert_eq!(activation.schema_uuid(), receipt.schema_uuid());
+    assert_eq!(
+        activation.primary_fingerprint(),
+        receipt.primary_fingerprint()
+    );
+    assert_eq!(activation.primary_records(), receipt.primary_records());
+    assert_eq!(activation.primary_bytes(), receipt.primary_bytes());
+    // Source, backup and the whole retained workspace are untouched.
+    assert_eq!(bytes(&source)?, before_source);
+    assert_eq!(bytes(&package)?, before_package);
+    assert_eq!(bytes(&workspace)?, before_workspace);
+    // Exactly the winning attempt's store files, byte for byte, minus the guard.
+    assert!(!target.join(UPGRADE_GUARD).exists());
+    let published = bytes(&target)?;
+    let expected: Vec<_> = attempt_store
+        .keys()
+        .filter(|path| path.as_path() != Path::new(UPGRADE_GUARD))
+        .collect();
+    assert_eq!(published.keys().collect::<Vec<_>>(), expected);
+    for (path, data) in &published {
+        assert_eq!(attempt_store.get(path), Some(data));
+        assert_eq!(path.components().count(), 1);
+    }
+    // LATEST_STORAGE_VERSION is still 2: this build correctly refuses to treat
+    // a published version-3 target as its own current, ordinarily-usable
+    // schema. Activation stages a source-preserving copy for a future
+    // version-3-aware binary; it does not itself promote version 3 to
+    // current, and must not silently bypass the same typed refusal every
+    // other newer-than-supported store gets. The primary fingerprint/record/
+    // byte equality asserted above -- independently re-derived by activation
+    // itself via `compare(&inputs.source, &opened, ...)` before the guard was
+    // ever removed -- is the proof of exact content identity (namespaces,
+    // retention metadata and every other primary key-value the receipt scope
+    // covers); ordinary open is not required, and is not the mechanism, for
+    // that proof.
+    assert_eq!(Store::inspect(&target)?.storage_version(), Some(3));
+    assert!(matches!(
+        Store::open(&target),
+        Err(crate::storage::StorageError::SchemaTooNew {
+            found: 3,
+            supported: 2
+        })
+    ));
+    assert!(matches!(
+        Store::open_read_only(&target),
+        Err(crate::storage::StorageError::SchemaTooNew {
+            found: 3,
+            supported: 2
+        })
+    ));
+    // The receipt still verifies and the workspace is still byte-identical.
+    SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options)?;
+    assert_eq!(bytes(&workspace)?, before_workspace);
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_activation_rejects_existing_overlapping_and_symlinked_targets() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let (source, package) = fixture(root.path())?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let workspace = root.path().join("workspace");
+    let receipt = sealed(&source, &package, &workspace, &options)?;
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    let before_workspace = bytes(&workspace)?;
+    let existing = root.path().join("existing");
+    fs::create_dir(&existing)?;
+    let symlink = root.path().join("symlink");
+    std::os::unix::fs::symlink(&existing, &symlink)?;
+    for rejected in [
+        existing.clone(),
+        symlink.clone(),
+        source.join("nested"),
+        package.join("nested"),
+        workspace.join("nested"),
+        receipt.store_directory().join("nested"),
+        root.path().join("missing-parent").join("target"),
+    ] {
+        assert!(
+            Store::activate_schema_upgrade(&source, &package, &workspace, &rejected, &options)
+                .is_err(),
+            "{} was accepted as an activation target",
+            rejected.display()
+        );
+        assert!(!rejected.join(UPGRADE_GUARD).exists());
+    }
+    assert!(fs::read_dir(&existing)?.next().is_none());
+    assert_eq!(bytes(&source)?, before_source);
+    assert_eq!(bytes(&package)?, before_package);
+    assert_eq!(bytes(&workspace)?, before_workspace);
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_activation_rejects_unsealed_and_tampered_workspaces() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let (source, package) = fixture(root.path())?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    // Stop right after the attempt is recorded VALIDATED but before it is SEALED.
+    let unsealed = root.path().join("unsealed");
+    Store::start_schema_upgrade(&source, &package, &unsealed, &options)?;
+    assert!(
+        resume_inner(&source, &package, &unsealed, &options, |phase| {
+            if phase == 6 {
+                Err(BackupError::Cancelled)
+            } else {
+                Ok(())
+            }
+        })
+        .is_err()
+    );
+    let before = bytes(&unsealed)?;
+    let target = root.path().join("unsealed-target");
+    assert!(
+        Store::activate_schema_upgrade(&source, &package, &unsealed, &target, &options).is_err()
+    );
+    assert!(!target.exists());
+    assert_eq!(bytes(&unsealed)?, before);
+    for damaged in [PLAN, JOURNAL, COMPLETE] {
+        let workspace = root.path().join(format!("tampered-{damaged}"));
+        sealed(&source, &package, &workspace, &options)?;
+        let path = workspace.join(damaged);
+        let mut content = fs::read(&path)?;
+        let last = content.len() - 1;
+        content[last] ^= 1;
+        fs::write(path, content)?;
+        let before = bytes(&workspace)?;
+        let target = root.path().join(format!("target-{damaged}"));
+        assert!(
+            Store::activate_schema_upgrade(&source, &package, &workspace, &target, &options)
+                .is_err()
+        );
+        assert!(!target.exists());
+        assert_eq!(bytes(&workspace)?, before);
+    }
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_activation_faults_never_leave_a_usable_target() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let (source, package) = fixture(root.path())?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let workspace = root.path().join("workspace");
+    sealed(&source, &package, &workspace, &options)?;
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    let before_workspace = bytes(&workspace)?;
+    for stop in 0..5 {
+        let target = root.path().join(format!("fault-{stop}"));
+        let error = activate_inner(&source, &package, &workspace, &target, &options, |phase| {
+            if phase == stop {
+                Err(BackupError::Cancelled)
+            } else {
+                Ok(())
+            }
+        });
+        assert!(error.is_err(), "fault {stop} was not reached");
+        // Before the guard-removal barrier the target is empty or guarded, and
+        // never openable as a store.
+        if target.join(UPGRADE_GUARD).exists() {
+            assert!(Store::open(&target).is_err());
+        } else {
+            assert!(fs::read_dir(&target)?.next().is_none());
+        }
+        assert_eq!(bytes(&source)?, before_source);
+        assert_eq!(bytes(&package)?, before_package);
+        assert_eq!(bytes(&workspace)?, before_workspace);
+    }
+    // A fresh target still activates ordinarily afterwards. LATEST_STORAGE_VERSION
+    // is still 2, so this build correctly refuses to open its own version-3
+    // publication rather than silently treating it as current.
+    let target = root.path().join("final");
+    Store::activate_schema_upgrade(&source, &package, &workspace, &target, &options)?;
+    assert!(!target.join(UPGRADE_GUARD).exists());
+    assert!(matches!(
+        Store::open(&target),
+        Err(crate::storage::StorageError::SchemaTooNew {
+            found: 3,
+            supported: 2
+        })
+    ));
+    assert_eq!(bytes(&workspace)?, before_workspace);
     Ok(())
 }

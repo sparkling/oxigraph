@@ -1,4 +1,7 @@
-//! Explicit marker-only v2-to-v3 construction. No ordinary admission or activation.
+//! Explicit marker-only v2-to-v3 construction and explicit fresh-target
+//! activation. No *ordinary* admission or activation: `Store::open`/
+//! `open_read_only` never start, resume, or adopt this path, and activating
+//! a receipt here never makes version 3 this binary's current schema.
 //! Child of the legacy receipt module solely to reuse its build and lease helpers;
 //! none of its historical encodings or validators are changed.
 use super::*;
@@ -169,6 +172,45 @@ impl SchemaUpgradeReceipt {
     }
 }
 
+/// In-memory evidence that one sealed receipt was copied into one fresh target.
+/// Not persisted. It does not mutate the originating receipt or workspace, never
+/// overwrites or swaps a directory, never resumes incomplete work, never cleans
+/// up a failed target, and does not change server routing. `active` is always
+/// true because the value exists only after the guard-removal barrier passed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SchemaUpgradeActivation {
+    directory: PathBuf,
+    receipt: SchemaUpgradeReceipt,
+}
+
+impl SchemaUpgradeActivation {
+    pub fn directory(&self) -> &Path {
+        &self.directory
+    }
+    pub const fn schema_upgrade_receipt(&self) -> &SchemaUpgradeReceipt {
+        &self.receipt
+    }
+    pub const fn schema_uuid(&self) -> &SchemaUuid {
+        self.receipt.schema_uuid()
+    }
+    pub const fn primary_fingerprint(&self) -> [u8; 32] {
+        self.receipt.primary_fingerprint()
+    }
+    pub const fn primary_records(&self) -> u64 {
+        self.receipt.primary_records()
+    }
+    pub const fn primary_bytes(&self) -> u64 {
+        self.receipt.primary_bytes()
+    }
+    #[expect(
+        clippy::unused_self,
+        reason = "constructed only after the publication barrier"
+    )]
+    pub const fn active(&self) -> bool {
+        true
+    }
+}
+
 #[expect(
     clippy::multiple_inherent_impl,
     reason = "separate inactive schema upgrade"
@@ -208,6 +250,31 @@ impl Store {
             source.as_ref(),
             completed_backup.as_ref(),
             workspace.as_ref(),
+            options,
+            |_| Ok(()),
+        )
+    }
+
+    /// Re-verifies the sealed receipt exactly as `SchemaUpgradeReceipt::verify`
+    /// does, then copies only the winning attempt's store files into a fresh,
+    /// previously non-existent target and removes that target's guard. Source,
+    /// package and workspace are never modified; contributor artifacts are never
+    /// published. The single guard unlink is the whole activation boundary:
+    /// before it the target is absent, empty or guarded, never an openable
+    /// store. Failures after it are reported as indeterminate and are never
+    /// cleaned up here. The result is an in-memory observation only.
+    pub fn activate_schema_upgrade(
+        source: impl AsRef<Path>,
+        completed_backup: impl AsRef<Path>,
+        workspace: impl AsRef<Path>,
+        target: impl AsRef<Path>,
+        options: &SchemaUpgradeOptions,
+    ) -> Result<SchemaUpgradeActivation, BackupError> {
+        activate_inner(
+            source.as_ref(),
+            completed_backup.as_ref(),
+            workspace.as_ref(),
+            target.as_ref(),
             options,
             |_| Ok(()),
         )
@@ -871,6 +938,133 @@ fn resume_inner(
         envelope: verified.envelope.clone(),
         receipt: Some(receipt),
     })
+}
+
+/// Rejects a target that contains, equals or lies inside a protected path.
+fn outside(target: &Path, protected: &Path) -> Result<(), BackupError> {
+    if target.starts_with(protected) || protected.starts_with(target) {
+        return Err(BackupError::InvalidPath);
+    }
+    Ok(())
+}
+
+fn activate_inner(
+    source: &Path,
+    package: &Path,
+    workspace: &Path,
+    destination: &Path,
+    options: &SchemaUpgradeOptions,
+    mut fault: impl FnMut(u8) -> Result<(), BackupError>,
+) -> Result<SchemaUpgradeActivation, BackupError> {
+    let started = Instant::now();
+    let source = stable_directory(source)?;
+    let package = stable_directory(package)?;
+    let directory = stable_directory(workspace)?;
+    disjoint(&source, &package, &directory)?;
+    let parent = destination
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let parent = stable_directory(parent)?;
+    let target = fresh_destination(destination, &source)?;
+    outside(&target, &package)?;
+    outside(&target, &directory)?;
+    // Activation repeats every check the sealed receipt verification performs;
+    // it never accepts a relaxed subset of them.
+    let _lease = WorkspaceLease::acquire(&directory)?;
+    let inputs = Inputs::open(&source, &package, options, started)?;
+    let verified = verify_workspace(&directory, &source, &package, &inputs, options, started)?;
+    if verified.records.last().map(|record| record.kind) != Some(SEALED) {
+        return Err(BackupError::InvalidManifest);
+    }
+    let receipt = make_receipt(&directory, &inputs, &verified)?;
+    if read(&directory.join(COMPLETE), MAX_MANIFEST)? != receipt_bytes(&verified) {
+        return Err(BackupError::InvalidManifest);
+    }
+    if directory.join(PENDING).try_exists()? {
+        return Err(BackupError::InvalidManifest);
+    }
+    inputs.recheck(&source, &package, options, started)?;
+    let mut winning = verified
+        .records
+        .iter()
+        .filter(|record| record.kind == VALIDATED && record.attempt == receipt.attempt);
+    let validated = winning.next().ok_or(BackupError::InvalidManifest)?;
+    if winning.next().is_some() {
+        return Err(BackupError::InvalidManifest);
+    }
+    let attempt_root = attempt_path(&directory, receipt.attempt);
+    outside(&target, &attempt_root)?;
+    if tree(&attempt_root, options, started)? != validated.files {
+        return Err(BackupError::FileMismatch);
+    }
+    // Only the winning attempt's store files are published. Contributor and
+    // other external artifacts stay in the retained workspace as evidence.
+    let mut expected = Vec::new();
+    for file in &validated.files {
+        if let Some(path) = file.path().strip_prefix("store/") {
+            expected.push(BackupFile::new(
+                path.to_owned(),
+                file.size(),
+                *file.sha256(),
+            ));
+        }
+    }
+    private_directory(&target)?;
+    fault(0)?;
+    write(&target.join(UPGRADE_GUARD), GUARD)?;
+    sync_directory(&target)?;
+    sync_directory(&parent)?;
+    fault(1)?;
+    for file in &expected {
+        if file.path() == UPGRADE_GUARD {
+            continue;
+        }
+        options.check(started)?;
+        copy_artifact(
+            &BackupArtifact::new(
+                file.path().to_owned(),
+                attempt_root.join("store").join(file.path()),
+                file.size(),
+                *file.sha256(),
+            )?,
+            &target.join(file.path()),
+            &options.backup().control,
+            started,
+        )?;
+        fault(2)?;
+    }
+    if tree(&target, options, started)? != expected {
+        return Err(BackupError::FileMismatch);
+    }
+    fault(3)?;
+    let opened = SchemaUpgradeSnapshot::open(
+        &target,
+        true,
+        &receipt.envelope().encode(),
+        &options.backup().store_options,
+    )?;
+    if compare(&inputs.source, &opened, options, started)? != inputs.projection {
+        return Err(BackupError::FileMismatch);
+    }
+    // Repeated because native recovery on open may rewrite files.
+    if tree(&target, options, started)? != expected {
+        return Err(BackupError::FileMismatch);
+    }
+    fault(4)?;
+    sync_directory(&target)?;
+    sync_directory(&parent)?;
+    let activation = SchemaUpgradeActivation {
+        directory: target.clone(),
+        receipt,
+    };
+    // The native handle must not outlive the guard unlink.
+    drop(opened);
+    fs::remove_file(target.join(UPGRADE_GUARD))?;
+    fault(5).map_err(indeterminate)?;
+    sync_directory(&target).map_err(BackupError::CompletionIndeterminate)?;
+    sync_directory(&parent).map_err(BackupError::CompletionIndeterminate)?;
+    Ok(activation)
 }
 
 fn receipt_bytes(verified: &Verified) -> Vec<u8> {
