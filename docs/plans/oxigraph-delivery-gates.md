@@ -25,12 +25,14 @@ programme plans link here instead of copying another status narrative.
 ## G4.3 — safe storage upgrades
 
 [ADR-0028](../adr/0028-safe-storage-schema-upgrades.md) remains **Proposed**
-(updated 2026-09-12). The following rows preserve its four staged gates and
-separate promotion/handoff requirements. None is claimed fully closed.
+(ADR itself updated 2026-09-16; this checklist re-audited the same date --
+see the "Corrected 2026-09-16" notes below for what changed). The following
+rows preserve its four staged gates and separate promotion/handoff
+requirements. None is claimed fully closed.
 
 | Gate | Proven native boundary | Still required to close the gate |
 | --- | --- | --- |
-| 1. Inventory and inspection | Offline marker/column-family inspection; typed unknown/newer/legacy refusal; bounded live RDF-feature refusal and retained-outbox consumption errors; explicit feature-independent reporting of live and retained-outbox RDF requirements; explicit existing governed-lineage identity and upgrade-guard observation; verified incomplete/pending/sealed outer upgrade-workspace inspection on the admitted build-bound profile; canonical checksummed envelope decoding with distinct schema UUID and declared RDF/codec metadata. The two real checked-in version-0/1 fixtures are hash-pinned against a recorded constant; `inspect`/`open`/`open_read_only` are proven, with real byte-preservation checks, to refuse current/missing/too-new/corrupt (MANIFEST, WAL-is-not-corruption, and SST footer) layouts and to report an RDF-feature-mismatch store as unsupported, the last of those now exercised in ordinary CI against a separately-built no-default-features CLI. [Inspection](../../lib/oxigraph/src/storage/rocksdb/format_inspection_tests.rs), [ordinary-open refusal](../../lib/oxigraph/src/storage/rocksdb/safe_open_tests.rs), [live features](../../lib/oxigraph/src/storage/rocksdb/feature_compatibility_tests.rs), [codec classification](../../lib/oxigraph/src/store/change_codec_feature_tests.rs), [outbox validation](../../lib/oxigraph/src/store/outbox.rs), [state CLI](../../cli/tests/store_inspection.rs), [upgrade inspection](../../lib/oxigraph/src/store/upgrade_inspection_tests.rs), [hash-pin and corruption coverage](../adr/0028-safe-storage-schema-upgrades.md#hash-pinning-the-real-legacy-fixtures-with-a-collision-resistance-correction-2026-09-16). | Envelope writing, explicit v2-to-v3 upgrade and profile admission; full history/derived-state admission and frozen cross-profile interrupted-fixture inspection remain open, tracked under the frozen qualification/promotion matrix below, not ordinary delivery. Default metadata-only inspection still reports RDF compatibility unknown; explicit feature inspection certifies only its declared scopes. |
+| 1. Inventory and inspection | Offline marker/column-family inspection; typed unknown/newer/legacy refusal; bounded live RDF-feature refusal and retained-outbox consumption errors; explicit feature-independent reporting of live and retained-outbox RDF requirements; explicit existing governed-lineage identity and upgrade-guard observation; verified incomplete/pending/sealed outer upgrade-workspace inspection on the admitted build-bound profile; canonical checksummed envelope decoding with distinct schema UUID and declared RDF/codec metadata. The two real checked-in version-0/1 fixtures are hash-pinned against a recorded constant; `inspect`/`open`/`open_read_only` are proven, with real byte-preservation checks, to refuse current/missing/too-new/corrupt (MANIFEST, WAL-is-not-corruption, and SST footer) layouts and to report an RDF-feature-mismatch store as unsupported, the last of those now exercised in ordinary CI against a separately-built no-default-features CLI. [Inspection](../../lib/oxigraph/src/storage/rocksdb/format_inspection_tests.rs), [ordinary-open refusal](../../lib/oxigraph/src/storage/rocksdb/safe_open_tests.rs), [live features](../../lib/oxigraph/src/storage/rocksdb/feature_compatibility_tests.rs), [codec classification](../../lib/oxigraph/src/store/change_codec_feature_tests.rs), [outbox validation](../../lib/oxigraph/src/store/outbox.rs), [state CLI](../../cli/tests/store_inspection.rs), [upgrade inspection](../../lib/oxigraph/src/store/upgrade_inspection_tests.rs), [hash-pin and corruption coverage](../adr/0028-safe-storage-schema-upgrades.md#hash-pinning-the-real-legacy-fixtures-with-a-collision-resistance-correction-2026-09-16). | Corrected 2026-09-16: envelope writing and the explicit marker-only v2-to-v3 shadow construction/resume/activation API and CLI (`lib/oxigraph/src/store/schema_upgrade.rs`, `cli/src/schema_upgrade.rs`) are implemented, with real OS-level process-kill coverage on all three entry points added earlier this session -- this is not still required, contrary to this row's own prior text. Full history/derived-state admission and frozen cross-profile interrupted-fixture inspection remain open, tracked under the frozen qualification/promotion matrix below, not ordinary delivery. Default metadata-only inspection still reports RDF compatibility unknown; explicit feature inspection certifies only its declared scopes. Making version 3 this binary's own current schema on ordinary `Store::open`/`open_read_only` ("profile admission") is the one genuinely open item here, and it is a deliberate product decision, not a pending gate-1 requirement -- `schema_upgrade.rs`'s own doc comment states plainly that ordinary open never starts, resumes or adopts this path. |
 | 2. Shadow transformation | Source-preserving legacy backup, ancestry, inactive preparation and explicit v0/v1 transformation; native quad/topology/namespace and failure checks; both offline shadow-copy preparation (`prepare_upgrade`) and explicit v0/v1 transformation (`transform_inner`) now have real OS-level process-kill coverage across their own PENDING-to-COMPLETE completion boundary, alongside their existing exhaustive synthetic fault-injection coverage of every phase. [Backups](../../lib/oxigraph/tests/legacy_backups.rs), [preparation](../../lib/oxigraph/tests/upgrade_preparation.rs), [transformation](../../lib/oxigraph/tests/upgrade_transformation.rs), [prepare real-process-kill coverage](../adr/0028-safe-storage-schema-upgrades.md#real-os-level-process-kill-coverage-for-legacy-offline-preparation-2026-09-16), [transform real-process-kill coverage](../adr/0028-safe-storage-schema-upgrades.md#real-os-level-process-kill-coverage-for-legacy-transformation-closing-the-pair-2026-09-16). | Full required logical/subsystem comparison, including metadata/receipt/outbox/index state where applicable; rebuild and validate required derived indexes. Inject failure/cancellation at every journal/fsync boundary, preserving the source and rejecting unsealed output; retain disk-exhaustion coverage. Real-process-kill coverage above is for one boundary per function, not every fault phase; the frozen qualification/crash matrix beyond it is a separate track. Existing native tests are not the complete frozen matrix. |
 | 3. Receipt and recovery | Verified completed-edge restart and build-bound inactive receipts on the bounded Linux/static Oxigraph/vendored-RocksDB profile. Re-audited 2026-09-16: fresh-process open/validate (`fresh_process_verifies_same_executable_and_rejects_appended_copy`), tampering (multiple receipt/journal/manifest/extra-file cases, including an internal symlink), crash/power-loss (extensive real-process-kill coverage across start/resume phases, edges and occurrences in the recovery workflow, plus the legacy path's own start/resume/activation/prepare/transform crash tests), and path substitution (production code explicitly rejects a symlinked destination-parent ancestor in `activate_upgrade`, tested) each have concrete existing coverage; none of the four is a fully exhaustive per-entry-point matrix. [Recovery](../../lib/oxigraph/tests/upgrade_recovery.rs), [receipts](../../lib/oxigraph/tests/upgrade_receipts.rs), [activation symlink coverage](../../lib/oxigraph/tests/upgrade_activation.rs). | Complete feature/subsystem/cursor identities and exact-receipt independent qualification remain a separate evaluator-authority requirement (an independent re-implementation comparison), not closeable by an ordinary-delivery test. Insufficient-disk checks have zero coverage and are confirmed infrastructure-blocked in this session's own container: `unshare --user --mount` fails with "Operation not permitted", ruling out an unprivileged size-limited tmpfs; a real disk-exhaustion test needs either elevated container permissions or a different simulation approach not yet designed. Old preparation/transformation workspaces are not made resumable. |
 | 4. Operational compatibility | Fresh, disjoint target activation is implemented; source, backup and sealed workspace remain preserved. A first operational-gate drill runs the full backup → upgrade → explicit cutover → older-binary rollback to preserved source → restore journey for both legacy fixture versions, measuring per-stage duration, peak disk, peak memory, write amplification and (2026-09-16) two complementary read-side ratios (physical block-device reads and cache-inclusive logical reads, since the drill's own recently-written working set stays page-cache-resident and a physical-only figure would misreport near zero regardless of actual read volume). [API](../../lib/oxigraph/tests/upgrade_activation.rs), [CLI](../../cli/tests/upgrade_activation.rs), [operational drill](../../lib/oxigraph/tests/upgrade_operational_drill.rs), [read-ratio instrumentation](../adr/0028-safe-storage-schema-upgrades.md#read-ratio-instrumentation-for-the-operational-drill-with-two-review-rounds-catching-a-measurement-flaw-and-a-codecomment-mismatch-2026-09-16). | Frozen size classes and supported-version windows remain a separate evaluator-authority requirement, not an ordinary-delivery test; the drill's own single synthetic size class and two legacy fixture versions are not a frozen matrix. An ~8.6x disagreement between the two legacy fixtures' own logical-read-ratio figures is unexplained and undecomposed. Native activation is not service routing, automatic cutover or rollback qualification. |
@@ -43,7 +45,12 @@ Latest bounded implementation: checksummed schema-envelope read side,
 independently accepted exact source/check identities. Formatting, envelope
 default/RDF-1.2 (4/4), legacy inspection (7), safe opens (17 top-level plus five
 child observations), CLI compilation, literal CLI mapping (2), and existing CLI
-inspection (9) pass. No envelope writer or version-3 admission is implemented.
+inspection (9) pass. No envelope writer or version-3 admission was
+implemented as of this specific 2026-09-12 workflow; the envelope writer
+and explicit v2-to-v3 construction/activation were implemented in
+subsequent work (`lib/oxigraph/src/store/schema_upgrade.rs`, see the
+corrected "Next product step" text above) -- version-3 admission on
+ordinary open remains a deliberate non-goal, not an open step.
 See [the exact read-side boundary](../adr/0028-safe-storage-schema-upgrades.md#schema-envelope-read-side-2026-09-12).
 
 Earlier bounded inspection evidence:
@@ -66,12 +73,31 @@ review is `programme-native-reviews/g43-formatting-sol-v1`. This resolves the
 recorded crate formatting failure, not a whole-programme gate; the prior failed
 record remains intact. No new CLI artifact was built for formatting-only edits.
 
-Next product step: implement the envelope writer and explicit v2-to-v3 shadow
-upgrade, retaining the distinct schema UUID across retries and binding the
-envelope into new receipt/backup formats. Resolve writer RDF-ceiling selection
-and the supported rollback window before activation; preserve all old receipt
-bytes and validators. The read-side descriptor does not substitute for that
-write path, full history/derived-state admission or frozen compatibility gates.
+Corrected 2026-09-16: this paragraph previously described implementing the
+envelope writer and explicit v2-to-v3 shadow upgrade as the next product
+step. That work is done -- `Store::start_schema_upgrade`,
+`resume_schema_upgrade` and `activate_schema_upgrade`
+(`lib/oxigraph/src/store/schema_upgrade.rs`) construct, resume and activate
+an inactive marker-only v2-to-v3 shadow copy with a distinct schema UUID
+retained across retries, an explicit caller-chosen RDF write ceiling
+(`SchemaUpgradeOptions::new` takes no default; the operator must choose),
+a bound receipt format (`SchemaUpgradeReceipt::verify`), CLI exposure for
+all four operations, and real OS-level process-kill coverage on all three
+entry points. See [ADR-0028's implementation status](../adr/0028-safe-storage-schema-upgrades.md)
+for the exact current bullet list. This checklist's own prior text was
+stale; nothing here should be read as implementation guidance without
+checking the ADR's status block first.
+
+What remains open for this stream is not a single next feature to build:
+(1) envelope admission on ordinary `Store::open`/`open_read_only` -- making
+version 3 this binary's own current schema -- is a deliberate, explicit
+product non-goal for this ADR, not a pending step, per `schema_upgrade.rs`'s
+own doc comment; (2) crash-matrix breadth beyond the boundaries already
+covered (start/resume/activation on both the legacy and v2-to-v3 paths,
+plus legacy prepare/transform) remains open the same way it does for gates
+2 and 3 -- individually tractable, low-risk increments, not a single step;
+(3) the frozen qualification/promotion matrix is a separate evaluator-
+authority track, not ordinary delivery.
 
 ## Programme boundaries beyond G4.3
 
