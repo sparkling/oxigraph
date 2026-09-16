@@ -2786,6 +2786,52 @@ resolution of a previously-disclosed open question, based on reading
 the two functions the drill actually calls rather than speculating
 about them.
 
+## Investigating an `LD_PRELOAD` alternative for disk-exhaustion testing, and why it needs more careful scoping before it can be trusted (2026-09-16)
+
+With gate 3's insufficient-disk-checks gap already confirmed blocked
+for the unprivileged-tmpfs approach (`unshare --user --mount` fails
+with "Operation not permitted" in this session's own container), this
+investigated a genuinely different alternative that needs neither root
+nor mount privileges: an `LD_PRELOAD` shared-library shim intercepting
+libc's `write`/`pwrite` and returning `ENOSPC` once a configured byte
+budget is exhausted, a well-established technique in other database
+projects' own test suites for exactly this purpose.
+
+A minimal C shim compiles cleanly (`gcc -shared -fPIC`, `dlsym(RTLD_
+NEXT, ...)` to reach the real libc functions) and, tested standalone
+against a single deliberate `write()` call, correctly returns `-1`/
+`ENOSPC` once the budget is exhausted. But loading it as a *global*
+`LD_PRELOAD` override and running even a trivial, unrelated Python
+invocation under it crashed immediately, before any output at all --
+consistent with `write()` being called by fundamental process
+machinery (the dynamic linker, stdio buffering, the interpreter's own
+startup) that a process-wide, unscoped interception disrupts in ways
+that have nothing to do with the intended test.
+
+This is not a dead end, but it is not yet a safe design either: the
+right next step is scoping the interception to the exact file
+descriptors under test, for example resolving `/proc/self/fd/<N>` to
+confirm a write's target path is inside the test's own temporary
+RocksDB directory before injecting `ENOSPC`, and passing every other
+write through unmodified -- but that additional check runs on every
+single `write()` call process-wide once the library is loaded, and
+itself needs careful, isolated testing (recursion, overhead, and
+correctness under RocksDB's own multi-threaded I/O) before it could be
+trusted inside the actual test suite. Attempting this in the same
+sitting as writing it up, without that isolated testing, was
+deliberately not done: the demonstrated crash is exactly the kind of
+evidence that this needs a dedicated, careful engineering pass of its
+own, not a quick reuse of an existing pattern the way the crash-matrix
+work earlier this session was. The experimental shim and its test
+artifacts were removed after this finding, not left in the tree.
+
+Insufficient-disk checks remain open, now with a concretely explored
+and rejected approach (unprivileged tmpfs), a concretely explored and
+not-yet-safe approach (unscoped `LD_PRELOAD`), and a specific,
+actionable next design step (`/proc/self/fd` path-scoped interception,
+tested in isolation before any integration) for whichever future
+increment picks this up.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
