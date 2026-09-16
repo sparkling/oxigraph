@@ -2530,6 +2530,65 @@ absent. This mirrors gate 1's own earlier correction this session: a
 column can, and both need re-verification against the real test suite
 before being trusted.
 
+## Read-ratio instrumentation for the operational drill, with two review rounds catching a measurement flaw and a code/comment mismatch (2026-09-16)
+
+Gate 4's row lists "duration, peak disk, peak memory, read amplification
+and write amplification" as still required, but a fresh check found the
+operational-gate drill (`lib/oxigraph/tests/upgrade_operational_drill.rs`,
+implemented earlier this session) already measures the first four --
+the delivery-gates row simply never linked to it. Read amplification
+was the one genuinely missing figure.
+
+The first attempt added a single `read_bytes`-based measurement,
+mirroring write amplification's own physical-bytes-over-logical-bytes
+definition. Round 1 review rejected it on a real conceptual flaw, not a
+wording issue: every input each leg reads was written or copied by this
+same process moments earlier, so those reads are ordinary Linux
+page-cache hits that never reach the block device -- `read_bytes`
+reports near zero for such a leg regardless of how much it actually
+read, and this session's own "write-dominated" explanation of that near
+zero was simply wrong (`restore_backup` obviously has to read the whole
+backup it copies). The fix adds a second, complementary counter, `rchar`
+(logical bytes passed through `read`/`pread`/`copy_file_range`
+regardless of cache hit or miss), reported alongside the physical
+figure as two ratios rather than one conflated "amplification" number.
+Extracting the shared ratio computation to a function surfaced a
+genuinely new `clippy::items_after_statements` warning (it had been a
+closure defined mid-function); resolved by hoisting it to a top-level
+helper, matching this file's own existing convention.
+
+Round 2 confirmed the two-counter design was a real fix, not a relabel,
+but caught a follow-on defect: the doc comment claimed `ratio()` reports
+`"unknown"` both when a sample is missing and when concurrent I/O
+contaminates the window, but the code only ever checks for a missing
+sample -- concurrent contamination is silent and inflates the delta
+instead. The same class of inaccuracy round 1 rejected on, correctly
+held to the same bar. Also flagged, and fixed in the same pass since
+each was precise and low-cost: an untested tmpfs "exactly zero"
+absolute (swapped-out tmpfs pages are read back through the block layer
+and do count), a wrong claim that RocksDB spawns threads per `Store`
+rather than sharing one per-`Env` pool, and an unsupported "plausible"
+interpretation of a real, disclosed anomaly -- the two legacy fixtures'
+own `legacy_logical_read_ratio` figures disagree by roughly 8.6x for
+similar-sized inputs, which this change does not explain and states as
+an open question rather than asserting a cause. Round 3: **ACCEPT**.
+
+`OXIGRAPH_ROCKSDB_BUILD_KIND=vendored cargo test --locked -p oxigraph
+--test upgrade_operational_drill --features rdf-12 -- --test-threads=1
+--nocapture` passes both fixture versions; `cargo fmt -p oxigraph --
+--check` genuinely exits 0 (checked with output redirected to a file
+first, `$?` read separately, learned directly from an earlier
+increment's own hardcoded-echo mistake); `git status --short` was
+checked immediately after every write-mode `cargo fmt` run this
+increment and confirmed no cross-package leak each time; `cargo clippy
+--locked -p oxigraph --tests` reports zero `items_after_statements` in
+this file (the crate's only remaining instances are in an unrelated,
+pre-existing file). Committed to `main` as `70f52629`; not pushed. A
+per-stage decomposition of the unexplained legacy read-ratio
+disagreement, sampling around `backup_legacy`, `upgrade` and
+`activate_upgrade` separately, is a real, disclosed open question for a
+future increment, not folded into this one.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
