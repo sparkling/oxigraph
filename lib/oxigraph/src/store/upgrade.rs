@@ -576,4 +576,111 @@ mod tests {
         }
         Ok(())
     }
+
+    /// The libtest filter of one helper `#[test]`, which never names the crate.
+    fn helper(name: &str) -> String {
+        let module = module_path!();
+        let path = module.split_once("::").map_or(module, |(_, rest)| rest);
+        format!("{path}::{name}")
+    }
+    /// Re-invokes this same test binary at one helper, which exits 73 at `stop`.
+    fn crash(
+        name: &str,
+        paths: &[(&str, &Path)],
+        stop: u8,
+    ) -> TestResult<std::process::ExitStatus> {
+        let mut command = std::process::Command::new(std::env::current_exe()?);
+        command.arg("--exact").arg(helper(name));
+        command.env("OXIGRAPH_UPGRADE_PREPARE_TEST_EXIT_AT", stop.to_string());
+        for (variable, path) in paths {
+            command.env(variable, path);
+        }
+        Ok(command.status()?)
+    }
+    /// Reads one path that the parent test passed to a re-invoked helper.
+    fn variable(name: &str) -> TestResult<PathBuf> {
+        let Some(value) = std::env::var_os(name) else {
+            return Err("the parent test passed no such path".into());
+        };
+        Ok(value.into())
+    }
+
+    #[test]
+    fn preparation_child_exits_before_and_after_the_completion_rename() -> TestResult {
+        for stop in [3_u8, 4] {
+            let dir = tempfile::tempdir()?;
+            let source = dir.path().join("source");
+            let package = dir.path().join("backup");
+            let output = dir.path().join(format!("prepared-{stop}"));
+            fixture(1, &source)?;
+            let before_source = hashes(&source)?;
+            let options = LegacyBackupOptions::default();
+            let receipt = Store::backup_legacy(&source, &package, &options)?;
+            let before_package = hashes(&package.join("store"))?;
+            let paths = [
+                ("OXIGRAPH_UPGRADE_PREPARE_TEST_SOURCE", source.as_path()),
+                ("OXIGRAPH_UPGRADE_PREPARE_TEST_PACKAGE", package.as_path()),
+                ("OXIGRAPH_UPGRADE_PREPARE_TEST_OUTPUT", output.as_path()),
+            ];
+            let status = crash("prepare_process_helper", &paths, stop)?;
+            assert_eq!(status.code(), Some(73), "the child did not reach {stop}");
+            if stop == 3 {
+                // A real process killed after the PENDING marker is written and
+                // synced but before the atomic rename to COMPLETE: no destructor
+                // runs, yet the workspace is left exactly as refused,
+                // unopenable and verify-failing as an in-process fault at the
+                // same phase, because the rename that would have made it usable
+                // never happened.
+                assert!(!output.join(COMPLETE).exists());
+                assert!(PreparedUpgrade::verify(&output, &options).is_err());
+                assert!(matches!(
+                    Store::open(output.join("store")),
+                    Err(crate::storage::StorageError::UpgradeIncomplete)
+                ));
+                assert!(matches!(
+                    Store::open_read_only(output.join("store")),
+                    Err(crate::storage::StorageError::UpgradeIncomplete)
+                ));
+            } else {
+                // Killed immediately after the rename: the marker is already
+                // visible in the directory even though the process died
+                // before the final directory fsync could run, so preparation
+                // is complete and independently verifiable. This proves only
+                // namespace visibility, not on-media durability across a
+                // further power loss, which is exactly why the production
+                // API still reports this window as indeterminate.
+                assert!(output.join(COMPLETE).exists());
+                assert_eq!(
+                    PreparedUpgrade::verify(&output, &options)?.legacy_backup(),
+                    &receipt
+                );
+            }
+            assert_eq!(hashes(&source)?, before_source);
+            assert_eq!(hashes(&package.join("store"))?, before_package);
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::exit,
+        reason = "bounded child models an exact preparation crash point"
+    )]
+    fn prepare_process_helper() -> TestResult {
+        let Some(source) = std::env::var_os("OXIGRAPH_UPGRADE_PREPARE_TEST_SOURCE") else {
+            return Ok(()); // An ordinary run: only the parent test re-invokes this.
+        };
+        let source = PathBuf::from(source);
+        let package = variable("OXIGRAPH_UPGRADE_PREPARE_TEST_PACKAGE")?;
+        let output = variable("OXIGRAPH_UPGRADE_PREPARE_TEST_OUTPUT")?;
+        let stop = std::env::var("OXIGRAPH_UPGRADE_PREPARE_TEST_EXIT_AT")?.parse::<u8>()?;
+        let options = LegacyBackupOptions::default();
+        prepare_inner(&source, &package, &output, &options, |phase| {
+            if phase == stop {
+                std::process::exit(73);
+            }
+            Ok(())
+        })?;
+        Err("the child returned instead of exiting at its crash point".into())
+    }
 }
