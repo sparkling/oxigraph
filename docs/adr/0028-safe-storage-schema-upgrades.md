@@ -63,11 +63,13 @@
   both a legacy and current declared version, and proven NOT to
   misclassify genuine WAL loss the same way: a legacy store's own
   version-marker refusal still fires correctly and the store is not
-  further mutated when its WAL is truncated.
+  further mutated when its WAL is truncated. A corrupted SST footer
+  (its fixed table magic number) is refused the same way as a
+  corrupted MANIFEST, completing the physical-corruption trio.
   Envelope admission on ordinary open, full crash-matrix breadth beyond
-  those five points, deeper corruption coverage beyond the MANIFEST, the
-  RDF-feature-mismatch test's dependency on a separately-built
-  no-default-features CLI, and the frozen qualification gates remain open
+  those five points, the RDF-feature-mismatch test's dependency on a
+  separately-built no-default-features CLI, and the frozen
+  qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
   This ADR owns the contract; both programme plans reference that one current
@@ -2165,6 +2167,55 @@ isn't corruption" cases for the legacy layout. What remains genuinely
 unbuilt: SST-level corruption coverage and the RDF-feature-mismatch
 test's dependency on a separately-built no-default-features CLI, both
 larger, separately-scoped pieces of work. ADR-0028 remains Proposed.
+
+## Completing the physical-corruption trio: a corrupted SST footer (2026-09-16)
+
+The third and final leg of gate 1's physical-corruption coverage,
+alongside the MANIFEST and WAL tests above: a corrupted SST file.
+
+Grounded empirically first, in two rounds, via a disposable exploration
+file (deleted, never committed): flipping roughly 50 arbitrary mid-file
+bytes in an SST produced no error at all, from `inspect`, `open`,
+`open_read_only`, or even a full scan of every inserted quad. The
+corrupted bytes had landed in the properties block, whose read and
+checksum failures RocksDB deliberately ignores as warning-only rather
+than fatal. Flipping the last 60 bytes instead -- the table footer,
+48 or 53 bytes depending on format version, always ending in a fixed
+magic number that every table open validates before any block checksum
+is consulted -- reliably produced `StorageError::Corruption` with a
+"Bad table magic number" message from all three APIs, including
+`inspect`, even though `inspect` opens with an empty explicit
+column-family list: the one SST in this fixture belongs to the default
+column family, which every open must include regardless of which other
+families the caller explicitly requests.
+
+The new test mirrors the MANIFEST test's structure exactly, reusing the
+same two-key `Db::open_read_write` + flush fixture the MANIFEST and WAL
+tests already depend on, for both a legacy (`GRAPHS_CF` omitted) and
+current declared version. Independent review at `xhigh` effort worked
+out RocksDB's exact footer byte layout across format versions and the
+table-preload path in `VersionSet::Recover` from first principles to
+confirm the corruption model was sound, not coincidental -- and
+returned ACCEPT with no blocking findings. It did flag, correctly, that
+this session's own review-request prompt text had briefly overstated
+the scope of the finding ("every SST the MANIFEST references") beyond
+what the actual committed doc comment claims; the doc comment itself
+was independently confirmed as accurately scoped, so no code change was
+needed.
+
+Verified via `cargo check`; the targeted test passing for both version
+iterations; the full `format_inspection_tests` module (10 passed, 1
+pre-existing ignored test unrelated to this change); `cargo fmt --check`
+at full-crate scope. Committed to `main` as `44aab5d5`.
+
+This closes the physical-corruption trio: MANIFEST, WAL and SST damage
+are each now proven to either correctly refuse (MANIFEST, SST) or
+correctly not be misclassified as refusal-blocking corruption (WAL),
+for both a legacy and current declared version, without further
+mutating the store. What remains in gate 1's compatibility matrix: the
+RDF-feature-mismatch test's dependency on a separately-built
+no-default-features CLI (build/CI infrastructure, not test-writing).
+ADR-0028 remains Proposed.
 
 ## Staged implementation and evaluator gates
 
