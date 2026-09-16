@@ -31,10 +31,16 @@
   operations (`start-schema-upgrade`, `resume-schema-upgrade`,
   `verify-schema-upgrade`, `activate-schema-upgrade`) and real OS-level
   process-kill crash-matrix coverage for the mid-copy-resume and
-  pre/post-guard-unlink-activation points; envelope admission on ordinary
-  open, full crash-matrix breadth, the operational gate, full compatibility
-  rejection, older-binary rollback and the frozen qualification gates remain
-  open
+  pre/post-guard-unlink-activation points.
+  A first operational-gate drill for the legacy version-0/1-to-2 path is
+  implemented (`lib/oxigraph/tests/upgrade_operational_drill.rs`):
+  backup-legacy/upgrade/explicit-cutover/source-preservation-rollback/
+  backup-with-receipt/restore, timed per stage with on-disk bytes summed,
+  against the two checked-in legacy fixtures.
+  Envelope admission on ordinary open, full crash-matrix breadth, additional
+  operational-gate size classes and peak-memory/amplification measurement,
+  full compatibility rejection, older-binary rollback and the frozen
+  qualification gates remain open
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
 - Current acceptance projection: [G4.3 delivery gates](../plans/oxigraph-delivery-gates.md#g43--safe-storage-upgrades).
   This ADR owns the contract; both programme plans reference that one current
@@ -1375,6 +1381,97 @@ the two checked-in fixtures; peak memory sampling; read/write amplification;
 promoting the drill from an ad hoc integration test to a `cli` subcommand or
 persisted receipt schema, which is only worth designing once the numbers
 above are proven to exist and be trustworthy at all.
+
+## First operational-gate drill landed, with a real spec bug found and fixed (2026-09-16)
+
+`lib/oxigraph/tests/upgrade_operational_drill.rs` implements the design
+above. Landing it took three real, harness-verified iterations, each
+instructive:
+
+1. **First implement (ACCEPT), root-applied and checked for real: failed.**
+   The spec unconditionally ran both checked-in fixtures through
+   `Store::upgrade`. Root had traced `upgrade_activation.rs`'s
+   `fixture()`/`inventory()` helpers closely but not far enough down the
+   file to see that its own version-1 (`rocksdb_bc_rdf_star_data`) test is
+   gated behind `#[cfg(feature = "rdf-12")]`, with a separate
+   `#[cfg(not(feature = "rdf-12"))]` test asserting
+   `Store::upgrade(...).unwrap_err()` for that exact fixture. The real
+   check failed at runtime with `Storage(Corruption(CorruptionError(Msg(
+   "the term buffer has an invalid type id")))))`, exit 101, zero tests
+   passed -- `Store::upgrade`'s own correct rejection of RDF-star content
+   without `rdf-12`, propagated by `?` out of the test. This is exactly the
+   harness doing its job: catching a real, non-obvious spec mistake that
+   review of the proposed diff alone would not have caught, since the diff
+   itself was internally consistent with the (wrong) spec.
+2. **Automatic check-failure retry: INCONCLUSIVE.** The harness's own
+   feedback loop correctly re-dispatched implement with the failure
+   evidence attached. That retry (a different native worker instance, no
+   shell or log access) produced a plausible-but-wrong diagnosis --
+   speculating about a directory-listing race in `directory_bytes` --
+   because it could not read the actual stderr. INCONCLUSIVE on an
+   IMPLEMENT-role dispatch throws immediately in this harness (no further
+   automatic retry), ending that workflow run with `status: "incomplete"`.
+   Root independently traced the true root cause directly (see above) and
+   dispatched a fresh, tightly-scoped fix spec as a new workflow run --
+   deliberately not pre-applying the fix to disk first, per the lesson
+   already recorded in the CLI-exposure section: a confirmation-only
+   dispatch against an already-applied diff cannot reach `mcp-handoff` in
+   this harness.
+3. **Second implement (ACCEPT), root-applied: passed check 1-3, failed
+   check 4 (fmt).** The fix itself -- splitting the single test into an
+   ungated `drill(0)` and an `rdf12_`-prefixed, `#[cfg(feature =
+   "rdf-12")]`-gated `drill(1)`, matching the sibling naming convention --
+   was correct on the first try and genuinely exercised: `cargo check`
+   passed, the default-feature run passed 1/1 (only version 0), the
+   `--features rdf-12` run passed 2/2 (both versions). `cargo fmt --check`
+   then failed on three lines exceeding the 100-column limit (the
+   source-preservation `assert_eq!`, the `Store::restore_backup` call, the
+   `eprintln!` line) that had never actually been checked in the first
+   iteration, since that run died at check 2 before reaching fmt. Rather
+   than dispatch a third native worker for a purely mechanical formatting
+   fix, root ran `cargo fmt -p oxigraph -- lib/oxigraph/tests/upgrade_
+   operational_drill.rs` directly and confirmed `--check` now exits `0` --
+   consistent with this session's established pattern of applying `cargo
+   fmt` directly rather than delegating whitespace-only changes.
+
+**A second, self-inflicted harness crash, and how it was recovered.** Root's
+own synthetic native-worker response representing that mechanical fmt fix
+set `workerId: null` (there being no real dispatched worker to name).
+`workflow.mjs`'s own strict validation (`workerOutput`, requiring
+`text(result.workerId)`) rejected this and threw `"Incomplete or unbounded
+native result"`, crashing that workflow run -- an operator mistake in
+constructing the synthetic JSON, not a defect in the code or the fix. By
+that point checks 1-3 had already passed for real with genuine harness
+evidence under `target/engineering-delivery/run-*/result.json`, and the fmt
+fix was already independently verified. Root ran the remaining two checks
+(fmt --check; the `upgrade_activation`/`restore_receipts`/`upgrade_receipts`
+sibling suites, 23 passed) directly, then assembled a standalone review
+dispatch by hand -- the same `native-worker`/`review`-role request shape the
+harness itself constructs, built from the real evidence files rather than
+through the crashed workflow's own state machine -- since the automated
+pipeline had died before reaching its own review step. Independent review
+(`claude-fable-5-1`, high effort) returned ACCEPT, correctly flagging what
+it could not itself verify (file access) and asking root to confirm `git
+status --porcelain` showed only the one new file and that the `--nocapture`
+stderr logs actually contained the `drill version=` measurement lines; both
+were confirmed directly before commit.
+
+**Real measured numbers from these verification runs** (this environment,
+one run each; not a claimed baseline -- see "no zero-downtime claim" above):
+version 0's `upgrade` stage took roughly 20-24s and `cutover` roughly
+20-23s, both dominated by RocksDB compaction/open cost on this fixture;
+every other stage (`backup_legacy`, `rollback`, `backup_with_receipt`,
+`restore`) completed in single-digit-to-tens of milliseconds; total on-disk
+bytes across every directory the drill produced was roughly 2.1-2.2MB for
+version 0 and roughly 3.3MB for version 1's `with-receipt-backup` and
+`restored` directories.
+
+Committed to `main` as `dab6050e` (test) and this section as a following
+commit; not pushed. This closes the first operational-gate drill for the
+legacy version-0/1-to-2 path. It does not close additional size classes,
+peak-memory sampling, read/write amplification, or the broader crash-matrix
+breadth beyond the two already-proven real-process-kill points, which
+remain the largest genuinely open pieces of G4.3. ADR-0028 remains Proposed.
 
 ## Staged implementation and evaluator gates
 
