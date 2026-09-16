@@ -34,13 +34,17 @@
   pre/post-guard-unlink-activation points.
   A first operational-gate drill for the legacy version-0/1-to-2 path is
   implemented (`lib/oxigraph/tests/upgrade_operational_drill.rs`):
-  backup-legacy/upgrade/explicit-cutover/source-preservation-rollback/
-  backup-with-receipt/restore, timed per stage with on-disk bytes summed,
-  peak resident-set-size sampled, and read/write amplification ratios
-  computed against each leg's own backup-receipt manifest, against the
-  two checked-in legacy fixtures plus a synthetic 5,000-quad size class
-  for the restore leg (the legacy leg cannot be scaled the same way
-  without a legacy-format writer, which this codebase does not provide).
+  backup-legacy/upgrade/explicit-cutover/source-preservation-and-older-
+  binary-rollback/backup-with-receipt/restore, timed per stage with
+  on-disk bytes summed, peak resident-set-size sampled, and read/write
+  amplification ratios computed against each leg's own backup-receipt
+  manifest, against the two checked-in legacy fixtures plus a synthetic
+  5,000-quad size class for the restore leg (the legacy leg cannot be
+  scaled the same way without a legacy-format writer, which this
+  codebase does not provide). Rollback verifies both byte preservation
+  and that the preserved source still backs up identically through
+  `Store::backup_legacy`, the operation an older, legacy-only binary
+  would run against it.
   Both upgrade paths' entry points now all have real OS-level process-kill
   coverage for at least one meaningful before/after durability boundary:
   the legacy path's start, resume and activation, and the v2-to-v3
@@ -1915,9 +1919,58 @@ public entry points and the v2-to-v3 draft's resume/activation: all five
 of this session's schema-transition entry points across both upgrade
 paths now have real OS-level process-kill coverage for at least one
 meaningful before/after durability boundary. Full crash-matrix breadth
-beyond these five points, the frozen compatibility/crash/system-RocksDB
-qualification matrix, and older-binary rollback remain separately
-tracked, out of ordinary-delivery scope. ADR-0028 remains Proposed.
+beyond these five points and the frozen compatibility/crash/system-RocksDB
+qualification matrix remain separately tracked, out of ordinary-delivery
+scope. ADR-0028 remains Proposed.
+
+## Older-binary rollback verification in the operational drill (2026-09-16)
+
+Gate 4's remaining named requirement, "older-binary rollback to
+preserved source," is closed here. The drill's rollback stage previously
+proved only that the preserved source's bytes were unchanged (a
+file-path/SHA-256 inventory comparison) -- a real but narrow guarantee,
+since bytes being untouched does not by itself prove the source is still
+usable. This increment adds a second, functional check inside the same
+timed rollback stage: after the existing inventory-equality assertion,
+the drill re-runs `Store::backup_legacy` against the preserved source --
+the same public operation an operator falling back to an older,
+legacy-only binary would run -- into a fresh `rollback-legacy-backup`
+directory, and asserts the resulting receipt's `fingerprint()` (a hash
+over `storage_version`, `database_id`, `rocksdb_sequence`,
+`column_families` and every file's name/length/SHA-256) equals the very
+first legacy backup receipt's own fingerprint, taken before any upgrade
+work began. This is not a self-comparison: the two receipts come from
+two independent `Store::backup_legacy` calls, bracketing the entire
+backup+upgrade+cutover+restore journey. `rollback_legacy_backup`'s
+directory bytes are added to `total_disk_bytes` only, deliberately
+excluded from `legacy_write_amplification`'s inputs, matching how
+`scaled_bytes` was handled in an earlier increment.
+
+Real observed values across two consecutive concurrent
+(`--features rdf-12`) runs: the new fingerprint assertion held on every
+run for both fixture versions. `legacy_write_amplification` (40.61/6.71)
+and `restore_write_amplification` (2.11) held exactly at the
+pre-increment baseline, confirming the new leg does not perturb either
+ratio's inputs -- the rollback stage's own duration grew from
+single-digit milliseconds to 10-55ms, expected since it now performs a
+full second legacy backup rather than only an inventory scan.
+
+Independent review returned ACCEPT with no blocking findings. All
+completion-check commands passed for real: `cargo check` clean; two
+consecutive concurrent drill runs (4/4 passes); `cargo fmt --check`
+clean; the two directly relevant sibling suites at 14 passed combined.
+Committed to `main` as `278947d0`; not pushed.
+
+This closes the older-binary-rollback leg named in gate 4. The
+operational-gate drill for the legacy path now measures duration, disk
+bytes, peak RSS, read/write amplification at two size classes, and
+older-binary rollback capability. Remaining open gate-4 work is limited
+to frozen size classes and supported-version windows, tracked separately
+under the frozen qualification matrix; gate 1's full compatibility
+rejection (needing hash-pinned v0/v1/current/missing/corrupt/too-new/
+RDF-feature-mismatch/interrupted fixtures) and envelope admission on
+ordinary open remain open, larger, more foundational pieces of work.
+ADR-0028 remains Proposed.
 
 ## Staged implementation and evaluator gates
 
