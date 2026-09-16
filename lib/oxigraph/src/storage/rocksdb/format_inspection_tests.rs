@@ -495,7 +495,8 @@ fn cancelled_feature_inspection_preserves_the_source() -> Result {
 
 #[cfg(feature = "rdf-12")]
 #[test]
-#[ignore = "requires a separately built no-default-features oxigraph CLI in target/debug"]
+#[ignore = "requires a separately built no-default-features oxigraph CLI in \
+            target/debug; wired in CI's test_rdf_no_default_features job"]
 fn rdf_12_writer_retained_history_is_reported_unsupported_by_no_default_cli() -> Result {
     let directory = tempfile::tempdir()?;
     let source = directory.path().join("source");

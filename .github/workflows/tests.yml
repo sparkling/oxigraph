@@ -264,6 +264,10 @@ jobs:
       - name: Test CLI feature boundaries without RDF 1.2
         run: cargo test --locked --all-targets --no-default-features
         working-directory: ./cli
+      - name: Build a no-default-features CLI for the offline feature-inspection test
+        run: cargo build --locked --no-default-features -p oxigraph-cli --bin oxigraph
+      - name: Test that a no-default-features CLI reports retained RDF 1.2 history as unsupported
+        run: cargo test --locked --features rdf-12 -p oxigraph --lib -- --ignored rdf_12_writer_retained_history_is_reported_unsupported_by_no_default_cli
 
   test_linux_i686:
     runs-on: ubuntu-latest
