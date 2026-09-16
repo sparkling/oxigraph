@@ -726,6 +726,109 @@ fn copy_backward_compatibility_fixture(
     }
 }
 
+/// Hashes every file's relative path and content, sorted by path (`tree`'s
+/// `BTreeMap` already sorts by key), so the result changes if any file is
+/// added, removed, renamed, or has a single byte edited. Each path and
+/// content chunk is prefixed with its own little-endian `u64` length before
+/// being fed to the hasher: RocksDB SST/MANIFEST/OPTIONS file content
+/// routinely contains NUL bytes, so a plain NUL-separated encoding would not
+/// be strictly injective (a NUL inside one file's content could in principle
+/// be read back as a path/content boundary under a different split). Length
+/// prefixes remove that ambiguity.
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    feature = "rocksdb"
+))]
+fn fixture_hash(files: &std::collections::BTreeMap<PathBuf, Vec<u8>>) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    for (path, bytes) in files {
+        let path = path.to_string_lossy();
+        hasher.update((path.len() as u64).to_le_bytes());
+        hasher.update(path.as_bytes());
+        hasher.update((bytes.len() as u64).to_le_bytes());
+        hasher.update(bytes);
+    }
+    hasher.finalize().into()
+}
+
+/// Recorded once from the exact checked-in fixture bytes via `fixture_hash`.
+/// A future edit, corruption or silent replacement of either fixture file
+/// set changes this hash and fails the assertion below immediately, rather
+/// than only being caught if it happens to also break a content assertion.
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    feature = "rocksdb"
+))]
+const ROCKSDB_BC_DATA_HASH: [u8; 32] = [
+    0xc3, 0x40, 0xe3, 0x83, 0x7b, 0xc7, 0xf0, 0x2e, 0x91, 0x52, 0xcc, 0xc8, 0xe4, 0x22, 0x18, 0x20,
+    0xba, 0xa2, 0xe5, 0x4a, 0xc3, 0x58, 0xf5, 0x36, 0xa5, 0x5f, 0x43, 0x67, 0x2d, 0x07, 0x40, 0x00,
+];
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    feature = "rocksdb"
+))]
+const ROCKSDB_BC_RDF_STAR_DATA_HASH: [u8; 32] = [
+    0xcb, 0xf0, 0xd4, 0xb3, 0x44, 0x55, 0xe4, 0x82, 0x66, 0x3f, 0x23, 0x46, 0xca, 0xfd, 0x84, 0xf6,
+    0xcb, 0x1b, 0xb1, 0xf5, 0x8e, 0xcf, 0x3f, 0x16, 0xda, 0x05, 0x93, 0xbf, 0x2e, 0x23, 0xea, 0x56,
+];
+
+/// Gate 1's hash-pin requirement for the version-0/1 fixtures: each fixture's
+/// exact bytes are pinned against a recorded hash, and `Store::inspect` --
+/// tested nowhere else against these two real fixtures, only against
+/// synthetic directories elsewhere -- is proven to report the expected
+/// legacy version without changing a single source byte. `Store::open`/
+/// `open_read_only`'s own non-mutation and `UpgradeRequired` refusal on
+/// these fixtures are already proven by `copy_backward_compatibility_fixture`
+/// above; this test adds the read-only inspection API and the hash-pin.
+#[test]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    feature = "rocksdb"
+))]
+fn test_legacy_fixtures_are_hash_pinned_and_inspect_preserves_them() -> Result<(), Box<dyn Error>> {
+    use oxigraph::store::StoreVersionStatus;
+    for (path, expected_version, expected_hash) in [
+        ("tests/rocksdb_bc_data", 0_u64, ROCKSDB_BC_DATA_HASH),
+        (
+            "tests/rocksdb_bc_rdf_star_data",
+            1_u64,
+            ROCKSDB_BC_RDF_STAR_DATA_HASH,
+        ),
+    ] {
+        let directory = TempDir::new()?;
+        let source = directory.path().join("source");
+        create_dir_all(&source)?;
+        for entry in read_dir(path)? {
+            let entry = entry?;
+            std::fs::copy(entry.path(), source.join(entry.file_name()))?;
+        }
+        let before = tree(&source)?;
+        assert_eq!(
+            fixture_hash(&before),
+            expected_hash,
+            "{path}'s checked-in bytes no longer match the recorded hash-pin"
+        );
+        let info = Store::inspect(&source)?;
+        assert_eq!(info.storage_version(), Some(expected_version));
+        assert_eq!(info.version_status(), StoreVersionStatus::Older);
+        assert_eq!(
+            tree(&source)?,
+            before,
+            "Store::inspect changed {path}'s bytes"
+        );
+    }
+    Ok(())
+}
+
 #[test]
 #[cfg(all(
     target_os = "linux",
