@@ -872,4 +872,222 @@ mod tests {
         })?;
         Err("the child returned instead of exiting at its crash point".into())
     }
+
+    /// Compiles a `/proc/self/fd`-scoped `ENOSPC`-injection shim, or `None`
+    /// when no C compiler is available: this fault is opt-in test
+    /// infrastructure, never a dependency of the crate's own build. Once
+    /// `LD_PRELOAD`ed into a fresh process, the shim intercepts the `write`
+    /// libc symbol Rust's `write_all` calls, for descriptors whose resolved
+    /// path starts with `ENOSPC_SHIM_PREFIX`, injecting a real `ENOSPC` once
+    /// a single write exceeds the remaining `ENOSPC_SHIM_BUDGET_BYTES`;
+    /// every other descriptor, and every other process on the machine,
+    /// passes through to the real `dlsym`-resolved libc function unmodified.
+    /// A `pwrite` symbol is defined too, but positioned writes on Linux
+    /// resolve to `pwrite64`, which this shim does not intercept.
+    /// `/proc/self/fd` and `LD_PRELOAD`-honoring dynamic linking are both
+    /// Linux-specific: the caller must skip this on any other OS. Compiled
+    /// next to the test binary itself, not into a temporary directory, since
+    /// a `noexec` mount there would silently make `LD_PRELOAD` a no-op.
+    /// Identical to `legacy_backup.rs`'s and `upgrade.rs`'s already-reviewed
+    /// `compile_enospc_shim` of the same name; duplicated file-local rather
+    /// than shared, matching this session's own established convention of
+    /// file-local crash-test infrastructure.
+    #[expect(
+        clippy::print_stderr,
+        reason = "diagnostic for a CI host missing a C compiler, opt-in test infrastructure only"
+    )]
+    fn compile_enospc_shim(directory: &Path) -> Result<Option<PathBuf>> {
+        const SOURCE: &str = r#"
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+static long budget = -1;
+static char prefix[4096];
+static int prefix_len = 0;
+static int initialized = 0;
+
+static void init_once(void) {
+    if (initialized) return;
+    const char *b = getenv("ENOSPC_SHIM_BUDGET_BYTES");
+    const char *p = getenv("ENOSPC_SHIM_PREFIX");
+    budget = b ? atol(b) : -1;
+    if (p) {
+        size_t n = strlen(p);
+        if (n >= sizeof(prefix)) n = sizeof(prefix) - 1;
+        memcpy(prefix, p, n);
+        prefix[n] = '\0';
+        prefix_len = (int)n;
+    }
+    initialized = 1;
+}
+
+static int fd_in_scope(int fd) {
+    if (prefix_len == 0) return 0;
+    char linkpath[64];
+    char target[4096];
+    int n = snprintf(linkpath, sizeof(linkpath), "/proc/self/fd/%d", fd);
+    if (n <= 0 || (size_t)n >= sizeof(linkpath)) return 0;
+    ssize_t len = readlink(linkpath, target, sizeof(target) - 1);
+    if (len <= 0) return 0;
+    target[len] = '\0';
+    return strncmp(target, prefix, (size_t)prefix_len) == 0;
+}
+
+static int should_inject(int fd, size_t count) {
+    init_once();
+    if (budget < 0 || !fd_in_scope(fd)) return 0;
+    if ((long)count > budget) return 1;
+    budget -= (long)count;
+    return 0;
+}
+
+typedef ssize_t (*write_fn)(int, const void *, size_t);
+typedef ssize_t (*pwrite_fn)(int, const void *, size_t, off_t);
+
+ssize_t write(int fd, const void *buf, size_t count) {
+    static write_fn real = NULL;
+    if (!real) real = (write_fn)dlsym(RTLD_NEXT, "write");
+    if (should_inject(fd, count)) { errno = ENOSPC; return -1; }
+    return real(fd, buf, count);
+}
+
+ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
+    static pwrite_fn real = NULL;
+    if (!real) real = (pwrite_fn)dlsym(RTLD_NEXT, "pwrite");
+    if (should_inject(fd, count)) { errno = ENOSPC; return -1; }
+    return real(fd, buf, count, offset);
+}
+"#;
+        let source_path = directory.join("oxigraph_upgrade_transform_enospc_shim.c");
+        fs::write(&source_path, SOURCE)?;
+        let shared_object = directory.join("oxigraph_upgrade_transform_enospc_shim.so");
+        let status = match std::process::Command::new("cc")
+            .arg("-shared")
+            .arg("-fPIC")
+            .arg("-O2")
+            .arg("-o")
+            .arg(&shared_object)
+            .arg(&source_path)
+            .arg("-ldl")
+            .status()
+        {
+            Ok(status) => status,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                eprintln!("skipping disk-exhaustion coverage: no `cc` on this host");
+                return Ok(None);
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if !status.success() {
+            return Err(format!("cc exited with {status}").into());
+        }
+        Ok(Some(shared_object))
+    }
+
+    /// A real `ENOSPC`, not a synthetic phase callback, injected on the
+    /// first byte of the first transform-journal frame -- strictly between
+    /// `fault(0)` (fires before `transform_upgrade` starts) and `fault(1)`
+    /// (fires only after the first edge's frame is written and synced).
+    /// Unlike `prepare_inner`'s and `backup_inner`'s injection points, this
+    /// one sits inside the RDF mutation loop itself, not pre-copy setup:
+    /// the fault fires while real quad-projection work is already
+    /// in flight, not before it starts. Neither
+    /// `upgrade_fault_boundaries_preserve_inputs_and_keep_all_leases_until_return`
+    /// (integer-boundary only) nor
+    /// `transform_child_exits_before_and_after_the_completion_rename`
+    /// (targets the later TRANSFORM_PENDING-to-COMPLETE rename) can reach
+    /// this moment.
+    #[test]
+    fn disk_exhaustion_on_the_first_transform_journal_frame_preserves_inputs() -> Result {
+        if !cfg!(target_os = "linux") {
+            return Ok(());
+        }
+        let shim_directory = std::env::current_exe()?
+            .parent()
+            .ok_or("test binary has no parent directory")?
+            .to_owned();
+        let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+            return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+        };
+        let directory = tempfile::tempdir()?;
+        let root = directory.path().canonicalize()?;
+        let source = root.join("source");
+        let package = root.join("backup");
+        let prepared = root.join("prepared");
+        fixture(&source)?;
+        let before_source = hashes(&source)?;
+        let options = UpgradeTransformOptions::default();
+        Store::backup_legacy(&source, &package, &options.backup)?;
+        Store::prepare_upgrade(&source, &package, &prepared, &options.backup)?;
+        let before_package = hashes(&package.join("store"))?;
+        let mut command = std::process::Command::new(std::env::current_exe()?);
+        command
+            .arg("--exact")
+            .arg(helper("transform_prepared_upgrade_enospc_process_helper"));
+        command.env("LD_PRELOAD", shim);
+        command.env("ENOSPC_SHIM_BUDGET_BYTES", "0");
+        command.env("ENOSPC_SHIM_PREFIX", &prepared);
+        command.env("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_SOURCE", &source);
+        command.env("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_PACKAGE", &package);
+        command.env("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_PREPARED", &prepared);
+        let status = command.status()?;
+        assert!(status.success(), "child helper failed: {status:?}");
+        // The kernel releases the child's exclusive native leases on process
+        // exit regardless of how it exited.
+        for path in [&source, &package.join("store"), &prepared.join("store")] {
+            assert!(LegacyStoreSnapshot::upgrade_lease_available(path));
+        }
+        // Only the mutation loop's own first-frame open creates this file
+        // (create_new, before the write that then fails), so its existence
+        // is positive evidence the child reached transform_inner's real
+        // work, not just that it exited 0; its zero length pins the fault
+        // to that first write specifically, not a later frame or the
+        // completion rename.
+        assert!(
+            prepared.join(TRANSFORM_JOURNAL).exists(),
+            "the child never reached transform_inner's mutation loop"
+        );
+        assert_eq!(fs::metadata(prepared.join(TRANSFORM_JOURNAL))?.len(), 0);
+        assert!(!prepared.join(TRANSFORM_COMPLETE).exists());
+        assert!(TransformedUpgrade::verify(&source, &package, &prepared, &options).is_err());
+        assert!(matches!(
+            Store::open(prepared.join("store")),
+            Err(crate::storage::StorageError::UpgradeIncomplete)
+        ));
+        assert_eq!(hashes(&source)?, before_source);
+        assert_eq!(hashes(&package.join("store"))?, before_package);
+        Ok(())
+    }
+
+    #[test]
+    fn transform_prepared_upgrade_enospc_process_helper() -> Result {
+        let Some(source) = std::env::var_os("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_SOURCE") else {
+            return Ok(()); // An ordinary run: only the parent test re-invokes this.
+        };
+        let source = PathBuf::from(source);
+        let package = variable("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_PACKAGE")?;
+        let prepared = variable("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_PREPARED")?;
+        let result = Store::transform_prepared_upgrade(
+            &source,
+            &package,
+            &prepared,
+            &UpgradeTransformOptions::default(),
+        );
+        match result {
+            Err(BackupError::Storage(crate::storage::StorageError::Io(error)))
+                if error.kind() == io::ErrorKind::StorageFull =>
+            {
+                Ok(())
+            }
+            other => Err(format!(
+                "expected a StorageFull BackupError::Storage(StorageError::Io(_)), got {other:?}"
+            )
+            .into()),
+        }
+    }
 }
