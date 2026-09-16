@@ -2905,6 +2905,110 @@ were removed after this verification, exactly as after the previous
 section's own experiment; nothing from this investigation was left in
 the tree.
 
+## The first real disk-exhaustion test, closing gate 3's zero-coverage gap (2026-09-16)
+
+The larger increment the previous section deliberately deferred --
+writing the actual Rust integration test against a real `oxigraph`
+operation, using the validated `LD_PRELOAD` shim design -- is now done
+and committed (`f975c943`), landing in
+[`legacy_backup.rs`](../../lib/oxigraph/src/store/legacy_backup.rs).
+
+`Store::backup_legacy` (`backup_inner`) was chosen as the target: a
+single flat, sequential file-copy loop (`copy_artifact`) with no
+RocksDB-FFI status-string parsing in between, confirmed by direct
+reading that the crate's only other `StorageFull` mapping (in
+`storage/rocksdb_wrapper.rs`) parses RocksDB's own `"IO error: No
+space left on device"` text and is unrelated to this plain-file-copy
+path. The shim is compiled once (skipping gracefully, with an
+`eprintln!`, if no `cc` is available) and `LD_PRELOAD`ed into a
+freshly re-exec'd child process -- required because `LD_PRELOAD` only
+takes effect at a process's own exec, never retroactively on an
+already-running one, so the same `current_exe() --exact <helper>`
+re-invocation technique this session's real-process-kill tests already
+use is reused here for an unrelated reason: getting the dynamic loader
+to pick the shim up at all. With the injection budget set to zero,
+the very first byte `copy_artifact` writes into the destination fails
+with a genuine `ENOSPC`, deterministically, regardless of fixture file
+size or ordering. The child helper asserts the result is specifically
+`Err(BackupError::Io(e))` with `e.kind() == io::ErrorKind::StorageFull`
+-- proving the crate's real `BackupError::Io(#[from] io::Error)`
+conversion preserves the OS error kind through a genuine fault, not
+just that some `Err` variant surfaces -- and only then does the parent
+assert on remaining disk state: source bytes unchanged, no `COMPLETE`
+marker, `LegacyBackupReceipt::verify` failing on the incomplete
+destination.
+
+Two independent review rounds (`xhigh`, `claude-fable-5-1`), both
+genuinely substantive rather than rubber-stamped:
+
+Round 1 REJECTed on two real defects. First, a **MUST-FIX**: the test
+module is `cfg(all(test, unix))`, so macOS and FreeBSD would compile
+and run this test even though `LD_PRELOAD` is ignored by `dyld` and
+`/proc/self/fd` does not exist there -- the backup would silently
+succeed, the helper would return `Err` where it expected the injected
+fault, and the test would fail loudly instead of skipping, directly
+contradicting the "graceful runtime skip" the delivery text claimed
+(which only ever covered the missing-`cc` case). Fixed with
+`if !cfg!(target_os = "linux") { return Ok(()); }` as the parent
+test's first statement, before any shim compilation is attempted.
+Second, a **SHOULD-FIX**: every parent-side assertion also holds when
+the child never actually executes the helper at all -- a helper-name
+typo makes the `--exact` filter match zero tests and the child exits
+0; an env-var name drift makes the helper itself return `Ok(())` as
+its own "ordinary run" no-op -- so the test could pass vacuously with
+no positive evidence the copy loop was ever reached. Fixed with
+`assert!(destination.join("store").is_dir(), ...)` immediately after
+the child exits: `backup_inner` creates that directory via
+`private_directory` immediately before the copy loop and no failure
+path removes it, so its presence is real evidence of loop entry, not
+just of a zero-exit-code child.
+
+That fix was not just reasoned about but empirically mutation-tested:
+the helper-name literal was temporarily corrupted, the parent test was
+re-run and observed to panic at exactly the new assertion with `test
+result: FAILED`, the literal was restored, `git diff | grep -c
+MUTATED` confirmed zero occurrences remained, and a fresh full run
+passed 6/6 again. Round 1 also raised four MINOR/INFO items, all
+applied: `ENOSPC_SHIM_PREFIX` is now built from a `canonicalize()`d
+root so it agrees by construction with what `/proc/self/fd` readlink
+reports, rather than by coincidence of the container's own `/tmp` not
+currently containing a symlink; the shim is compiled beside the test
+binary itself (`current_exe().parent()`, i.e. `target/*/deps`) instead
+of into a tempdir, since a `noexec` mount there would silently defeat
+`LD_PRELOAD`; the `cc`-missing skip now prints an `eprintln!` instead
+of passing silently; and the doc comment no longer overclaims `pwrite`
+coverage, since Linux positioned writes actually resolve to the
+distinct `pwrite64` symbol, which this shim does not intercept (this
+is harmless for `copy_artifact`, which uses `write_all`, not positioned
+writes, confirmed by direct reading of `backup.rs`).
+
+Round 2 ACCEPTed: both fixes independently re-verified against
+`backup_inner`'s actual control flow (including a fifth reasoning
+check the reviewer added unprompted -- `check_native_files` guarantees
+at least `LOCK`/`IDENTITY`/`CURRENT`/the named `MANIFEST` are present,
+so `files` always has at least four entries and the copy loop always
+runs at least once, closing the last gap in the vacuous-pass argument),
+every MINOR fix confirmed present and matching its C source exactly,
+and one new non-blocking MINOR recorded: the shim is compiled with the
+host's default `cc` ABI, so a 32-bit or statically-linked (musl) test
+target would see the shim silently fail to load and the parent test
+would fail loudly rather than skip. This is explicitly scoped as
+relevant only if a CI job ever runs this crate's library tests against
+such a target -- not the case today -- and is recorded here as a known
+limitation rather than fixed pre-emptively.
+
+What this does not claim: this is one entry point (`backup_legacy`),
+not the crash/fault matrix gate 3 still describes as open more broadly
+-- `prepare_inner`, `transform_inner`, the v2-to-v3 draft's
+construction/resume/activation, and `activate_upgrade` remain covered
+only by their existing synthetic phase-callback and real-process-kill
+tests, not by this disk-exhaustion technique. The technique itself is
+Linux-specific by construction (`/proc/self/fd`, `LD_PRELOAD`-honoring
+dynamic linking), gated at runtime rather than by a compile-time `cfg`,
+matching this file's own established preference for graceful runtime
+degradation (see `proc_self_io_field` in the operational drill) over
+narrowing what compiles.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
