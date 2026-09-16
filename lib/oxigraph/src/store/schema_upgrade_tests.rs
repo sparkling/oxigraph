@@ -743,6 +743,59 @@ fn schema_upgrade_resume_child_exit_mid_copy_retains_a_resumable_attempt() -> Te
     Ok(())
 }
 
+/// `resume_inner` has ten fault phases (0..=9), already covered exhaustively
+/// but only synthetically by `schema_upgrade_every_interruption_retains_uuid_
+/// and_prior_attempt_bytes`, and only once by a real process kill (mid-copy,
+/// phase 2, above). This test adds real-process-kill coverage for the
+/// remaining, most consequential boundary: `fault(8)` fires after `PENDING`
+/// is written and synced but strictly before `fs::rename(PENDING, COMPLETE)`;
+/// `fault(9)` fires strictly after that rename has already returned, mapped
+/// through `indeterminate()` -- the same asymmetric completion-rename
+/// boundary already proven with a real kill for the legacy path's
+/// `prepare_inner`/`transform_inner` (see `upgrade.rs`'s and
+/// `upgrade_transform.rs`'s own equivalent tests), now extended to the
+/// v2-to-v3 draft's own `resume_inner`.
+#[test]
+fn schema_upgrade_resume_child_exits_before_and_after_the_completion_rename() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let root = tempfile::tempdir()?;
+    let (source, package) = fixture(root.path())?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    for stop in [8_u8, 9] {
+        let workspace = root.path().join(format!("resume-completion-crash-{stop}"));
+        let initial = Store::start_schema_upgrade(&source, &package, &workspace, &options)?;
+        let paths = [
+            ("OXIGRAPH_SCHEMA_UPGRADE_TEST_SOURCE", source.as_path()),
+            ("OXIGRAPH_SCHEMA_UPGRADE_TEST_PACKAGE", package.as_path()),
+            (
+                "OXIGRAPH_SCHEMA_UPGRADE_TEST_WORKSPACE",
+                workspace.as_path(),
+            ),
+        ];
+        let status = crash("schema_upgrade_resume_process_helper", &paths, stop)?;
+        assert_eq!(status.code(), Some(73), "the child did not reach {stop}");
+        // stop=8: killed after PENDING is written and synced but before the
+        // atomic rename to COMPLETE -- a fresh, in-process resume completes
+        // the same upgrade from that durable point, exactly as the existing
+        // synthetic every-interruption test already proves for this phase.
+        // stop=9: killed immediately after the rename -- the marker is
+        // already visible in the directory even though the final directory
+        // fsync never ran, so a fresh resume still succeeds and reaches the
+        // same UUID and receipt, not a different or degraded outcome.
+        let state = Store::resume_schema_upgrade(&source, &package, &workspace, &options)?;
+        assert_eq!(state.schema_uuid(), initial.schema_uuid());
+        assert!(state.receipt().is_some());
+        SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options)?;
+        assert_eq!(bytes(&source)?, before_source);
+        assert_eq!(bytes(&package)?, before_package);
+    }
+    Ok(())
+}
+
 #[test]
 fn schema_upgrade_activation_child_exits_before_and_after_guard_unlink() -> TestResult {
     if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
