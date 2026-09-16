@@ -287,6 +287,98 @@ fn inspect_and_open_refuse_a_corrupted_manifest_without_source_changes() -> Resu
     Ok(())
 }
 
+/// A corrupted WAL, unlike a corrupted MANIFEST (previous test), does not
+/// trip RocksDB's open-time validation: `inspect`/`open`/`open_read_only`
+/// all still correctly classify a legacy layout and refuse it with
+/// `UpgradeRequired`, not some other error, even though genuinely
+/// unrecoverable data was lost. RocksDB does replay the WAL on every open,
+/// including read-only opens (an earlier version of this doc comment
+/// claimed otherwise; independent review caught that as a real factual
+/// error, not just imprecise wording); a truncated tail is tolerated
+/// rather than reported as `Corruption` because of the default
+/// point-in-time recovery mode, not because replay is skipped.
+///
+/// The `oxversion` marker is flushed to an SST before the WAL is touched,
+/// so truncating a WAL segment written *before* that flush proves nothing:
+/// an earlier version of this test truncated exactly that segment and
+/// passed for the wrong reason (independent review caught this too, and
+/// confirmed it empirically: the flushed segment truncated to a non-empty
+/// but already-superseded remainder, never exercising real WAL recovery
+/// loss). To genuinely exercise WAL damage, this version inserts one more
+/// record *after* the flush and drops the database without flushing
+/// again, so that record exists only in the WAL; truncating then discards
+/// real, otherwise-recoverable data, and the assertions below confirm the
+/// legacy-marker refusal still fires correctly despite that loss.
+#[test]
+fn a_truncated_wal_does_not_mask_legacy_refusal_or_mutate_the_source() -> Result {
+    let directory = tempfile::tempdir()?;
+    // An exact legacy version-0 layout is missing GRAPHS_CF (added in a
+    // later schema iteration): the full current column-family set with a
+    // legacy marker is an inconsistent combination that this crate
+    // classifies as SchemaUnknown, not UpgradeRequired -- confirmed
+    // empirically after an initial version of this test used the full set
+    // by mistake and got SchemaUnknown instead, matching this file's own
+    // feature_inspection_only_classifies_exact_legacy_inventories_as_upgradeable
+    // test, which already establishes the same (0, GRAPHS_CF omitted) shape.
+    let definitions = RocksDbStorage::column_families()
+        .into_iter()
+        .filter(|definition| definition.name != GRAPHS_CF)
+        .collect();
+    let db = Db::open_read_write(directory.path(), definitions, DbOptions::default())?;
+    let default = db.column_family(DEFAULT_CF)?;
+    db.insert(&default, b"corruption-fixture", b"preserve")?;
+    db.insert(&default, b"oxversion", &0_u64.to_be_bytes())?;
+    db.flush()?;
+    // Left unflushed on purpose: this key exists only in the WAL written
+    // after the flush above, so truncating that WAL genuinely destroys
+    // recoverable data rather than an already-superseded segment.
+    db.insert(&default, b"unflushed-after-marker", b"wal-only")?;
+    drop(default);
+    drop(db);
+
+    let mut truncated_any = false;
+    for entry in std::fs::read_dir(directory.path())? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().ends_with(".log") {
+            let path = entry.path();
+            let bytes = std::fs::read(&path)?;
+            assert!(
+                !bytes.is_empty(),
+                "expected a non-empty post-flush WAL segment at {}",
+                path.display()
+            );
+            std::fs::write(&path, &bytes[..bytes.len() / 2])?;
+            truncated_any = true;
+        }
+    }
+    assert!(truncated_any, "no WAL file in a freshly written store");
+
+    let before = tree(directory.path())?;
+    let info = Store::inspect(directory.path())?;
+    assert_eq!(info.version_status(), StoreVersionStatus::Older);
+    assert_eq!(info.storage_version(), Some(0));
+    assert!(matches!(
+        Store::open(directory.path()),
+        Err(StorageError::UpgradeRequired {
+            found: 0,
+            supported: 2
+        })
+    ));
+    assert!(matches!(
+        Store::open_read_only(directory.path()),
+        Err(StorageError::UpgradeRequired {
+            found: 0,
+            supported: 2
+        })
+    ));
+    assert_eq!(
+        tree(directory.path())?,
+        before,
+        "a refused legacy store must not be further mutated by a truncated WAL"
+    );
+    Ok(())
+}
+
 #[test]
 fn repeated_feature_inspection_does_not_create_a_native_lock() -> Result {
     let directory = tempfile::tempdir()?;
