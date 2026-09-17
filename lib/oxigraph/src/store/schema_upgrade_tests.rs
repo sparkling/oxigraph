@@ -796,6 +796,61 @@ fn schema_upgrade_resume_child_exits_before_and_after_the_completion_rename() ->
     Ok(())
 }
 
+/// A real process kill on `resume_inner`'s own `write_envelope` call --
+/// `fault(3)` fires strictly before it, `fault(4)` strictly after -- the
+/// one RocksDB-internal write path in this whole crash-matrix family:
+/// `SchemaUpgradeSnapshot::write_envelope`'s `db.insert()`/`db.flush()`,
+/// the same call this session's real-`ENOSPC` coverage
+/// (`disk_exhaustion_on_the_resume_schema_envelope_write_preserves_every_
+/// input`) already targets with an injected `Result::Err`. A real,
+/// unwind-skipping process exit proves the crash-recovery path tolerates a
+/// genuinely unclean RocksDB shutdown at this exact point instead, which
+/// neither that test nor the existing synthetic coverage
+/// (`schema_upgrade_every_interruption_retains_uuid_and_prior_attempt_
+/// bytes`) can. Because the last record after either kill is still
+/// `INTENT` -- `VALIDATED` is only appended at `fault(6)`, well after this
+/// boundary -- a fresh resume abandons this attempt (a `FAILED` record for
+/// it) and starts a new one from scratch, the same outcome shape
+/// `schema_upgrade_resume_child_exit_mid_copy_retains_a_resumable_attempt`
+/// already proves for `fault(2)`, extended here to the two phases either
+/// side of the one RocksDB-internal write.
+#[test]
+fn schema_upgrade_resume_child_exits_before_and_after_the_schema_envelope_write() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let root = tempfile::tempdir()?;
+    let (source, package) = fixture(root.path())?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    for stop in [3_u8, 4] {
+        let workspace = root.path().join(format!("resume-envelope-crash-{stop}"));
+        let initial = Store::start_schema_upgrade(&source, &package, &workspace, &options)?;
+        let paths = [
+            ("OXIGRAPH_SCHEMA_UPGRADE_TEST_SOURCE", source.as_path()),
+            ("OXIGRAPH_SCHEMA_UPGRADE_TEST_PACKAGE", package.as_path()),
+            (
+                "OXIGRAPH_SCHEMA_UPGRADE_TEST_WORKSPACE",
+                workspace.as_path(),
+            ),
+        ];
+        let status = crash("schema_upgrade_resume_process_helper", &paths, stop)?;
+        assert_eq!(status.code(), Some(73), "the child did not reach {stop}");
+        // Either kill leaves the last record as INTENT, so a fresh,
+        // in-process resume abandons this attempt and starts a new one,
+        // reaching the same upgrade outcome as an uninterrupted run -- not
+        // a degraded or different result.
+        let state = Store::resume_schema_upgrade(&source, &package, &workspace, &options)?;
+        assert_eq!(state.schema_uuid(), initial.schema_uuid());
+        assert!(state.receipt().is_some());
+        SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options)?;
+        assert_eq!(bytes(&source)?, before_source);
+        assert_eq!(bytes(&package)?, before_package);
+    }
+    Ok(())
+}
+
 #[test]
 fn schema_upgrade_activation_child_exits_before_and_after_guard_unlink() -> TestResult {
     if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
