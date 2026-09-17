@@ -2179,4 +2179,323 @@ mod tests {
         )?;
         std::process::exit(74);
     }
+
+    /// Compiles a `/proc/self/fd`-scoped `ENOSPC`-injection shim, or `None`
+    /// when no C compiler is available: this fault is opt-in test
+    /// infrastructure, never a dependency of the crate's own build. Once
+    /// `LD_PRELOAD`ed into a fresh process, the shim intercepts the `write`
+    /// libc symbol Rust's `write_all` calls, for descriptors whose resolved
+    /// path starts with `ENOSPC_SHIM_PREFIX`, injecting a real `ENOSPC` once
+    /// a single write exceeds the remaining `ENOSPC_SHIM_BUDGET_BYTES`;
+    /// every other descriptor, and every other process on the machine,
+    /// passes through to the real `dlsym`-resolved libc function unmodified.
+    /// A `pwrite` symbol is defined too, but positioned writes on Linux
+    /// resolve to `pwrite64`, which this shim does not intercept.
+    /// `/proc/self/fd` and `LD_PRELOAD`-honoring dynamic linking are both
+    /// Linux-specific: the caller must skip this on any other OS. Compiled
+    /// next to the test binary itself, not into a temporary directory, since
+    /// a `noexec` mount there would silently make `LD_PRELOAD` a no-op.
+    /// Identical to this session's four other already-reviewed copies of
+    /// `compile_enospc_shim` (`legacy_backup.rs`, `upgrade.rs`,
+    /// `upgrade_transform.rs`, `schema_upgrade_tests.rs`); duplicated
+    /// file-local rather than shared, matching the established convention
+    /// of file-local crash-test infrastructure.
+    #[expect(
+        clippy::print_stderr,
+        reason = "diagnostic for a CI host missing a C compiler, opt-in test infrastructure only"
+    )]
+    fn compile_enospc_shim(directory: &Path) -> Result<Option<PathBuf>> {
+        const SOURCE: &str = r#"
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+static long budget = -1;
+static char prefix[4096];
+static int prefix_len = 0;
+static int initialized = 0;
+
+static void init_once(void) {
+    if (initialized) return;
+    const char *b = getenv("ENOSPC_SHIM_BUDGET_BYTES");
+    const char *p = getenv("ENOSPC_SHIM_PREFIX");
+    budget = b ? atol(b) : -1;
+    if (p) {
+        size_t n = strlen(p);
+        if (n >= sizeof(prefix)) n = sizeof(prefix) - 1;
+        memcpy(prefix, p, n);
+        prefix[n] = '\0';
+        prefix_len = (int)n;
+    }
+    initialized = 1;
+}
+
+static int fd_in_scope(int fd) {
+    if (prefix_len == 0) return 0;
+    char linkpath[64];
+    char target[4096];
+    int n = snprintf(linkpath, sizeof(linkpath), "/proc/self/fd/%d", fd);
+    if (n <= 0 || (size_t)n >= sizeof(linkpath)) return 0;
+    ssize_t len = readlink(linkpath, target, sizeof(target) - 1);
+    if (len <= 0) return 0;
+    target[len] = '\0';
+    return strncmp(target, prefix, (size_t)prefix_len) == 0;
+}
+
+static int should_inject(int fd, size_t count) {
+    init_once();
+    if (budget < 0 || !fd_in_scope(fd)) return 0;
+    if ((long)count > budget) return 1;
+    budget -= (long)count;
+    return 0;
+}
+
+typedef ssize_t (*write_fn)(int, const void *, size_t);
+typedef ssize_t (*pwrite_fn)(int, const void *, size_t, off_t);
+
+ssize_t write(int fd, const void *buf, size_t count) {
+    static write_fn real = NULL;
+    if (!real) real = (write_fn)dlsym(RTLD_NEXT, "write");
+    if (should_inject(fd, count)) { errno = ENOSPC; return -1; }
+    return real(fd, buf, count);
+}
+
+ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
+    static pwrite_fn real = NULL;
+    if (!real) real = (pwrite_fn)dlsym(RTLD_NEXT, "pwrite");
+    if (should_inject(fd, count)) { errno = ENOSPC; return -1; }
+    return real(fd, buf, count, offset);
+}
+"#;
+        let source_path = directory.join("oxigraph_legacy_activation_enospc_shim.c");
+        fs::write(&source_path, SOURCE)?;
+        let shared_object = directory.join("oxigraph_legacy_activation_enospc_shim.so");
+        let status = match std::process::Command::new("cc")
+            .arg("-shared")
+            .arg("-fPIC")
+            .arg("-O2")
+            .arg("-o")
+            .arg(&shared_object)
+            .arg(&source_path)
+            .arg("-ldl")
+            .status()
+        {
+            Ok(status) => status,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                eprintln!("skipping disk-exhaustion coverage: no `cc` on this host");
+                return Ok(None);
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if !status.success() {
+            return Err(format!("cc exited with {status}").into());
+        }
+        Ok(Some(shared_object))
+    }
+
+    /// A real `ENOSPC`, not a synthetic phase callback or a real process
+    /// kill, injected on the first byte of `activate_upgrade_inner`'s guard
+    /// write -- strictly between `fault(0)` and `fault(1)`. Unlike
+    /// `activation_child_exits_immediately_before_and_after_guard_unlink`
+    /// above, which real-kills at the *unlink* boundary (phases 4/5) at the
+    /// very end of activation, this targets the guard *write* at the very
+    /// start -- a boundary this function shares structurally with
+    /// `schema_upgrade.rs`'s `activate_inner` (both call the same `write()`
+    /// helper on the same `UPGRADE_GUARD`/`GUARD` constants), but which had
+    /// no real-OS-fault coverage of its own before this test.
+    #[test]
+    fn disk_exhaustion_on_the_legacy_activation_guard_write_preserves_every_input() -> Result {
+        if !cfg!(target_os = "linux") {
+            return Ok(());
+        }
+        if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+            return Ok(());
+        }
+        let shim_directory = std::env::current_exe()?
+            .parent()
+            .ok_or("test binary has no parent directory")?
+            .to_owned();
+        let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+            return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+        };
+        let root = tempfile::tempdir()?;
+        let root_path = root.path().canonicalize()?;
+        let source = root_path.join("source");
+        let backup = root_path.join("backup");
+        let workspace = root_path.join("workspace");
+        fixture(&source)?;
+        let options = UpgradeOptions::default();
+        Store::backup_legacy(&source, &backup, &options.recovery.transform.backup)?;
+        Store::upgrade(&source, &backup, &workspace, &options)?;
+        let before_source = inventory(&source)?;
+        let before_backup = inventory(&backup)?;
+        let before_workspace = inventory(&workspace)?;
+        let target = root_path.join("legacy-activate-guard-enospc");
+        let status = std::process::Command::new(std::env::current_exe()?)
+            .arg("--exact")
+            .arg("store::upgrade::transform::receipt::tests::legacy_activation_enospc_guard_process_helper")
+            .env("LD_PRELOAD", shim)
+            .env("ENOSPC_SHIM_BUDGET_BYTES", "0")
+            .env("ENOSPC_SHIM_PREFIX", &target)
+            .env("OXIGRAPH_ACTIVATION_ENOSPC_GUARD_TEST_SOURCE", &source)
+            .env("OXIGRAPH_ACTIVATION_ENOSPC_GUARD_TEST_BACKUP", &backup)
+            .env(
+                "OXIGRAPH_ACTIVATION_ENOSPC_GUARD_TEST_WORKSPACE",
+                &workspace,
+            )
+            .env("OXIGRAPH_ACTIVATION_ENOSPC_GUARD_TEST_TARGET", &target)
+            .status()?;
+        assert!(status.success(), "child helper failed: {status:?}");
+        // Only the guard's own create_new open makes this file exist at all
+        // (before the write that then fails), so this is positive evidence
+        // the child reached real activation work, not just that it exited
+        // 0; its zero length pins the fault to that first write specifically.
+        assert!(
+            target.join(UPGRADE_GUARD).exists(),
+            "the child never reached activate_upgrade_inner's guard write"
+        );
+        assert_eq!(fs::metadata(target.join(UPGRADE_GUARD))?.len(), 0);
+        assert!(Store::open(&target).is_err());
+        assert_eq!(inventory(&source)?, before_source);
+        assert_eq!(inventory(&backup)?, before_backup);
+        assert_eq!(inventory(&workspace)?, before_workspace);
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_activation_enospc_guard_process_helper() -> Result {
+        if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+            return Ok(());
+        }
+        let Some(source) = std::env::var_os("OXIGRAPH_ACTIVATION_ENOSPC_GUARD_TEST_SOURCE") else {
+            return Ok(()); // An ordinary run: only the parent test re-invokes this.
+        };
+        let backup =
+            std::env::var_os("OXIGRAPH_ACTIVATION_ENOSPC_GUARD_TEST_BACKUP").ok_or("backup")?;
+        let workspace = std::env::var_os("OXIGRAPH_ACTIVATION_ENOSPC_GUARD_TEST_WORKSPACE")
+            .ok_or("workspace")?;
+        let target =
+            std::env::var_os("OXIGRAPH_ACTIVATION_ENOSPC_GUARD_TEST_TARGET").ok_or("target")?;
+        let result = Store::activate_upgrade(
+            source,
+            backup,
+            workspace,
+            target,
+            &UpgradeOptions::default(),
+        );
+        match result {
+            Err(BackupError::Io(error)) if error.kind() == io::ErrorKind::StorageFull => Ok(()),
+            other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
+        }
+    }
+
+    /// A real `ENOSPC` injected inside `activate_upgrade_inner`'s copy loop
+    /// -- strictly between `fault(1)` and `fault(2)` -- completing this
+    /// function's own disk-exhaustion coverage alongside the guard-write
+    /// test above, mirroring the same budget-precision technique
+    /// `schema_upgrade_tests.rs`'s sibling pair already established: the
+    /// budget is set to exactly `GUARD.len()`, not zero, so the guard
+    /// write's own `write_all` call (`count == budget`) is not rejected by
+    /// the shim's `count > budget` check and completes in full, leaving
+    /// zero budget for the copy loop's first write instead.
+    #[test]
+    fn disk_exhaustion_during_the_legacy_activation_copy_loop_preserves_every_input() -> Result {
+        if !cfg!(target_os = "linux") {
+            return Ok(());
+        }
+        if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+            return Ok(());
+        }
+        let shim_directory = std::env::current_exe()?
+            .parent()
+            .ok_or("test binary has no parent directory")?
+            .to_owned();
+        let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+            return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+        };
+        let root = tempfile::tempdir()?;
+        let root_path = root.path().canonicalize()?;
+        let source = root_path.join("source");
+        let backup = root_path.join("backup");
+        let workspace = root_path.join("workspace");
+        fixture(&source)?;
+        let options = UpgradeOptions::default();
+        Store::backup_legacy(&source, &backup, &options.recovery.transform.backup)?;
+        Store::upgrade(&source, &backup, &workspace, &options)?;
+        let before_source = inventory(&source)?;
+        let before_backup = inventory(&backup)?;
+        let before_workspace = inventory(&workspace)?;
+        let target = root_path.join("legacy-activate-copy-enospc");
+        // The whole design rests on this budget being large enough to let
+        // the guard write through but not zero: pin it explicitly rather
+        // than leaving it an unstated premise of GUARD's own definition.
+        assert!(!GUARD.is_empty());
+        let status = std::process::Command::new(std::env::current_exe()?)
+            .arg("--exact")
+            .arg("store::upgrade::transform::receipt::tests::legacy_activation_enospc_copy_process_helper")
+            .env("LD_PRELOAD", shim)
+            .env("ENOSPC_SHIM_BUDGET_BYTES", GUARD.len().to_string())
+            .env("ENOSPC_SHIM_PREFIX", &target)
+            .env("OXIGRAPH_ACTIVATION_ENOSPC_COPY_TEST_SOURCE", &source)
+            .env("OXIGRAPH_ACTIVATION_ENOSPC_COPY_TEST_BACKUP", &backup)
+            .env(
+                "OXIGRAPH_ACTIVATION_ENOSPC_COPY_TEST_WORKSPACE",
+                &workspace,
+            )
+            .env("OXIGRAPH_ACTIVATION_ENOSPC_COPY_TEST_TARGET", &target)
+            .status()?;
+        assert!(status.success(), "child helper failed: {status:?}");
+        // The guard write's own budget was exactly consumed, not exceeded,
+        // so it completed in full: positive evidence the child passed the
+        // earlier boundary and reached the copy loop specifically.
+        assert_eq!(
+            fs::read(target.join(UPGRADE_GUARD))?,
+            GUARD,
+            "the guard write itself must have succeeded in full under this budget"
+        );
+        // At least one more entry exists beyond the guard: copy_artifact
+        // always creates its destination via create_new before attempting
+        // to write it, so even the failing file's own zero-byte stub is on
+        // disk.
+        assert!(
+            fs::read_dir(&target)?.count() >= 2,
+            "the child never reached activate_upgrade_inner's copy loop"
+        );
+        assert!(Store::open(&target).is_err());
+        assert_eq!(inventory(&source)?, before_source);
+        assert_eq!(inventory(&backup)?, before_backup);
+        assert_eq!(inventory(&workspace)?, before_workspace);
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_activation_enospc_copy_process_helper() -> Result {
+        if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+            return Ok(());
+        }
+        let Some(source) = std::env::var_os("OXIGRAPH_ACTIVATION_ENOSPC_COPY_TEST_SOURCE") else {
+            return Ok(()); // An ordinary run: only the parent test re-invokes this.
+        };
+        let backup =
+            std::env::var_os("OXIGRAPH_ACTIVATION_ENOSPC_COPY_TEST_BACKUP").ok_or("backup")?;
+        let workspace = std::env::var_os("OXIGRAPH_ACTIVATION_ENOSPC_COPY_TEST_WORKSPACE")
+            .ok_or("workspace")?;
+        let target =
+            std::env::var_os("OXIGRAPH_ACTIVATION_ENOSPC_COPY_TEST_TARGET").ok_or("target")?;
+        let result = Store::activate_upgrade(
+            source,
+            backup,
+            workspace,
+            target,
+            &UpgradeOptions::default(),
+        );
+        match result {
+            Err(BackupError::Io(error)) if error.kind() == io::ErrorKind::StorageFull => Ok(()),
+            other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
+        }
+    }
 }
