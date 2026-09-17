@@ -4266,6 +4266,73 @@ possibly infeasible for a `write()`-only shim without a materially
 different, deeper RocksDB-internals investigation -- not a queue of
 further same-shaped increments.
 
+## Resolving `resume_inner`'s "genuinely uncertain" framing by actually doing the deeper investigation (2026-09-17)
+
+The paragraph directly above -- and four earlier dated sections
+(twelfth, fourteenth, fifteenth, sixteenth, seventeenth) -- repeated a
+"genuinely uncertain, possibly infeasible... without a materially
+different, deeper RocksDB-internals investigation" framing for
+`SchemaUpgradeSnapshot::open` and `write_envelope`, first written on
+2026-09-16. That framing was never actually resolved by the deeper
+investigation it kept deferring; it was carried forward as inherited
+text across five later sections, the same failure mode as this
+session's own "eight functions" miscount and the fabricated "G33"/
+"G41" labels found earlier today. Doing the investigation directly,
+rather than repeating the hedge a sixth time, resolves both items --
+in the tractable direction, not confirming the ceiling:
+
+- **`SchemaUpgradeSnapshot::open` is not uncertain at all: it performs
+  zero writes, definitively.** Its full body
+  (`lib/oxigraph/src/storage/rocksdb/schema_upgrade.rs:14-47`) opens
+  via `Db::open_read_only_with_options`, RocksDB's own dedicated
+  read-only entry point (the C API's
+  `rocksdb_open_for_read_only_column_families`), which writes nothing
+  to disk regardless of database size or WAL state -- no `LOCK`
+  acquisition write, no `MANIFEST` update, no WAL replay write. The
+  only other operations are a single `db.get()` (a read) and
+  `setup_unmigrated()` (in-memory column-family handle bookkeeping,
+  zero I/O). There is no write boundary here to test, not an uncertain
+  one -- "not applicable" was always the correct classification, and
+  the read-only open call's own name said so from the start.
+- **`write_envelope` is tractable, not infeasible, for this exact
+  shim.** Its full body
+  (`lib/oxigraph/src/storage/rocksdb/schema_upgrade.rs:172-202`) opens
+  read-write, then `db.insert(&default, b"oxversion", &envelope.encode())`
+  followed by `db.flush()`. Read the vendored RocksDB C++ source
+  directly rather than assuming: ordinary (non-`direct_io`) WAL and
+  SST writes go through `PosixWritableFile::Append`
+  (`oxrocksdb-sys/rocksdb/env/io_posix.cc:1549`), which calls
+  `PosixWrite` (line 114), whose own body is a plain `write(fd, src,
+  bytes_to_write)` loop (line 123) -- the exact libc symbol this
+  crate's shim already intercepts. The alternative path,
+  `PositionedAppend` (line 1566), calls `pwrite` instead, which this
+  crate does not configure for ordinary writes (confirmed: no
+  `direct_io` or `io_uring` write options are set anywhere in this
+  crate's own RocksDB configuration). `write_envelope`'s actual disk
+  writes should therefore be directly interceptable by the existing
+  technique, unmodified -- not a "materially different approach."
+  No existing test exercises this function at all. If implemented,
+  the natural scoping mirrors this session's very first ENOSPC test's
+  own directory-wide, budget-zero technique (rather than an exact-file
+  prefix, since RocksDB's own internal WAL/SST filenames and sequence
+  numbering are not predictable from outside without duplicating its
+  bookkeeping): scope `ENOSPC_SHIM_PREFIX` to the whole target
+  directory, budget zero, faulting the very first write RocksDB
+  itself makes while re-opening for the envelope write.
+
+Both findings were independently re-verified directly against the
+real source (not merely trusted from the fork that first surfaced
+them): `Db::open_read_only_with_options` at the cited call site,
+`write_envelope`'s exact body, and `PosixWrite`'s own `write()` call
+in the vendored `io_posix.cc`, all read and confirmed line-for-line.
+The "practical ceiling" framing in the paragraph above, and in every
+earlier section repeating it, should be read as superseded by this
+one -- not corrected in place, matching this session's own established
+convention of adding a new dated section rather than rewriting past
+narrative, since each of those sections accurately reflected what was
+known (or, more honestly, not yet investigated) at the time it was
+written.
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
