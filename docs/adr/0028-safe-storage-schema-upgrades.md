@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-16
+- Updated: 2026-09-17
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
@@ -3991,7 +3991,7 @@ revisit only if a flake actually appears. Committed `2fdb2a3b` (the
 entry point and the `legacy_backup.rs` fix), `68e825f0` (the two
 proactive twin fixes).
 
-Fourteen entry points across eight functions now; four candidates
+Fourteen entry points across seven functions now; four candidates
 remain from the same gate-2 audit (`prepare_inner`'s own `PENDING`
 write and `UPGRADE_GUARD`-as-its-own-fault-point, `transform_inner`'s
 second-frame append write and its `TRANSFORM_PENDING` write).
@@ -4195,7 +4195,7 @@ failed. Committed `3127139f`.
 
 Every ENOSPC test file in the crate now parameterizes its shim
 filename per caller; no known instance of this hazard class remains
-unfixed. Seventeen entry points across eight functions; one candidate
+unfixed. Seventeen entry points across seven functions; one candidate
 remains from the original six-candidate gate-2 audit --
 `transform_inner`'s second-and-later journal-frame append write
 (a genuinely different code branch, `OpenOptions::append` rather than
@@ -4256,7 +4256,7 @@ citing line numbers that silently drift under later edits. Committed
 
 **Every one of the six candidates the 2026-09-17 gate-2 audit found is
 now implemented, independently reviewed, and committed.** Eighteen
-disk-exhaustion entry points across eight functions exist crate-wide,
+disk-exhaustion entry points across seven functions exist crate-wide,
 all built on the same `/proc/self/fd`-scoped `LD_PRELOAD` shim, every
 file now with its own per-test shim-filename parameterization. The
 remaining open items in this specific technique are `resume_inner`'s
