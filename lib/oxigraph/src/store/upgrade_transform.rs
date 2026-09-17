@@ -1152,6 +1152,94 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
         Ok(())
     }
 
+    /// A real `ENOSPC` injected on the first byte the *second* journal
+    /// frame ever writes -- a genuinely different code branch from the
+    /// first frame's own already-tested boundary: `last.is_none()` is
+    /// only true for the first frame, so every later frame opens via
+    /// the append arm of the journal open, not the first frame's
+    /// `create_new` arm, and reaching it exercises `completed_journal`'s
+    /// own multi-frame accumulation (`journal_frame(edge, receipt,
+    /// logical, &frames)`, folding in the previous frames' own
+    /// checksum) rather than the single-frame case. Real fixtures
+    /// produce more than one edge --
+    /// `completed_journal` iterates `receipt.storage_version()..=2`, and
+    /// this file's own `fixture` uses version-0 legacy data, giving edges
+    /// `0, 1, 2` -- so this boundary is reachable, not hypothetical.
+    /// `journal_frame`'s own output length does not depend on the
+    /// *values* of `receipt`, `edge`, `logical`, or `previous`, only on
+    /// their fixed byte widths (`receipt.fingerprint()` and
+    /// `envelope_checksum` both return `[u8; 32]` unconditionally), so
+    /// calling it here with the real `receipt` but a placeholder all-zero
+    /// `logical` -- this test has no legitimate way to obtain the real
+    /// projection fingerprint without duplicating `project_upgrade`'s own
+    /// native machinery -- still yields the exact byte length the real
+    /// first frame will have, matching this crate's own "never a magic
+    /// number for a computable quantity" discipline without needing the
+    /// real value.
+    #[test]
+    fn disk_exhaustion_on_the_second_transform_journal_frame_preserves_inputs() -> Result {
+        if !cfg!(target_os = "linux") {
+            return Ok(());
+        }
+        let shim_directory = std::env::current_exe()?
+            .parent()
+            .ok_or("test binary has no parent directory")?
+            .to_owned();
+        let Some(shim) = compile_enospc_shim(&shim_directory, "second_frame")? else {
+            return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+        };
+        let directory = tempfile::tempdir()?;
+        let root = directory.path().canonicalize()?;
+        let source = root.join("source");
+        let package = root.join("backup");
+        let prepared = root.join("prepared");
+        fixture(&source)?;
+        let before_source = hashes(&source)?;
+        let options = UpgradeTransformOptions::default();
+        let receipt = Store::backup_legacy(&source, &package, &options.backup)?;
+        Store::prepare_upgrade(&source, &package, &prepared, &options.backup)?;
+        let before_package = hashes(&package.join("store"))?;
+        let first_frame_len =
+            journal_frame(receipt.storage_version(), &receipt, &[0_u8; 32], &[]).len();
+        let mut command = std::process::Command::new(std::env::current_exe()?);
+        command
+            .arg("--exact")
+            .arg(helper("transform_prepared_upgrade_enospc_process_helper"));
+        command.env("LD_PRELOAD", shim);
+        command.env("ENOSPC_SHIM_BUDGET_BYTES", first_frame_len.to_string());
+        command.env("ENOSPC_SHIM_PREFIX", prepared.join(TRANSFORM_JOURNAL));
+        command.env("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_SOURCE", &source);
+        command.env("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_PACKAGE", &package);
+        command.env("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_PREPARED", &prepared);
+        let status = command.status()?;
+        assert!(status.success(), "child helper failed: {status:?}");
+        for path in [&source, &package.join("store"), &prepared.join("store")] {
+            assert!(LegacyStoreSnapshot::upgrade_lease_available(path));
+        }
+        // The first frame's budget was exactly consumed, not exceeded, so
+        // it completed in full: this is genuine positive evidence the
+        // child passed the first-frame boundary and reached the second
+        // frame specifically, not a restatement of the first-frame test's
+        // own vacuous-pass guard. The file's length staying exactly at
+        // that boundary (not growing at all) pins the fault to the second
+        // frame's own first byte, not a partial write into it.
+        assert_eq!(
+            fs::metadata(prepared.join(TRANSFORM_JOURNAL))?.len(),
+            first_frame_len as u64,
+            "the first frame must have written in full and the second must not have grown the file at all"
+        );
+        assert!(!prepared.join(TRANSFORM_PENDING).exists());
+        assert!(!prepared.join(TRANSFORM_COMPLETE).exists());
+        assert!(TransformedUpgrade::verify(&source, &package, &prepared, &options).is_err());
+        assert!(matches!(
+            Store::open(prepared.join("store")),
+            Err(crate::storage::StorageError::UpgradeIncomplete)
+        ));
+        assert_eq!(hashes(&source)?, before_source);
+        assert_eq!(hashes(&package.join("store"))?, before_package);
+        Ok(())
+    }
+
     #[test]
     fn transform_prepared_upgrade_enospc_process_helper() -> Result {
         let Some(source) = std::env::var_os("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_SOURCE") else {
