@@ -30,6 +30,11 @@ const models = Object.freeze({
   codex: "gpt-5.6-sol",
   claude: "claude-sonnet-5",
 });
+const astraModels = Object.freeze({
+  codex: "gpt-6-astra",
+  claude: "claude-sonnet-5",
+});
+const noEffort = Object.freeze({ codex: null, claude: null });
 
 function outcome({
   taskId,
@@ -42,6 +47,7 @@ function outcome({
   modelSet = models,
   model = modelSet[provider],
   disposition = "verified",
+  efforts,
 }) {
   return {
     taskId,
@@ -50,6 +56,7 @@ function outcome({
     provider,
     model,
     models: modelSet,
+    ...(efforts !== undefined ? { efforts } : {}),
     candidateSha256: digest(`${taskId}/${provider}/candidate`),
     evaluatorSha256,
     contractSha256: frozen.contractSha256,
@@ -406,4 +413,143 @@ test("the fifth admitted task reopens pairing and drift reopens cold start", asy
   assert.equal(recovered.mode, "routed");
   assert.equal(recovered.provider, "claude");
   assert.equal(recovered.pairedSamples, MINIMUM_PAIRED_SAMPLES);
+});
+
+test("outcome efforts are bound to Astra models and validated against its ladder", async (t) => {
+  const { history, authority } = await fixture(t);
+  await assert.rejects(
+    admit(
+      history,
+      authority,
+      outcome({
+        taskId: "astra-unknown-effort",
+        provider: "codex",
+        quality: 0.5,
+        mode: "routed",
+        pairId: null,
+        modelSet: astraModels,
+        efforts: { codex: "extreme", claude: null },
+      }),
+    ),
+    /must be low, medium, high, xhigh, max, or ultra/u,
+  );
+  await assert.rejects(
+    admit(
+      history,
+      authority,
+      outcome({
+        taskId: "non-astra-with-effort",
+        provider: "claude",
+        quality: 0.5,
+        mode: "routed",
+        pairId: null,
+        efforts: { codex: null, claude: "low" },
+      }),
+    ),
+    /requires gpt-6-astra/u,
+  );
+  await assert.rejects(
+    admit(
+      history,
+      authority,
+      outcome({
+        taskId: "astra-missing-effort",
+        provider: "codex",
+        quality: 0.5,
+        mode: "routed",
+        pairId: null,
+        modelSet: astraModels,
+        efforts: noEffort,
+      }),
+    ),
+    /explicit reasoning effort/u,
+  );
+  await admit(
+    history,
+    authority,
+    outcome({
+      taskId: "astra-valid-effort",
+      provider: "codex",
+      quality: 0.7,
+      mode: "routed",
+      pairId: null,
+      modelSet: astraModels,
+      efforts: { codex: "low", claude: null },
+    }),
+  );
+  assert.equal(history.snapshot().length, 1);
+});
+
+test("an outcome without efforts keeps the historical shape and hash exactly", async (t) => {
+  const { path, history, authority } = await fixture(t);
+  await admit(
+    history,
+    authority,
+    outcome({
+      taskId: "legacy-shape",
+      provider: "codex",
+      quality: 0.6,
+      mode: "routed",
+      pairId: null,
+    }),
+  );
+  const stored = JSON.parse((await readFile(path, "utf8")).trim());
+  assert.ok(
+    !("efforts" in stored.outcome),
+    "efforts must be omitted, not defaulted, for legacy-shaped outcomes",
+  );
+  assert.equal(history.snapshot()[0].outcome.efforts, undefined);
+});
+
+test("outcomes at different Astra efforts do not pool into the same current regime", async (t) => {
+  const { history, authority } = await fixture(t);
+  const router = new QualityFirstRouter({ history });
+  const lowEfforts = Object.freeze({ codex: "low", claude: null });
+  const maxEfforts = Object.freeze({ codex: "max", claude: null });
+
+  for (let index = 0; index < MINIMUM_PAIRED_SAMPLES; index += 1) {
+    await admitPair(history, authority, `astra-low-${index}`, [0.9, 0.2], {
+      modelSet: astraModels,
+      efforts: lowEfforts,
+    });
+  }
+  const lowRouted = await router.route(
+    context({ models: astraModels, efforts: lowEfforts }),
+  );
+  assert.equal(lowRouted.mode, "routed");
+  assert.equal(lowRouted.provider, "codex");
+  assert.equal(lowRouted.pairedSamples, MINIMUM_PAIRED_SAMPLES);
+
+  // Same model, a different effort: the low-effort samples above must not
+  // count toward this regime's own pairing -- this is the contamination
+  // gate B named, now closed. classOutcomes() counts by role/taskClass
+  // alone, so the reason is "drift" here, exactly as an outright model
+  // change already reports above, not "cold-start".
+  const maxCold = await router.route(
+    context({ models: astraModels, efforts: maxEfforts }),
+  );
+  assert.equal(maxCold.mode, "paired");
+  assert.equal(maxCold.reason, "drift");
+  assert.equal(maxCold.pairedSamples, 0);
+
+  for (let index = 0; index < MINIMUM_PAIRED_SAMPLES; index += 1) {
+    await admitPair(history, authority, `astra-max-${index}`, [0.1, 0.95], {
+      modelSet: astraModels,
+      efforts: maxEfforts,
+    });
+  }
+  const maxRouted = await router.route(
+    context({ models: astraModels, efforts: maxEfforts }),
+  );
+  assert.equal(maxRouted.mode, "routed");
+  assert.equal(maxRouted.provider, "claude");
+  assert.equal(maxRouted.pairedSamples, MINIMUM_PAIRED_SAMPLES);
+
+  // The low-effort regime is unaffected by the max-effort activity above.
+  const lowStillRouted = await router.route(
+    context({ models: astraModels, efforts: lowEfforts }),
+  );
+  assert.equal(lowStillRouted.mode, "routed");
+  assert.equal(lowStillRouted.provider, "codex");
+  assert.equal(lowStillRouted.pairedSamples, MINIMUM_PAIRED_SAMPLES);
 });

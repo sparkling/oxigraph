@@ -1,6 +1,10 @@
 import { Router, calibrationReport } from "@metaharness/router";
 import { canonicalSha256, routingEmbedding } from "./features.mjs";
-import { NATIVE_PROVIDERS } from "./history.mjs";
+import {
+  NATIVE_PROVIDERS,
+  normalizeProviderEfforts,
+  providerEffort,
+} from "./history.mjs";
 
 export const MINIMUM_PAIRED_SAMPLES = 5;
 export const REPAIR_PAIR_INTERVAL = 5;
@@ -47,6 +51,11 @@ function normalizeContext(value) {
   }
   const role = string(value.role, "routing role", 64);
   if (!WORKER_ROLES.has(role)) throw new Error(`unsupported routing role: ${role}`);
+  const efforts = normalizeProviderEfforts(
+    value.efforts,
+    normalizedModels,
+    "routing context efforts",
+  );
   return Object.freeze({
     taskId: string(value.taskId, "routing taskId"),
     taskClass: string(value.taskClass, "routing taskClass"),
@@ -55,9 +64,20 @@ function normalizeContext(value) {
     evaluatorSha256: digest(value.evaluatorSha256, "routing evaluatorSha256"),
     harnessSha256: digest(value.harnessSha256, "routing harnessSha256"),
     models: Object.freeze(normalizedModels),
+    ...(efforts !== undefined ? { efforts } : {}),
   });
 }
 
+// Deliberately NOT effort-aware: application.mjs keeps its own independent
+// routingFingerprint(control, contract) implementation of this exact
+// formula (contractSha256/evaluatorSha256/harnessSha256/models only) and
+// re-derives it to verify a reported decision's fingerprintSha256. That
+// module has no effort concept anywhere in its own control/contract
+// model, so changing what this hashes would desync the two without a
+// separate, larger change there too -- confirmed directly by running its
+// tests, not assumed. currentFingerprint() below is effort-aware where it
+// matters (which past entries count as the current regime for pooling);
+// the publicly reported fingerprint intentionally stays as before.
 function fingerprint(context) {
   return canonicalSha256({
     contractSha256: context.contractSha256,
@@ -81,7 +101,9 @@ function currentFingerprint(entry, context) {
     outcome.evaluatorSha256 === context.evaluatorSha256 &&
     outcome.harnessSha256 === context.harnessSha256 &&
     QUALITY_FIRST_PROVIDER_ORDER.every(
-      (provider) => outcome.models[provider] === context.models[provider],
+      (provider) =>
+        outcome.models[provider] === context.models[provider] &&
+        providerEffort(outcome.efforts, provider) === providerEffort(context.efforts, provider),
     )
   );
 }

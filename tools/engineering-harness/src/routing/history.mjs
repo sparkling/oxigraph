@@ -16,6 +16,7 @@ import {
   unlink,
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { validateAstraReasoningEffort } from "../policy/astra-routing.mjs";
 import {
   canonicalJson,
   canonicalSha256,
@@ -23,6 +24,47 @@ import {
 } from "./features.mjs";
 
 export const NATIVE_PROVIDERS = Object.freeze(["codex", "claude"]);
+
+/**
+ * Per-provider reasoning efforts, keyed and validated the same way as the
+ * `models` map this always accompanies. `undefined` (never supplied --
+ * every entry recorded before this field existed, and any caller that
+ * never touches Astra) is returned as-is: the outcome/context normalizer
+ * omits the field entirely in that case, so the historical canonical-JSON
+ * shape, and therefore every already-stored `entrySha256`, is unchanged
+ * byte-for-byte. `providerEffort` below is the single place that treats a
+ * present-but-absent effort and an omitted `efforts` map as equivalent
+ * for comparison. A provider bound to `ASTRA_MODEL` must carry one of its
+ * supported efforts; any other provider must carry `null` --
+ * `validateAstraReasoningEffort` already enforces exactly this pairing and
+ * is reused rather than duplicated. This keeps quality history and
+ * routing decisions from pooling outcomes recorded at different Astra
+ * efforts as if they were interchangeable, since two efforts for the same
+ * model can have materially different expected quality.
+ */
+export function normalizeProviderEfforts(value, models, label) {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  if (Object.keys(value).length !== NATIVE_PROVIDERS.length) {
+    throw new Error(`${label} must bind both native provider efforts`);
+  }
+  const efforts = {};
+  for (const provider of NATIVE_PROVIDERS) {
+    if (!(provider in value)) {
+      throw new Error(`${label} must bind both native provider efforts`);
+    }
+    efforts[provider] = validateAstraReasoningEffort(models[provider], value[provider] ?? null);
+  }
+  return Object.freeze(efforts);
+}
+
+/** Reads one provider's effort, treating an omitted `efforts` map as all-null. */
+export function providerEffort(efforts, provider) {
+  return efforts?.[provider] ?? null;
+}
+
 export const ROUTER_HISTORY_SCHEMA = 1;
 
 const MAX_HISTORY_BYTES = 64 * 1024 * 1024;
@@ -47,6 +89,7 @@ const OUTCOME_KEYS = new Set([
   "provider",
   "model",
   "models",
+  "efforts",
   "candidateSha256",
   "evaluatorSha256",
   "contractSha256",
@@ -133,6 +176,7 @@ export function normalizeQualityOutcome(value) {
   if (model !== models[provider]) {
     throw new Error("outcome model does not match its frozen provider model map");
   }
+  const efforts = normalizeProviderEfforts(value.efforts, models, "outcome efforts");
   const mode = string(value.mode, "outcome mode", 32);
   if (mode !== "paired" && mode !== "routed") {
     throw new Error(`unsupported router history mode: ${mode}`);
@@ -163,6 +207,13 @@ export function normalizeQualityOutcome(value) {
     pairId,
     repairCycles,
   };
+  // Omitted entirely, not just defaulted, when never supplied: this keeps
+  // the canonical JSON shape -- and therefore every already-stored
+  // entrySha256 -- byte-identical for every entry recorded before this
+  // field existed. providerEffort() is how callers read it back uniformly.
+  if (efforts !== undefined) {
+    normalized.efforts = efforts;
+  }
   if (value.predictedQuality !== undefined) {
     normalized.predictedQuality = probability(
       value.predictedQuality,
