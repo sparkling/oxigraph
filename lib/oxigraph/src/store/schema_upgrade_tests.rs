@@ -1317,3 +1317,104 @@ fn schema_upgrade_activate_copy_enospc_process_helper() -> TestResult {
         other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
     }
 }
+
+/// A real `ENOSPC`, not a synthetic phase callback or a real process kill,
+/// injected on the first byte of `start_inner`'s own plan write -- strictly
+/// between `fault(0)` and `fault(1)`. This is the same boundary
+/// `schema_upgrade_start_child_exits_before_and_after_the_initial_plan_is_
+/// synced`'s `phase == 0` case already real-kills, but that test proves
+/// only what a *process death* leaves behind (no `PLAN` file at all); this
+/// proves what a real OS write failure leaves behind at the same boundary
+/// (an empty `PLAN` file) -- a related but distinct on-disk state, both of
+/// which `resume_schema_upgrade` must fail closed on rather than treat as
+/// valid. The plan write is the same architectural shape as this crate's
+/// very first disk-exhaustion test (`prepare_inner`'s journal write), for a
+/// different function -- confirmed by direct reading before picking this
+/// target, not assumed, since a structurally similar shape does not by
+/// itself guarantee an identical error path (`transform_inner`'s journal
+/// write turned out to surface as `BackupError::Storage(StorageError::Io(_))`
+/// rather than the bare `BackupError::Io(_)` this test expects).
+#[test]
+fn disk_exhaustion_on_the_construction_plan_write_preserves_every_input() -> TestResult {
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let shim_directory = std::env::current_exe()?
+        .parent()
+        .ok_or("test binary has no parent directory")?
+        .to_owned();
+    let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+        return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+    };
+    let root = tempfile::tempdir()?;
+    let root_path = root.path().canonicalize()?;
+    let (source, package) = fixture(&root_path)?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    let workspace = root_path.join("construction-enospc");
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command
+        .arg("--exact")
+        .arg(helper("schema_upgrade_construction_enospc_process_helper"));
+    command.env("LD_PRELOAD", shim);
+    command.env("ENOSPC_SHIM_BUDGET_BYTES", "0");
+    command.env("ENOSPC_SHIM_PREFIX", &workspace);
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_CONSTRUCTION_ENOSPC_TEST_SOURCE",
+        &source,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_CONSTRUCTION_ENOSPC_TEST_PACKAGE",
+        &package,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_CONSTRUCTION_ENOSPC_TEST_WORKSPACE",
+        &workspace,
+    );
+    let status = command.status()?;
+    assert!(status.success(), "child helper failed: {status:?}");
+    // Only start_inner's own write(&directory.join(PLAN), ...) call creates
+    // this file (create_new, before the write that then fails), so its
+    // existence is positive evidence the child reached real construction
+    // work, not just that it exited 0; its zero length pins the fault to
+    // that first write specifically.
+    assert!(
+        workspace.join(PLAN).exists(),
+        "the child never reached start_inner's plan write"
+    );
+    assert_eq!(fs::metadata(workspace.join(PLAN))?.len(), 0);
+    let before_workspace = bytes(&workspace)?;
+    // Matches the existing real-kill test's own phase-0 invariant: a plan
+    // that never finished writing fails closed on resume rather than being
+    // treated as valid, whether it is entirely absent (the real-kill case)
+    // or present but empty (this case).
+    assert!(Store::resume_schema_upgrade(&source, &package, &workspace, &options).is_err());
+    assert_eq!(bytes(&workspace)?, before_workspace);
+    assert_eq!(bytes(&source)?, before_source);
+    assert_eq!(bytes(&package)?, before_package);
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_construction_enospc_process_helper() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let Some(source) = std::env::var_os("OXIGRAPH_SCHEMA_UPGRADE_CONSTRUCTION_ENOSPC_TEST_SOURCE")
+    else {
+        return Ok(()); // An ordinary run: only the parent test re-invokes this.
+    };
+    let source = PathBuf::from(source);
+    let package = variable("OXIGRAPH_SCHEMA_UPGRADE_CONSTRUCTION_ENOSPC_TEST_PACKAGE")?;
+    let workspace = variable("OXIGRAPH_SCHEMA_UPGRADE_CONSTRUCTION_ENOSPC_TEST_WORKSPACE")?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let result = Store::start_schema_upgrade(&source, &package, &workspace, &options);
+    match result {
+        Err(BackupError::Io(error)) if error.kind() == io::ErrorKind::StorageFull => Ok(()),
+        other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
+    }
+}
