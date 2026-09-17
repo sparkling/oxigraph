@@ -850,6 +850,91 @@ mod tests {
         Ok(())
     }
 
+    /// Real process kills bracketing every one of `transform_inner`'s
+    /// per-edge journal-frame writes and its own pre-loop/post-loop
+    /// boundaries. `fault(0)` fires once, strictly before
+    /// `transform_upgrade` is even called -- no `TRANSFORM_JOURNAL` file
+    /// exists yet at that point. Inside the native migration loop,
+    /// `transform_inner`'s own closure receives one `edge` value per
+    /// underlying migration step; this file's own `fixture()` always
+    /// produces a version-0 legacy store, whose migration passes through
+    /// edges 0, 1 and 2 in turn (confirmed by reading `transform_upgrade`
+    /// and `migrate_versioned_to` directly, not assumed: `phase(version)`
+    /// fires first with `version == 0`, `migrate_versioned_to`'s own
+    /// `version == 0` branch calls `phase(0)` repeatedly -- once per quad,
+    /// harmlessly re-using the same edge value -- until it advances to
+    /// `phase(1)`, and `transform_upgrade`'s own final `phase(2)` fires
+    /// once more after the migration loop returns). The FIRST time each
+    /// new edge value is seen, a fixed-length journal frame is written and
+    /// synced before `fault(edge + 1)` fires, so `fault(1)`, `fault(2)`
+    /// and `fault(3)` fire strictly after the first, second and third
+    /// frame respectively. Because `journal_frame`'s own length is fixed
+    /// regardless of edge value or prior content -- the same property this
+    /// session's earlier ENOSPC coverage of this exact file already
+    /// established -- the journal file's exact byte length at each of
+    /// those three points is `N * one_frame_len`, computed directly rather
+    /// than guessed. `fault(4)` fires once more, strictly after
+    /// `transform_upgrade` fully returns (including its own post-loop
+    /// projection/validation/flush sequence) but before `transform_inner`'s
+    /// own remaining steps; the journal is already complete by then and
+    /// unchanged in length from `fault(3)`, so this boundary is
+    /// distinguished from it by what native work has completed inside
+    /// RocksDB, not by the journal file's own observable state.
+    ///
+    /// None of these five kills touch the `UPGRADE_GUARD` `prepare_inner`
+    /// already wrote when preparing this workspace: `Store::open` on the
+    /// prepared workspace's own `store/` refuses with `UpgradeIncomplete`
+    /// at every one of them, exactly as
+    /// `transform_child_exits_before_and_after_the_completion_rename`
+    /// (above) already proves unconditionally for its own, later boundary.
+    #[test]
+    fn transform_child_exits_before_each_journal_frame_and_after_the_native_migration() -> Result {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let package = dir.path().join("backup");
+        fixture(&source)?;
+        let before_source = hashes(&source)?;
+        let options = UpgradeTransformOptions::default();
+        let receipt = Store::backup_legacy(&source, &package, &options.backup)?;
+        let before_package = hashes(&package.join("store"))?;
+        let one_frame_len = journal_frame(0, &receipt, &[0_u8; 32], &[]).len() as u64;
+        for stop in [0_u8, 1, 2, 3, 4] {
+            let prepared = dir.path().join(format!("prepared-frames-{stop}"));
+            Store::prepare_upgrade(&source, &package, &prepared, &options.backup)?;
+            let paths = [
+                ("OXIGRAPH_UPGRADE_TRANSFORM_TEST_SOURCE", source.as_path()),
+                ("OXIGRAPH_UPGRADE_TRANSFORM_TEST_PACKAGE", package.as_path()),
+                (
+                    "OXIGRAPH_UPGRADE_TRANSFORM_TEST_PREPARED",
+                    prepared.as_path(),
+                ),
+            ];
+            let status = crash("transform_process_helper", &paths, stop)?;
+            assert_eq!(status.code(), Some(73), "the child did not reach {stop}");
+            let journal = prepared.join(TRANSFORM_JOURNAL);
+            if stop == 0 {
+                assert!(!journal.exists());
+            } else {
+                let expected_frames = u64::from(stop.min(3));
+                assert_eq!(
+                    fs::metadata(&journal)?.len(),
+                    expected_frames * one_frame_len,
+                    "stop {stop} must leave exactly {expected_frames} complete frame(s)"
+                );
+            }
+            assert!(!prepared.join(TRANSFORM_PENDING).exists());
+            assert!(!prepared.join(TRANSFORM_COMPLETE).exists());
+            assert!(TransformedUpgrade::verify(&source, &package, &prepared, &options).is_err());
+            assert!(matches!(
+                Store::open(prepared.join("store")),
+                Err(crate::storage::StorageError::UpgradeIncomplete)
+            ));
+            assert_eq!(hashes(&source)?, before_source);
+            assert_eq!(hashes(&package.join("store"))?, before_package);
+        }
+        Ok(())
+    }
+
     #[test]
     #[expect(
         clippy::exit,
