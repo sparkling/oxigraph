@@ -625,6 +625,73 @@ schema change first, confirm it against `validateCrossEntryInvariants`
 and the existing history-file format, and only then implement it with
 its own focused test additions to `router-history.test.mjs`.
 
+### 14. Implementing gate B's confirmed fix, and closing out a verification question it raised (2026-09-17)
+
+SS13's deferred design now has an answer, implemented and committed
+(`46b55202`). `history.mjs` gained `normalizeProviderEfforts()` and
+`providerEffort()`: an outcome may now carry an optional `efforts` map,
+validated against `astra-routing.mjs`'s existing
+`validateAstraReasoningEffort` ladder, added to `OUTCOME_KEYS` and
+included in the normalized outcome only when present -- omitted, not
+defaulted, for legacy-shaped outcomes, so every pre-existing entry's
+canonical JSON (and therefore `entrySha256`) is byte-identical to
+before. Verified directly against the real 31-entry
+`.runtime/router-history.jsonl`: it still opens, validates its full
+hash chain, and shows no `efforts` field on any entry.
+
+`quality-router.mjs`'s internal `currentFingerprint()` (which decides
+which past entries pool into "the current regime" for quality
+aggregation) now also compares effort per provider, closing the actual
+contamination gate B named: a `low`-effort and a `max`-effort
+`gpt-6-astra` regime no longer share pairing or calibration data. The
+*publicly reported* `fingerprintSha256` from `fingerprint()` was
+deliberately left unchanged after extending it broke 9 tests in
+`g12-programme.test.mjs` -- `application.mjs` keeps its own
+independent, duplicate re-derivation of that exact formula
+(`routingFingerprint(control, contract)`) with no effort concept
+anywhere in its own control/contract model, and re-verifies a reported
+decision's fingerprint against it. Reverted; documented with a code
+comment at the point of reversion. Extending `application.mjs` to
+carry effort too is a separate, larger, currently unforced change --
+nothing in its own domain needs to display or bind effort today, and
+gate B's confirmed problem is already fully closed without it. Not
+attempted; not recommended unless a concrete future need (e.g. an
+effort-aware receipt/audit surface) actually forces it.
+
+Verification: 3 new tests in `router-history.test.mjs` (schema
+preservation, ladder validation, and a same-model-different-effort
+non-contamination case), plus the full 1501-test engineering-harness
+suite run twice via `git stash` (with and without this change) --
+identical except the 3 new passing tests and two commit-identity tests
+that mechanically fail on any uncommitted diff, not a real regression.
+
+One of those two commit-identity tests
+(`test/g17-qualification-identity.test.mjs:50:1`, "G1.7 identity binds
+the sealed e9 subject separately from descendant harness control")
+kept failing even after `46b55202` was committed and the tree was
+clean, which needed its own separate check rather than being waved
+through. Reading `src/qualification/identity.mjs`'s
+`verifyControlOnlyDelta` and the G1.7 contract
+(`qualification/g1.7/contract.json`) directly: this test compares the
+contract's sealed subject commit
+(`e9d2db1b7c4eb974b406136e667e09ba06e34b48`, 2026-08-28 --
+the "e9" in its own name) against current `HEAD`, and fails on any
+changed path outside `README.md`/`docs/`/`tools/engineering-harness/`.
+539 commits have landed since that subject was sealed, the large
+majority touching `lib/` or `cli/` through ordinary product delivery,
+so this has been failing continuously for about three weeks and has
+nothing to do with `46b55202` or this session's disk-exhaustion work.
+The contract's own `authority` block records
+`promotionAuthority: false`, `publicationAuthority: false`,
+`routerQualityAuthority: false`, and its `objective` text says the
+protocol "leaves both human decisions unapproved" and "keeps every
+execution owner unavailable" -- this G1.7 track is an inert, archival
+protocol-freeze exercise (a `transactional_write` benchmark
+subject/reference/control comparison) that was never wired to gate
+ordinary delivery. No action taken or needed; recorded in Ruflo memory
+(`programme-controls/oxigraph-g17-e9-subject-drift-is-preexisting-and-inert`)
+so a future tick does not re-open this same question.
+
 ## Native adapter admission for product repair (2026-09-10)
 
 The ordinary workflow now admits the exact product file
