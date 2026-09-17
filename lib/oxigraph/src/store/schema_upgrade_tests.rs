@@ -1418,3 +1418,128 @@ fn schema_upgrade_construction_enospc_process_helper() -> TestResult {
         other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
     }
 }
+
+/// A real `ENOSPC`, injected on the first byte of `resume_inner`'s own
+/// attempt guard write -- strictly between `fault(0)` and `fault(1)`.
+/// `resume_inner` has ten fault phases (0..=9); this is the first of them to
+/// get real-OS-fault coverage, chosen only after directly auditing every
+/// phase's own write shape rather than assuming the technique transfers
+/// unchanged: the guard write here is `write(&path.join("store").join(
+/// UPGRADE_GUARD), GUARD)?`, the exact same `UPGRADE_GUARD`/`GUARD`
+/// constants and write shape already twice proven for `activate_inner` and
+/// `activate_upgrade_inner`'s own guard writes.
+///
+/// The one genuinely new wrinkle `resume_inner` has that those two
+/// functions do not: by the time `fault(0)` is reached, `append()` has
+/// already durably written and fsynced an `INTENT` record to
+/// `directory/JOURNAL` -- a real write, but strictly *before* `fault(0)`
+/// and, critically, at the workspace root rather than inside the fresh
+/// attempt directory `attempt_path` creates. Scoping `ENOSPC_SHIM_PREFIX`
+/// to `workspace.join("attempts")` rather than the whole workspace excludes
+/// that journal write from the fault's scope, so the guard write remains
+/// the first in-scope write; the injection-point assertions below pin this
+/// directly rather than leaving it as a claim from reading the code alone.
+///
+/// Because the `INTENT` record is already durable, this boundary is
+/// architecturally closer to the existing real-process-kill mid-copy
+/// recovery test than to `start_inner`'s own plan-write test: the fixture's
+/// own exhaustive synthetic test
+/// (`schema_upgrade_every_interruption_retains_uuid_and_prior_attempt_
+/// bytes`) already proves a fresh resume recovers cleanly from a
+/// synthetic-cancel at this exact phase, so a real OS fault here is
+/// expected to recover the same way, not fail closed.
+#[test]
+fn disk_exhaustion_on_the_resume_guard_write_preserves_every_input() -> TestResult {
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let shim_directory = std::env::current_exe()?
+        .parent()
+        .ok_or("test binary has no parent directory")?
+        .to_owned();
+    let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+        return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+    };
+    let root = tempfile::tempdir()?;
+    let root_path = root.path().canonicalize()?;
+    let (source, package) = fixture(&root_path)?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    let workspace = root_path.join("resume-guard-enospc");
+    let initial = Store::start_schema_upgrade(&source, &package, &workspace, &options)?;
+    let attempts = workspace.join("attempts");
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command
+        .arg("--exact")
+        .arg(helper("schema_upgrade_resume_guard_enospc_process_helper"));
+    command.env("LD_PRELOAD", shim);
+    command.env("ENOSPC_SHIM_BUDGET_BYTES", "0");
+    command.env("ENOSPC_SHIM_PREFIX", &attempts);
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_GUARD_ENOSPC_TEST_SOURCE",
+        &source,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_GUARD_ENOSPC_TEST_PACKAGE",
+        &package,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_GUARD_ENOSPC_TEST_WORKSPACE",
+        &workspace,
+    );
+    let status = command.status()?;
+    assert!(status.success(), "child helper failed: {status:?}");
+    // The first (and, on a fresh workspace, only) attempt is always numbered
+    // 0: only resume_inner's own guard write creates this file, so its
+    // existence is positive evidence the child reached that write, and its
+    // zero length pins the fault to that write's first byte specifically.
+    let guard = attempts
+        .join(format!("{:016}", 0_u64))
+        .join("store")
+        .join(UPGRADE_GUARD);
+    assert!(
+        guard.exists(),
+        "the child never reached resume_inner's guard write"
+    );
+    assert_eq!(fs::metadata(&guard)?.len(), 0);
+    let attempts_before = bytes(&attempts)?;
+    // Matches schema_upgrade_every_interruption_retains_uuid_and_prior_
+    // attempt_bytes's own phase-0 invariant: the durably-recorded INTENT
+    // makes this attempt recoverable, not fatal, so a fresh in-process
+    // resume completes the same upgrade rather than failing closed.
+    let state = Store::resume_schema_upgrade(&source, &package, &workspace, &options)?;
+    assert_eq!(state.schema_uuid(), initial.schema_uuid());
+    assert!(state.receipt().is_some());
+    let attempts_after = bytes(&attempts)?;
+    for (path, data) in attempts_before {
+        assert_eq!(attempts_after.get(&path), Some(&data));
+    }
+    SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options)?;
+    assert_eq!(bytes(&source)?, before_source);
+    assert_eq!(bytes(&package)?, before_package);
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_resume_guard_enospc_process_helper() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let Some(source) = std::env::var_os("OXIGRAPH_SCHEMA_UPGRADE_RESUME_GUARD_ENOSPC_TEST_SOURCE")
+    else {
+        return Ok(()); // An ordinary run: only the parent test re-invokes this.
+    };
+    let source = PathBuf::from(source);
+    let package = variable("OXIGRAPH_SCHEMA_UPGRADE_RESUME_GUARD_ENOSPC_TEST_PACKAGE")?;
+    let workspace = variable("OXIGRAPH_SCHEMA_UPGRADE_RESUME_GUARD_ENOSPC_TEST_WORKSPACE")?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let result = Store::resume_schema_upgrade(&source, &package, &workspace, &options);
+    match result {
+        Err(BackupError::Io(error)) if error.kind() == io::ErrorKind::StorageFull => Ok(()),
+        other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
+    }
+}
