@@ -4066,6 +4066,75 @@ each explicitly states its own dependency on unavailable host/human
 authorization or an unavailable execution owner, the genuinely-gated
 shape this session has consistently distinguished from actual drift.
 
+## A sixteenth entry point, and correcting a fabricated gate label carried in this session's own bookkeeping (2026-09-17)
+
+The second of the three candidates named above:
+`disk_exhaustion_on_the_preparation_guard_write_preserves_both_inputs`
+(`lib/oxigraph/src/store/upgrade.rs`), the first test in this file to
+let the guard write itself be the one that fails -- the file's three
+existing tests each deliberately avoid that: the journal test faults
+before the guard is ever attempted, the copy-loop test's budget is
+exactly `GUARD.len()` so the guard write succeeds by design, and the
+`PENDING` test's exact-file prefix never matches the guard path at
+any budget. `ENOSPC_SHIM_PREFIX` scopes to the `store/` directory
+(created before the journal write, but empty until the guard write
+itself), budget zero: the journal write is never nested under
+`store/` so it runs to completion unconstrained, and the guard write
+-- `store/`'s first-ever write -- is the one write in scope from its
+very first byte. Verifies the journal survived in full, `store/`
+contains exactly one entry (the empty guard file -- `create_new`
+succeeded, `write_all` failed) proving the copy loop never started,
+`PENDING`/`COMPLETE` never exist, `verify()` fails closed, and both
+inputs remain untouched. Fourth distinct shim name (`"guard"`) in
+this file; verified 3 consecutive full-module runs under four-way
+concurrency, 11/11 each time.
+
+Independently reviewed (**ACCEPT**, no fix required): confirmed
+`private_directory` calls only `mkdir` (via `DirBuilder::create`), never
+`write`/`pwrite`, so directory creation is invisible to the shim;
+confirmed no root-level filename in this workspace can string-prefix-
+collide with `"store"` under the shim's raw `strncmp`; confirmed the
+exact-single-entry assertion is structural, not incidentally-currently-
+true (`private_directory` creates nothing inside the directory, and
+`read_dir` never yields `.`/`..`); confirmed against every other guard-
+write test in the crate (`upgrade_receipt.rs`, `schema_upgrade_tests.rs`,
+`upgrade_resume.rs`'s own guard writes) that none targets this same
+function or call site; and confirmed the failure mode is loud, not
+vacuous, in every misplacement case. The reviewer deliberately did not
+re-run `cargo test` itself, citing this session's own established
+no-concurrent-cargo-test-on-the-same-binary rule while other reviews
+were active -- correct caution, with this change's own pre-existing
+3x11/11 evidence standing as the empirical verification instead.
+Committed `7740efd2`.
+
+Separately this tick, a background audit was asked what "G33" and
+"G41" -- labels this control record's own `separatePromotionRequirements`
+bookkeeping had carried across many prior ticks, and which the
+previous section above echoed once into this file's own prose --
+actually referred to. Neither is a real, independently-defined
+programme gate: neither appears anywhere else in `docs/adr/` or
+`docs/plans/`, and neither matches real gate numbering (G4.1 is
+explicitly closed; no G3.x gate is "G33"). They were ad-hoc shorthand
+invented inside the control record itself and never traced back to a
+real gate. Worse, the audit found "G4.4 facade coverage when
+implemented" misfiled inside the same "G41" list as if it were a
+small remaining promotion-evidence line item, when it is actually an
+entire unbuilt feature -- a versioned RDF4J-compatible REST facade
+([ADR-0029](0029-rdf4j-rest-interoperability.md)), with zero existing code (confirmed by
+grepping for `rdf4j` across `lib/` and `cli/`), genuinely unblocked
+and actionable, just large in scope and not started. Corrected: the
+fabricated label removed from the previous section's own prose
+(this file), and the control record's `separatePromotionRequirements`
+restructured into a `frozenPromotionEvidence` bucket (the real,
+genuinely-blocked evaluator-authority pattern, applying to G3.2, G3.4,
+and G1.7 alike) and a separate `g44RdfjFacade` entry naming the actual,
+unblocked, large-scope feature gap. This is the third distinct kind of
+drift this session has found and fixed in its own record-keeping this
+tick alone -- two stale task-board progress fields (G3.2, G3.4) and now
+one fabricated label -- each corrected the same way: read the actual
+current state directly, and change the record to match it, not the
+other way around.
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
