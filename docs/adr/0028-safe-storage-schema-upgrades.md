@@ -3847,6 +3847,89 @@ ceiling of what real-OS-fault disk-exhaustion testing can reach in
 this crate's upgrade/activation machinery without that deeper
 investigation.
 
+## A thirteenth entry point on a different function: `prepare_inner`'s copy loop (2026-09-17)
+
+Twelve entry points' ceiling above is specific to `resume_inner`'s and
+its siblings' RocksDB-internal boundaries. Gate 2's own row in the
+delivery-gates plan makes a narrower, separate claim about a
+*different* set of three functions -- `backup_legacy`, `prepare_upgrade`
+and `transform_inner` -- each already having exactly one journal/fsync
+boundary under real coverage, "not every journal/fsync boundary that
+function has." Rather than assume that gap was also exhausted, a
+read-only fork audited all three functions directly against their own
+existing single test and the shim's exact injection semantics.
+
+Result: **6 distinct, non-duplicate, tractable candidates**, not a
+ceiling like `resume_inner`'s remaining two. `backup_inner`'s and
+`prepare_inner`'s own `PENDING`-manifest writes; `prepare_inner`'s
+`UPGRADE_GUARD` write as its own fault point (currently only
+positively confirmed as a side effect of the copy-loop test below, not
+independently fault-tested); `prepare_inner`'s copy loop itself (until
+now, completely untested -- its existing single test faults the
+journal write, one boundary earlier); and `transform_inner`'s
+second-and-later journal frame (`OpenOptions::append`, a genuinely
+different branch from the already-tested first frame's
+`OpenOptions::create_new`) plus its own `TRANSFORM_PENDING` write.
+
+Implemented the single best-scoped candidate first:
+`disk_exhaustion_during_the_preparation_copy_loop_preserves_both_inputs`
+(`lib/oxigraph/src/store/upgrade.rs`). `ENOSPC_SHIM_PREFIX` is scoped to
+`destination/store`, not the whole prepared-output directory, so the
+already-tested journal write (which lives at the destination root, not
+under `store`) stays untouched regardless of budget.
+`ENOSPC_SHIM_BUDGET_BYTES = GUARD.len()` lets the guard write -- the
+only other write under `store` before the loop -- through in full,
+then faults the copy loop's first write. `copy_artifact` always
+`create_new`s its destination before writing, so a zero-byte stub for
+that file, not its absence, is the positive evidence of loop entry.
+Verifies: the guard and journal writes both survived in full (proof
+the fault landed exactly where intended, not one boundary earlier);
+the stub matches a real receipt file under the completed backup
+package; `PreparedUpgrade::verify` fails closed; and -- the actual
+product guarantee this test exists to establish -- both the untouched
+legacy source and the already-completed backup package are
+byte-identical to before the fault. Neither `backup_inner`'s nor
+`resume_inner`'s own copy-loop tests can establish that specific
+guarantee, since neither has this function's three-input structure
+(untouched source, completed package, fresh prepared destination, all
+three needing independent preservation proof).
+
+Independently reviewed (**ACCEPT**), verifying every claim against the
+actual source rather than the diff alone: the budget math and absence
+of any intervening write between the guard and the loop; that
+`receipt.files()` paths are provably flat (via `check_name`'s
+character restrictions and `check_native_files`' regular-file-only
+enforcement), so the non-recursive directory scan used by the test's
+own assertions cannot be fooled by a nested path; that every
+misplacement mode (fault landing on the guard, the journal, or a later
+file; the shim failing to compile or load) trips a specific,
+non-vacuous assertion; and no correctness bugs. One non-blocking
+precision nit accepted and fixed: the doc comment's "first byte the
+copy loop writes" is not quite the same claim as "first receipt
+file" -- a zero-byte file sorted first would copy with no `write()`
+call at all, so they only coincide because this fixture's own
+sort-first file happens to be non-empty; restated to say so explicitly
+rather than leave the coincidence implicit, matching this file's own
+established convention for that exact distinction. A second
+observation (two tests in the same binary now compile the same
+file-local shim `.so`, in theory racing a `cc` rewrite against a
+concurrent child's mapped copy) was noted as the crate's own existing,
+accepted convention (`schema_upgrade_tests.rs` already shares one shim
+across seven tests this way) and not a defect of this test
+specifically. Committed `a121d0f9`.
+
+Five candidates from the same audit remain open, scoped but not yet
+implemented, recorded for a future increment rather than rushed
+alongside this one: `backup_inner`'s and `prepare_inner`'s own
+`PENDING`-write boundaries (both amenable to the same file-specific
+`ENOSPC_SHIM_PREFIX` technique already used for `resume_inner`'s
+`JOURNAL` entry -- scope the prefix to the exact pending-manifest file,
+budget zero); `prepare_inner`'s `UPGRADE_GUARD` write as its own
+dedicated fault point; and `transform_inner`'s second-frame append
+write (budget computed by calling `journal_frame` directly for the
+first frame alone, matching this file's own "never a magic number for
+a computable quantity" discipline) and its `TRANSFORM_PENDING` write.
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
