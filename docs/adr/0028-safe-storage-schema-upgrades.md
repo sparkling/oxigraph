@@ -4523,6 +4523,54 @@ boundaries, `activate_inner`'s copy-loop/pre-open boundary, and
 `prepare_inner`/`transform_inner`'s remaining legacy-path phases -- stay
 open for future increments, one at a time.
 
+### The third real-process-kill candidate, and the first non-abandonment assertion (2026-09-17)
+
+The audit's third-ranked candidate is now implemented too:
+`schema_upgrade_resume_child_exits_around_the_validated_and_sealed_appends`
+(`lib/oxigraph/src/store/schema_upgrade_tests.rs`), bracketing
+`resume_inner`'s `fault(5)`/`fault(6)`/`fault(7)` -- the `VALIDATED` and
+`SEALED` journal-append calls. Every real-kill boundary this file already
+covered (phases 2, 3, 4) leaves the last journal record as `INTENT`, so a
+fresh resume always abandons the killed attempt and starts a new one;
+`fault(5)` behaves the same way. `fault(6)` and `fault(7)` are genuinely
+different: a fresh resume does not abandon the attempt after either -- it
+reuses attempt 0's own already-validated (or already-sealed) output
+directly, because the durably-recorded journal entry a real,
+unwind-skipping process death still left behind is what makes that safe.
+This is the first real-kill test in this file to specifically assert that
+non-abandonment (checking for the literal absence of a new
+`0000000000000001` attempts directory), not just the generic "a fresh
+resume still reaches the same outcome" shape every sibling real-kill test
+already asserts.
+
+Independent review (`resume-validated-sealed-kill-review`): **ACCEPT**.
+Verified the exact fault placement and that the `SEALED` append's own
+branch derives the SAME attempt number rather than a new one; confirmed
+the attempt-0 byte-preservation assertion is non-vacuous by identifying
+concrete bugs it would catch (a cleanup-on-abandon regression, or an
+attempt-numbering bug that reused attempt 0 for a retry); and confirmed
+the reuse path's own safety is not blind trust -- `verify_workspace`
+re-runs `verify_output`'s full projection comparison for every `VALIDATED`
+record before a resume proceeds, which is exactly what makes killing at
+this boundary meaningful to test at all. Two non-blocking doc-comment
+wording nits, explicitly left to this session's own discretion: the
+original "`fault(6)`/`fault(7)` are the first real-kill points where a
+fresh resume does NOT abandon" framing should have credited that phases 8
+and 9 (already real-kill tested by the completion-rename test) also
+produce non-abandoning resumes -- what is genuinely first here is the
+*assertion* of that property, not the phase numbers themselves; and the
+original "every earlier kill point this file already covers (0 through
+4)" framing could be misread as claiming real-kill coverage of phases 0
+and 1, when only 2, 3 and 4 currently have it (0 and 1 share the same
+`INTENT`-last property but remain open candidates). Both applied before
+landing. Committed as `17dbaa10`.
+
+Three of the audit's ranked candidates are now closed. Remaining:
+`activate_inner`'s copy-loop/pre-open boundary, and
+`prepare_inner`/`transform_inner`'s remaining legacy-path phases
+(`fault(0)`/`fault(1)` on `prepare_inner`; the per-edge journal-append
+phases on `transform_inner`).
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
