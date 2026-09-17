@@ -661,6 +661,71 @@ mod tests {
         Ok(())
     }
 
+    /// Real process kills bracketing `prepare_inner`'s guard write and its
+    /// copy loop: `phase(0)` fires once, strictly after `private_directory`
+    /// creates an empty `store/` but strictly before the journal and guard
+    /// are written; `phase(1)` fires once, strictly after both are written
+    /// and all three directory syncs complete, but before the copy loop
+    /// starts; `phase(2)` fires per file inside that loop, the same
+    /// per-file boundary this crate's other copy-loop tests already use.
+    ///
+    /// `phase(0)`'s own outcome was verified directly rather than assumed
+    /// to match its siblings: killed at that point, `store/` is a real but
+    /// entirely empty directory -- no guard, no journal, nothing --
+    /// because `reject_incomplete_upgrade` only refuses when the guard
+    /// file is actually present (`symlink_metadata` on it), and an absent
+    /// guard makes that check pass through as `Ok(())` regardless of
+    /// whether the directory is empty, partially populated, or does not
+    /// exist. `Store::open` on that guard-less empty directory therefore
+    /// does NOT return `UpgradeIncomplete`; it succeeds and creates a
+    /// fresh, valid, empty store there, via the same ordinary
+    /// create-if-missing semantics `Store::open` uses for any other new,
+    /// empty target -- there is nothing to distinguish this from a user
+    /// legitimately opening a brand-new path, and this is not a defect.
+    /// `phase(1)` and `phase(2)` are different: the guard already exists
+    /// by then, so `Store::open` refuses exactly as an in-process fault at
+    /// the same point already proves it does.
+    #[test]
+    fn preparation_child_exits_before_the_guard_write_and_during_the_copy_loop() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let package = dir.path().join("backup");
+        fixture(1, &source)?;
+        let before_source = hashes(&source)?;
+        let options = LegacyBackupOptions::default();
+        Store::backup_legacy(&source, &package, &options)?;
+        let before_package = hashes(&package.join("store"))?;
+        for stop in [0_u8, 1, 2] {
+            let output = dir.path().join(format!("prepared-early-{stop}"));
+            let paths = [
+                ("OXIGRAPH_UPGRADE_PREPARE_TEST_SOURCE", source.as_path()),
+                ("OXIGRAPH_UPGRADE_PREPARE_TEST_PACKAGE", package.as_path()),
+                ("OXIGRAPH_UPGRADE_PREPARE_TEST_OUTPUT", output.as_path()),
+            ];
+            let status = crash("prepare_process_helper", &paths, stop)?;
+            assert_eq!(status.code(), Some(73), "the child did not reach {stop}");
+            assert!(PreparedUpgrade::verify(&output, &options).is_err());
+            if stop == 0 {
+                // No guard exists yet: Store::open legitimately creates a
+                // fresh empty store here, the same as it would for any
+                // other new, empty target -- not a refusal, and not a bug.
+                assert!(Store::open(output.join("store")).is_ok());
+            } else {
+                assert!(matches!(
+                    Store::open(output.join("store")),
+                    Err(crate::storage::StorageError::UpgradeIncomplete)
+                ));
+                assert!(matches!(
+                    Store::open_read_only(output.join("store")),
+                    Err(crate::storage::StorageError::UpgradeIncomplete)
+                ));
+            }
+            assert_eq!(hashes(&source)?, before_source);
+            assert_eq!(hashes(&package.join("store"))?, before_package);
+        }
+        Ok(())
+    }
+
     #[test]
     #[expect(
         clippy::exit,
