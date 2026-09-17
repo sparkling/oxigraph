@@ -3364,6 +3364,72 @@ covered crate-wide now (`backup_legacy`, `prepare_upgrade`,
 `transform_prepared_upgrade`, and two boundaries of
 `activate_schema_upgrade`), not the complete crash/fault matrix.
 
+## A genuinely broader audit, then the legacy activation path's two boundaries in one dispatch (2026-09-17)
+
+This tick opened with a wider question than any prior one: not just
+"which G4.3 gate item is next," but whether continuing to mine this
+one technique was still the best use of the programme's time at all.
+The live Ruflo task list was checked across the whole programme, not
+filtered to G4.3. It surfaced nothing actionable -- every pending item
+was either already-completed historical work or explicitly gated
+behind external human or host authorization this session cannot grant
+itself (`"authorization-gated host validation"`, `"explicit host and
+human authorization remain prerequisites"`). This confirmed, rather
+than assumed, that crash-matrix breadth remained the best available
+ordinary-delivery slice.
+
+`Store::activate_upgrade` / `activate_upgrade_inner`
+(`upgrade_receipt.rs`), the legacy v0/v1-to-v2 activation path, was
+picked over the already-deprioritized `start_inner` and `resume_inner`
+because it had never been audited at all. Direct reading found it
+structurally near-identical to `schema_upgrade.rs`'s `activate_inner`,
+already tested twice this session: the same `write()` helper, the same
+`UPGRADE_GUARD`/`GUARD` constants (both files share the same
+`use super::*` chain), the same guard-write-then-copy-loop shape. This
+is stated plainly, not oversold: it is the least architecturally novel
+target this session has picked. Its real value is closing a genuine
+gap, not novelty -- grepping the whole crate for any existing crash
+test targeting `activate_upgrade_inner`'s guard-write or copy-loop
+boundaries specifically found none. The function's *only* existing
+real-process-kill coverage
+(`activation_child_exits_immediately_before_and_after_guard_unlink`)
+targets the *later* guard-unlink boundary at phases 4/5, and does so
+through a mechanism unique to this file: `Store::activate_upgrade`'s
+public wrapper bakes in `activation_process_fault`, a
+`#[cfg(test)]`-gated module-level function that reads
+`OXIGRAPH_ACTIVATION_TEST_EXIT_AT` internally, rather than exposing an
+injectable fault closure the way the other four files' public wrappers
+do. Confirmed this stays dormant for the new tests: they never set
+that env var, so the function's `#[cfg(test)]` branch never matches.
+
+Both boundaries -- the guard write (`fault(0)` to `fault(1)`, budget
+`0`) and the copy loop (`fault(1)` to `fault(2)`, budget `GUARD.len()`)
+-- were covered in a single dispatch, since both reuse the exact
+budget-precision technique and premise-pinning assertion
+(`assert!(!GUARD.is_empty())`) already established for the analogous
+`schema_upgrade.rs` pair; there was no remaining design uncertainty to
+resolve one boundary at a time. The two new tests
+(`disk_exhaustion_on_the_legacy_activation_guard_write_preserves_
+every_input`, `disk_exhaustion_during_the_legacy_activation_copy_
+loop_preserves_every_input`) follow this file's *own* pre-existing
+crash-test convention exactly -- hardcoded literal libtest path
+strings, not a `helper()`-computed name, since this file has never
+defined one and its three existing crash-test helpers already use
+that exact style.
+
+Single review round (`xhigh`, `claude-fable-5-1`): **ACCEPT**,
+independently re-tracing the injection points against
+`activate_upgrade_inner`'s real write order, confirming
+`activation_process_fault` stays dormant, and confirming the vacuous-
+pass and mutation-test protections match exactly. Committed
+`a6487340`.
+
+What remains open: `start_inner` and `resume_inner`'s remaining fault
+phases still have no disk-exhaustion coverage. Seven entry points are
+covered crate-wide now, across five functions -- two of which
+(`activate_inner` and `activate_upgrade_inner`) each have two distinct
+covered boundaries -- not the complete crash/fault matrix.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
