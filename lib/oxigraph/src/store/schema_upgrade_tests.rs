@@ -997,7 +997,7 @@ fn schema_upgrade_start_process_helper() -> TestResult {
 /// same name; duplicated file-local rather than shared, matching this
 /// session's own established convention of file-local crash-test
 /// infrastructure. `name` distinguishes each caller's own `.c`/`.so`
-/// filenames: this file has seven ENOSPC tests, all runnable concurrently
+/// filenames: this file has eight ENOSPC tests, all runnable concurrently
 /// under libtest's default multithreading, and an unparameterized shared
 /// filename already raced for real once this exact situation arose with
 /// just two tests in another file (`legacy_backup.rs`) -- fixed there and
@@ -1979,5 +1979,162 @@ fn schema_upgrade_resume_sealed_enospc_process_helper() -> TestResult {
     match result {
         Err(BackupError::Io(error)) if error.kind() == io::ErrorKind::StorageFull => Ok(()),
         other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
+    }
+}
+
+/// A real `ENOSPC` injected on `resume_inner`'s own `write_envelope` call --
+/// strictly between `fault(3)` and `fault(4)` -- the first entry point in
+/// this crate's whole disk-exhaustion suite to target a write RocksDB's own
+/// vendored C++ code makes, not a write this crate's own Rust code issues
+/// directly. Resolved as tractable, not infeasible, by reading RocksDB's
+/// real vendored source rather than assuming: `write_envelope`'s
+/// `db.insert()` then `db.flush()` go through `PosixWritableFile::Append`
+/// (`oxrocksdb-sys/rocksdb/env/io_posix.cc`), whose own body is a plain
+/// `write(fd, ...)` loop -- the exact libc symbol this crate's shim already
+/// intercepts -- since this crate configures no `direct_io`/`io_uring` for
+/// ordinary writes, which would otherwise route through the unintercepted
+/// `pwrite`-based `PositionedAppend` path instead.
+///
+/// `SchemaUpgradeSnapshot::open`'s own read-only inspection (`fault(2)` to
+/// `fault(3)`) performs zero writes -- confirmed via `Db::open_read_only_
+/// with_options`, RocksDB's own dedicated read-only entry point -- so it
+/// never counts against any budget scoped under `store/`. This means the
+/// only writes ever in scope for an `ENOSPC_SHIM_PREFIX` of `<attempt>/
+/// store` before `write_envelope` itself are the guard write and the copy
+/// loop's own files: `resume_inner`'s own "last record is INTENT" branch
+/// means any fresh process invocation that reaches `write_envelope` must,
+/// within that same process, first complete that entire sequence -- there
+/// is no way to synthetically pre-drive the workspace past it in the
+/// parent process, unlike every other boundary's own append-based
+/// technique. The budget is therefore the sum of `GUARD.len()` and every
+/// byte the copy loop will write, computed by summing `package/store`'s
+/// own real bytes rather than guessing: whatever non-`store/` contributor
+/// files a receipt might also carry (see the copy-loop test's own doc
+/// comment above) are copied to targets outside this exact prefix and so
+/// never count against it either way, so this sum is correct regardless
+/// of whether any exist.
+#[test]
+fn disk_exhaustion_on_the_resume_schema_envelope_write_preserves_every_input() -> TestResult {
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let shim_directory = std::env::current_exe()?
+        .parent()
+        .ok_or("test binary has no parent directory")?
+        .to_owned();
+    let Some(shim) = compile_enospc_shim(&shim_directory, "resume_envelope")? else {
+        return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+    };
+    let root = tempfile::tempdir()?;
+    let root_path = root.path().canonicalize()?;
+    let (source, package) = fixture(&root_path)?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    let workspace = root_path.join("resume-envelope-enospc");
+    let initial = Store::start_schema_upgrade(&source, &package, &workspace, &options)?;
+    let attempts = workspace.join("attempts");
+    let attempt = attempts.join(format!("{:016}", 0_u64));
+    let store = attempt.join("store");
+    let copy_budget: u64 = bytes(&package.join("store"))?
+        .values()
+        .map(|value| value.len() as u64)
+        .sum();
+    let budget = GUARD.len() as u64 + copy_budget;
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command.arg("--exact").arg(helper(
+        "schema_upgrade_resume_envelope_enospc_process_helper",
+    ));
+    command.env("LD_PRELOAD", shim);
+    command.env("ENOSPC_SHIM_BUDGET_BYTES", budget.to_string());
+    command.env("ENOSPC_SHIM_PREFIX", &store);
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_ENVELOPE_ENOSPC_TEST_SOURCE",
+        &source,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_ENVELOPE_ENOSPC_TEST_PACKAGE",
+        &package,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_ENVELOPE_ENOSPC_TEST_WORKSPACE",
+        &workspace,
+    );
+    let status = command.status()?;
+    assert!(status.success(), "child helper failed: {status:?}");
+    // The guard write's and every copied file's own budget was exactly
+    // consumed, not exceeded, so both completed in full: positive evidence
+    // the child passed the guard and copy-loop boundaries and reached
+    // SchemaUpgradeSnapshot::open/write_envelope specifically, not a
+    // restatement of the guard-write or copy-loop tests' own vacuous-pass
+    // guards. Whether write_envelope's own fault leaves a fresh zero-byte
+    // file or appends nothing to an already-copied one, the copied total
+    // excluding the guard is unaffected either way, so this holds exactly,
+    // not approximately.
+    assert_eq!(
+        fs::metadata(store.join(UPGRADE_GUARD))?.len(),
+        GUARD.len() as u64,
+        "the guard write itself must have succeeded in full under this budget"
+    );
+    let copied = bytes(&store)?;
+    let guard_path = PathBuf::from(UPGRADE_GUARD);
+    let copied_total: u64 = copied
+        .iter()
+        .filter(|(path, _)| **path != guard_path)
+        .map(|(_, data)| data.len() as u64)
+        .sum();
+    assert_eq!(
+        copied_total, copy_budget,
+        "the copy loop must have completed in full before SchemaUpgradeSnapshot::open ran"
+    );
+    let attempts_before = bytes(&attempts)?;
+    // Matches schema_upgrade_every_interruption_retains_uuid_and_prior_
+    // attempt_bytes's own invariant: a fresh in-process resume completes
+    // the same upgrade rather than failing closed.
+    let state = Store::resume_schema_upgrade(&source, &package, &workspace, &options)?;
+    assert_eq!(state.schema_uuid(), initial.schema_uuid());
+    assert!(state.receipt().is_some());
+    let attempts_after = bytes(&attempts)?;
+    for (path, data) in attempts_before {
+        assert_eq!(attempts_after.get(&path), Some(&data));
+    }
+    SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options)?;
+    assert_eq!(bytes(&source)?, before_source);
+    assert_eq!(bytes(&package)?, before_package);
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_resume_envelope_enospc_process_helper() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let Some(source) =
+        std::env::var_os("OXIGRAPH_SCHEMA_UPGRADE_RESUME_ENVELOPE_ENOSPC_TEST_SOURCE")
+    else {
+        return Ok(()); // An ordinary run: only the parent test re-invokes this.
+    };
+    let source = PathBuf::from(source);
+    let package = variable("OXIGRAPH_SCHEMA_UPGRADE_RESUME_ENVELOPE_ENOSPC_TEST_PACKAGE")?;
+    let workspace = variable("OXIGRAPH_SCHEMA_UPGRADE_RESUME_ENVELOPE_ENOSPC_TEST_WORKSPACE")?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let result = Store::resume_schema_upgrade(&source, &package, &workspace, &options);
+    match result {
+        // write_envelope's errors come from RocksDB (via SchemaUpgradeSnapshot,
+        // a crate::storage type), wrapped through StorageError -- unlike every
+        // other resume_inner boundary in this file, which faults this crate's
+        // own plain write() helper and surfaces bare BackupError::Io instead.
+        Err(BackupError::Storage(crate::storage::StorageError::Io(error)))
+            if error.kind() == io::ErrorKind::StorageFull =>
+        {
+            Ok(())
+        }
+        other => Err(format!(
+            "expected a StorageFull BackupError::Storage(StorageError::Io(_)), got {other:?}"
+        )
+        .into()),
     }
 }
