@@ -4628,6 +4628,64 @@ reflexively defending or dismissing the choice. Committed as `96c1c726`.
 Four of the audit's ranked candidates are now closed. The remaining one,
 `prepare_inner`/`transform_inner`'s legacy-path phases, stays open.
 
+### The fifth real-process-kill candidate, half-closed: prepare_inner done, transform_inner still open (2026-09-17)
+
+The audit's fifth and final ranked candidate is now closed too:
+`preparation_child_exits_before_the_guard_write_and_during_the_copy_loop`
+(`lib/oxigraph/src/store/upgrade.rs`), bracketing `prepare_inner`'s
+`phase(0)` (strictly before the journal and guard are written),
+`phase(1)` (strictly after both are written and synced, before the copy
+loop), and `phase(2)` (per file inside that loop).
+
+Before writing any assertion, `phase(0)`'s own outcome was checked
+empirically via a throwaway probe test, not assumed to match its
+siblings: a kill there leaves `store/` as a real but entirely empty
+directory, since `reject_incomplete_upgrade` (`storage/rocksdb.rs`) only
+refuses when the guard file's `symlink_metadata` actually succeeds --
+absent guard, present or not, empty or not, all pass through as `Ok(())`
+regardless. `Store::open` on that guard-less empty directory therefore
+succeeds, creating a fresh empty store via ordinary create-if-missing
+semantics, rather than returning `UpgradeIncomplete`. This is
+qualitatively different from `phase(1)`/`phase(2)`, where the guard
+already exists and refusal happens exactly as the earlier `phase(3)`/`(4)`
+sibling test already proves.
+
+Independent review (`prepare-guard-write-kill-review`) traced
+`create_if_missing` end-to-end from `Store::open` through
+`OpenLease::acquire`'s own fresh-store detection to confirm this finding
+directly, then gave the explicitly-requested independent design
+assessment: **acceptable, not a gap**, for reasons beyond what this
+session's own investigation had already found -- the only guard-less
+state reachable is a *completely empty* directory (the guard write
+precedes the copy loop, and all three directory syncs precede `phase(1)`,
+so copied native data can never sit unguarded), `PreparedUpgrade::verify`
+still refuses in every one of the three killed states regardless, a retry
+needs a fresh destination either way (`fresh_destination` rejects any
+existing path), and -- the review's own added finding -- **this exact
+window is already documented as accepted design in this ADR's own
+earlier text**: "The brief window before guard creation can leave an
+empty directory, but no copied native files." This was a previously
+*known*, deliberately-accepted boundary, not a previously-undiscovered
+gap, so no separate product finding was raised. The review also
+considered and rejected two possible tightenings (moving the guard to the
+`destination` level would break the deliberate property that refusal
+survives the whole directory being moved elsewhere; writing the guard
+before `store/` exists is impossible since the guard lives inside it) and
+noted one purely defense-in-depth nicety (swapping the guard-before-journal
+write order) not worth a change on its own. Verdict: **ACCEPT**, no
+required fixes. Committed as `3389850a`.
+
+This closes `prepare_inner`'s real-process-kill coverage to all five of
+its phases (`0..=4`). The audit's own fifth-ranked candidate was actually
+a combined item -- "`prepare_inner`'s `fault(0)`/`fault(1)` boundary...
+and `transform_inner`'s per-edge journal-append phases" -- and only the
+`prepare_inner` half is closed by this section; `transform_inner`'s own
+per-edge phases remain a genuinely open, not-yet-implemented candidate,
+not claimed closed here. Four of the audit's five ranked candidates are
+therefore fully closed and the fifth is half-closed; this is real,
+substantial progress on the real-process-kill thread, not its own
+stopping point yet the way the ENOSPC thread reached one earlier today.
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
