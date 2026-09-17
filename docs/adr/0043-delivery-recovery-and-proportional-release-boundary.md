@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-09-07
-- Updated: 2026-09-12
+- Updated: 2026-09-17
 - Deciders: Oxigraph parity programme
 - Implementation status: R1 source handoff `aa7128bb` is delivered. Ordinary
   product work follows the implemented native-host workflow below; the wider
@@ -504,6 +504,60 @@ transaction/topology tests pass
 The checks prove only the changed product/binding behavior at this source
 state. They do not confer production readiness, performance, containment,
 provider, or broad semantic-parity claims.
+
+### 12. Correcting the "Astra activation gate" tasks' stale dormancy premise (2026-09-17)
+
+Two long-pending Ruflo tasks, `task-1788732955580-l69gx4` ("Astra
+activation gate A") and `task-1788732963005-oiyx9g` ("Astra activation
+gate B"), were both filed on 2026-09-06 and both state their own
+acceptance criteria as "keep Astra dormant, no provider execution,
+qualification, promotion, or publication." Investigated directly
+before any implementation was attempted: that premise is contradicted
+by this ADR's own §9, in this ADR's own words -- "the owner's September
+12 selection replaces Sol High with Astra Low for this programme's
+implementation work," "18 records represented 13 distinct parent
+turns, all recording `gpt-6-astra` / `max`," and "the two failed
+Astra-bound schema-upgrade workflows keep their original identities."
+`gpt-6-astra` was demonstrably executed for real programme work,
+repeatedly, at multiple efforts, in the days immediately following
+both tasks' own creation date. "Dormant" described a state that no
+longer held true by the time either task could have been started.
+
+This is not a case where the underlying engineering concern is wrong.
+Gate A's own goal -- a version-additive effort-migration contract that
+maps legacy `none`/`minimal` callers to `low`, fails closed on an
+unknown effort, and never silently substitutes a transport or
+provider -- and gate B's goal -- keeping per-effort request identity
+distinct so a dormant-or-not Astra outcome cannot contaminate the
+existing generic router's own quality history -- remain genuinely
+useful hardening, independent of whether Astra has already executed.
+What is wrong is the *framing*: both tasks describe themselves as a
+gate to satisfy *before* a hypothetical future activation, when that
+activation already happened, repeatedly, and is already documented in
+this same ADR. A "pre-seal" gate for an event that has already
+occurred cannot be implemented as originally scoped; it needs
+rewriting as a retroactive hardening pass over the now-active routing
+path, not a pre-activation checklist.
+
+A second, independent gap was found while investigating gate A
+specifically: `tools/engineering-harness/src/policy/astra-routing.mjs`'s
+own `ASTRA_REASONING_EFFORTS` currently lists six values --
+`[low, medium, high, xhigh, max, ultra]` -- while gate A's own task
+text says to "preserve low/medium/high/xhigh/max," silently omitting
+`ultra`. This omission predates, and is independent of, the dormancy
+question above; it would need correcting regardless of how the gate
+is rescoped.
+
+Neither task's premise has been corrected in the task tracker itself
+(the available tooling can update a task's status and progress, not
+rewrite its recorded description), so this ADR section is the
+authoritative record of the correction until a session with dedicated
+time to rescope and implement the underlying hardening work picks it
+up. Full investigation, evidence, and reasoning are recorded in Ruflo
+memory: `programme-reviews/oxigraph-astra-gates-stale-premise-2026-09-17-v1`.
+This correction does not activate, qualify, promote, or publish
+anything; it corrects a documentation premise so a future
+implementation attempt does not start from a false starting state.
 
 ## Native adapter admission for product repair (2026-09-10)
 
