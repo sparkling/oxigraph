@@ -745,11 +745,20 @@ mod tests {
     /// Linux-specific: the caller must skip this on any other OS. Compiled
     /// next to the test binary itself, not into a temporary directory, since
     /// a `noexec` mount there would silently make `LD_PRELOAD` a no-op.
+    /// `name` distinguishes each caller's own `.c`/`.so` filenames: this
+    /// file has two ENOSPC tests now, both of which can run concurrently
+    /// under libtest's default multithreading, and a shared filename raced
+    /// for real on the first such run here (one test's `cc` invocation
+    /// rewriting the `.so` while the other's freshly-spawned child had it
+    /// mapped, observed as a spurious `backup_legacy_enospc_process_helper`
+    /// failure that did not reproduce on immediate retry) -- not merely the
+    /// theoretical risk this crate's other, single-shim-sharing test files
+    /// still carry.
     #[expect(
         clippy::print_stderr,
         reason = "diagnostic for a CI host missing a C compiler, opt-in test infrastructure only"
     )]
-    fn compile_enospc_shim(directory: &Path) -> TestResult<Option<PathBuf>> {
+    fn compile_enospc_shim(directory: &Path, name: &str) -> TestResult<Option<PathBuf>> {
         const SOURCE: &str = r#"
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -816,9 +825,9 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
     return real(fd, buf, count, offset);
 }
 "#;
-        let source_path = directory.join("oxigraph_legacy_backup_enospc_shim.c");
+        let source_path = directory.join(format!("oxigraph_legacy_backup_enospc_shim_{name}.c"));
         fs::write(&source_path, SOURCE)?;
-        let shared_object = directory.join("oxigraph_legacy_backup_enospc_shim.so");
+        let shared_object = directory.join(format!("oxigraph_legacy_backup_enospc_shim_{name}.so"));
         let status = match std::process::Command::new("cc")
             .arg("-shared")
             .arg("-fPIC")
@@ -861,7 +870,7 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
             .parent()
             .ok_or("test binary has no parent directory")?
             .to_owned();
-        let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+        let Some(shim) = compile_enospc_shim(&shim_directory, "copy")? else {
             return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
         };
         let directory = tempfile::tempdir()?;
@@ -898,6 +907,71 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
         assert!(
             LegacyBackupReceipt::verify(&destination, &TransactionStartControl::new()).is_err()
         );
+        Ok(())
+    }
+
+    /// A real `ENOSPC` injected on the first byte the manifest write ever
+    /// makes -- strictly after the copy loop has already copied every file
+    /// in full, unlike
+    /// `disk_exhaustion_during_copy_preserves_source_and_leaves_destination_
+    /// incomplete` (which faults inside the loop itself). `PENDING`
+    /// (`destination.join(PENDING)`) is a sibling of `store/`, not nested
+    /// under it, so scoping `ENOSPC_SHIM_PREFIX` to that exact file --
+    /// the same file-specific technique already used for the schema-upgrade
+    /// draft's own `JOURNAL` entry -- means the copy loop's own writes
+    /// under `store/` never match the prefix at all, regardless of budget:
+    /// no budget accounting for the loop's own byte volume is needed.
+    /// Reuses `backup_legacy_enospc_process_helper` unchanged; the
+    /// injection point is entirely determined by this test's own
+    /// budget/prefix choice.
+    #[test]
+    fn disk_exhaustion_on_the_backup_manifest_write_preserves_the_completed_copy() -> TestResult {
+        if !cfg!(target_os = "linux") {
+            return Ok(());
+        }
+        let shim_directory = std::env::current_exe()?
+            .parent()
+            .ok_or("test binary has no parent directory")?
+            .to_owned();
+        let Some(shim) = compile_enospc_shim(&shim_directory, "manifest")? else {
+            return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+        };
+        let directory = tempfile::tempdir()?;
+        let root = directory.path().canonicalize()?;
+        let source = root.join("source");
+        let destination = root.join("package");
+        copy_fixture(1, &source)?;
+        let before = source_inventory(&source)?;
+        let mut command = std::process::Command::new(std::env::current_exe()?);
+        command
+            .arg("--exact")
+            .arg(enospc_helper("backup_legacy_enospc_process_helper"));
+        command.env("LD_PRELOAD", shim);
+        command.env("ENOSPC_SHIM_BUDGET_BYTES", "0");
+        command.env("ENOSPC_SHIM_PREFIX", destination.join(PENDING));
+        command.env("OXIGRAPH_LEGACY_BACKUP_ENOSPC_TEST_SOURCE", &source);
+        command.env(
+            "OXIGRAPH_LEGACY_BACKUP_ENOSPC_TEST_DESTINATION",
+            &destination,
+        );
+        let status = command.status()?;
+        assert!(status.success(), "child helper failed: {status:?}");
+        // The copy loop's own writes never matched the PENDING-file-specific
+        // prefix, so they were never subject to the budget at all: positive
+        // evidence every file copied in full, not just that the child
+        // process happened to exit 0.
+        assert_eq!(
+            source_inventory(&destination.join("store"))?,
+            before,
+            "the copy loop must have completed in full before the manifest write ran"
+        );
+        assert!(destination.join(PENDING).exists());
+        assert_eq!(fs::metadata(destination.join(PENDING))?.len(), 0);
+        assert!(!destination.join(COMPLETE).exists());
+        assert!(
+            LegacyBackupReceipt::verify(&destination, &TransactionStartControl::new()).is_err()
+        );
+        assert_eq!(source_inventory(&source)?, before);
         Ok(())
     }
 
