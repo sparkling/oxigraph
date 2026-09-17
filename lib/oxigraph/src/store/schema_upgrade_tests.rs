@@ -1690,3 +1690,138 @@ fn schema_upgrade_resume_copy_enospc_process_helper() -> TestResult {
         other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
     }
 }
+
+/// A real `ENOSPC`, injected on `resume_inner`'s own `VALIDATED`-record
+/// journal append -- strictly between `fault(5)` and `fault(6)` -- using a
+/// genuinely new prefix-scoping variant: `ENOSPC_SHIM_PREFIX` names the
+/// `JOURNAL` *file* itself, not a directory. `start_inner` creates this
+/// file, empty, in the parent process before any child is ever spawned;
+/// `append()` is the only function that ever *writes bytes* to it inside a
+/// scoped child. The guard write, the copy loop, and `SchemaUpgradeSnapshot
+/// ::open`/`write_envelope` all write under the completely disjoint
+/// `directory/attempts/<n>/` tree, so none of them can ever match this
+/// prefix, regardless of how much RocksDB-internal write volume they
+/// involve. This sidesteps the problem that made a directory-scoped
+/// approach to this same boundary intractable: scoping to the specific
+/// file, rather than trying to account for every byte every intervening
+/// RocksDB call writes, removes the need to know that volume at all.
+///
+/// On a fresh, never-before-resumed workspace, exactly one journal write
+/// precedes this one: the `INTENT` record, appended strictly before
+/// `fault(0)`. Its exact encoded length is computed here by calling
+/// `frame()` directly -- the same private function `append()` itself
+/// calls, accessible from this test module the same way `resume_inner`,
+/// `attempt_path` and every other private helper already are -- rather
+/// than guessing or hardcoding a byte count, matching this file's own
+/// `GUARD.len()` discipline. A budget equal to that exact length lets the
+/// `INTENT` append through in full (`count == budget`, which the shim's
+/// `count > budget` check does not reject) and leaves zero budget for the
+/// very next write to this file, the `VALIDATED` append.
+///
+/// Because the prefix cannot match any other write, a `StorageFull`
+/// failure here can only mean the entire happy path up to `fault(5)` --
+/// guard write, copy loop, RocksDB open/compare, `write_envelope` --
+/// already succeeded: there is no other way to reach a second write to
+/// this specific file. The journal's own exact bytes after the failed
+/// attempt (precisely the `INTENT` frame, no more) are therefore both the
+/// vacuous-pass guard and the injection-point pin in one assertion.
+#[test]
+fn disk_exhaustion_on_the_resume_validated_journal_write_preserves_every_input() -> TestResult {
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let shim_directory = std::env::current_exe()?
+        .parent()
+        .ok_or("test binary has no parent directory")?
+        .to_owned();
+    let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+        return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+    };
+    let root = tempfile::tempdir()?;
+    let root_path = root.path().canonicalize()?;
+    let (source, package) = fixture(&root_path)?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    let workspace = root_path.join("resume-validated-enospc");
+    let initial = Store::start_schema_upgrade(&source, &package, &workspace, &options)?;
+    let journal = workspace.join(JOURNAL);
+    let plan = fs::read(workspace.join(PLAN))?;
+    let intent_frame = frame(
+        &Record {
+            kind: INTENT,
+            attempt: 0,
+            files: Vec::new(),
+        },
+        &envelope_checksum(PLAN_MAGIC, &plan),
+    );
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command.arg("--exact").arg(helper(
+        "schema_upgrade_resume_validated_enospc_process_helper",
+    ));
+    command.env("LD_PRELOAD", shim);
+    command.env("ENOSPC_SHIM_BUDGET_BYTES", intent_frame.len().to_string());
+    command.env("ENOSPC_SHIM_PREFIX", &journal);
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_VALIDATED_ENOSPC_TEST_SOURCE",
+        &source,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_VALIDATED_ENOSPC_TEST_PACKAGE",
+        &package,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_VALIDATED_ENOSPC_TEST_WORKSPACE",
+        &workspace,
+    );
+    let status = command.status()?;
+    assert!(status.success(), "child helper failed: {status:?}");
+    // Only the INTENT frame survives: a corrupted helper name (the child
+    // never running resume_inner at all) leaves JOURNAL at the empty bytes
+    // start_inner itself wrote, not this exact nonzero frame, so this is
+    // also the vacuous-pass guard, not only the injection-point pin.
+    assert_eq!(
+        fs::read(&journal)?,
+        intent_frame,
+        "the journal must show exactly the INTENT record and nothing more"
+    );
+    let attempts_before = bytes(&workspace.join("attempts"))?;
+    // Matches schema_upgrade_every_interruption_retains_uuid_and_prior_
+    // attempt_bytes's own phase-5 invariant: a fresh in-process resume
+    // completes the same upgrade rather than failing closed.
+    let state = Store::resume_schema_upgrade(&source, &package, &workspace, &options)?;
+    assert_eq!(state.schema_uuid(), initial.schema_uuid());
+    assert!(state.receipt().is_some());
+    let attempts_after = bytes(&workspace.join("attempts"))?;
+    for (path, data) in attempts_before {
+        assert_eq!(attempts_after.get(&path), Some(&data));
+    }
+    SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options)?;
+    assert_eq!(bytes(&source)?, before_source);
+    assert_eq!(bytes(&package)?, before_package);
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_resume_validated_enospc_process_helper() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let Some(source) =
+        std::env::var_os("OXIGRAPH_SCHEMA_UPGRADE_RESUME_VALIDATED_ENOSPC_TEST_SOURCE")
+    else {
+        return Ok(()); // An ordinary run: only the parent test re-invokes this.
+    };
+    let source = PathBuf::from(source);
+    let package = variable("OXIGRAPH_SCHEMA_UPGRADE_RESUME_VALIDATED_ENOSPC_TEST_PACKAGE")?;
+    let workspace = variable("OXIGRAPH_SCHEMA_UPGRADE_RESUME_VALIDATED_ENOSPC_TEST_WORKSPACE")?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let result = Store::resume_schema_upgrade(&source, &package, &workspace, &options);
+    match result {
+        Err(BackupError::Io(error)) if error.kind() == io::ErrorKind::StorageFull => Ok(()),
+        other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
+    }
+}
