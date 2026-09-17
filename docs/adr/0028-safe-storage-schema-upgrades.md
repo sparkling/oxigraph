@@ -3930,6 +3930,72 @@ write (budget computed by calling `journal_frame` directly for the
 first frame alone, matching this file's own "never a magic number for
 a computable quantity" discipline) and its `TRANSFORM_PENDING` write.
 
+## A fourteenth entry point, and a real flake in the crash-test infrastructure itself (2026-09-17)
+
+The first of the five candidates above:
+`disk_exhaustion_on_the_backup_manifest_write_preserves_the_completed_copy`
+(`lib/oxigraph/src/store/legacy_backup.rs`), targeting `backup_inner`'s
+`PENDING`-manifest write -- a sibling of `store/`, not nested under
+it, so `ENOSPC_SHIM_PREFIX` scopes to the exact file
+(`destination.join(PENDING)`), budget zero, and the copy loop's own
+writes under `store/` never match that prefix at any budget. Verifies
+the copy loop ran to full byte-for-byte completion first (the fault
+lands one boundary later than the existing test, which faults the
+loop itself), the manifest stub is zero-length, `COMPLETE` never
+exists, `verify()` fails closed, and the source is untouched.
+
+Verifying it surfaced something new to this crate's crash-test
+infrastructure: a **real, observed** flake, not a theoretical risk.
+Running the full `legacy_backup::tests` module under libtest's default
+multithreading produced one failure
+(`backup_legacy_enospc_process_helper` and its parent both failing)
+that did not reproduce on immediate retry. Diagnosis: this file's two
+ENOSPC tests both call `compile_enospc_shim`, which compiles a `.c`
+file to a hardcoded, shared `.so` path next to the test binary. With
+two tests now able to run concurrently in one binary, one test's `cc`
+invocation could rewrite that shared `.so` while the other's
+freshly-spawned `--exact` child had the old one `LD_PRELOAD`-mapped --
+a compile-vs-mmap race between two *different* tests' shim
+compilations, not a logic defect in either test itself. Fixed by
+giving `compile_enospc_shim` a `name` parameter, producing distinct
+`.c`/`.so` filenames per caller (`"copy"`/`"manifest"`). Re-verified:
+5 consecutive full-module runs post-fix, all green.
+
+This matters beyond the one file. Every other ENOSPC test file in this
+crate shares exactly this shape of hazard, just not yet triggered:
+`upgrade.rs` (2 tests, since the thirteenth entry point above),
+`upgrade_receipt.rs` (2 tests), and `schema_upgrade_tests.rs` (7
+tests). Independently reviewed (**ACCEPT**) alongside the new test
+itself: confirmed the fix eliminates the collision (exactly the right
+number of call sites, each with a distinct name, no cross-file
+filename clash against any other file's own shim basename), confirmed
+the `PENDING`-file prefix cannot accidentally match `COMPLETE` or
+`store/` via the shim's raw `strncmp` (checked the actual constant
+strings and every path `backup_inner` creates at the destination's
+top level), and confirmed the copy-completion assertion is not
+vacuous (`source_inventory` errors loudly rather than returning an
+empty map for a missing directory, and the real fixture is
+non-empty). The review named `upgrade.rs` and `upgrade_receipt.rs`
+explicitly as carrying "exactly like the pair that fired here" --
+applied the identical fix to both proactively, before either flaked,
+verified by 3 consecutive runs of each (`store::upgrade::tests`,
+9/9; the two affected `upgrade_receipt.rs` tests via a
+`legacy_activation` filter, 4/4, their real ~22s subprocess durations
+confirming they actually ran rather than skipping on a missing
+`OXIGRAPH_ROCKSDB_BUILD_KIND=vendored`). `schema_upgrade_tests.rs`'s
+own seven-test sharing was deliberately left alone: it has run dozens
+of times across this session's earlier entry points with no observed
+flake, so retrofitting it now would be hardening against a risk with
+no positive evidence there, unlike the three files just fixed --
+revisit only if a flake actually appears. Committed `2fdb2a3b` (the
+entry point and the `legacy_backup.rs` fix), `68e825f0` (the two
+proactive twin fixes).
+
+Fourteen entry points across eight functions now; four candidates
+remain from the same gate-2 audit (`prepare_inner`'s own `PENDING`
+write and `UPGRADE_GUARD`-as-its-own-fault-point, `transform_inner`'s
+second-frame append write and its `TRANSFORM_PENDING` write).
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
