@@ -110,3 +110,62 @@ The current handler boundary is
 G1.6's accepted verifier and rejecting controls satisfy only this ADR's
 service-claim prerequisite; they do not implement endpoint selection,
 bound-join planning, federation telemetry, or the G3.5 evaluator.
+
+### Scoping investigation: dependencies are satisfied, but the only small slice is not a good single-tick fit (2026-09-18)
+
+Investigated as the next candidate after G4.4's `/rdf4j-server/repositories`
+slice landed. This ADR's own acceptance boundary states the embedded/research
+planner "may be implemented after G1.5 and G3.1-G3.2." Checked directly rather
+than trusted from a plan-doc summary line: ADR-0019's egress/deadline/
+cancellation policy is real and live, wrapping every outbound `SERVICE`
+request via `HttpClient`/`find_egress_error`; ADR-0023's
+`lib/oxigraph/src/sparql/statistics.rs` has a real, non-stub
+`StatisticsAvailability`/`BoundStatisticsSparqlQuery` provider. Both
+dependencies are genuinely satisfied for embedded/research use.
+
+The codebase check found this is not greenfield, and materially stronger than
+expected: `lib/oxigraph/src/sparql/http.rs`'s `HttpServiceHandler` is a
+complete, real, egress-policy-respecting HTTP dispatcher for explicit
+`SERVICE <iri>` -- it already negotiates content types, parses results, and
+correctly distinguishes a fatal deadline from a `SERVICE SILENT`-preserving
+remote timeout. `lib/oxigraph/src/sparql/mod.rs` already wires it as the
+*default* handler for ordinary query evaluation, so arbitrary explicit
+`SERVICE` calls already work end-to-end through `Store` and the CLI today.
+This existing handler is exactly the "unplanned explicit-`SERVICE` oracle"
+this ADR's own acceptance boundary names as the correctness baseline new
+planning work must match -- it already exists in production code, not only
+in doc-comment examples.
+
+What this ADR actually still needs breaks into two very different sizes:
+
+1. **A versioned endpoint catalog type** (capabilities and cost evidence,
+   keyed by endpoint IRI) -- small, standalone, and zero-risk to existing
+   code, since nothing would consume it yet.
+2. **Cost-based source selection, bound-join batching, and telemetry wired
+   into live query planning** -- large, correctness-critical work touching
+   the same join planner/optimizer that decides evaluation order for every
+   query today, unlike G4.4's independent new HTTP route.
+
+Only (1) is small enough for a single tick, but implementing it alone this
+session is declined for the same reason G4.2's own remaining items were
+found not to be a good single-tick fit: it would be genuinely unverifiable
+scaffolding. G4.4's `/repositories` route had an external oracle to check a
+design choice against even without an in-repo pin (RDF4J's own real source,
+fetched directly). A federation catalog's "capabilities" and "cost evidence"
+fields have no such oracle -- this ADR states only the phrase, not a schema
+-- and no consumer exists yet to validate the shape against either. Building
+it now risks inventing a wrong shape that the eventual planner work (2) would
+then have to discover was wrong and rework, which is worse than not building
+it yet. This is not the same failure mode as "brand-new zero-code feature
+slice" (G4.2's finding) but reaches the same conclusion: decline rather than
+manufacture unverifiable scaffolding.
+
+No FedShop or controlled-loopback test fixtures exist anywhere in this
+repository (checked by search, not assumed), which will also gate this ADR's
+own acceptance boundary regardless of when planning work begins.
+
+G3.5 remains at 0% progress on the task board; this is accurate, not stale --
+genuinely no delivery work has landed toward it. This scoping is recorded so
+a future session does not have to re-derive that `HttpServiceHandler` already
+exists and already serves as the correctness oracle, or re-discover why the
+catalog-alone slice was declined.
