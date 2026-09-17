@@ -851,6 +851,78 @@ fn schema_upgrade_resume_child_exits_before_and_after_the_schema_envelope_write(
     Ok(())
 }
 
+/// Real process kills bracketing `resume_inner`'s two journal-append
+/// calls: `fault(5)` fires strictly before the `VALIDATED` record is
+/// appended, `fault(6)` strictly after it (and before the `if` that reads
+/// that same in-memory record back to decide whether to append `SEALED`
+/// next), and `fault(7)` strictly after the `SEALED` append. Every kill
+/// point at `fault(0)` through `fault(4)` -- and, again, `fault(5)` here --
+/// leaves the last journal record as `INTENT`, so a fresh resume always
+/// abandons that attempt and starts over (this file's own real-kill
+/// coverage of that shape is at phases 2, 3 and 4; 0 and 1 share the same
+/// `INTENT`-last property but are not yet real-kill tested). `fault(6)`
+/// and `fault(7)` are different: a fresh resume does NOT abandon the
+/// attempt after either -- it reuses attempt 0's own already-validated (or
+/// already-sealed) output directly, because the journal record a real,
+/// unwind-skipping process death still left durably recorded is what
+/// tells it there's nothing left to redo. Phases 8 and 9 (the completion-
+/// rename boundary, already real-kill tested above) also produce a
+/// non-abandoning resume, so `fault(6)`/`fault(7)` are not the only such
+/// phases -- but no sibling test in this file, including that one, checks
+/// FOR that non-abandonment directly; this is the first one that does.
+/// This specifically checks for that distinction (no `0000000000000001`
+/// directory after `fault(6)`/`fault(7)`, one always present after
+/// `fault(5)`), not just the generic "a fresh resume still reaches the
+/// same outcome" shape every other real-kill test in this file already
+/// asserts.
+#[test]
+fn schema_upgrade_resume_child_exits_around_the_validated_and_sealed_appends() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let root = tempfile::tempdir()?;
+    let (source, package) = fixture(root.path())?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    for stop in [5_u8, 6, 7] {
+        let workspace = root.path().join(format!("resume-validate-crash-{stop}"));
+        let initial = Store::start_schema_upgrade(&source, &package, &workspace, &options)?;
+        let attempts = workspace.join("attempts");
+        let paths = [
+            ("OXIGRAPH_SCHEMA_UPGRADE_TEST_SOURCE", source.as_path()),
+            ("OXIGRAPH_SCHEMA_UPGRADE_TEST_PACKAGE", package.as_path()),
+            (
+                "OXIGRAPH_SCHEMA_UPGRADE_TEST_WORKSPACE",
+                workspace.as_path(),
+            ),
+        ];
+        let status = crash("schema_upgrade_resume_process_helper", &paths, stop)?;
+        assert_eq!(status.code(), Some(73), "the child did not reach {stop}");
+        let attempt_zero = attempts.join(format!("{:016}", 0_u64));
+        let attempt_one = attempts.join(format!("{:016}", 1_u64));
+        let before_attempt_zero = bytes(&attempt_zero)?;
+        let state = Store::resume_schema_upgrade(&source, &package, &workspace, &options)?;
+        assert_eq!(state.schema_uuid(), initial.schema_uuid());
+        assert!(state.receipt().is_some());
+        // Attempt 0's own files are never touched by the fresh resume,
+        // whether it is abandoned (stop=5) or reused (stop=6, stop=7).
+        assert_eq!(bytes(&attempt_zero)?, before_attempt_zero);
+        if stop == 5 {
+            assert!(attempt_one.exists(), "a new attempt must have been started");
+        } else {
+            assert!(
+                !attempt_one.exists(),
+                "the same attempt must have been reused, not abandoned"
+            );
+        }
+        SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options)?;
+        assert_eq!(bytes(&source)?, before_source);
+        assert_eq!(bytes(&package)?, before_package);
+    }
+    Ok(())
+}
+
 #[test]
 fn schema_upgrade_activation_child_exits_before_and_after_guard_unlink() -> TestResult {
     if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
