@@ -3430,6 +3430,82 @@ covered crate-wide now, across five functions -- two of which
 (`activate_inner` and `activate_upgrade_inner`) each have two distinct
 covered boundaries -- not the complete crash/fault matrix.
 
+## Correctly scoping `resume_inner`'s remaining gap, and closing the small one instead (2026-09-17)
+
+Before picking a ninth target, the prior tick's own "remaining fault
+phases" note for `start_inner` and `resume_inner` was re-checked
+directly rather than trusted as previously stated, since it had always
+been vague about size. Counting `resume_inner`'s own `fault(N)` call
+sites in `schema_upgrade.rs` found ten phases, 0 through 9, with
+real-process-kill coverage already established at phase 2 (mid-copy)
+and phases 8/9 (completion rename) by earlier work this session --
+leaving **seven** phases (0, 1, 3, 4, 5, 6, 7) with only synthetic
+coverage. This is a materially larger, not-yet-scoped investigation:
+which of those seven phases even have a real `write()` call amenable
+to `ENOSPC` injection, as opposed to a phase that only branches on
+already-written state, needs its own audit before any test can be
+designed. It was deliberately deferred rather than folded into this
+tick or attempted piecemeal.
+
+`start_inner`, by contrast, was confirmed small by the same direct
+reading: exactly one real write between `fault(0)` and `fault(1)` --
+`write(&directory.join(PLAN), &plan)?` -- architecturally identical to
+this session's very first disk-exhaustion test (`prepare_inner`'s
+journal write), a single pre-copy metadata write. A second,
+empty-buffer write immediately follows it in the source, but
+`write_all(&[])` never issues an actual `write(2)` syscall for a
+zero-length buffer, so it is unreachable once the first write fails.
+This is explicitly the least novel application of the technique yet,
+stated plainly rather than oversold; its value is closing a genuine,
+previously-uncovered boundary, not novelty. A real-process-kill test
+already covers this exact boundary
+(`schema_upgrade_start_child_exits_before_and_after_the_initial_plan_
+is_synced`, `phase == 0` case), proving only what a process death
+leaves behind (no `PLAN` file at all); the new test proves what a real
+OS write failure leaves behind at the same boundary (an empty `PLAN`
+file instead) -- a related but distinct on-disk state, both of which
+`resume_schema_upgrade` must fail closed on rather than treat as
+valid.
+
+The new test (`disk_exhaustion_on_the_construction_plan_write_
+preserves_every_input`) and its child helper
+(`schema_upgrade_construction_enospc_process_helper`) reuse this
+file's existing `compile_enospc_shim`, `helper`, `variable`,
+`fixture`, and `bytes` functions unmodified -- no new shim copy, no
+production code touched.
+
+Single review round (`xhigh`, `claude-fable-5-1`): **ACCEPT**, with
+five non-blocking findings applied anyway: a workspace byte-identity
+check around the failed resume call (the test asserted `source` and
+`package` were untouched but never checked the half-built workspace
+itself); corrected doc-comment wording that had overstated the new
+test as matching the real-kill case's invariant "exactly," when the
+two on-disk states (missing vs. empty `PLAN`) are related but not
+identical; the missing `OXIGRAPH_ROCKSDB_BUILD_KIND` vendored
+early-return this file's other four `ENOSPC`/kill helpers all carry,
+which the new helper had omitted (harmless in practice, since the
+parent never spawns it outside vendored builds, but inconsistent with
+the file's established helper shape); and replacing an ephemeral
+"`transform_inner`'s own surprise earlier this session" doc reference
+with the concrete fact it referred to, so the comment stays
+self-contained for a future reader.
+
+Verified after applying the fixes: `cargo fmt -p oxigraph --
+--check` clean; both new tests pass in isolation; a mutation
+round-trip (helper name corrupted, the parent test observed to panic
+at the `PLAN`-existence assertion with `test result: FAILED`, literal
+restored, `git diff ... | grep -c MUTATED` confirmed `0`); the full
+`store::upgrade::transform::receipt::schema_upgrade::tests` module run
+to completion, **27 passed, 0 failed** (1329.26s). Committed
+`e3261d63`.
+
+Eight entry points are covered crate-wide now, across six functions --
+two of which (`activate_inner` and `activate_upgrade_inner`) each have
+two distinct covered boundaries -- not the complete crash/fault
+matrix. `resume_inner`'s seven remaining synthetic-only fault phases
+remain the one still-open, larger, not-yet-scoped item in this
+sub-thread.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
