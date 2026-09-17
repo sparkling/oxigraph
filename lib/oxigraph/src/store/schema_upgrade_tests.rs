@@ -1825,3 +1825,148 @@ fn schema_upgrade_resume_validated_enospc_process_helper() -> TestResult {
         other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
     }
 }
+
+/// A real `ENOSPC`, injected on `resume_inner`'s own `SEALED`-record journal
+/// append -- strictly between `fault(6)` and `fault(7)` -- reusing the
+/// `VALIDATED`-append test's own `JOURNAL`-file prefix-scoping technique,
+/// but with a genuinely different setup: this boundary is only reachable
+/// when the journal *already* ends in a `VALIDATED` record, which
+/// `resume_inner`'s own second top-level `if` block appends the `SEALED`
+/// record for immediately, with no other write in between. Getting there
+/// first, synthetically, via a direct `resume_inner(..., |phase| if phase
+/// == 6 { Err(BackupError::Cancelled) } else { Ok(()) })` call -- the exact
+/// technique `schema_upgrade_every_interruption_retains_uuid_and_prior_
+/// attempt_bytes` already uses for every phase -- durably appends `INTENT`
+/// and `VALIDATED` in this *parent* process, before any child is ever
+/// spawned. The child's own first (and only) write to `JOURNAL` is then the
+/// `SEALED` append itself, so budget `0` faults it on the first byte, the
+/// same technique as the very first disk-exhaustion tests this session
+/// wrote, not the nonzero-budget precision this file's other tests need.
+///
+/// This boundary has no filesystem artifact analogous to the guard file or
+/// a copied file to serve as a vacuous-pass guard: nothing new is written
+/// to disk between reaching this point and the `SEALED` append itself, so
+/// the journal's own bytes are identical whether the child genuinely
+/// attempted and failed the `SEALED` append or never ran at all (a
+/// corrupted helper name still leaves the journal at the two frames this
+/// test's own setup already wrote). Libtest's outer harness always prints
+/// its own `running N test(s)` summary line regardless of output
+/// capturing, so this test captures the child's stdout instead of only its
+/// exit status and asserts that line reports one test, not zero -- the one
+/// case in this file where a filesystem check is unavailable and inspecting
+/// the harness's own unsuppressed summary output is the correct substitute.
+#[test]
+fn disk_exhaustion_on_the_resume_sealed_journal_write_preserves_every_input() -> TestResult {
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let shim_directory = std::env::current_exe()?
+        .parent()
+        .ok_or("test binary has no parent directory")?
+        .to_owned();
+    let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+        return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+    };
+    let root = tempfile::tempdir()?;
+    let root_path = root.path().canonicalize()?;
+    let (source, package) = fixture(&root_path)?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    let workspace = root_path.join("resume-sealed-enospc");
+    let initial = Store::start_schema_upgrade(&source, &package, &workspace, &options)?;
+    let error = resume_inner(&source, &package, &workspace, &options, |phase| {
+        if phase == 6 {
+            Err(BackupError::Cancelled)
+        } else {
+            Ok(())
+        }
+    });
+    // Not just `is_err()`: any other failure before fault(6) (e.g. a real,
+    // unrelated bug) would ALSO leave the journal short of VALIDATED, and
+    // the child's fresh INTENT append would then satisfy every remaining
+    // assertion below while silently testing the wrong boundary entirely.
+    // Pinning the exact synthetic error rules that out.
+    assert!(
+        matches!(&error, Err(BackupError::Cancelled)),
+        "phase 6 was not reached: {error:?}"
+    );
+    let journal = workspace.join(JOURNAL);
+    let journal_before_child = fs::read(&journal)?;
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command
+        .arg("--exact")
+        .arg(helper("schema_upgrade_resume_sealed_enospc_process_helper"));
+    command.env("LD_PRELOAD", shim);
+    command.env("ENOSPC_SHIM_BUDGET_BYTES", "0");
+    command.env("ENOSPC_SHIM_PREFIX", &journal);
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_SEALED_ENOSPC_TEST_SOURCE",
+        &source,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_SEALED_ENOSPC_TEST_PACKAGE",
+        &package,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_SEALED_ENOSPC_TEST_WORKSPACE",
+        &workspace,
+    );
+    let output = command.output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    assert!(
+        output.status.success(),
+        "child helper failed: status {:?}, stdout {stdout}, stderr {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        stdout.contains("running 1 test"),
+        "the --exact filter did not match exactly one test: {stdout}"
+    );
+    // Budget 0 means the SEALED append cannot have written any byte at all:
+    // the journal must be exactly what this test's own setup already wrote.
+    assert_eq!(
+        fs::read(&journal)?,
+        journal_before_child,
+        "the journal must still show only INTENT and VALIDATED"
+    );
+    let attempts_before = bytes(&workspace.join("attempts"))?;
+    // Matches schema_upgrade_every_interruption_retains_uuid_and_prior_
+    // attempt_bytes's own phase-6 invariant: a fresh in-process resume
+    // completes the same upgrade rather than failing closed.
+    let state = Store::resume_schema_upgrade(&source, &package, &workspace, &options)?;
+    assert_eq!(state.schema_uuid(), initial.schema_uuid());
+    assert!(state.receipt().is_some());
+    let attempts_after = bytes(&workspace.join("attempts"))?;
+    for (path, data) in attempts_before {
+        assert_eq!(attempts_after.get(&path), Some(&data));
+    }
+    SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options)?;
+    assert_eq!(bytes(&source)?, before_source);
+    assert_eq!(bytes(&package)?, before_package);
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_resume_sealed_enospc_process_helper() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let Some(source) = std::env::var_os("OXIGRAPH_SCHEMA_UPGRADE_RESUME_SEALED_ENOSPC_TEST_SOURCE")
+    else {
+        return Ok(()); // An ordinary run: only the parent test re-invokes this.
+    };
+    let source = PathBuf::from(source);
+    let package = variable("OXIGRAPH_SCHEMA_UPGRADE_RESUME_SEALED_ENOSPC_TEST_PACKAGE")?;
+    let workspace = variable("OXIGRAPH_SCHEMA_UPGRADE_RESUME_SEALED_ENOSPC_TEST_WORKSPACE")?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let result = Store::resume_schema_upgrade(&source, &package, &workspace, &options);
+    match result {
+        Err(BackupError::Io(error)) if error.kind() == io::ErrorKind::StorageFull => Ok(()),
+        other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
+    }
+}
