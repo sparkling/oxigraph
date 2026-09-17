@@ -4571,6 +4571,63 @@ Three of the audit's ranked candidates are now closed. Remaining:
 (`fault(0)`/`fault(1)` on `prepare_inner`; the per-edge journal-append
 phases on `transform_inner`).
 
+### The fourth real-process-kill candidate, and a correction to the audit's own premise (2026-09-17)
+
+The audit's fourth-ranked candidate is now implemented:
+`schema_upgrade_activation_child_exits_during_the_copy_loop_and_before_
+the_native_open` (`lib/oxigraph/src/store/schema_upgrade_tests.rs`),
+bracketing `activate_inner`'s `fault(2)` (per-file, inside the copy loop)
+and `fault(3)` (once, strictly after the copy loop's own `tree()` check,
+strictly before `SchemaUpgradeSnapshot::open`). Both kill points leave the
+target's `UPGRADE_GUARD` present and `Store::open` refused, the same
+shape already proven with a real kill at `fault(4)` by the earlier
+`schema_upgrade_activation_child_exits_before_and_after_guard_unlink` --
+applied here to the copy-and-pre-open window instead, this function's
+longest and most probable real-world crash window, and against a dirtier
+target (a partially-copied file at `fault(2)`; a full but unopened tree at
+`fault(3)`) rather than that sibling's fully-verified `fault(4)` state.
+
+This candidate's own priority ranking, set by the earlier audit fork,
+rested on a premise independent review found to be wrong: the audit
+described `activate_inner`'s own `SchemaUpgradeSnapshot::open` call as "a
+WRITABLE/recovery open... unlike `resume_inner`'s read-only one," citing
+that call's own inline comment ("Repeated because native recovery on open
+may rewrite files") as the reason this candidate needed the same
+source-level care `write_envelope` needed. Independent review
+(`activate-copy-loop-kill-review`) traced the call directly and found this
+is not correct: `SchemaUpgradeSnapshot::open` is *always*
+`Db::open_read_only_with_options` regardless of the `lease` argument (the
+`true` passed here only controls whether `OpenLease::acquire_existing`
+flocks the pre-existing `LOCK` file, not whether the DB opens for
+writing) -- the same native open shape `resume_inner`'s own copy-verification
+open already uses, differing only in the lease flag. The "may rewrite
+files" comment describes a defensive, fail-closed re-check
+(`activate_inner` re-verifies the target's tree after `open` and returns
+`FileMismatch` if anything changed) against a possibility that, empirically,
+never occurs in this build -- not an actual write this build's own open
+path performs. This means both `fault(2)` and `fault(3)` fire strictly
+before `open` regardless, so this test does not exercise (and was never
+going to exercise) the mutating-open concern that motivated ranking it as
+it was; it proves the simpler guard-based-refusal property instead. A
+real kill during or immediately after `open` itself remains untestable
+with this function's current `fault` callback, since no hook exists
+between `open`'s own start and its post-open re-check -- by the absence
+of a hook, not by an oversight in this review.
+
+Independent review verdict: **ACCEPT-with-required-fixes** -- the test
+logic itself required no changes (verified correct, non-vacuous, and
+re-run independently with matching timings), only two word-level doc
+fixes: "writable" corrected to "leased" per the finding above, and a
+stale "below" cross-reference to the guard-unlink sibling test (which is
+actually above this one in the file) corrected to "above." Both applied.
+The review also gave an explicit, requested honest assessment of this
+candidate's own marginal value -- moderate, not mechanical padding, for
+the two concrete reasons in the paragraph above -- rather than either
+reflexively defending or dismissing the choice. Committed as `96c1c726`.
+
+Four of the audit's ranked candidates are now closed. The remaining one,
+`prepare_inner`/`transform_inner`'s legacy-path phases, stays open.
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
