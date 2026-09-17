@@ -4333,6 +4333,94 @@ narrative, since each of those sections accurately reflected what was
 known (or, more honestly, not yet investigated) at the time it was
 written.
 
+### A nineteenth entry point closes every remaining candidate: `resume_inner`'s `write_envelope` (2026-09-17)
+
+`disk_exhaustion_on_the_resume_schema_envelope_write_preserves_every_input`
+(`lib/oxigraph/src/store/schema_upgrade_tests.rs`) is now implemented,
+independently reviewed and committed. It is the first entry point in the
+whole crate's disk-exhaustion suite to target a write RocksDB's own vendored
+C++ code makes -- `SchemaUpgradeSnapshot::write_envelope`'s `db.insert()`
+then `db.flush()` -- rather than a write this crate's own Rust code issues
+directly. The previous section resolved the "genuinely uncertain, possibly
+infeasible" framing by reading the real vendored source; this section
+records the resulting test and its review.
+
+Budget: `SchemaUpgradeSnapshot::open`'s own read-only inspection
+(`Db::open_read_only_with_options`) performs zero writes, so the only
+writes ever in scope before `write_envelope` itself are the attempt guard
+write and the copy loop's own files. `resume_inner`'s own "last record is
+INTENT" branch means any fresh process invocation that reaches
+`write_envelope` must, within that same process, first complete that whole
+sequence -- there is no way to synthetically pre-drive the workspace past
+it in the parent process, unlike every other boundary's own append-based
+technique this session used. This is this session's first genuinely
+multi-component aggregate budget: `GUARD.len()` plus the sum of every byte
+under `package/store`, computed via the existing recursive `bytes()`
+helper rather than guessed, and scoped to the whole `store/` subdirectory
+(not an exact file) since RocksDB's own internal WAL/SST filenames and
+sequence numbers are not predictable from outside.
+
+Self-verification before dispatching review: two isolated passes; a
+mutation test reducing the computed budget by exactly one byte, confirming
+the error shape shifted from `BackupError::Storage(StorageError::Io(_))`
+to bare `BackupError::Io` exactly as the two-error-path distinction
+predicts, then reverted; and a full 45+-test module run that surfaced two
+`InvalidPath` failures on the first pass (`schema_upgrade_sealed_tampering_is_not_repaired`,
+`schema_upgrade_rejects_preflight_built_by_a_different_binary`), investigated
+via `git stash` (both passed individually with the new test stashed out)
+and a clean second full-module run (37/37, 0 failures), concluding this was
+a pre-existing flake in the suite's own long-run behavior rather than a
+regression from the new test.
+
+Independent review (`write-envelope-review`, dispatched with elevated
+scrutiny given the technique's novelty) traced every load-bearing claim to
+source rather than trusting the doc comment, including: the exact
+`BackupReceipt::verify` equality check in `backup.rs` that structurally
+guarantees the copy-loop budget can be neither high nor low relative to
+what the copy loop actually writes (the mutation test proved the downward
+exactness empirically; the receipt-verify equality proves the upward
+exactness structurally); re-deriving the read-only zero-write claim
+directly from `db_impl_open.cc` (info-log, memtable-flush, version-edit and
+WAL-truncation all separately gated on `!read_only`); confirming the guard,
+store-directory and prefix-collision scoping are each safe and that exact-
+file scoping is genuinely unusable here (the first in-scope write is
+RocksDB's own `Db::open_read_write` housekeeping -- LOG/MANIFEST/WAL/`CURRENT`
+temp files -- whose names are derived from checkpoint state, not
+predictable from outside); a vacuous-pass audit confirming assertion (b)
+cannot pass trivially (two independent guards: the child's exact
+error-shape match fails first if the fault lands in the copy loop instead,
+and no failed-open debris can inflate the post-fault byte sum since every
+in-scope write fails at budget 0 and RocksDB's own WAL preallocation uses
+`FALLOC_FL_KEEP_SIZE`); tracing the full error-shape chain end-to-end from
+the shim's `ENOSPC` through `PosixWrite`, `IOStatus::NoSpace`,
+`Status::ToString`, this crate's `ErrorKind::StorageFull` mapping, and the
+two-error-path `BackupError` distinction; and independently re-verifying
+the flake conclusion by ruling out every shared-state mechanism directly
+(distinct tempdirs, distinct shim filenames including the new one, no
+process-global env vars, and confirming the one `InvalidPath`-yielding lock
+path in this file locks each test's own package manifest, not a shared
+one) -- while flagging that the git-stash A/B alone is weak evidence (n=1
+each way) and that the pre-existing flake itself deserves its own
+root-cause follow-up, which is not this change's problem.
+
+Verdict: **ACCEPT**, with one required fix: `compile_enospc_shim`'s own doc
+comment in this file said "this file has seven ENOSPC tests", now stale at
+eight with the new test added -- corrected before landing, matching this
+session's own established convention (commit `8d99e001`) of fixing a count
+a moment invalidates rather than leaving it to drift. Committed as
+`61be03eb`.
+
+This closes every candidate this session's own gate-2 and gate-3 audits
+ever identified: eighteen entry points became nineteen, and both of
+`resume_inner`'s two previously "genuinely uncertain, possibly infeasible"
+boundaries are now resolved -- `SchemaUpgradeSnapshot::open` confirmed
+zero-write (not a candidate), and `write_envelope` now implemented and
+reviewed. No further disk-exhaustion candidate is currently known. This is
+a genuine stopping point for the whole ENOSPC crash-matrix thread that has
+run across this entire session; the next increment should pick a
+genuinely different focus area rather than continue searching for more
+ENOSPC boundaries.
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
