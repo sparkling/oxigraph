@@ -968,6 +968,86 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
         Ok(())
     }
 
+    /// A real `ENOSPC` injected on the first byte the preparation manifest
+    /// write ever makes -- strictly after the journal write, the guard
+    /// write, and the entire copy loop have all already succeeded in
+    /// full, unlike either test above (which fault the journal write
+    /// itself, or the copy loop's own first write). `PENDING`
+    /// (`destination.join(PENDING)`) is a sibling of `store/`, not nested
+    /// under it, so scoping `ENOSPC_SHIM_PREFIX` to that exact file means
+    /// none of the three earlier writes (the journal, the guard, or any
+    /// copied file, all of which live under `destination` but never under
+    /// this exact path) can ever match the prefix, at any budget. Reuses
+    /// `prepare_upgrade_enospc_process_helper` unchanged.
+    #[test]
+    fn disk_exhaustion_on_the_preparation_manifest_write_preserves_the_completed_copy() -> TestResult
+    {
+        if !cfg!(target_os = "linux") {
+            return Ok(());
+        }
+        let shim_directory = std::env::current_exe()?
+            .parent()
+            .ok_or("test binary has no parent directory")?
+            .to_owned();
+        let Some(shim) = compile_enospc_shim(&shim_directory, "pending")? else {
+            return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+        };
+        let directory = tempfile::tempdir()?;
+        let root = directory.path().canonicalize()?;
+        let source = root.join("source");
+        let package = root.join("backup");
+        let output = root.join("prepared");
+        fixture(1, &source)?;
+        let before_source = hashes(&source)?;
+        let options = LegacyBackupOptions::default();
+        let receipt = Store::backup_legacy(&source, &package, &options)?;
+        let before_package = hashes(&package.join("store"))?;
+        let store = output.join("store");
+        let mut command = std::process::Command::new(std::env::current_exe()?);
+        command
+            .arg("--exact")
+            .arg(helper("prepare_upgrade_enospc_process_helper"));
+        command.env("LD_PRELOAD", shim);
+        command.env("ENOSPC_SHIM_BUDGET_BYTES", "0");
+        command.env("ENOSPC_SHIM_PREFIX", output.join(PENDING));
+        command.env("OXIGRAPH_UPGRADE_PREPARE_ENOSPC_TEST_SOURCE", &source);
+        command.env("OXIGRAPH_UPGRADE_PREPARE_ENOSPC_TEST_PACKAGE", &package);
+        command.env("OXIGRAPH_UPGRADE_PREPARE_ENOSPC_TEST_OUTPUT", &output);
+        let status = command.status()?;
+        assert!(status.success(), "child helper failed: {status:?}");
+        // Neither the journal nor the guard write ever matched the
+        // PENDING-file-specific prefix, so both are positive evidence the
+        // fault landed strictly after both -- not a restatement of either
+        // earlier test's own vacuous-pass guard.
+        assert_eq!(fs::read(output.join(JOURNAL))?, journal(&receipt));
+        assert_eq!(
+            fs::read(store.join(UPGRADE_GUARD))?,
+            GUARD,
+            "the guard write itself must have succeeded in full under this budget"
+        );
+        // The copy loop's own writes never matched the prefix either, at
+        // any budget: positive evidence every file copied in full, not
+        // just that the child process happened to exit 0.
+        let mut copied = hashes(&store)?;
+        assert_eq!(
+            copied.remove(&PathBuf::from(UPGRADE_GUARD)),
+            Some(Sha256::digest(GUARD).into())
+        );
+        assert_eq!(
+            copied,
+            hashes(&package.join("store"))?,
+            "the copy loop must have completed in full before the manifest write ran"
+        );
+        assert!(output.join(PENDING).exists());
+        assert_eq!(fs::metadata(output.join(PENDING))?.len(), 0);
+        assert!(!output.join(COMPLETE).exists());
+        assert!(PreparedUpgrade::verify(&output, &options).is_err());
+        assert_eq!(hashes(&source)?, before_source);
+        assert_eq!(hashes(&package.join("store"))?, before_package);
+        LegacyBackupReceipt::verify_ancestry(&source, &package, &TransactionStartControl::new())?;
+        Ok(())
+    }
+
     #[test]
     fn prepare_upgrade_enospc_process_helper() -> TestResult {
         let Some(source) = std::env::var_os("OXIGRAPH_UPGRADE_PREPARE_ENOSPC_TEST_SOURCE") else {
