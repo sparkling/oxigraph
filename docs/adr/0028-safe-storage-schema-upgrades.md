@@ -3298,6 +3298,72 @@ candidate, rather than either assuming yes (and wasting the tick
 chasing untenable new tooling) or assuming no without checking. See
 the corresponding correction to gate 2's own checklist row.
 
+## A fifth entry point completes a function this session already partially covered, using a new budget-precision technique (2026-09-16)
+
+Having verified the audit above, `activate_inner`'s own `copy_artifact`
+loop (`fault(1)` to `fault(2)`, copying validated attempt-store files
+into the activation target) was picked as the fifth disk-exhaustion
+target: it completes coverage of the same function the fourth entry
+point partially covered (its guard write, `fault(0)` to `fault(1)`),
+rather than opening a sixth new function.
+
+This target needed a genuinely new technique, not a repeat of the
+existing budget-zero pattern. Setting `ENOSPC_SHIM_BUDGET_BYTES=0`
+again would fault the guard write a second time -- the boundary
+already covered. Instead the budget is set to exactly `GUARD.len()`,
+computed at runtime rather than hardcoded: the guard's own
+`write_all` call has `count == budget`, which the shim's `should_inject`
+check (`if (long)count > budget`) does not reject, so it completes in
+full and leaves zero budget remaining -- exactly enough to let the
+already-covered write through untouched while faulting the very next
+one, `copy_artifact`'s first write inside the loop. This is the first
+test this session to use a nonzero budget deliberately; all four prior
+tests used budget `0` to fault the very first write in scope.
+
+The new test
+(`disk_exhaustion_during_the_activation_copy_loop_preserves_every_input`,
+[`schema_upgrade_tests.rs`](../../lib/oxigraph/src/store/schema_upgrade_tests.rs))
+reuses the sibling guard-write test's own `compile_enospc_shim`
+unmodified -- both tests live in the same file, so there is no fifth
+file-local shim copy to add. Its assertions are deliberately different
+from a simple existence check: the guard file's *content* must be
+byte-identical to `GUARD` (not just present), which is the test's own
+positive evidence the earlier boundary was passed in full, not a
+restatement of the sibling test's vacuous-pass guard; and at least one
+more directory entry must exist beyond the guard, since
+`copy_artifact` always creates its destination via `create_new` before
+attempting to write it, so even the first failing file's own
+zero-byte stub lands on disk.
+
+Single review round (`xhigh`, `claude-fable-5-1`): **ACCEPT**,
+independently confirming the budget arithmetic against the shim's own
+`should_inject` logic, the non-vacuous assertions, and the
+wrong-filter failure mode (a corrupted helper name now fails via a
+real `NotFound` error reading the never-created guard file, a
+different failure *shape* than the sibling test's `assert!` panic but
+the same protective effect). Two real, cheap findings were applied
+afterward: a doc-comment off-by-one ("four other files" corrected to
+"three" -- the other files are `legacy_backup.rs`, `upgrade.rs` and
+`upgrade_transform.rs`), and an explicit `assert!(!GUARD.is_empty())`
+pinning the premise the whole budget-precision design rests on. A
+third finding -- the two `ENOSPC` tests in this one file now share a
+single shim artifact path (`oxigraph_schema_upgrade_activate_enospc_shim.{c,so}`),
+which could race if `cargo test`'s default parallelism scheduled them
+concurrently -- was left as documented, non-blocking: the delivery
+entry point's own completion check already runs with
+`--test-threads=1`, and any race would fail loudly (a corrupted
+compile or a half-written `.so` that glibc refuses to preload), never
+silently. Committed `9704720f`.
+
+What remains open: `start_inner` (`schema_upgrade.rs`'s construction
+path) and `resume_inner`'s remaining fault phases beyond the two
+already covered by real-process-kill tests still have no
+disk-exhaustion coverage, as does the legacy path's own
+`activate_upgrade` (`upgrade_receipt.rs`). Five entry points are
+covered crate-wide now (`backup_legacy`, `prepare_upgrade`,
+`transform_prepared_upgrade`, and two boundaries of
+`activate_schema_upgrade`), not the complete crash/fault matrix.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
