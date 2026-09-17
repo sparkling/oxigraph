@@ -871,6 +871,95 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
         Ok(())
     }
 
+    /// A real `ENOSPC` injected on the first byte the copy loop writes to
+    /// its first non-empty file -- strictly after both the journal and
+    /// guard writes succeeded in full, unlike
+    /// `disk_exhaustion_before_the_journal_write_preserves_both_inputs`
+    /// (which faults before either setup write runs). A zero-byte receipt
+    /// file sorted first would copy in full with no `write()` call at all,
+    /// so "first byte the loop writes" and "first receipt file" are not
+    /// the same claim; this fixture's own sort-first file is non-empty,
+    /// making them coincide here, but the phrasing follows
+    /// `schema_upgrade_tests.rs`'s own more precise convention rather than
+    /// assume that coincidence generally. Reuses the same
+    /// `prepare_upgrade_enospc_process_helper`: the injection point is
+    /// entirely determined by this test's own budget/prefix choice, not by
+    /// which helper is invoked. `copy_artifact` always creates its
+    /// destination via `create_new` before attempting to write it, so a
+    /// zero-byte stub for that file, not its absence, is the positive
+    /// evidence this test actually reached the loop.
+    #[test]
+    fn disk_exhaustion_during_the_preparation_copy_loop_preserves_both_inputs() -> TestResult {
+        if !cfg!(target_os = "linux") {
+            return Ok(());
+        }
+        let shim_directory = std::env::current_exe()?
+            .parent()
+            .ok_or("test binary has no parent directory")?
+            .to_owned();
+        let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+            return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+        };
+        let directory = tempfile::tempdir()?;
+        let root = directory.path().canonicalize()?;
+        let source = root.join("source");
+        let package = root.join("backup");
+        let output = root.join("prepared");
+        fixture(1, &source)?;
+        let before_source = hashes(&source)?;
+        let options = LegacyBackupOptions::default();
+        let receipt = Store::backup_legacy(&source, &package, &options)?;
+        let before_package = hashes(&package.join("store"))?;
+        let store = output.join("store");
+        // The whole design rests on this budget being large enough to let
+        // the guard write through but not zero: pin it explicitly rather
+        // than leaving it an unstated premise of GUARD's own definition.
+        assert!(!GUARD.is_empty());
+        let mut command = std::process::Command::new(std::env::current_exe()?);
+        command
+            .arg("--exact")
+            .arg(helper("prepare_upgrade_enospc_process_helper"));
+        command.env("LD_PRELOAD", shim);
+        command.env("ENOSPC_SHIM_BUDGET_BYTES", GUARD.len().to_string());
+        command.env("ENOSPC_SHIM_PREFIX", &store);
+        command.env("OXIGRAPH_UPGRADE_PREPARE_ENOSPC_TEST_SOURCE", &source);
+        command.env("OXIGRAPH_UPGRADE_PREPARE_ENOSPC_TEST_PACKAGE", &package);
+        command.env("OXIGRAPH_UPGRADE_PREPARE_ENOSPC_TEST_OUTPUT", &output);
+        let status = command.status()?;
+        assert!(status.success(), "child helper failed: {status:?}");
+        // The guard write's own budget was exactly consumed, not exceeded,
+        // so it completed in full: positive evidence the child passed both
+        // earlier setup writes and reached the copy loop specifically, not
+        // a restatement of the journal-write test's own vacuous-pass guard.
+        assert_eq!(
+            fs::read(store.join(UPGRADE_GUARD))?,
+            GUARD,
+            "the guard write itself must have succeeded in full under this budget"
+        );
+        assert_eq!(fs::read(output.join(JOURNAL))?, journal(&receipt));
+        let guard_path = PathBuf::from(UPGRADE_GUARD);
+        let stubs = hashes(&store)?;
+        assert!(
+            stubs.keys().any(|path| *path != guard_path),
+            "the child never reached prepare_inner's copy loop"
+        );
+        for path in stubs.keys() {
+            if *path != guard_path {
+                assert_eq!(fs::metadata(store.join(path))?.len(), 0);
+                assert!(
+                    package.join("store").join(path).is_file(),
+                    "{path:?} is not a receipt file the copy loop could have created"
+                );
+            }
+        }
+        assert!(!output.join(COMPLETE).exists());
+        assert!(PreparedUpgrade::verify(&output, &options).is_err());
+        assert_eq!(hashes(&source)?, before_source);
+        assert_eq!(hashes(&package.join("store"))?, before_package);
+        LegacyBackupReceipt::verify_ancestry(&source, &package, &TransactionStartControl::new())?;
+        Ok(())
+    }
+
     #[test]
     fn prepare_upgrade_enospc_process_helper() -> TestResult {
         let Some(source) = std::env::var_os("OXIGRAPH_UPGRADE_PREPARE_ENOSPC_TEST_SOURCE") else {
