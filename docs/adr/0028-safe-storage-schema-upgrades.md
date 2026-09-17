@@ -4054,7 +4054,7 @@ ADR-0023's own dated "G3.2 opt-in native bounded planning (2026-09-08)"
 section. That section's own text -- "G3.2 remains in progress for
 frozen-corpus acceptance... before a speed claim or default
 promotion" -- is the same evaluator-authority carve-out already
-tracked for G3.4, G33, and G41; the delivery-gates plan's own G3 row
+tracked for G3.4; the delivery-gates plan's own G3 row
 was already accurate, so only the task-board field needed correcting
 (`progress` 0 to 80, matching G3.4's own treatment). The same sweep
 checked G3.5, G4.4 through G4.8 and found no comparable drift (no real
