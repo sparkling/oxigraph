@@ -559,6 +559,72 @@ This correction does not activate, qualify, promote, or publish
 anything; it corrects a documentation premise so a future
 implementation attempt does not start from a false starting state.
 
+### 13. Reading the actual Astra routing code before scoping either gate's fix (2026-09-17)
+
+With the dormancy premise corrected, the next question was whether
+gate A's and gate B's own *proposed fixes* were themselves still
+right, now that the "gate before activation" framing was gone. Both
+`tools/engineering-harness/src/policy/astra-routing.mjs` (70 lines) and
+the relevant slice of `tools/engineering-harness/src/routing/
+history.mjs` (707 lines) were read directly rather than assumed from
+the task text.
+
+**Gate A's own proposed fix does not hold up.** Its text asks to "map
+legacy `none`/`minimal` to `low`." Grepping the whole harness source
+found no live caller anywhere passing `"none"` or `"minimal"` as a
+reasoning effort; the only `"none"`/`"minimal"` string literals in the
+tree are for unrelated concerns (`fork_turns: "none"`, a sanitizer
+flag, a fallback attempt ID). More importantly,
+`tools/engineering-harness/test/astra-routing.test.mjs`'s own existing,
+passing test (`"Astra selections require an explicit supported effort
+while legacy models remain unchanged"`) already asserts, deliberately,
+that `validateAstraReasoningEffort(ASTRA_MODEL, "none")` and the
+`"minimal"` case both **throw**. Implementing gate A's literal request
+would mean *weakening* an already-tested, deliberate fail-closed check
+for a caller convention that does not appear to exist in this
+codebase, for no live benefit identified. The gap this session's
+earlier investigation flagged in gate A's own task *text* (omitting
+`ultra` from "preserve low/medium/high/xhigh/max") was already correct
+in the code itself (`ASTRA_REASONING_EFFORTS` has always listed all
+six values); no code change is needed there either. Net effect: gate
+A, as originally proposed, has no remaining part that should actually
+be implemented. Its dormancy premise was already corrected in SS12;
+this closes the remaining question of whether its technical proposal
+was independently sound, and finds that it was not.
+
+**Gate B's underlying concern is real and was confirmed directly, not
+assumed.** `normalizeQualityOutcome`'s `OUTCOME_KEYS` set (`history.mjs`
+lines 43-60) lists exactly `taskId`, `taskClass`, `role`, `provider`,
+`model`, `models`, four SHA-256 digest fields, `disposition`,
+`quality`, `mode`, `pairId`, `predictedQuality`, and `repairCycles` --
+no `effort` field anywhere. Every recorded outcome is keyed only by a
+bare `model` string. For a single-effort model this is harmless, but
+`gpt-6-astra` has six reasoning-effort levels (`low` through `ultra`)
+that this session's own work has already seen used for materially
+different work (`low` for the owner's September 12 selection, `max`
+for 13 sampled parent turns per SS9). A `low`-effort failure and a
+`max`-effort success are, today, indistinguishable `"gpt-6-astra"`
+entries to any code that aggregates or compares quality by model
+identity. This is exactly gate B's own stated worry, now confirmed by
+reading the schema rather than inferred from its "generic v6 Router"
+language (which still has no literal referent in code; the router's
+real identity is `RouterHistory`/`QualityFirstRouter`, schema
+version 1).
+
+Fixing this well means adding an effort-aware identity to a 707-line
+file with its own envelope validation, file-locking, and cross-entry
+invariant machinery (`validateCrossEntryInvariants`,
+`validateEnvelope`) -- a materially riskier change than anything in
+gate A, and one that deserves its own careful, unhurried design pass
+(at minimum: whether to add a new required `effort` field, whether
+that is a breaking schema change for already-written history files,
+and how existing entries without it should be classified) rather than
+a rushed addition at the end of an unrelated session. Deliberately not
+attempted here. The next session picking this up should design the
+schema change first, confirm it against `validateCrossEntryInvariants`
+and the existing history-file format, and only then implement it with
+its own focused test additions to `router-history.test.mjs`.
+
 ## Native adapter admission for product repair (2026-09-10)
 
 The ordinary workflow now admits the exact product file
