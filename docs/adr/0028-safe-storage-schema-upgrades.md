@@ -3664,6 +3664,89 @@ in this sub-thread, each requiring its own dedicated investigation
 rather than an assumption that this tick's technique transfers
 unchanged.
 
+## Investigating the Astra activation gates, and unlocking `resume_inner`'s third boundary with a new prefix-scoping variant (2026-09-17)
+
+Before picking an eleventh disk-exhaustion target, this tick did the
+honest weighing its own control state had been deferring: rather than
+assuming the two long-pending Astra activation gate tasks (G4.1-
+adjacent, high priority, pending since 2026-09-06) were either
+tractable or not, a research agent was dispatched to investigate
+directly. It found a genuine, evidence-based blocker: both tasks'
+own acceptance criteria state "keep Astra dormant, no provider
+execution" -- a premise this ADR's own governing sibling, ADR-0043,
+directly contradicts with a documented history of actual `gpt-6-astra`
+executions since 2026-09-10/12. Implementing either task against a
+known-false premise was correctly not attempted; the finding was
+recorded instead, left for a future session with the dedicated
+ADR-0043 context this one has not built up.
+
+Rather than stop at that, the same rigor was then turned on the
+immediately preceding entry's own "needs its own dedicated
+investigation" framing for `resume_inner`'s two remaining `append()`-
+based journal-write candidates. Direct reading of `storage/rocksdb/
+schema_upgrade.rs` confirmed `SchemaUpgradeSnapshot::open` (the
+`fault(2)`-`fault(3)` segment) opens the database read-only and likely
+performs zero writes at all -- genuinely infeasible for this
+technique, not merely hard -- while `write_envelope` (`fault(3)`-
+`fault(4)`) does a real but RocksDB-internal `db.insert`+`db.flush`
+whose exact write volume remains uncomputed.
+
+The actual unlock did not require solving that RocksDB-volume problem
+at all. `append()` writes exclusively to `directory.join(JOURNAL)`, a
+file structurally disjoint from every RocksDB and copy-loop path
+under `directory/attempts/<n>/`. Scoping `ENOSPC_SHIM_PREFIX` to the
+`JOURNAL` file itself -- a genuinely new prefix-scoping variant of the
+established technique, naming a specific file rather than a directory
+-- means none of the guard write, copy loop, or RocksDB calls can ever
+match this prefix, regardless of how much internal write volume they
+involve. The exact injection budget (letting the sole preceding
+`INTENT`-record write through in full, then leaving zero for the next)
+is computed by calling this file's own private `frame()` and
+`envelope_checksum()` functions directly -- confirmed empirically
+accessible from the test module via the same `use super::*;` that
+already exposes `resume_inner` and every other private helper this
+file's tests call -- rather than a hardcoded byte count, extending the
+`GUARD.len()` discipline established earlier this session to a value
+that is not itself a simple constant.
+
+A structural consequence worth stating plainly: because the prefix
+cannot match any other write, a `StorageFull` failure in the child can
+only mean the entire happy path up to `fault(5)` -- guard write, copy
+loop, RocksDB open/compare, `write_envelope` -- already succeeded,
+since there is no other way to reach a second write to this specific
+file. This makes the vacuous-pass guard and the injection-point pin
+the same single assertion: the journal's exact bytes after the failed
+attempt must equal precisely the computed `INTENT` frame.
+
+Single review round (`xhigh`, `claude-fable-5-1`): **ACCEPT**, with a
+doc-comment precision fix applied: clarified that `start_inner` (not
+`append()`) is what first creates `JOURNAL`, empty, in the parent
+process before any child is spawned. Also independently confirmed the
+review's own flagged residual assumption -- no sibling constant
+(`PLAN`, `PENDING`, `COMPLETE`, `"attempts"`) shares `JOURNAL`'s
+literal as a prefix, so no other write could ever be misattributed to
+this scope.
+
+Verified, again with strict no-concurrent-cargo-test discipline: both
+new tests passed in isolation on the **first attempt**, both before
+and after the doc fix; a mutation round-trip confirmed the exact
+designed failure mode (`left=[]` for a non-running child vs. `right=`
+the real `INTENT` frame bytes); two full `store::upgrade::transform::
+receipt::schema_upgrade::tests` module runs, each in isolation,
+**33 passed, 0 failed** both times (1516.88s pre-fix, 1485.89s
+post-fix). Committed `5fd90435`.
+
+Eleven entry points are covered crate-wide now, across seven
+functions -- `resume_inner` now with three distinct covered
+boundaries, the most of any function so far. `resume_inner`'s
+`SEALED`-record append (`fault(6)`-`fault(7)`) remains uncovered,
+deliberately deferred as its own future entry point since it needs
+first driving a workspace to `VALIDATED`-but-not-`SEALED` state, more
+setup complexity than this one. The `SchemaUpgradeSnapshot::open`
+(read-only, likely zero writes) and `write_envelope` (real but
+RocksDB-internal, volume uncomputed) segments remain genuinely
+uncertain or infeasible for this specific technique.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
