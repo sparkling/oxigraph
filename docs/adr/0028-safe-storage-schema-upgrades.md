@@ -4202,6 +4202,70 @@ remains from the original six-candidate gate-2 audit --
 the already-tested first frame's `OpenOptions::create_new`), scoped
 but not yet implemented.
 
+## An eighteenth entry point closes the gate-2 audit's every candidate (2026-09-17)
+
+The sixth and final candidate from the same-day gate-2 audit:
+`disk_exhaustion_on_the_second_transform_journal_frame_preserves_inputs`
+(`lib/oxigraph/src/store/upgrade_transform.rs`), targeting the append
+arm of `transform_inner`'s journal open -- reachable because real
+fixtures produce three frames (edges 0, 1, 2 for this file's own
+version-0 fixture), not one, so every frame after the first genuinely
+exercises `OpenOptions::append` rather than the already-tested first
+frame's `OpenOptions::create_new`.
+
+The interesting design problem here was the budget: letting the first
+frame through in full requires knowing its exact byte length, but the
+real length depends on `logical` (the native projection fingerprint),
+which this test has no legitimate way to obtain without duplicating
+`project_upgrade`'s own internal machinery. Resolved by reading
+`journal_frame`'s own definition closely rather than assuming: every
+one of its components has a length fixed by TYPE, not by VALUE --
+`receipt.fingerprint()` and `envelope_checksum()` both return
+`[u8; 32]` unconditionally, and nothing in the function branches on
+`edge`'s specific value -- so calling it with the real `receipt` but a
+placeholder all-zero `logical` yields exactly the real first frame's
+byte length. This is the same "never a magic number for a computable
+quantity" discipline this file's own budget-precision techniques have
+followed all session, applied to a case where the *real* value isn't
+obtainable but the *length* provably doesn't depend on it. Verifies
+the journal file's length is EXACTLY that computed value (not merely
+non-zero), pinning that nothing beyond the first frame ever landed;
+`TRANSFORM_PENDING`/`TRANSFORM_COMPLETE` never exist; `verify()` fails
+closed on a journal that is a valid, correctly-checksummed, but
+strictly truncated prefix of the expected three-frame journal --
+materially different from the first-frame test's own empty-file case,
+not a cosmetic duplicate; `Store::open` reports `UpgradeIncomplete`;
+and both inputs remain untouched.
+
+Independently reviewed (**ACCEPT**), with the length-computation
+reasoning given the most scrutiny: traced every byte of
+`journal_frame`'s output through the real source of `receipt.rs`'s
+`envelope_checksum` and `legacy_backup.rs`'s `fingerprint`, confirming
+neither has any input-length-dependent output size, and confirmed the
+choice of `receipt.storage_version()` as the probed edge value
+actually matches the real first edge the production code uses (though
+the review notes this wouldn't have mattered for the length claim
+either way). Also confirmed the resulting truncated-but-internally-
+valid journal state is a genuinely new, materially interesting input
+for `verify`'s own `completed_journal` comparison, not equivalent to
+anything the crate's other tests already exercise. One doc-comment nit
+taken: a hardcoded line-number reference was replaced with a plain
+description, matching this file's own established convention of not
+citing line numbers that silently drift under later edits. Committed
+`702c8bb2`.
+
+**Every one of the six candidates the 2026-09-17 gate-2 audit found is
+now implemented, independently reviewed, and committed.** Eighteen
+disk-exhaustion entry points across eight functions exist crate-wide,
+all built on the same `/proc/self/fd`-scoped `LD_PRELOAD` shim, every
+file now with its own per-test shim-filename parameterization. The
+remaining open items in this specific technique are `resume_inner`'s
+two RocksDB-internal candidates (`SchemaUpgradeSnapshot::open`,
+`write_envelope`), already documented as genuinely uncertain or
+possibly infeasible for a `write()`-only shim without a materially
+different, deeper RocksDB-internals investigation -- not a queue of
+further same-shaped increments.
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
