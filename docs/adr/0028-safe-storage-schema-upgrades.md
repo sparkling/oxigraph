@@ -3506,6 +3506,95 @@ matrix. `resume_inner`'s seven remaining synthetic-only fault phases
 remain the one still-open, larger, not-yet-scoped item in this
 sub-thread.
 
+## Correcting my own prior framing, then closing `resume_inner`'s first boundary (2026-09-17)
+
+The immediately preceding entry left `resume_inner`'s seven remaining
+fault phases as "the one still-open, larger, not-yet-scoped item."
+Before picking a tenth target, that claim was itself re-checked
+directly rather than trusted, matching this session's own repeated
+discipline of investigating stale statements rather than repeating
+them. Reading every one of `resume_inner`'s ten fault-phase segments
+in turn found the picture more nuanced than "large and unscoped":
+
+- `fault(0)` to `fault(1)` (the attempt guard write) and `fault(1)` to
+  `fault(2)` (the copy loop's first file) are cleanly tractable, using
+  the exact same write shape and technique already twice proven for
+  `activate_inner` and `activate_upgrade_inner`.
+- The two `append()`-based journal writes, at `fault(5)` to `fault(6)`
+  and `fault(6)` to `fault(7)`, are also plausibly tractable, since
+  `append()`'s own implementation (a plain `OpenOptions::new().append(
+  true)` then `write_all`/`sync_all` against `directory.join(JOURNAL)`)
+  is simple and well-understood everywhere else it is used.
+- `fault(2)` to `fault(3)` (`SchemaUpgradeSnapshot::open`) and
+  `fault(3)` to `fault(4)` (`SchemaUpgradeSnapshot::write_envelope`)
+  are genuinely uncertain: both go through RocksDB's own internal I/O
+  (LOCK/LOG/MANIFEST/WAL files, or a `put`/write-batch path), not a
+  single, cleanly interceptable `write()` call, and may not propagate
+  `ENOSPC` as a clean `BackupError` variant at all.
+- `fault(4)` to `fault(5)` (`verify_output`, `sync_tree`,
+  `sync_directory`, `tree`, `inputs.recheck`) has no obvious new
+  `write()` call at all -- an `ENOSPC` test here may be simply
+  infeasible for this technique, not just hard to scope.
+
+This is a genuine correction, not a restatement: at least two of the
+seven segments turn out to be exactly as tractable as work already
+twice completed this session, contrary to the more cautious framing
+recorded a moment ago. The most structurally novel and best-understood
+of those two -- the attempt guard write -- was picked for this tick.
+
+`resume_inner`'s own extra wrinkle, absent from `activate_inner` and
+`activate_upgrade_inner`: by `fault(0)`, `append()` has already
+durably written and fsynced an `INTENT` record to `directory/JOURNAL`,
+at the workspace root, strictly *before* the fault point and outside
+the fresh attempt directory `attempt_path` creates. Scoping
+`ENOSPC_SHIM_PREFIX` to `workspace/attempts` rather than the whole
+workspace excludes that write from the fault's scope, confirmed by
+reading `append()`'s own implementation directly rather than assumed.
+
+Because that `INTENT` record is already durable, this boundary's
+correct invariant is recovery, not failure: the file's own exhaustive
+synthetic test
+(`schema_upgrade_every_interruption_retains_uuid_and_prior_attempt_
+bytes`) already proves a fresh resume completes the same upgrade after
+a synthetic cancellation at every phase, including this one. The new
+test (`disk_exhaustion_on_the_resume_guard_write_preserves_every_
+input`) asserts exactly that -- a materially different, and more
+specific, claim than reusing the "fails closed" assertion pattern that
+was correct for `start_inner`'s genuinely unrecoverable plan-write
+case. Getting this right required tracing the `INTENT`/`FAILED`/
+attempt-retry state machine directly, not copying the nearest prior
+test's assertions.
+
+Single review round (`xhigh`, `claude-fable-5-1`): **ACCEPT**, with one
+non-blocking finding applied: an `attempts/` byte-preservation check
+across the fresh resume, matching the exhaustive interruption test's
+own convention of proving prior-attempt bytes survive a later resume
+unchanged.
+
+A first full-module verification run showed 12 unrelated failures
+(`Error: UnsupportedPlatform` and assertion failures in tests this
+tick never touched). Investigated directly rather than treated as a
+regression: an isolated re-verify and a mutation-check round-trip had
+been run concurrently against the same package while that background
+run was still executing, and this codebase's crash tests re-exec
+`std::env::current_exe()` to spawn children -- a concurrent `cargo
+test`/`build` on the same package rebuilds that same binary path
+mid-flight, so already-running tests re-exec a momentarily
+inconsistent file. A clean re-run in isolation, with no other cargo
+activity against this package, passed **29 passed, 0 failed**
+(1484.54s), confirming the first run's failures were self-inflicted
+infrastructure corruption, not a defect in the new test or in
+production code. This lesson is now recorded in this session's own
+process memory to prevent recurrence. Committed `931f39d3`.
+
+Nine entry points are covered crate-wide now, across seven functions --
+two of which (`activate_inner` and `activate_upgrade_inner`) each have
+two distinct covered boundaries. `resume_inner`'s copy loop, its two
+`append()`-based journal writes, and its RocksDB-open/write_envelope/
+read-only segments remain open, each requiring its own future
+evaluation rather than an assumption that this tick's technique
+transfers unchanged.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
