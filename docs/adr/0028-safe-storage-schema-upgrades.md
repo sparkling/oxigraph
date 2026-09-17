@@ -4480,6 +4480,49 @@ candidate list above remains open for future increments, one at a time,
 following this session's own established self-verify-then-review
 discipline.
 
+### The second real-process-kill candidate: `resume_inner`'s `write_envelope` boundary (2026-09-17)
+
+The audit's own second-ranked candidate is now implemented too:
+`schema_upgrade_resume_child_exits_before_and_after_the_schema_envelope_write`
+(`lib/oxigraph/src/store/schema_upgrade_tests.rs`), a real process kill on
+`resume_inner`'s `fault(3)`/`fault(4)` boundary around
+`SchemaUpgradeSnapshot::write_envelope` -- the one RocksDB-internal write
+path in this whole crash-matrix family, the same call this session's
+earlier `disk_exhaustion_on_the_resume_schema_envelope_write_preserves_
+every_input` already targets with an injected `ENOSPC`. The two tests
+prove genuinely different properties of the same call: the ENOSPC test
+proves the crash-recovery path handles a returned `Err`; this one proves
+it tolerates a real, unwind-skipping process death at the same point, which
+an injected error cannot. The test reuses the existing
+`schema_upgrade_resume_process_helper` scaffolding unchanged -- no new
+production hook was needed, since that helper already accepts an arbitrary
+fault-phase number via an environment variable. Because the last journal
+record after either kill is still `INTENT` (`VALIDATED` only appends after
+`fault(5)`), a fresh resume abandons the attempt and starts a new one from
+scratch, the same outcome shape `schema_upgrade_resume_child_exit_mid_copy_
+retains_a_resumable_attempt` already proves for `fault(2)`.
+
+Independent review (`resume-envelope-kill-review`): **ACCEPT**, with two
+non-blocking doc-precision notes that explicitly required no code change
+(the "`fault(6)`" phrasing is precise about the predicted outcome but not
+about the exact line the `VALIDATED` append sits on relative to `fault(5)`
+and `fault(6)`; "genuinely unclean RocksDB shutdown" is literally true of
+the process but slightly generous about the attempt store's own handle,
+which is already dropped before either kill point) -- both flagged as not
+undermining the test's actual value, since every load-bearing inference
+they touch is still correct. The review also independently confirmed a
+non-trivial detail: `write_envelope`'s own leftover `LOCK` file in the
+abandoned attempt is inert, since `scan_workspace` only name-checks
+abandoned-attempt content (never re-verifies it) and `LOCK` is already in
+the allowed native-filename set. Committed as `fb4dfe8d`.
+
+Two of the audit's ranked candidates are now closed (`backup_inner`'s
+completion-rename boundary, and this one). The remaining ranked
+candidates -- `resume_inner`'s `VALIDATED`/`SEALED` journal-append
+boundaries, `activate_inner`'s copy-loop/pre-open boundary, and
+`prepare_inner`/`transform_inner`'s remaining legacy-path phases -- stay
+open for future increments, one at a time.
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
