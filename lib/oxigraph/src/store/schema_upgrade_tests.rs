@@ -976,6 +976,70 @@ fn schema_upgrade_activation_child_exits_before_and_after_guard_unlink() -> Test
     Ok(())
 }
 
+/// Real process kills bracketing `activate_inner`'s copy loop and its own
+/// leased, native `open` call. `fault(2)` fires per file inside the copy
+/// loop, the same per-file boundary this crate's other copy-loop tests
+/// already use; `fault(3)` fires once, strictly after the copy loop and
+/// its own `tree()` check both complete, but strictly before
+/// `SchemaUpgradeSnapshot::open`. That open's own inline comment
+/// ("Repeated because native recovery on open may rewrite files") reads
+/// as a possible-mutation warning, but the open itself is always
+/// `Db::open_read_only_with_options` -- the comment describes a
+/// defensive, fail-closed re-check, not a write this build's own open
+/// path actually performs. Both kill points here precede that call
+/// regardless, so neither exercises it either way; a real kill during or
+/// immediately after the open is not a boundary this function's own
+/// `fault` callback currently exposes a hook for (the next hook,
+/// `fault(4)`, already fires only after both the open and its re-check
+/// have completed, and already has real-kill coverage via
+/// `schema_upgrade_activation_child_exits_before_and_after_guard_unlink`,
+/// above). What `fault(2)`/`fault(3)` do prove is the simpler, still
+/// load-bearing property that a real, unwind-skipping process death
+/// during the copy-and-verify sequence leaves the target exactly as
+/// refused as an in-process fault at the same point would, via the guard
+/// this function writes at `fault(0)` and only unlinks at the very end.
+#[test]
+fn schema_upgrade_activation_child_exits_during_the_copy_loop_and_before_the_native_open()
+-> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let root = tempfile::tempdir()?;
+    let (source, package) = fixture(root.path())?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let workspace = root.path().join("workspace");
+    sealed(&source, &package, &workspace, &options)?;
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    let before_workspace = bytes(&workspace)?;
+    for phase in [2_u8, 3] {
+        let target = root.path().join(format!("crash-{phase}"));
+        let paths = [
+            ("OXIGRAPH_SCHEMA_UPGRADE_TEST_SOURCE", source.as_path()),
+            ("OXIGRAPH_SCHEMA_UPGRADE_TEST_PACKAGE", package.as_path()),
+            (
+                "OXIGRAPH_SCHEMA_UPGRADE_TEST_WORKSPACE",
+                workspace.as_path(),
+            ),
+            ("OXIGRAPH_SCHEMA_UPGRADE_TEST_TARGET", target.as_path()),
+        ];
+        let name = "schema_upgrade_activation_process_helper";
+        let status = crash(name, &paths, phase)?;
+        assert_eq!(status.code(), Some(73), "the child did not reach {phase}");
+        // Killed mid-copy (phase 2) or immediately after the copy loop's
+        // own verification but before the native open (phase 3): the
+        // guard outlives the dead process either way, so the target is
+        // refused exactly as an in-process fault at the same point would
+        // be.
+        assert!(target.join(UPGRADE_GUARD).exists());
+        assert!(Store::open(&target).is_err());
+        assert_eq!(bytes(&source)?, before_source);
+        assert_eq!(bytes(&package)?, before_package);
+        assert_eq!(bytes(&workspace)?, before_workspace);
+    }
+    Ok(())
+}
+
 #[test]
 #[expect(
     clippy::exit,
