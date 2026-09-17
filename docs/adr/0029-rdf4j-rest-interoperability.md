@@ -2,10 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-08-25
+- Updated: 2026-09-18
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; the current server exposes W3C and
-  Oxigraph routes, not an RDF4J REST compatibility profile
+- Implementation status: partially implemented; `GET /rdf4j-server/repositories`
+  (stage 1's discovery route) is landed behind `--rdf4j` (off by default,
+  commit `e62a33a6`). All other stage-1/2/3/4 endpoints remain unimplemented.
 - Programme task: `task-1787670632568-gk92vo` (G4.4)
 - **Depends on**:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
@@ -217,6 +218,70 @@ directly from it rather than re-deriving the routing/reuse analysis: the
 exact file locations, the exact library primitives to reuse, and the exact
 two open risks (implementation scope, wire-format verification) to resolve
 before or during that work.
+
+### `GET /repositories` implemented: G4.4's first landed stage-1 slice (2026-09-18)
+
+The route scoped above is implemented, reviewed, fixed, and committed
+(`e62a33a6`), directly from the prior section's own file/primitive analysis
+with no re-derivation needed. Two new `#[arg(long)]` flags, `--rdf4j` (off by
+default) and `--rdf4j-repository-id` (default `"default"`), gate the facade on
+both `Serve` and `ServeReadOnly`; a disabled facade adds no reachable route
+(the match arm is guarded by `if rdf4j`, so it falls through to the ordinary
+404 otherwise). The handler builds a synthetic one-row tuple result via
+`spareval::QuerySolutionIter::from_tuples` and serializes it through the
+existing `query_results_content_negotiation` helper, exactly as scoped.
+
+This closes open risk 1 (implementation scope) from the prior section: the
+wiring touched exactly the file set predicted (`cli/src/cli.rs`, `main`'s two
+dispatch arms, `serve`, `handle_request`, plus 12 pre-existing test call
+sites across five other test files that needed the two new parameters
+threaded through to keep compiling).
+
+Open risk 2 (wire-format verification) was partially, not fully, closed.
+This ADR's own stage-1 gate requires differentially comparing against a
+*pinned* RDF4J Server, which still does not exist in this repository or
+environment. What did happen: an independent review (elevated scrutiny)
+fetched RDF4J 6.0.0's actual `RepositoryListController.java` source directly
+from `raw.githubusercontent.com` at tag `6.0.0` -- not vendored, not a pin,
+but real, checkable, cited evidence rather than "publicly-documented" general
+knowledge -- and found the initial implementation wrong in three ways against
+that real source, all fixed before landing:
+
+- **`uri` must be an IRI term, not a literal.** The reference constructs it
+  via `vf.createIRI(namespace, info.getId())`. This is the one binding a real
+  RDF4J client actually dereferences as a location, so the wrong term kind is
+  substantive, not cosmetic.
+- **Head/binding order is `uri, id, title, readable, writable`**, not the
+  initially-implemented `id, title, uri, readable, writable`. Order does not
+  matter to a name-keyed client, but it does matter to this ADR's own
+  eventual exact differential-comparison gate.
+- **`title` must be omitted (unbound) when no description is configured**,
+  matching the reference's own behavior, rather than fabricated as a
+  duplicate of `id`. The implementation initially fabricated it; fixed to
+  `None`, verified by re-running the test and reading its own actual JSON
+  output rather than hand-deriving the corrected string.
+
+This is real, non-fabricated, checkable evidence against genuine upstream
+source -- stronger than the "best-effort guess... without a way to verify it
+here" the prior section rejected -- but it is explicitly evidence FOR one
+implementation, not the ADR's own required pinned-server differential
+comparison. `/repositories` is implemented and correct against real upstream
+source as currently understood; it is not yet qualified per this ADR's own
+stage-1 gate, and this ADR remains Proposed for exactly that reason.
+
+The review also surfaced one non-blocking, previously-undocumented gap:
+`RequestOperation::classify` (`cli/src/access/operation.rs`) has no arm for
+`/rdf4j-server/*`. Under any non-open ADR-0026 access policy the route is
+therefore denied at admission, and an operator cannot even author a rule to
+authorize it, since `Rule::validate` rejects `Endpoint::Unknown`. This is
+fail-closed and safe -- not a security gap -- but means the facade is
+currently usable only under an open access policy until a later stage adds
+an explicit classification. Documented in the handler's own doc comment.
+
+Remaining stage-1/2 scope from this ADR's own endpoint table --
+`GET`/`POST /repositories/{id}` (query execution), `/statements`,
+`/contexts`/`/size`, `/namespaces` -- is unimplemented and dependency-clear
+of ADR-0030/G4.5, same as this slice was.
 
 ## Consequences
 
