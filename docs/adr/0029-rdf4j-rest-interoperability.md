@@ -132,6 +132,92 @@ codec identifiers, endpoint cases, exclusions, and response hashes. Passing a
 subset cannot be described as generic “RDF4J compatible,” and `/protocol` is a
 fail-closed claim gate rather than a compile-time constant.
 
+### Concrete scoping for the smallest stage-1 slice, and why it is not implemented this session (2026-09-17)
+
+With this session's own two crash-test audit forks closed (ENOSPC and
+real-process-kill, both ADR-0028) and G4.2 (ADR-0027) audited and found not to
+be a good single-tick fit (its own remaining items are either brand-new
+zero-code feature slices or a separate evaluator-authority track), this ADR's
+own dependency-clear stages 1-2 were investigated as the next candidate. Stage
+3 (the leased-transaction adapter) explicitly depends on ADR-0030/G4.5, which
+is 0% done; stages 1 and 2 use Oxigraph's own existing transaction mechanism
+and are genuinely dependency-clear, confirmed by reading this ADR's own
+"Staged implementation and evaluator gates" section directly rather than
+trusting an earlier session's "unblocked" note.
+
+No existing scaffolding exists anywhere in the repository: a case-insensitive
+search for "rdf4j" across every source file matches only documentation (this
+ADR, the plans, the README); zero `.rs` files reference it. This is a clean
+slate.
+
+The routing architecture was read directly to find the smallest defensible
+first slice. Every native HTTP route dispatches from one flat
+`match (request.uri().path(), request.method().as_ref())` block inside
+`handle_request` (`cli/src/main.rs`). The layers this ADR requires new facade
+routes to inherit -- authorization, admission, deadline, egress, cancellation,
+metrics, and readiness -- are applied structurally *outside and before* that
+match, in `serve`'s own request-handling closure (`AccessController::
+prepare_request` -> `operations::gate` (readiness) -> `check_request` ->
+`handle_request` -> `finalize_response`, with admission wired at the
+connection level via `Server::with_request_admission`). A new match arm
+therefore inherits every one of those controls automatically, with no new
+middleware plumbing -- confirmed by reading the code, not assumed from the
+ADR's own "all facade routes pass through the same ... controls as native
+routes" claim.
+
+`GET /repositories` -- "return a SPARQL tuple result containing the one
+configured repository" per this ADR's own endpoint table -- is the smallest
+defensible first route: no RDF4J-specific request parsing, no
+transaction/mutation semantics, and no exposure to ADR-0030/G4.5 at all
+(unlike `/protocol`, whose own pre-qualification response this ADR leaves
+genuinely unspecified: it says `/protocol` advertises the real protocol
+number only "after the mandatory client matrix is green," but never states
+what it should return before that point). The response itself is tractable
+with existing library primitives: `spareval::QuerySolutionIter::from_tuples`
+builds a synthetic one-row tuple result from a fixed variable list with no
+real SPARQL evaluation needed, and the existing `query_results_content_
+negotiation` helper (`cli/src/main.rs`, already used by `/query`) already
+implements the exact JSON/XML/CSV/TSV Accept-header negotiation this ADR's
+own stage-1 gate names as a requirement, so no new negotiation code is
+needed either.
+
+This is not implemented this session, for two honestly-stated reasons rather
+than time pressure alone:
+
+1. **Genuine scope, once traced end to end.** Wiring even this single route
+   correctly touches: a new CLI flag on *two* command variants (`Serve` and
+   `ServeReadOnly` both call the shared `serve` function, each with its own
+   `#[arg(long)]` in `cli/src/cli.rs`); both of `main`'s own dispatch match
+   arms; `serve`'s and `handle_request`'s own signatures; and a genuinely new
+   response-construction path. This is a larger, more novel unit of work than
+   any single crash-test increment this session completed (each of those
+   reused an existing test-scaffolding pattern almost entirely; this reuses
+   library primitives but the wiring itself is new). Attempting to write,
+   self-verify, and get this independently reviewed inside the tail of an
+   already investigation-heavy tick risked exactly the kind of rushed,
+   lower-quality first cut this session has consistently avoided elsewhere.
+2. **The exact RDF4J wire-format column names for `/repositories` are not
+   verifiable against anything in this repository.** This ADR itself does not
+   specify them (only "a SPARQL tuple result containing the one configured
+   repository"), and no pinned RDF4J reference, fixture, or client corpus
+   exists anywhere in the tree to check against -- confirmed by the same
+   repository-wide search that found no existing scaffolding. This ADR's own
+   stage-1 gate requires "differentially compar[ing] logical results with a
+   pinned RDF4J Server" before this can be called verified, which is not
+   something an ordinary-delivery increment in this environment can satisfy
+   on its own. Implementing a best-effort guess at the column names (the
+   real, stable, publicly-documented RDF4J protocol uses `id`/`title`/`uri`/
+   `readable`/`writable`) without a way to verify it here would be exactly
+   the kind of unqualified claim this ADR's own closing paragraph warns
+   against ("Passing a subset cannot be described as generic 'RDF4J
+   compatible'").
+
+This scoping is recorded so a future session can start implementation
+directly from it rather than re-deriving the routing/reuse analysis: the
+exact file locations, the exact library primitives to reuse, and the exact
+two open risks (implementation scope, wire-format verification) to resolve
+before or during that work.
+
 ## Consequences
 
 - Existing RDF4J client applications gain a bounded migration/integration path
