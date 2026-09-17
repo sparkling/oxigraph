@@ -4,9 +4,11 @@
 - **Date**: 2026-08-25
 - Updated: 2026-09-18
 - Deciders: Oxigraph parity programme
-- Implementation status: partially implemented; `GET /rdf4j-server/repositories`
-  (stage 1's discovery route) is landed behind `--rdf4j` (off by default,
-  commit `e62a33a6`). All other stage-1/2/3/4 endpoints remain unimplemented.
+- Implementation status: partially implemented; behind `--rdf4j` (off by
+  default): `GET /rdf4j-server/repositories` (discovery, commit `e62a33a6`)
+  and `GET`/`POST /rdf4j-server/repositories/{id}` (SPARQL query execution,
+  commit `047cbbd4`). `/statements`, `/contexts`, `/size`, `/namespaces`, and
+  all of stages 2-4 remain unimplemented.
 - Programme task: `task-1787670632568-gk92vo` (G4.4)
 - **Depends on**:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
@@ -282,6 +284,63 @@ Remaining stage-1/2 scope from this ADR's own endpoint table --
 `GET`/`POST /repositories/{id}` (query execution), `/statements`,
 `/contexts`/`/size`, `/namespaces` -- is unimplemented and dependency-clear
 of ADR-0030/G4.5, same as this slice was.
+
+### `GET`/`POST /repositories/{id}` implemented: G4.4's second landed slice (2026-09-18)
+
+Query execution through the RDF4J repository-scoped endpoint is implemented,
+reviewed, and committed (`047cbbd4`), continuing directly from this ADR's own
+endpoint table with no re-scoping needed: the file, functions, and gating
+this route reuses (`handle_request`'s existing `rdf4j`/`rdf4j_repository_id`
+parameters, `configure_and_evaluate_sparql_query`) were all already in place
+from the prior slice.
+
+The central design decision -- reusing `configure_and_evaluate_sparql_query`
+verbatim, with no new RDF4J-specific parameter-handling code, rather than
+building bespoke `infer`/`queryLn`/`distinct` parsing -- was independently
+verified, not assumed. An elevated-scrutiny review traced every path through
+that function and confirmed its existing `args.reject_unknown("query")` call
+runs unconditionally on the only straight-line path to query evaluation, so
+any RDF4J-specific parameter this stage does not implement (the review
+live-tested `infer=false` against a running `--rdf4j` server, not only the
+test suite) fails with a typed 400 naming the offending parameter, rather
+than being silently ignored. This satisfies this ADR's own Decision-section
+requirement that "unsupported values fail explicitly rather than being
+ignored or reinterpreted" using entirely pre-existing code.
+
+SPARQL Update is deliberately excluded from this route: this ADR's own
+endpoint table places it under `/repositories/{id}/statements`, a separate
+future slice, not under repository-scoped query execution.
+
+The review found the route logic itself free of defects -- path-matching
+exactness (a wrong repository ID, a `/statements` suffix, and a bare
+trailing slash were each live-verified to correctly miss this route and
+fall through to the ordinary 404), correct GET/POST arms modeled on
+`/sparql`'s own, and correct non-gating on `read_only` (queries work
+identically on a read-only server) -- but one required, and two
+recommended, fixes:
+
+- **Required:** the `--rdf4j` flag's own `--help` text (`cli/src/cli.rs`)
+  still described the facade as "discovery-only," which this slice makes
+  inaccurate. Fixed on both `Serve` and `ServeReadOnly`.
+- **Applied (recommended):** added a test for the POST
+  `application/sparql-query` direct-body branch, which the review had only
+  verified by hand against a live server, not in CI. Also strengthened the
+  RDF4J-parameter-rejection test to assert the response body actually names
+  `infer`, not only the status code, so a future 400-for-an-unrelated-reason
+  regression cannot pass this test silently -- this is the load-bearing
+  evidence for this ADR's own "fail explicitly" requirement, so asserting
+  only a status code understated what needed proving.
+
+`GET /repositories/{id}` observations the review flagged for the eventual
+differential-comparison gate, not requiring action now: the route also
+accepts the `QUERY` HTTP verb (an Oxigraph extension no RDF4J client sends;
+harmless, inherited unchanged from `/sparql`), and an unsupported method
+(e.g. `DELETE`) returns a plain 404 rather than RDF4J's own `405` with an
+`Allow` header -- consistent with the first slice's already-accepted
+behavior, not a new divergence introduced here.
+
+Remaining G4.4 stage-1 scope after this slice: `/statements`, `/contexts`,
+`/size`, `/namespaces`. All remain dependency-clear of ADR-0030/G4.5.
 
 ## Consequences
 
