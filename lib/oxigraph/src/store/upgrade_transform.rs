@@ -891,12 +891,18 @@ mod tests {
     /// Identical to `legacy_backup.rs`'s and `upgrade.rs`'s already-reviewed
     /// `compile_enospc_shim` of the same name; duplicated file-local rather
     /// than shared, matching this session's own established convention of
-    /// file-local crash-test infrastructure.
+    /// file-local crash-test infrastructure. `name` distinguishes each
+    /// caller's own `.c`/`.so` filenames: this file is about to gain a
+    /// second ENOSPC test, both runnable concurrently under libtest's
+    /// default multithreading, and an unparameterized shared filename
+    /// raced for real the first time this exact situation arose
+    /// (`legacy_backup.rs`'s own two tests) -- applied proactively here
+    /// before adding the second test, not after observing a flake.
     #[expect(
         clippy::print_stderr,
         reason = "diagnostic for a CI host missing a C compiler, opt-in test infrastructure only"
     )]
-    fn compile_enospc_shim(directory: &Path) -> Result<Option<PathBuf>> {
+    fn compile_enospc_shim(directory: &Path, name: &str) -> Result<Option<PathBuf>> {
         const SOURCE: &str = r#"
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -963,9 +969,11 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
     return real(fd, buf, count, offset);
 }
 "#;
-        let source_path = directory.join("oxigraph_upgrade_transform_enospc_shim.c");
+        let source_path =
+            directory.join(format!("oxigraph_upgrade_transform_enospc_shim_{name}.c"));
         fs::write(&source_path, SOURCE)?;
-        let shared_object = directory.join("oxigraph_upgrade_transform_enospc_shim.so");
+        let shared_object =
+            directory.join(format!("oxigraph_upgrade_transform_enospc_shim_{name}.so"));
         let status = match std::process::Command::new("cc")
             .arg("-shared")
             .arg("-fPIC")
@@ -1011,7 +1019,7 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
             .parent()
             .ok_or("test binary has no parent directory")?
             .to_owned();
-        let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+        let Some(shim) = compile_enospc_shim(&shim_directory, "journal")? else {
             return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
         };
         let directory = tempfile::tempdir()?;
@@ -1064,6 +1072,86 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
         Ok(())
     }
 
+    /// A real `ENOSPC` injected on the first byte the final `TRANSFORM_
+    /// PENDING` manifest write ever makes -- strictly after every journal
+    /// frame and the entire native mutation loop have already succeeded,
+    /// unlike the test above (which faults the very first frame). `TRANSFORM_
+    /// PENDING` is a sibling of both `TRANSFORM_JOURNAL` and `store/` at
+    /// `directory`'s own root, and its string does not share a prefix with
+    /// either (`"...transform.journal"` vs `"...transformed.pending"`
+    /// diverge immediately after `"transform"`), so scoping `ENOSPC_SHIM_
+    /// PREFIX` to that exact file means neither the journal's own frame
+    /// writes nor any of the mutation loop's native `store/` writes --
+    /// whose aggregate volume this technique cannot otherwise account for
+    /// -- can ever match the prefix, at any budget: the file-specific
+    /// technique this crate has already used for `resume_inner`'s `JOURNAL`
+    /// entry and for `backup_inner`'s and `prepare_inner`'s own `PENDING`
+    /// writes, reused here for a third, structurally distinct function.
+    /// Reuses `transform_prepared_upgrade_enospc_process_helper` unchanged;
+    /// the specific error kind it demands (`StorageFull`, not
+    /// `InvalidManifest`) is itself part of the proof that the journal's
+    /// own internal `frames != completed_journal(...)` check already
+    /// passed inside the child before this fault ever landed.
+    #[test]
+    fn disk_exhaustion_on_the_transform_manifest_write_preserves_every_input() -> Result {
+        if !cfg!(target_os = "linux") {
+            return Ok(());
+        }
+        let shim_directory = std::env::current_exe()?
+            .parent()
+            .ok_or("test binary has no parent directory")?
+            .to_owned();
+        let Some(shim) = compile_enospc_shim(&shim_directory, "pending")? else {
+            return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+        };
+        let directory = tempfile::tempdir()?;
+        let root = directory.path().canonicalize()?;
+        let source = root.join("source");
+        let package = root.join("backup");
+        let prepared = root.join("prepared");
+        fixture(&source)?;
+        let before_source = hashes(&source)?;
+        let options = UpgradeTransformOptions::default();
+        Store::backup_legacy(&source, &package, &options.backup)?;
+        Store::prepare_upgrade(&source, &package, &prepared, &options.backup)?;
+        let before_package = hashes(&package.join("store"))?;
+        let mut command = std::process::Command::new(std::env::current_exe()?);
+        command
+            .arg("--exact")
+            .arg(helper("transform_prepared_upgrade_enospc_process_helper"));
+        command.env("LD_PRELOAD", shim);
+        command.env("ENOSPC_SHIM_BUDGET_BYTES", "0");
+        command.env("ENOSPC_SHIM_PREFIX", prepared.join(TRANSFORM_PENDING));
+        command.env("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_SOURCE", &source);
+        command.env("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_PACKAGE", &package);
+        command.env("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_PREPARED", &prepared);
+        let status = command.status()?;
+        assert!(status.success(), "child helper failed: {status:?}");
+        for path in [&source, &package.join("store"), &prepared.join("store")] {
+            assert!(LegacyStoreSnapshot::upgrade_lease_available(path));
+        }
+        // Neither the journal frame writes nor any native store/ write ever
+        // matched this exact-file prefix, so both ran to completion
+        // unconstrained: positive evidence the mutation loop actually
+        // finished, not just that the child process happened to exit 0.
+        assert!(
+            prepared.join(TRANSFORM_JOURNAL).exists(),
+            "the child never reached transform_inner's mutation loop"
+        );
+        assert!(fs::metadata(prepared.join(TRANSFORM_JOURNAL))?.len() > 0);
+        assert!(prepared.join(TRANSFORM_PENDING).exists());
+        assert_eq!(fs::metadata(prepared.join(TRANSFORM_PENDING))?.len(), 0);
+        assert!(!prepared.join(TRANSFORM_COMPLETE).exists());
+        assert!(TransformedUpgrade::verify(&source, &package, &prepared, &options).is_err());
+        assert!(matches!(
+            Store::open(prepared.join("store")),
+            Err(crate::storage::StorageError::UpgradeIncomplete)
+        ));
+        assert_eq!(hashes(&source)?, before_source);
+        assert_eq!(hashes(&package.join("store"))?, before_package);
+        Ok(())
+    }
+
     #[test]
     fn transform_prepared_upgrade_enospc_process_helper() -> Result {
         let Some(source) = std::env::var_os("OXIGRAPH_UPGRADE_TRANSFORM_ENOSPC_TEST_SOURCE") else {
@@ -1079,13 +1167,22 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
             &UpgradeTransformOptions::default(),
         );
         match result {
+            // The native mutation loop's own writes wrap I/O errors through
+            // StorageError (a fault on any journal frame lands here); the
+            // final TRANSFORM_PENDING write instead goes through this
+            // file's shared `write()` helper, which surfaces a bare
+            // BackupError::Io directly. Both are genuine StorageFull
+            // outcomes of this same function, just from different internal
+            // error paths -- not two different failure classes to
+            // disambiguate, so either is accepted here.
             Err(BackupError::Storage(crate::storage::StorageError::Io(error)))
                 if error.kind() == io::ErrorKind::StorageFull =>
             {
                 Ok(())
             }
+            Err(BackupError::Io(error)) if error.kind() == io::ErrorKind::StorageFull => Ok(()),
             other => Err(format!(
-                "expected a StorageFull BackupError::Storage(StorageError::Io(_)), got {other:?}"
+                "expected a StorageFull BackupError::Storage(StorageError::Io(_)) or BackupError::Io(_), got {other:?}"
             )
             .into()),
         }
