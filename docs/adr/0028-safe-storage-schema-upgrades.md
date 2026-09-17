@@ -4421,6 +4421,65 @@ run across this entire session; the next increment should pick a
 genuinely different focus area rather than continue searching for more
 ENOSPC boundaries.
 
+### A dedicated real-process-kill audit, and closing `backup_inner`'s last gap (2026-09-17)
+
+With the ENOSPC thread closed, a dedicated read-only audit fork checked
+this crate's *other* class of crash-test coverage -- real OS-level
+process-kill (child-exit) tests, distinct from ENOSPC's injected-`Result`
+faults, since a real `std::process::exit` bypasses every destructor,
+buffered write and `Drop` impl a synthetic in-process fault cannot rule
+out. Unlike the ENOSPC audit, this one found substantially more remaining
+work than it closed: at least fifteen distinct, tractable phases across
+`backup_inner`, `prepare_inner`, `transform_inner`, `activate_upgrade_inner`,
+`resume_inner` and `activate_inner`, most of which already have exactly
+one covered boundary each rather than zero. This is not a stopping point;
+it is the start of a comparably large, well-precedented body of future
+work, ranked by the audit as follows (highest first): `backup_inner`'s
+own zero-coverage gap; `resume_inner`'s `write_envelope` boundary
+(continuing this session's own just-closed ENOSPC context on the same
+call); `resume_inner`'s VALIDATED/SEALED journal-append boundaries;
+`activate_inner`'s copy-loop/pre-open boundary (flagged as needing the
+same source-level care `write_envelope` needed, since `SchemaUpgradeSnapshot::open`
+may itself rewrite files on open); and the remaining legacy-path phases
+on `prepare_inner`/`transform_inner`. Two boundaries were flagged as
+likely not worth adding (post-rename phases that don't appear to reveal
+observably different on-disk state from a boundary already tested one
+phase earlier).
+
+The audit also confirmed directly, not assumed, that this file's own
+existing `cancellation_before_copy_completion_and_marker_never_completes`
+test -- despite superficially resembling a crash test -- uses cooperative
+`cancellation.cancel()`, not a real process exit, and so provides no
+real-kill evidence at all; `backup_inner` genuinely had zero real-kill
+coverage of any boundary before this section, unlike its three siblings.
+
+The top-ranked candidate, `backup_inner`'s own PENDING-write-to-COMPLETE-rename
+boundary, is now implemented as `backup_child_exits_before_and_after_the_completion_rename`
+(`lib/oxigraph/src/store/legacy_backup.rs`), mirroring the identical
+technique its three siblings (`prepare_inner`, `transform_inner`,
+`activate_upgrade_inner`) already use for their own analogous boundary.
+Independent review (`backup-inner-kill-review`) verified the phase
+placement, that `LegacyBackupReceipt::verify` genuinely requires the
+COMPLETE marker (not merely its presence as a filename), that the kill
+point leaves nothing unassertable in flight, and found no concurrency or
+naming hazard -- ACCEPT-with-required-fixes on two doc-comment overclaims
+(a "this crate's own" zero-coverage claim that was too broad -- two
+functions in a separate crash-test family, `backup_with_receipt_inner`
+and `restore_inner`, also still lack real-kill coverage and remain out of
+this scope -- and a description of "every other test in this file" that
+overlooked this file's own two ENOSPC tests, which fault a real syscall
+in a re-exec'd child that then returns the error and exits normally
+rather than injecting synchronously in-process). Both corrected before
+landing. Committed as `e44c2fc2`.
+
+This closes ADR-0028's legacy-upgrade crash-test family's real-process-kill
+gap in full: `backup_inner`, `prepare_inner`, `transform_inner` and
+`activate_upgrade_inner` each now have at least one real-kill boundary.
+It does not close the wider real-process-kill audit -- the ranked
+candidate list above remains open for future increments, one at a time,
+following this session's own established self-verify-then-review
+discipline.
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
