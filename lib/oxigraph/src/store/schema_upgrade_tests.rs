@@ -996,12 +996,19 @@ fn schema_upgrade_start_process_helper() -> TestResult {
 /// `upgrade_transform.rs`'s already-reviewed `compile_enospc_shim` of the
 /// same name; duplicated file-local rather than shared, matching this
 /// session's own established convention of file-local crash-test
-/// infrastructure.
+/// infrastructure. `name` distinguishes each caller's own `.c`/`.so`
+/// filenames: this file has seven ENOSPC tests, all runnable concurrently
+/// under libtest's default multithreading, and an unparameterized shared
+/// filename already raced for real once this exact situation arose with
+/// just two tests in another file (`legacy_backup.rs`) -- fixed there and
+/// in two further files at the time, and applied here proactively too
+/// once flagged by an independent review, rather than waiting for this
+/// file's own higher-concurrency exposure to produce a flake first.
 #[expect(
     clippy::print_stderr,
     reason = "diagnostic for a CI host missing a C compiler, opt-in test infrastructure only"
 )]
-fn compile_enospc_shim(directory: &Path) -> TestResult<Option<PathBuf>> {
+fn compile_enospc_shim(directory: &Path, name: &str) -> TestResult<Option<PathBuf>> {
     const SOURCE: &str = r#"
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -1068,9 +1075,13 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
     return real(fd, buf, count, offset);
 }
 "#;
-    let source_path = directory.join("oxigraph_schema_upgrade_activate_enospc_shim.c");
+    let source_path = directory.join(format!(
+        "oxigraph_schema_upgrade_activate_enospc_shim_{name}.c"
+    ));
     fs::write(&source_path, SOURCE)?;
-    let shared_object = directory.join("oxigraph_schema_upgrade_activate_enospc_shim.so");
+    let shared_object = directory.join(format!(
+        "oxigraph_schema_upgrade_activate_enospc_shim_{name}.so"
+    ));
     let status = match std::process::Command::new("cc")
         .arg("-shared")
         .arg("-fPIC")
@@ -1118,7 +1129,7 @@ fn disk_exhaustion_on_the_activation_guard_write_preserves_every_input() -> Test
         .parent()
         .ok_or("test binary has no parent directory")?
         .to_owned();
-    let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+    let Some(shim) = compile_enospc_shim(&shim_directory, "activation_guard")? else {
         return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
     };
     let root = tempfile::tempdir()?;
@@ -1232,7 +1243,7 @@ fn disk_exhaustion_during_the_activation_copy_loop_preserves_every_input() -> Te
         .parent()
         .ok_or("test binary has no parent directory")?
         .to_owned();
-    let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+    let Some(shim) = compile_enospc_shim(&shim_directory, "activation_copy")? else {
         return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
     };
     let root = tempfile::tempdir()?;
@@ -1346,7 +1357,7 @@ fn disk_exhaustion_on_the_construction_plan_write_preserves_every_input() -> Tes
         .parent()
         .ok_or("test binary has no parent directory")?
         .to_owned();
-    let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+    let Some(shim) = compile_enospc_shim(&shim_directory, "construction")? else {
         return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
     };
     let root = tempfile::tempdir()?;
@@ -1460,7 +1471,7 @@ fn disk_exhaustion_on_the_resume_guard_write_preserves_every_input() -> TestResu
         .parent()
         .ok_or("test binary has no parent directory")?
         .to_owned();
-    let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+    let Some(shim) = compile_enospc_shim(&shim_directory, "resume_guard")? else {
         return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
     };
     let root = tempfile::tempdir()?;
@@ -1585,7 +1596,7 @@ fn disk_exhaustion_during_the_resume_copy_loop_preserves_every_input() -> TestRe
         .parent()
         .ok_or("test binary has no parent directory")?
         .to_owned();
-    let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+    let Some(shim) = compile_enospc_shim(&shim_directory, "resume_copy")? else {
         return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
     };
     let root = tempfile::tempdir()?;
@@ -1737,7 +1748,7 @@ fn disk_exhaustion_on_the_resume_validated_journal_write_preserves_every_input()
         .parent()
         .ok_or("test binary has no parent directory")?
         .to_owned();
-    let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+    let Some(shim) = compile_enospc_shim(&shim_directory, "resume_validated")? else {
         return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
     };
     let root = tempfile::tempdir()?;
@@ -1867,7 +1878,7 @@ fn disk_exhaustion_on_the_resume_sealed_journal_write_preserves_every_input() ->
         .parent()
         .ok_or("test binary has no parent directory")?
         .to_owned();
-    let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+    let Some(shim) = compile_enospc_shim(&shim_directory, "resume_sealed")? else {
         return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
     };
     let root = tempfile::tempdir()?;
