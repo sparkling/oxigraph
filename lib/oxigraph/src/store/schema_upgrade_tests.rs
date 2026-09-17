@@ -1195,3 +1195,125 @@ fn schema_upgrade_activate_enospc_process_helper() -> TestResult {
         other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
     }
 }
+
+/// A real `ENOSPC`, not a synthetic phase callback or a real process kill,
+/// injected inside `activate_inner`'s copy loop -- strictly between
+/// `fault(1)` and `fault(2)`, completing this function's own disk-exhaustion
+/// coverage alongside `disk_exhaustion_on_the_activation_guard_write_
+/// preserves_every_input` above, which covers the earlier guard-write
+/// boundary (`fault(0)` to `fault(1)`). Reuses that test's own
+/// `compile_enospc_shim` unmodified: both tests live in this same file, so
+/// there is no second file-local copy to duplicate here, unlike the three
+/// other files this session's LD_PRELOAD tests span.
+///
+/// The budget is deliberately set to exactly `GUARD.len()`, not zero: a
+/// zero budget would fault on the guard write itself, a boundary already
+/// covered above. Letting the guard write consume the whole budget (its
+/// `write_all` call is `count == budget`, which `should_inject` does not
+/// reject) and leaving zero remaining means the very next in-scope write --
+/// the first non-empty file `copy_artifact` writes inside the loop -- fails
+/// instead. A source file that happens to be empty never calls `write` at
+/// all (`copy_artifact`'s own read/write loop breaks on a zero-byte read
+/// before ever writing), so this pins the fault to the first *non-empty*
+/// file in `expected`, not necessarily the very first file by iteration
+/// order; `schema_upgrade_activation_faults_never_leave_a_usable_target`'s
+/// own `stop == 2` case already establishes this fixture's copy loop
+/// processes more than one file, so this is not an assumption unique to
+/// this test.
+#[test]
+fn disk_exhaustion_during_the_activation_copy_loop_preserves_every_input() -> TestResult {
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let shim_directory = std::env::current_exe()?
+        .parent()
+        .ok_or("test binary has no parent directory")?
+        .to_owned();
+    let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+        return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+    };
+    let root = tempfile::tempdir()?;
+    let root_path = root.path().canonicalize()?;
+    let (source, package) = fixture(&root_path)?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let workspace = root_path.join("workspace");
+    sealed(&source, &package, &workspace, &options)?;
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    let before_workspace = bytes(&workspace)?;
+    let target = root_path.join("activate-copy-enospc");
+    // The whole design rests on this budget being large enough to let the
+    // guard write through but not zero: pin it explicitly rather than
+    // leaving it an unstated premise of GUARD's own definition.
+    assert!(!GUARD.is_empty());
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command
+        .arg("--exact")
+        .arg(helper("schema_upgrade_activate_copy_enospc_process_helper"));
+    command.env("LD_PRELOAD", shim);
+    command.env("ENOSPC_SHIM_BUDGET_BYTES", GUARD.len().to_string());
+    command.env("ENOSPC_SHIM_PREFIX", &target);
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_ACTIVATE_COPY_ENOSPC_TEST_SOURCE",
+        &source,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_ACTIVATE_COPY_ENOSPC_TEST_PACKAGE",
+        &package,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_ACTIVATE_COPY_ENOSPC_TEST_WORKSPACE",
+        &workspace,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_ACTIVATE_COPY_ENOSPC_TEST_TARGET",
+        &target,
+    );
+    let status = command.status()?;
+    assert!(status.success(), "child helper failed: {status:?}");
+    // The guard write's own budget was exactly consumed, not exceeded, so it
+    // completed in full: this is genuine positive evidence the child passed
+    // the earlier boundary and reached the copy loop specifically, not a
+    // restatement of the guard-write test's own vacuous-pass guard.
+    assert_eq!(
+        fs::read(target.join(UPGRADE_GUARD))?,
+        GUARD,
+        "the guard write itself must have succeeded in full under this budget"
+    );
+    // At least one more entry exists beyond the guard: copy_artifact always
+    // creates its destination via create_new before attempting to write it,
+    // so even the failing file's own zero-byte stub is on disk.
+    assert!(
+        fs::read_dir(&target)?.count() >= 2,
+        "the child never reached activate_inner's copy loop"
+    );
+    assert!(Store::open(&target).is_err());
+    assert_eq!(bytes(&source)?, before_source);
+    assert_eq!(bytes(&package)?, before_package);
+    assert_eq!(bytes(&workspace)?, before_workspace);
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_activate_copy_enospc_process_helper() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let Some(source) = std::env::var_os("OXIGRAPH_SCHEMA_UPGRADE_ACTIVATE_COPY_ENOSPC_TEST_SOURCE")
+    else {
+        return Ok(()); // An ordinary run: only the parent test re-invokes this.
+    };
+    let source = PathBuf::from(source);
+    let package = variable("OXIGRAPH_SCHEMA_UPGRADE_ACTIVATE_COPY_ENOSPC_TEST_PACKAGE")?;
+    let workspace = variable("OXIGRAPH_SCHEMA_UPGRADE_ACTIVATE_COPY_ENOSPC_TEST_WORKSPACE")?;
+    let target = variable("OXIGRAPH_SCHEMA_UPGRADE_ACTIVATE_COPY_ENOSPC_TEST_TARGET")?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let result = Store::activate_schema_upgrade(&source, &package, &workspace, &target, &options);
+    match result {
+        Err(BackupError::Io(error)) if error.kind() == io::ErrorKind::StorageFull => Ok(()),
+        other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
+    }
+}
