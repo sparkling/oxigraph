@@ -4686,6 +4686,62 @@ therefore fully closed and the fifth is half-closed; this is real,
 substantial progress on the real-process-kill thread, not its own
 stopping point yet the way the ENOSPC thread reached one earlier today.
 
+### The real-process-kill audit's last remaining candidate closes the whole thread (2026-09-17)
+
+`transform_inner`'s own per-edge journal-append phases -- the other half
+of the audit's combined fifth-ranked candidate, left open above -- are now
+closed too:
+`transform_child_exits_before_each_journal_frame_and_after_the_native_migration`
+(`lib/oxigraph/src/store/upgrade_transform.rs`) brackets `fault(0)`
+(strictly before the transform starts), `fault(1)`/`fault(2)`/`fault(3)`
+(strictly after each of the three per-edge journal frames a version-0
+legacy migration writes), and `fault(4)` (strictly after the native
+migration's own post-loop `project`/`validate`/`flush` sequence
+completes). The exact edge sequence (`0, 1, 2`, never higher, so no
+collision with the function's own later fixed `fault(4)` call) was traced
+directly through `transform_upgrade` and `migrate_versioned_to` rather
+than assumed, and `journal_frame`'s fixed 161-byte length (constant
+regardless of edge value or prior content, since prior frames are hashed
+to a constant-width digest rather than embedded) let each stop value's
+exact journal length be asserted precisely -- verified with a deliberate
+`+ 1` mutation on the frame-count formula, which failed with an exact
+byte mismatch (161 vs 322) before being reverted.
+
+Independent review (`transform-journal-kill-review`): **ACCEPT**, no
+required fixes. The review independently re-verified the fixture's own
+version-0 status three separate ways (cross-referencing `copy_fixture`,
+extracting the raw `oxversion` marker from the fixture's own WAL file, and
+checking the MANIFEST's column-family list against `legacy_layout`'s own
+version-0/1 distinction), re-ran the stated mutation test itself and
+reproduced the identical result, found a reused prepared directory is
+refused even earlier than the journal's own `create_new` failure (via
+`check_workspace`'s exact-3-entries rule), and gave an explicit assessment
+of `fault(4)`'s own marginal value: though its on-disk assertions are
+identical to `fault(3)`'s, it proves refusal against a materially
+different process state (the native DB cleanly closed via
+`validate`/`flush`/`drop`, versus still open read-write mid-closure at
+`fault(3)`) -- worthwhile, not padding, with one honestly-named limitation
+(neither point could catch a hypothetical bug inside the `validate`/
+`flush` sequence itself, though this is inert by design since a killed
+transform workspace is permanently unrecoverable and its native state
+never propagates). Committed as `829258d6`.
+
+The reviewer independently confirmed this against this ADR's own ranked
+candidate list, rather than assuming it: **this closes the last open item
+in this session's own real-process-kill audit fork.** Combined with the
+already-committed completion-rename sibling, `transform_inner` now has
+real-kill coverage at every one of its fault phases `0..=6`. A second
+entire crash-test family reaches a genuine stopping point this session,
+after the ENOSPC thread's own closure earlier today: `backup_inner`,
+`prepare_inner`, `transform_inner`, `activate_upgrade_inner` (legacy path)
+and `resume_inner`, `activate_inner` (v2-to-v3 draft) all now have
+real-process-kill coverage across every fault phase the audit's own
+finding list identified. The audit's own separately-scoped, deliberately
+out-of-scope items -- the v2-to-v3 draft's construction step (needing its
+own production hooks first), and `backup_with_receipt_inner`/`restore_inner`
+(a different crash-test family entirely) -- remain genuinely open future
+work, not claimed closed here.
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
