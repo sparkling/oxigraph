@@ -3595,6 +3595,75 @@ read-only segments remain open, each requiring its own future
 evaluation rather than an assumption that this tick's technique
 transfers unchanged.
 
+## A second boundary on `resume_inner`, and re-weighing the append()-based candidates (2026-09-17)
+
+Before picking a tenth target, the live Ruflo task list was checked
+fresh again across the whole programme -- nothing new appeared beyond
+the two already-noted Astra activation gate tasks (G4.1-adjacent,
+high priority, pending since 2026-09-06), deliberately left for a
+future tick since starting that unfamiliar subsystem half-context
+within this tick's own established rhythm would trade away, rather
+than build on, this session's accumulated disk-exhaustion expertise.
+
+The immediately preceding entry's own list of "plausibly tractable"
+`resume_inner` candidates -- the two `append()`-based journal writes at
+`fault(5)` to `fault(6)` and `fault(6)` to `fault(7)` -- was
+reconsidered rather than acted on directly. Both share `directory/
+JOURNAL`, the same file the pre-`fault(0)` `INTENT` append already
+writes to, and multiple RocksDB-internal writes
+(`SchemaUpgradeSnapshot::open`, `write_envelope`) happen between
+`fault(0)` and `fault(5)`/`fault(6)`. Isolating either boundary would
+need a precise nonzero-budget computation accounting for all of that
+intervening RocksDB write volume, which is not yet understood with
+enough confidence to attempt safely. This is a genuine downgrade from
+"plausibly tractable" to "needs its own dedicated investigation before
+being attempted," not a restatement.
+
+The copy loop (`fault(1)` to `fault(2)`) remained the cleanest
+available target: the same nonzero-budget precision technique (budget
+= `GUARD.len()`) already twice proven for `activate_inner`'s and
+`activate_upgrade_inner`'s own copy loops, reusing this tick's own
+already-established `workspace/attempts` prefix scoping unchanged.
+Unlike those two functions, `resume_inner` has no dedicated activation-
+target directory -- the guard write and every copied file land under
+the same `workspace/attempts/<n>/` tree -- and `inputs.receipt.files()`
+is not guaranteed to order its entries so the first copy always lands
+under `store/` specifically (`verify_output`'s own external/expected
+filtering implies non-`store/` contributor files are a real, supported
+shape). The vacuous-pass guard therefore recursively snapshots the
+whole attempt directory with this file's existing `bytes()` helper,
+rather than assuming a fixed physical layout the way the activation-
+style tests' flat `read_dir` count safely can for their own simpler
+destination shape.
+
+Single review round (`xhigh`, `claude-fable-5-1`): **ACCEPT**, with two
+non-blocking findings applied: pinning every non-guard attempt-file to
+a real receipt path under `package` (proving it is a genuine
+`copy_artifact` destination, not merely "some second file exists"),
+and a doc-comment caveat that an empty first receipt file shifts the
+injection to the first non-empty one -- matching the activation-style
+copy-loop test's own explicit caveat rather than leaving it implicit.
+
+Verified with strict no-concurrent-cargo-test discipline throughout,
+following the lesson recorded earlier this tick
+(`feedback_no_concurrent_cargo_test_same_binary.md`): both new tests
+passed in isolation before and after the review fixes; two separate
+mutation round-trips confirmed the same non-vacuous `NotFound` failure
+mode already established for this file's other `ENOSPC` tests; two
+full `store::upgrade::transform::receipt::schema_upgrade::tests` module
+runs, each in isolation with nothing else touching the package,
+**31 passed, 0 failed** both times (1420.57s pre-fix, 1536.20s
+post-fix). Committed `f0cacdbd`.
+
+Ten entry points are covered crate-wide now, across seven functions --
+three of which (`activate_inner`, `activate_upgrade_inner`, and now
+`resume_inner`) each have two distinct covered boundaries.
+`resume_inner`'s two `append()`-based journal writes and its RocksDB-
+open/write_envelope/read-only segments remain the genuinely open items
+in this sub-thread, each requiring its own dedicated investigation
+rather than an assumption that this tick's technique transfers
+unchanged.
+
 ## Staged implementation and evaluator gates
 
 1. **Inventory and inspect:** hash-pin version-0, version-1, current, missing,
