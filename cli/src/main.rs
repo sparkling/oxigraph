@@ -18,11 +18,13 @@ use oxhttp::model::{Body, HeaderValue, Method, Request, Response, StatusCode, Ur
 use oxigraph::io::{
     DocumentLoader, JsonLdProfileSet, RdfFormat, RdfParseError, RdfParser, RdfSerializer,
 };
-use oxigraph::model::{GraphName, IriParseError, NamedNode, NamedOrBlankNode, RdfVersion};
+use oxigraph::model::{
+    GraphName, IriParseError, Literal, NamedNode, NamedOrBlankNode, RdfVersion, Term, Variable,
+};
 use oxigraph::sparql::results::{QueryResultsFormat, QueryResultsSerializer};
 use oxigraph::sparql::{
-    CancellationToken, QueryEntailment, QueryEntailmentOptions, QueryResults, SparqlEvaluator,
-    SparqlVersion as LibrarySparqlVersion,
+    CancellationToken, QueryEntailment, QueryEntailmentOptions, QueryResults, QuerySolutionIter,
+    SparqlEvaluator, SparqlVersion as LibrarySparqlVersion,
 };
 use oxigraph::store::{BulkLoader, LoaderError, Store};
 use oxiri::{Iri, IriRef};
@@ -106,6 +108,8 @@ pub fn main() -> anyhow::Result<()> {
             union_default_graph,
             entailment,
             timeout_s,
+            rdf4j,
+            rdf4j_repository_id,
         } => {
             let access = Arc::new(match access_policy {
                 Some(path) => oxigraph_cli::access::AccessController::from_file(&path, false)?,
@@ -138,6 +142,8 @@ pub fn main() -> anyhow::Result<()> {
                 union_default_graph,
                 entailment.into(),
                 timeout_s,
+                rdf4j,
+                rdf4j_repository_id,
             )
         }
         Command::ServeReadOnly {
@@ -151,6 +157,8 @@ pub fn main() -> anyhow::Result<()> {
             union_default_graph,
             entailment,
             timeout_s,
+            rdf4j,
+            rdf4j_repository_id,
         } => {
             let access = Arc::new(match access_policy {
                 Some(path) => oxigraph_cli::access::AccessController::from_file(&path, true)?,
@@ -179,6 +187,8 @@ pub fn main() -> anyhow::Result<()> {
                 union_default_graph,
                 entailment.into(),
                 timeout_s,
+                rdf4j,
+                rdf4j_repository_id,
             )
         }
         Command::Backup {
@@ -1756,6 +1766,8 @@ fn serve(
     union_default_graph: bool,
     entailment: QueryEntailment,
     timeout_s: Option<u64>,
+    rdf4j: bool,
+    rdf4j_repository_id: String,
 ) -> anyhow::Result<()> {
     entailment.ensure_supported()?;
     let sparql_evaluator = sparql_evaluator();
@@ -1776,6 +1788,8 @@ fn serve(
                         union_default_graph,
                         entailment,
                         timeout,
+                        rdf4j,
+                        &rdf4j_repository_id,
                     )
                 })
                 .unwrap_or_else(|(status, message)| error(status, message)),
@@ -1875,8 +1889,13 @@ fn handle_request(
     union_default_graph: bool,
     entailment: QueryEntailment,
     timeout: Option<Duration>,
+    rdf4j: bool,
+    rdf4j_repository_id: &str,
 ) -> Result<Response<Body>, HttpError> {
     match (request.uri().path(), request.method().as_ref()) {
+        ("/rdf4j-server/repositories", "GET") if rdf4j => {
+            rdf4j_repositories(request, rdf4j_repository_id, read_only)
+        }
         ("/", "HEAD") => Response::builder()
             .header(CONTENT_TYPE, "text/html")
             .body(Body::empty())
@@ -2128,6 +2147,77 @@ fn handle_request(
             ),
         )),
     }
+}
+
+/// ADR-0029 stage 1's smallest slice: `GET /repositories`, RDF4J's own
+/// discovery route listing the one configured repository. Only reachable
+/// when `--rdf4j` is set; a disabled facade is fully inert (no route match).
+/// Note this route is not yet reachable under a non-open ADR-0026 access
+/// policy: `RequestOperation::classify` has no arm for `/rdf4j-server/*`,
+/// so it is denied at admission and an operator cannot author a rule for
+/// it either -- fail-closed, but an undocumented limitation until a later
+/// stage adds an explicit classification.
+///
+/// The response is a synthetic, fixed one-row SPARQL tuple result -- no
+/// SPARQL evaluation runs -- reusing this server's own existing
+/// `query_results_content_negotiation` so the same Accept-header negotiation
+/// `/query` already honors (JSON/XML/CSV/TSV) applies here too.
+///
+/// The binding names, order, and term types were checked directly against
+/// RDF4J 6.0.0's own `RepositoryListController` source (fetched, not vendored
+/// in this repository, so this does NOT discharge ADR-0029's own stage-1
+/// differential-comparison gate against a pinned server, but is stronger
+/// evidence than unverified general protocol knowledge): head order
+/// `uri, id, title, readable, writable`; `uri` is an RDF4J-style
+/// concatenation of the request's own resolved base URL with the repository
+/// ID (not percent-encoded, matching the reference's own `namespace + id`
+/// construction) bound as an IRI term, not a literal; `title` is left
+/// unbound (`None`) when no description is configured, matching the
+/// reference's own omission rather than fabricating a value.
+fn rdf4j_repositories(
+    request: &Request<Body>,
+    repository_id: &str,
+    read_only: bool,
+) -> Result<Response<Body>, HttpError> {
+    let uri = format!("{}/{repository_id}", base_url(request));
+    let uri = NamedNode::new(uri).map_err(internal_server_error)?;
+    let variables: Arc<[Variable]> = Arc::from([
+        Variable::new_unchecked("uri"),
+        Variable::new_unchecked("id"),
+        Variable::new_unchecked("title"),
+        Variable::new_unchecked("readable"),
+        Variable::new_unchecked("writable"),
+    ]);
+    let solutions = QuerySolutionIter::from_tuples(
+        Arc::clone(&variables),
+        [Ok(vec![
+            Some(Term::NamedNode(uri)),
+            Some(Term::Literal(Literal::new_simple_literal(
+                repository_id.to_owned(),
+            ))),
+            None,
+            Some(Term::Literal(true.into())),
+            Some(Term::Literal((!read_only).into())),
+        ])],
+    );
+    let selected = query_results_content_negotiation(request, true)?;
+    let mut body = ResultBodyWriter::new(Vec::new(), request);
+    let mut serializer = selected
+        .serializer()?
+        .serialize_solutions_to_writer(&mut body, solutions.variables().to_vec())
+        .map_err(result_body::internal_error)?;
+    for solution in solutions {
+        let solution = solution.map_err(query_evaluation_error)?;
+        serializer
+            .serialize(&solution)
+            .map_err(|error| result_body::http_error(error, query_results_not_acceptable))?;
+    }
+    serializer.finish().map_err(result_body::internal_error)?;
+    let body = body.finish().map_err(result_body::internal_error)?;
+    Response::builder()
+        .header(CONTENT_TYPE, selected.media_type())
+        .body(body.into())
+        .map_err(internal_server_error)
 }
 
 fn method_not_allowed_response(
@@ -4935,6 +5025,40 @@ mod tests {
     }
 
     #[test]
+    fn rdf4j_repositories_disabled_by_default() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories")
+            .body(())?;
+        ServerTest::new()?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repositories_lists_the_one_configured_repository() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories")
+            .header(ACCEPT, "application/sparql-results+json")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_body(
+            request,
+            r#"{"head":{"vars":["uri","id","title","readable","writable"]},"results":{"bindings":[{"uri":{"type":"uri","value":"http://localhost/rdf4j-server/repositories/test-repo"},"id":{"type":"literal","value":"test-repo"},"readable":{"type":"literal","value":"true","datatype":"http://www.w3.org/2001/XMLSchema#boolean"},"writable":{"type":"literal","value":"true","datatype":"http://www.w3.org/2001/XMLSchema#boolean"}}]}}"#,
+        )
+    }
+
+    #[test]
+    fn rdf4j_repositories_read_only_reports_not_writable() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories")
+            .header(ACCEPT, "application/sparql-results+json")
+            .body(())?;
+        let mut response = ServerTest::with_rdf4j("test-repo")?.exec_read_only(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert!(body.contains(r#""writable":{"type":"literal","value":"false""#));
+        assert!(body.contains(r#""readable":{"type":"literal","value":"true""#));
+        Ok(())
+    }
+
+    #[test]
     fn get_query_accept_star() -> Result<()> {
         let request = Request::builder()
             .uri(
@@ -7029,12 +7153,24 @@ mod tests {
 
     struct ServerTest {
         store: Store,
+        rdf4j: bool,
+        rdf4j_repository_id: String,
     }
 
     impl ServerTest {
         fn new() -> Result<Self> {
             Ok(Self {
                 store: Store::new()?,
+                rdf4j: false,
+                rdf4j_repository_id: "default".to_owned(),
+            })
+        }
+
+        fn with_rdf4j(repository_id: &str) -> Result<Self> {
+            Ok(Self {
+                store: Store::new()?,
+                rdf4j: true,
+                rdf4j_repository_id: repository_id.to_owned(),
             })
         }
 
@@ -7052,6 +7188,8 @@ mod tests {
                     false,
                     QueryEntailment::Simple,
                     None,
+                    self.rdf4j,
+                    &self.rdf4j_repository_id,
                 )
                 .unwrap_or_else(|(status, message)| error(status, message)),
             )
@@ -7071,6 +7209,8 @@ mod tests {
                     false,
                     QueryEntailment::Simple,
                     None,
+                    self.rdf4j,
+                    &self.rdf4j_repository_id,
                 )
                 .unwrap_or_else(|(status, message)| error(status, message)),
             )

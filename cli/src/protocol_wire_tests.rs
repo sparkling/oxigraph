@@ -402,6 +402,8 @@ fn spawn_server(
                     false,
                     entailment,
                     None,
+                    false,
+                    "default",
                 )
                 .unwrap_or_else(|(status, message)| error(status, message)),
             )

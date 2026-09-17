@@ -297,6 +297,8 @@ fn start_server(store: &Store) -> Result<(SocketAddr, oxhttp::ListeningServer)> 
                     false,
                     QueryEntailment::Simple,
                     None,
+                    false,
+                    "default",
                 )
                 .unwrap_or_else(|(status, message)| error(status, message)),
             )

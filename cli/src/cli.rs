@@ -103,6 +103,15 @@ pub enum Command {
         /// Might be used to set up things like HTTP query timeout
         #[arg(long)]
         timeout_s: Option<u64>,
+        /// Enable the optional, disabled-by-default RDF4J REST facade mounted under `/rdf4j-server`
+        ///
+        /// This is an early, partial discovery-only slice (`GET /repositories`), not a
+        /// claim of RDF4J client compatibility. See ADR-0029.
+        #[arg(long)]
+        rdf4j: bool,
+        /// The single repository ID the RDF4J facade advertises for this store
+        #[arg(long, default_value = "default")]
+        rdf4j_repository_id: String,
     },
     /// Start Oxigraph HTTP server in read-only mode
     ///
@@ -148,6 +157,15 @@ pub enum Command {
         /// Might be used to set up things like HTTP query timeout
         #[arg(long)]
         timeout_s: Option<u64>,
+        /// Enable the optional, disabled-by-default RDF4J REST facade mounted under `/rdf4j-server`
+        ///
+        /// This is an early, partial discovery-only slice (`GET /repositories`), not a
+        /// claim of RDF4J client compatibility. See ADR-0029.
+        #[arg(long)]
+        rdf4j: bool,
+        /// The single repository ID the RDF4J facade advertises for this store
+        #[arg(long, default_value = "default")]
+        rdf4j_repository_id: String,
     },
     /// Create a database backup into a target directory
     ///

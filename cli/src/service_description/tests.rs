@@ -490,6 +490,8 @@ fn service_request(
         false,
         QueryEntailment::Simple,
         None,
+        false,
+        "default",
     )
 }
 
@@ -520,6 +522,8 @@ fn load_request(
         false,
         QueryEntailment::Simple,
         None,
+        false,
+        "default",
     )
 }
 
@@ -555,6 +559,8 @@ fn service_request_with_lease(
         false,
         QueryEntailment::Simple,
         None,
+        false,
+        "default",
     )
 }
 
@@ -592,6 +598,8 @@ fn load_request_with_lease(
         false,
         QueryEntailment::Simple,
         None,
+        false,
+        "default",
     )
 }
 
@@ -620,6 +628,8 @@ fn local_request_with_lease(
         false,
         QueryEntailment::Simple,
         None,
+        false,
+        "default",
     )
 }
 
@@ -927,6 +937,8 @@ fn server_endpoints_use_the_shared_deny_all_evaluator() -> Result<(), Box<dyn Er
             true,
             QueryEntailment::Simple,
             None,
+            false,
+            "default",
         ),
         StatusCode::OK,
     )?)?;
@@ -946,6 +958,8 @@ fn server_endpoints_use_the_shared_deny_all_evaluator() -> Result<(), Box<dyn Er
             true,
             QueryEntailment::Simple,
             None,
+            false,
+            "default",
         ),
         StatusCode::OK,
     )?)?;
@@ -1087,6 +1101,8 @@ fn admitted_lease_deadline_fails_partial_service_stream_without_clean_eof()
             false,
             QueryEntailment::Simple,
             None,
+            false,
+            "default",
         )
         .map(|mut response| {
             let mut partial = Vec::new();
