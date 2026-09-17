@@ -3996,6 +3996,76 @@ remain from the same gate-2 audit (`prepare_inner`'s own `PENDING`
 write and `UPGRADE_GUARD`-as-its-own-fault-point, `transform_inner`'s
 second-frame append write and its `TRANSFORM_PENDING` write).
 
+## A fifteenth entry point, and a task-board staleness sweep beyond the crash matrix (2026-09-17)
+
+The first of the four candidates above:
+`disk_exhaustion_on_the_preparation_manifest_write_preserves_the_completed_copy`
+(`lib/oxigraph/src/store/upgrade.rs`), targeting `prepare_inner`'s own
+`PENDING`-manifest write -- the same shape as `backup_inner`'s just-closed
+manifest-write boundary, but a genuinely different function with its
+own copy-loop, journal, and guard writes to prove untouched.
+`ENOSPC_SHIM_PREFIX` scopes to the exact file `output.join(PENDING)`;
+since neither the journal write nor the guard write nor any copy-loop
+write ever lives under that exact path, none of them is merely "let
+through by a computed budget" the way the copy-loop test lets the
+guard write through -- they are simply never in scope, and run to
+completion unconstrained by any budget accounting at all. Verifies the
+journal and guard writes both survived in full, a full hash comparison
+against the completed backup package (with the guard entry removed)
+proves the copy loop ran to full byte-for-byte completion, the
+manifest stub is zero-length, `COMPLETE` never exists, `verify()` fails
+closed, and both the source and backup package remain untouched.
+Reuses `prepare_upgrade_enospc_process_helper` unchanged; a third
+distinct shim name (`"pending"`) in this file, verified 3 consecutive
+times with all three ENOSPC tests present (10/10 each run), confirming
+the parameterized-shim fix from the fourteenth entry point holds under
+three-way, not just two-way, concurrency.
+
+Independently reviewed (**ACCEPT with one required fix**): every
+substantive claim -- prefix-collision safety against the real constant
+strings, non-vacuousness of the copy-completion proof (the fixture
+copies 10 real files, not a degenerate empty case), genuinely-new-
+boundary status against both this file's other two tests and
+`legacy_backup.rs`'s own manifest-write test, and no correctness bugs
+-- held up against the actual source. One required fix: the doc
+comment's opening sentence named the faulted write "the journal
+manifest write" when it is the *preparation* manifest (`PENDING` holds
+`encode(&receipt)`; the journal is a different, separately-already-
+succeeded file the same sentence correctly describes as such) -- a
+self-contradiction the review would not let stand in a suite whose
+doc comments exist specifically to pin injection points. Fixed exactly
+as directed; re-verified after the fix (isolated pass, full module
+10/10, fmt clean). Committed `64fd4c8c`.
+
+Alongside this, a background audit swept the wider Ruflo task board
+for the same kind of staleness already found and corrected for the
+two "Astra activation gate" tasks and G3.4 (see the earlier sections
+in this file and in
+[ADR-0043](0043-delivery-recovery-and-proportional-release-boundary.md#12-correcting-the-astra-activation-gate-tasks-stale-dormancy-premise)).
+Found one more genuine case: **G3.2** (`task-1787603736767-vilwx5`,
+bounded join planning, [ADR-0023](0023-statistics-and-bounded-join-planning.md))
+showed `progress: 0` despite real, substantial, committed work --
+`lib/sparopt/src/optimizer/bounded.rs` (a `BoundedJoinPlanning` DP
+optimizer over same-graph basic-quad leaves, opt-in via
+`with_bounded_join_planning`, greedy remaining the default) and
+`lib/oxigraph/tests/bounded_join_planning.rs`'s differential tests,
+both independently verified to exist with real content, matching
+ADR-0023's own dated "G3.2 opt-in native bounded planning (2026-09-08)"
+section. That section's own text -- "G3.2 remains in progress for
+frozen-corpus acceptance... before a speed claim or default
+promotion" -- is the same evaluator-authority carve-out already
+tracked for G3.4, G33, and G41; the delivery-gates plan's own G3 row
+was already accurate, so only the task-board field needed correcting
+(`progress` 0 to 80, matching G3.4's own treatment). The same sweep
+checked G3.5, G4.4 through G4.8 and found no comparable drift (no real
+code exists for any of them beyond, for G4.4, a benchmark comparison
+script) -- their `progress: 0` is accurate, not stale. The large
+ADR-0034/0037-0041 Graph-V5/G1.7 task batch and the separate
+`ROCKSDB-OPAQUE-C-BRIDGE-CONTRACT-RED` tasks were left unaudited:
+each explicitly states its own dependency on unavailable host/human
+authorization or an unavailable execution owner, the genuinely-gated
+shape this session has consistently distinguished from actual drift.
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
