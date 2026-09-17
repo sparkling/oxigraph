@@ -1543,3 +1543,150 @@ fn schema_upgrade_resume_guard_enospc_process_helper() -> TestResult {
         other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
     }
 }
+
+/// A real `ENOSPC`, injected during `resume_inner`'s own copy loop -- strictly
+/// between `fault(1)` and `fault(2)` -- using the same nonzero-budget
+/// precision technique already proven for `activate_inner`'s and
+/// `activate_upgrade_inner`'s own copy loops: a budget of exactly
+/// `GUARD.len()` lets the preceding guard write through in full (`count ==
+/// budget` does not satisfy the shim's `count > budget` injection test), then
+/// leaves zero budget for the very next write, `copy_artifact`'s own first
+/// file.
+///
+/// Unlike those two functions' copy-loop tests, which scope the fault to a
+/// dedicated, single-purpose activation target directory, `resume_inner` has
+/// no such separate destination at this stage: the guard write and every
+/// copied file land under the same `workspace/attempts/<n>/` tree the guard-
+/// write test already scoped `ENOSPC_SHIM_PREFIX` to. That prefix is reused
+/// unchanged here. Because `inputs.receipt.files()` is not guaranteed to
+/// order its entries so the first copy always lands under `store/`
+/// specifically (some receipts also carry non-`store/` contributor files,
+/// per `verify_output`'s own external/expected split), the vacuous-pass
+/// guard below recursively snapshots the whole attempt directory with this
+/// file's existing `bytes()` helper rather than assuming a fixed physical
+/// layout the way the activation-style tests' flat `read_dir` count can.
+///
+/// As with the already-accepted activation-style copy-loop test, this pins
+/// the fault to the first *non-empty* file `copy_artifact` writes, not
+/// necessarily the very first file by iteration order: a file that happens
+/// to be empty never calls `write` at all, so `fault(2)` for it is reached
+/// without spending any budget, and the injection lands on whichever file
+/// is first to actually attempt a nonzero write. The assertions below do
+/// not depend on which specific file that is.
+#[test]
+fn disk_exhaustion_during_the_resume_copy_loop_preserves_every_input() -> TestResult {
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let shim_directory = std::env::current_exe()?
+        .parent()
+        .ok_or("test binary has no parent directory")?
+        .to_owned();
+    let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+        return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+    };
+    let root = tempfile::tempdir()?;
+    let root_path = root.path().canonicalize()?;
+    let (source, package) = fixture(&root_path)?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    let workspace = root_path.join("resume-copy-enospc");
+    let initial = Store::start_schema_upgrade(&source, &package, &workspace, &options)?;
+    let attempts = workspace.join("attempts");
+    // The whole design rests on this budget being large enough to let the
+    // guard write through but not zero: pin it explicitly rather than
+    // leaving it an unstated premise of GUARD's own definition.
+    assert!(!GUARD.is_empty());
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command
+        .arg("--exact")
+        .arg(helper("schema_upgrade_resume_copy_enospc_process_helper"));
+    command.env("LD_PRELOAD", shim);
+    command.env("ENOSPC_SHIM_BUDGET_BYTES", GUARD.len().to_string());
+    command.env("ENOSPC_SHIM_PREFIX", &attempts);
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_COPY_ENOSPC_TEST_SOURCE",
+        &source,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_COPY_ENOSPC_TEST_PACKAGE",
+        &package,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_COPY_ENOSPC_TEST_WORKSPACE",
+        &workspace,
+    );
+    let status = command.status()?;
+    assert!(status.success(), "child helper failed: {status:?}");
+    let attempt = attempts.join(format!("{:016}", 0_u64));
+    // The guard write's own budget was exactly consumed, not exceeded, so it
+    // completed in full: this is genuine positive evidence the child passed
+    // the earlier boundary and reached the copy loop specifically, not a
+    // restatement of the guard-write test's own vacuous-pass guard.
+    assert_eq!(
+        fs::read(attempt.join("store").join(UPGRADE_GUARD))?,
+        GUARD,
+        "the guard write itself must have succeeded in full under this budget"
+    );
+    // copy_artifact always creates its destination via create_new before
+    // attempting to write it, so even the failing file's own zero-byte stub
+    // is on disk somewhere under the attempt tree, regardless of whether it
+    // landed under store/ or elsewhere.
+    let files = bytes(&attempt)?;
+    assert!(
+        files.len() >= 2,
+        "the child never reached resume_inner's copy loop"
+    );
+    // Every non-guard entry mirrors a real receipt file in the package,
+    // pinning the stub to a genuine copy_artifact destination rather than
+    // assuming any second attempt-local write must be one.
+    let guard_path = Path::new("store").join(UPGRADE_GUARD);
+    for path in files.keys() {
+        if *path != guard_path {
+            assert!(
+                package.join(path).is_file(),
+                "{path:?} is not a receipt file the copy loop could have created"
+            );
+        }
+    }
+    let attempts_before = bytes(&attempts)?;
+    // Matches schema_upgrade_every_interruption_retains_uuid_and_prior_
+    // attempt_bytes's own phase-1 invariant and the real-kill mid-copy
+    // test's own recovery assertion: a fresh in-process resume completes
+    // the same upgrade rather than failing closed.
+    let state = Store::resume_schema_upgrade(&source, &package, &workspace, &options)?;
+    assert_eq!(state.schema_uuid(), initial.schema_uuid());
+    assert!(state.receipt().is_some());
+    let attempts_after = bytes(&attempts)?;
+    for (path, data) in attempts_before {
+        assert_eq!(attempts_after.get(&path), Some(&data));
+    }
+    SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options)?;
+    assert_eq!(bytes(&source)?, before_source);
+    assert_eq!(bytes(&package)?, before_package);
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_resume_copy_enospc_process_helper() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let Some(source) = std::env::var_os("OXIGRAPH_SCHEMA_UPGRADE_RESUME_COPY_ENOSPC_TEST_SOURCE")
+    else {
+        return Ok(()); // An ordinary run: only the parent test re-invokes this.
+    };
+    let source = PathBuf::from(source);
+    let package = variable("OXIGRAPH_SCHEMA_UPGRADE_RESUME_COPY_ENOSPC_TEST_PACKAGE")?;
+    let workspace = variable("OXIGRAPH_SCHEMA_UPGRADE_RESUME_COPY_ENOSPC_TEST_WORKSPACE")?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let result = Store::resume_schema_upgrade(&source, &package, &workspace, &options);
+    match result {
+        Err(BackupError::Io(error)) if error.kind() == io::ErrorKind::StorageFull => Ok(()),
+        other => Err(format!("expected a StorageFull BackupError::Io, got {other:?}").into()),
+    }
+}
