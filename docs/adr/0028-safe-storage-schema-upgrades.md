@@ -3770,6 +3770,83 @@ implementation, an independent logical export comparison, default/RDF-1.2 and
 system/vendored RocksDB lanes, and exact receipt identities. A new schema
 version cannot ship until its predecessor upgrade path and failure matrix pass.
 
+## A fourth `resume_inner` boundary, a real REJECT, and a working fix (2026-09-17)
+
+The twelfth disk-exhaustion entry point covers `resume_inner`'s
+`SEALED`-record journal append, strictly between `fault(6)` and
+`fault(7)`, reusing the immediately preceding entry's `JOURNAL`-file
+prefix-scoping technique. The setup differs: `resume_inner` only
+appends `SEALED` when the journal already ends in `VALIDATED`, with
+no other write in between -- an ordinary, unfaulted resume goes
+straight through `VALIDATED`-`SEALED`-`PENDING`-`COMPLETE` in one
+call, so there is no natural "stop at `VALIDATED`" checkpoint to rely
+on. Reaching that state first, durably, in the parent process, via a
+direct `resume_inner` call with a synthetic `phase == 6` cancellation
+-- the exact technique the file's own exhaustive interruption test
+already uses for every phase -- means the child's own first write to
+`JOURNAL` is the `SEALED` append itself, so budget `0` (the technique
+this session's very first tests used, not the nonzero-budget precision
+the intervening entries needed) faults it on the first byte.
+
+This boundary genuinely has no filesystem artifact to serve as a
+vacuous-pass guard: nothing new is written to disk between reaching
+this point and the `SEALED` attempt, so the journal's bytes are
+identical whether the child genuinely attempted and failed or never
+ran `resume_inner` at all. Disclosed plainly rather than glossed over,
+the fix is to capture the child's stdout via `Command::output()`
+instead of only `Command::status()`, and assert on libtest's own
+`running N test(s)` summary line -- printed by the harness itself
+regardless of per-test output capturing, unlike the suppressed body of
+a passing test. This is the one test in this file where a filesystem
+check is unavailable and inspecting the harness's own unsuppressed
+output is the correct, and only, substitute.
+
+Round 1 review (`xhigh`, `claude-fable-5-1`): **REJECT**, on a real,
+previously-unnoticed correctness gap, not a stylistic nitpick. The
+synthetic setup was checked only with `error.is_err()`, so any failure
+before phase 6 for any other reason -- not just the injected
+cancellation -- would leave the journal short of `VALIDATED`, and the
+child's own fresh `INTENT` append would then satisfy every remaining
+assertion (byte-identical journal, stdout guard, recovery) while
+silently exercising the wrong boundary. This is exactly the kind of
+gap this session's own "audit, don't assume" discipline exists to
+catch, and here an independent reviewer caught it that a same-tick
+self-review had not. Fixed exactly as the review's own suggested
+one-liner: pinned the setup to `matches!(&error, Err(BackupError::
+Cancelled))`, borrowing `error` so it remains usable in the panic
+message. Two further findings, both real, were applied in the same
+pass: the stdout guard changed from a negative check (`!contains(
+"running 0 tests")`, which vacuously passes on ANY stdout lacking that
+exact phrase, including empty stdout) to a positive one (`contains(
+"running 1 test")`); and the failure message's raw byte-array Debug
+output was replaced with `String::from_utf8_lossy` on both streams.
+
+Round 2 review: **ACCEPT**, confirming all three fixes read exactly as
+intended, including independently re-deriving why `fault(6)?`'s bare
+propagation (unlike `fault(9)`'s explicit `.map_err(indeterminate)`)
+means `Cancelled` surfaces unwrapped, matching the new assertion's own
+expectation.
+
+Verified, with strict no-concurrent-cargo-test discipline throughout:
+both new tests passed in isolation before and after the fixes; two
+mutation round-trips (helper name corrupted both times, the parent
+panicking at the stdout assertion each time with `running 0 tests`
+observed directly, literal restored, `0` `MUTATED` occurrences remain
+both times); two full `store::upgrade::transform::receipt::schema_
+upgrade::tests` module runs, each in isolation, **35 passed, 0
+failed** both times (1545.01s, 1562.88s). Committed `8150381e`.
+
+Twelve entry points are covered crate-wide now, across seven
+functions -- `resume_inner` with four distinct covered boundaries, the
+most of any function. `SchemaUpgradeSnapshot::open` (read-only, likely
+zero writes) and `write_envelope` (real but RocksDB-internal, volume
+uncomputed) remain genuinely uncertain or infeasible for this specific
+technique; closing them would need a materially different approach,
+not an extension of this one. This likely represents the practical
+ceiling of what real-OS-fault disk-exhaustion testing can reach in
+this crate's upgrade/activation machinery without that deeper
+investigation.
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
