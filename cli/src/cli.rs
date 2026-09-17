@@ -105,8 +105,10 @@ pub enum Command {
         timeout_s: Option<u64>,
         /// Enable the optional, disabled-by-default RDF4J REST facade mounted under `/rdf4j-server`
         ///
-        /// This is an early, partial discovery-only slice (`GET /repositories`), not a
-        /// claim of RDF4J client compatibility. See ADR-0029.
+        /// This is an early, partial slice covering repository discovery
+        /// (`GET /repositories`) and SPARQL query execution
+        /// (`GET`/`POST /repositories/{id}`), not a claim of RDF4J client
+        /// compatibility. See ADR-0029.
         #[arg(long)]
         rdf4j: bool,
         /// The single repository ID the RDF4J facade advertises for this store
@@ -159,8 +161,10 @@ pub enum Command {
         timeout_s: Option<u64>,
         /// Enable the optional, disabled-by-default RDF4J REST facade mounted under `/rdf4j-server`
         ///
-        /// This is an early, partial discovery-only slice (`GET /repositories`), not a
-        /// claim of RDF4J client compatibility. See ADR-0029.
+        /// This is an early, partial slice covering repository discovery
+        /// (`GET /repositories`) and SPARQL query execution
+        /// (`GET`/`POST /repositories/{id}`), not a claim of RDF4J client
+        /// compatibility. See ADR-0029.
         #[arg(long)]
         rdf4j: bool,
         /// The single repository ID the RDF4J facade advertises for this store

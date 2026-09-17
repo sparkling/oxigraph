@@ -1896,6 +1896,71 @@ fn handle_request(
         ("/rdf4j-server/repositories", "GET") if rdf4j => {
             rdf4j_repositories(request, rdf4j_repository_id, read_only)
         }
+        // ADR-0029 stage 1: `/repositories/{id}` query execution reuses
+        // configure_and_evaluate_sparql_query verbatim -- its own existing
+        // reject_unknown("query") call already fails closed on any
+        // RDF4J-specific parameter (`infer`, `queryLn`, `distinct`) this
+        // stage does not yet support, matching this ADR's own requirement
+        // that unsupported values fail explicitly rather than being ignored
+        // or reinterpreted. SPARQL Update is out of scope here; ADR-0029
+        // places it under `/repositories/{id}/statements`, a separate future
+        // slice. The repository ID is matched as an exact literal path
+        // segment; a percent-encoded ID (per this ADR's own Decision text)
+        // is not yet supported.
+        (path, "GET")
+            if rdf4j
+                && path.strip_prefix("/rdf4j-server/repositories/")
+                    == Some(rdf4j_repository_id) =>
+        {
+            reject_nonempty_sparql_get_body(request)?;
+            configure_and_evaluate_sparql_query(
+                store,
+                sparql_evaluator,
+                RequestParams::from_request_url(request),
+                None,
+                None,
+                request,
+                union_default_graph,
+                entailment,
+                timeout,
+            )
+        }
+        (path, "POST" | "QUERY")
+            if rdf4j
+                && path.strip_prefix("/rdf4j-server/repositories/")
+                    == Some(rdf4j_repository_id) =>
+        {
+            let content_type = sparql_request_content_type(request)?
+                .ok_or_else(|| bad_request("No Content-Type given"))?;
+            if content_type.media_type == "application/sparql-query" {
+                let body = limited_string_body(request)?;
+                configure_and_evaluate_sparql_query(
+                    store,
+                    sparql_evaluator,
+                    RequestParams::from_request_url(request),
+                    Some(body),
+                    content_type.version,
+                    request,
+                    union_default_graph,
+                    entailment,
+                    timeout,
+                )
+            } else if content_type.media_type == "application/x-www-form-urlencoded" {
+                configure_and_evaluate_sparql_query(
+                    store,
+                    sparql_evaluator,
+                    RequestParams::from_request_url_and_body(request)?,
+                    None,
+                    None,
+                    request,
+                    union_default_graph,
+                    entailment,
+                    timeout,
+                )
+            } else {
+                Err(unsupported_media_type(&content_type.media_type))
+            }
+        }
         ("/", "HEAD") => Response::builder()
             .header(CONTENT_TYPE, "text/html")
             .body(Body::empty())
@@ -5055,6 +5120,102 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
         assert!(body.contains(r#""writable":{"type":"literal","value":"false""#));
         assert!(body.contains(r#""readable":{"type":"literal","value":"true""#));
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_query_disabled_by_default() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo?query=ASK%20{}")
+            .body(())?;
+        ServerTest::new()?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_query_wrong_repository_id_not_found() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/other-repo?query=ASK%20{}")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_query_executes_a_select() -> Result<()> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/store")
+            .header(CONTENT_TYPE, "application/trig")
+            .body("<http://example.com> <http://example.com> <http://example.com> .")?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo?query=SELECT%20?s%20?p%20?o%20WHERE%20{%20?s%20?p%20?o%20}",
+            )
+            .header(ACCEPT, "text/csv")
+            .body(())?;
+        server.test_body(
+            request,
+            "s,p,o\r\nhttp://example.com,http://example.com,http://example.com\r\n",
+        )
+    }
+
+    #[test]
+    fn rdf4j_repository_query_post_form_urlencoded() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo")
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body("query=ASK%20%7B%7D")?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::OK)
+    }
+
+    #[test]
+    fn rdf4j_repository_query_post_direct_body() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo")
+            .header(CONTENT_TYPE, "application/sparql-query")
+            .body("ASK {}")?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::OK)
+    }
+
+    #[test]
+    fn rdf4j_repository_query_missing_query_parameter() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_query_rejects_unsupported_rdf4j_parameter() -> Result<()> {
+        // `infer` is a real RDF4J extension parameter this stage does not
+        // yet implement; it must fail explicitly rather than be silently
+        // ignored, per ADR-0029's own semantic-boundary requirement. Assert
+        // the body names the offending parameter, not just the status code,
+        // so a future 400-for-a-different-reason regression can't pass
+        // silently.
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo?query=ASK%20{}&infer=false")
+            .body(())?;
+        let mut response = ServerTest::with_rdf4j("test-repo")?.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(body.contains("infer"), "Error message: {body}");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_query_works_on_a_read_only_server() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo?query=ASK%20{}")
+            .body(())?;
+        let mut response = ServerTest::with_rdf4j("test-repo")?.exec_read_only(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
         Ok(())
     }
 
