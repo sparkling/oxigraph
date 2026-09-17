@@ -717,6 +717,128 @@ mod tests {
     }
 
     /// The libtest filter of one helper `#[test]`, which never names the crate.
+    fn helper(name: &str) -> String {
+        let module = module_path!();
+        let path = module.split_once("::").map_or(module, |(_, rest)| rest);
+        format!("{path}::{name}")
+    }
+    /// Re-invokes this same test binary at one helper, which exits 73 at `stop`.
+    fn crash(
+        name: &str,
+        paths: &[(&str, &Path)],
+        stop: u8,
+    ) -> TestResult<std::process::ExitStatus> {
+        let mut command = std::process::Command::new(std::env::current_exe()?);
+        command.arg("--exact").arg(helper(name));
+        command.env("OXIGRAPH_LEGACY_BACKUP_TEST_EXIT_AT", stop.to_string());
+        for (variable, path) in paths {
+            command.env(variable, path);
+        }
+        Ok(command.status()?)
+    }
+    /// Reads one path that the parent test passed to a re-invoked helper.
+    fn variable(name: &str) -> TestResult<PathBuf> {
+        let Some(value) = std::env::var_os(name) else {
+            return Err("the parent test passed no such path".into());
+        };
+        Ok(value.into())
+    }
+
+    /// A real OS-level process kill, not a synthetic in-process fault: this
+    /// is `backup_inner`'s -- and, before this test, the last remaining
+    /// function in ADR-0028's legacy-upgrade crash-test family (alongside
+    /// `prepare_inner`, `transform_inner`, `activate_upgrade_inner`) --
+    /// zero real process-kill coverage of any boundary, unlike those three
+    /// siblings, which already each have one. (Two functions outside this
+    /// family, `backup_with_receipt_inner` in `backup.rs` and `restore_inner`
+    /// in `restore.rs`, also still lack real-kill coverage; they are a
+    /// separate crash-test family and out of this test's scope.) Every
+    /// other test in this file either injects a fault synchronously within
+    /// the same process (`Err(BackupError::Cancelled)` or
+    /// `cancellation.cancel()`), or -- the two `disk_exhaustion_*` ENOSPC
+    /// tests -- re-execs a child that hits a real `ENOSPC` via an
+    /// `LD_PRELOAD` shim and then returns that error and exits normally, so
+    /// destructors still run either way. None of those prove that no
+    /// destructor, buffered write or `Drop` impl this crate does not
+    /// control was silently relied on to make the on-disk state consistent
+    /// -- only a real, unwind-skipping process exit proves that.
+    /// Targets the exact same PENDING-write-to-rename boundary this file's
+    /// own `injected_phases_preserve_source_and_completion_boundary` (phase
+    /// 3) and `postcompletion_failure_is_indeterminate_but_independently_
+    /// verifiable` (phase 4) already prove synthetically, and that
+    /// `preparation_child_exits_before_and_after_the_completion_rename`
+    /// (`upgrade.rs`) and `transform_child_exits_before_and_after_the_
+    /// completion_rename` (`upgrade_transform.rs`) already prove with a real
+    /// kill for their own analogous boundary -- this is the same technique,
+    /// applied to the one function that did not yet have it.
+    #[test]
+    fn backup_child_exits_before_and_after_the_completion_rename() -> TestResult {
+        for stop in [3_u8, 4] {
+            let directory = tempfile::tempdir()?;
+            let source = directory.path().join("source");
+            let destination = directory.path().join(format!("backup-{stop}"));
+            copy_fixture(0, &source)?;
+            let before = source_inventory(&source)?;
+            let paths = [
+                ("OXIGRAPH_LEGACY_BACKUP_TEST_SOURCE", source.as_path()),
+                (
+                    "OXIGRAPH_LEGACY_BACKUP_TEST_DESTINATION",
+                    destination.as_path(),
+                ),
+            ];
+            let status = crash("backup_process_helper", &paths, stop)?;
+            assert_eq!(status.code(), Some(73), "the child did not reach {stop}");
+            if stop == 3 {
+                // A real process killed after the PENDING marker is written
+                // and synced but before the atomic rename to COMPLETE: no
+                // destructor runs, yet the workspace is left exactly as
+                // refused and verify-failing as an in-process fault at the
+                // same phase, because the rename that would have made it
+                // usable never happened.
+                assert!(!destination.join(COMPLETE).exists());
+                assert!(
+                    LegacyBackupReceipt::verify(&destination, &TransactionStartControl::new())
+                        .is_err()
+                );
+            } else {
+                // Killed immediately after the rename: the marker is
+                // already visible in the directory even though the process
+                // died before the final directory fsync could run, so the
+                // backup is complete and independently verifiable. This
+                // proves only namespace visibility, not on-media durability
+                // across a further power loss, which is exactly why the
+                // production API still reports this window as
+                // indeterminate.
+                assert!(destination.join(COMPLETE).exists());
+                LegacyBackupReceipt::verify(&destination, &TransactionStartControl::new())?;
+            }
+            assert_eq!(source_inventory(&source)?, before);
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::exit,
+        reason = "bounded child models an exact backup crash point"
+    )]
+    fn backup_process_helper() -> TestResult {
+        let Some(source) = std::env::var_os("OXIGRAPH_LEGACY_BACKUP_TEST_SOURCE") else {
+            return Ok(()); // An ordinary run: only the parent test re-invokes this.
+        };
+        let source = PathBuf::from(source);
+        let destination = variable("OXIGRAPH_LEGACY_BACKUP_TEST_DESTINATION")?;
+        let stop = std::env::var("OXIGRAPH_LEGACY_BACKUP_TEST_EXIT_AT")?.parse::<u8>()?;
+        backup_inner(&source, &destination, &options(), |phase| {
+            if phase == stop {
+                std::process::exit(73);
+            }
+            Ok(())
+        })?;
+        Err("the child returned instead of exiting at its crash point".into())
+    }
+
+    /// The libtest filter of one helper `#[test]`, which never names the crate.
     fn enospc_helper(name: &str) -> String {
         let module = module_path!();
         let path = module.split_once("::").map_or(module, |(_, rest)| rest);
