@@ -2199,12 +2199,18 @@ mod tests {
     /// `compile_enospc_shim` (`legacy_backup.rs`, `upgrade.rs`,
     /// `upgrade_transform.rs`, `schema_upgrade_tests.rs`); duplicated
     /// file-local rather than shared, matching the established convention
-    /// of file-local crash-test infrastructure.
+    /// of file-local crash-test infrastructure. `name` distinguishes each
+    /// caller's own `.c`/`.so` filenames: this file has two ENOSPC tests,
+    /// both runnable concurrently under libtest's default multithreading,
+    /// and an unparameterized shared filename raced for real the first
+    /// time this exact situation arose (`legacy_backup.rs`'s own two
+    /// tests) -- fixed there first, then applied proactively here and in
+    /// `upgrade.rs` before observing a failure in either.
     #[expect(
         clippy::print_stderr,
         reason = "diagnostic for a CI host missing a C compiler, opt-in test infrastructure only"
     )]
-    fn compile_enospc_shim(directory: &Path) -> Result<Option<PathBuf>> {
+    fn compile_enospc_shim(directory: &Path, name: &str) -> Result<Option<PathBuf>> {
         const SOURCE: &str = r#"
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -2271,9 +2277,11 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
     return real(fd, buf, count, offset);
 }
 "#;
-        let source_path = directory.join("oxigraph_legacy_activation_enospc_shim.c");
+        let source_path =
+            directory.join(format!("oxigraph_legacy_activation_enospc_shim_{name}.c"));
         fs::write(&source_path, SOURCE)?;
-        let shared_object = directory.join("oxigraph_legacy_activation_enospc_shim.so");
+        let shared_object =
+            directory.join(format!("oxigraph_legacy_activation_enospc_shim_{name}.so"));
         let status = match std::process::Command::new("cc")
             .arg("-shared")
             .arg("-fPIC")
@@ -2319,7 +2327,7 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
             .parent()
             .ok_or("test binary has no parent directory")?
             .to_owned();
-        let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+        let Some(shim) = compile_enospc_shim(&shim_directory, "guard")? else {
             return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
         };
         let root = tempfile::tempdir()?;
@@ -2414,7 +2422,7 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
             .parent()
             .ok_or("test binary has no parent directory")?
             .to_owned();
-        let Some(shim) = compile_enospc_shim(&shim_directory)? else {
+        let Some(shim) = compile_enospc_shim(&shim_directory, "copy")? else {
             return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
         };
         let root = tempfile::tempdir()?;
