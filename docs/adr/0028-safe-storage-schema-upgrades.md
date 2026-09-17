@@ -4135,6 +4135,73 @@ one fabricated label -- each corrected the same way: read the actual
 current state directly, and change the record to match it, not the
 other way around.
 
+## A seventeenth entry point, and closing every known instance of the shim-filename race (2026-09-17)
+
+The third of the three candidates named above:
+`disk_exhaustion_on_the_transform_manifest_write_preserves_every_input`
+(`lib/oxigraph/src/store/upgrade_transform.rs`), targeting
+`transform_inner`'s final `TRANSFORM_PENDING` manifest write --
+strictly after every journal frame and the entire native mutation
+loop have already succeeded, unlike the file's one existing test
+(which faults the very first frame). `ENOSPC_SHIM_PREFIX` scopes to
+the exact file `prepared.join(TRANSFORM_PENDING)`; since it shares no
+string prefix with `TRANSFORM_JOURNAL` or anything under `store/`,
+neither the journal frames nor the mutation loop's own native writes
+-- whose aggregate volume this technique cannot otherwise budget-
+account for -- are ever in scope, at any budget, so both run to
+completion unconstrained.
+
+Implementing it surfaced a genuine discovery, not a mistake to fix
+and move past: the new fault produces a bare `BackupError::Io`, while
+the file's existing journal-frame test's fault produces
+`BackupError::Storage(StorageError::Io(_))` -- two different error
+paths inside `transform_inner` itself (the native mutation loop's
+phase closure is typed to return `Result<(), StorageError>`; the
+final manifest write goes through this crate's shared, plain `write()`
+helper instead, which never wraps through `StorageError`). Rather
+than duplicate the shared process helper for one different match arm,
+the existing helper was widened to accept either shape. Independently
+reviewed (**ACCEPT**) with specific scrutiny requested on exactly this
+widening -- whether it could silently weaken the OLD test's own
+diagnostic power if its fault site could ever ALSO produce the newly-
+accepted shape. The review traced the closure's required return type
+and both error constructors to prove the two shapes are mutually
+exclusive by construction: nothing on the journal-frame path can ever
+produce a bare `Io`, and nothing on the manifest-write path can ever
+produce a `Storage`-wrapped one. Each test's own fault-location proof
+rests on file-state assertions, not on which error variant matched,
+so neither test's specificity was actually reduced. Committed
+`6b40c5d9`.
+
+The same review flagged, unprompted, a pre-existing hazard this
+session's earlier shim-race fixes had not reached:
+`schema_upgrade_tests.rs` still shared one unparameterized
+`compile_enospc_shim` filename across all seven of its own ENOSPC
+tests -- the identical race class found for real in `legacy_backup.rs`
+and fixed there and in two further files, left alone in this file at
+the time on the reasoning that dozens of runs across the session had
+shown no flake. That reasoning does not actually bear on the
+structural risk, and this file has the highest concurrency exposure
+of any (seven call sites, not two), so the fix was applied here too:
+each of the seven tests now gets its own shim filename
+(`activation_guard`, `activation_copy`, `construction`,
+`resume_guard`, `resume_copy`, `resume_validated`, `resume_sealed`),
+purely mechanical, no test logic touched. Verified with the strongest
+stress test this hazard class has had all session:
+`cargo test -p oxigraph --lib -- --test-threads=8 disk_exhaustion`
+runs all seventeen disk-exhaustion tests across every file in the
+crate at once under aggressive 8-way concurrency -- 17 passed, 0
+failed. Committed `3127139f`.
+
+Every ENOSPC test file in the crate now parameterizes its shim
+filename per caller; no known instance of this hazard class remains
+unfixed. Seventeen entry points across eight functions; one candidate
+remains from the original six-candidate gate-2 audit --
+`transform_inner`'s second-and-later journal-frame append write
+(a genuinely different code branch, `OpenOptions::append` rather than
+the already-tested first frame's `OpenOptions::create_new`), scoped
+but not yet implemented.
+
 ## Consequences
 
 - Ordinary open becomes non-destructive and upgrade outcomes become auditable.
