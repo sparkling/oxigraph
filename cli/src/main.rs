@@ -2008,6 +2008,16 @@ fn handle_request(
         {
             rdf4j_repository_statements_delete(request, store, read_only)
         }
+        (path, "POST" | "PUT")
+            if rdf4j
+                && path
+                    .strip_prefix("/rdf4j-server/repositories/")
+                    .and_then(|rest| rest.strip_suffix("/statements"))
+                    == Some(rdf4j_repository_id) =>
+        {
+            let replace_current = request.method() == "PUT";
+            rdf4j_repository_statements_add(request, store, read_only, replace_current)
+        }
         (path, "GET" | "HEAD")
             if rdf4j
                 && path
@@ -2882,6 +2892,181 @@ fn rdf4j_repository_statements_delete(
             .map_err(internal_server_error)?;
         for quad in matches {
             transaction.remove(&quad);
+        }
+    }
+    graph_store::commit(transaction, request)?;
+
+    Response::builder()
+        .status(StatusCode::NO_CONTENT)
+        .body(Body::empty())
+        .map_err(internal_server_error)
+}
+
+/// ADR-0029 stage 2: `/repositories/{id}/statements` `POST` (add-data) and
+/// `PUT` (replace) add RDF content, differing only in whether the selected
+/// scope is cleared first -- mirroring RDF4J's own real
+/// `StatementsController.getAddDataResult(..., replaceCurrent)`, a single
+/// method both real HTTP methods call. Reuses the exact transaction
+/// primitives already shipped for `DELETE` (`7fcb191b`,
+/// `graph_store::start_transaction`/`commit`) and the same
+/// `RdfParser`/`RdfFormat` machinery already used by the native Graph
+/// Store Protocol's own POST/PUT (`cli/src/graph_store.rs`'s `load_graph`),
+/// reused directly for the 0-or-1-context case.
+///
+/// Verified against RDF4J 6.0.0's own `StatementsController` source
+/// (fetched, not vendored) and `RepositoryConnection.add`'s own documented
+/// contract: with no `context` parameter, parsed statements keep whichever
+/// graph the document itself assigns (or the default graph if the format
+/// carries none); with exactly one `context`, the *reference* forces every
+/// parsed statement into that graph regardless of the document's own
+/// assignment. This implementation matches that for graph-only formats
+/// (Turtle, RDF/XML, N-Triples), but for a dataset-capable format (TriG,
+/// N-Quads, JSON-LD) whose document contains its own named-graph blocks,
+/// `RdfParser::without_named_graphs` -- the primitive this reuses from the
+/// Graph Store Protocol's own `load_graph` -- errors rather than silently
+/// discarding the document's own graph assignment and forcing it into the
+/// requested one; no `RdfParser` option flattens a dataset into a single
+/// target graph. The resulting `400` is fail-closed, not silent corruption,
+/// but it is a real, narrower slice than the reference's own force-fidelity
+/// -- true fan-in fidelity would need per-quad graph rewriting, deferred
+/// alongside the multi-context case below. **Two or more repeated
+/// `context` values are explicitly rejected with a typed `400`** rather
+/// than implemented: the reference's own real behavior there duplicates
+/// every parsed statement into every listed context (an
+/// N-triples-times-M-contexts fan-out, real data growth, not a bug) -- a
+/// genuinely different feature deserving its own dedicated, tested slice
+/// rather than being bundled in under this tick's scope, the same
+/// "smallest defensible slice" judgment already applied to
+/// `/repositories/{id}`'s deferred `infer` and `/size`'s deferred `context`
+/// filtering.
+///
+/// `baseURI` reuses `RdfParser::with_base_iri` directly, already proven
+/// elsewhere in this codebase. RDF4J's own `preserveNodeId` parameter
+/// (verified exact name: `Protocol.PRESERVE_BNODE_ID_PARAM_NAME` is
+/// `"preserveNodeId"`, singular, not the more guessable "preserveNodeIds")
+/// is accepted only when absent or (case-insensitively) `true`: Oxigraph's
+/// own parser already preserves source blank-node labels verbatim by
+/// default, matching RDF4J's own `true` case, but has no verified
+/// equivalent of RDF4J's `false` (regenerate-to-avoid-merge-collision)
+/// semantic -- `rename_blank_nodes` is a plausible future candidate, not
+/// yet confirmed to match RDF4J's exact contract -- so any other value
+/// (including "False", "0", or "no", matching `Boolean.parseBoolean`'s own
+/// real all-other-spellings-mean-false contract, not only the literal
+/// string `"false"`) is explicitly rejected with `400` rather than
+/// silently claiming unverified fidelity. This also means an *absent*
+/// `preserveNodeId` is accepted with Oxigraph's own preserve-by-default
+/// behavior even though RDF4J's own real default for this parameter is
+/// `false` (regenerate) -- rejecting the absent case too would make this
+/// endpoint unusable for any client that omits the parameter (which is
+/// the common case), so this is a deliberate, documented default
+/// divergence, not an oversight.
+///
+/// Malformed content types map to `415` and malformed RDF bodies to `400`,
+/// reusing the exact `unsupported_media_type`/`loader_to_http_error`
+/// helpers already used by the native Graph Store Protocol's own POST/PUT
+/// for the identical conditions. Unlike Graph Store Protocol's own POST,
+/// there is no default-to-RDF/XML fallback when `Content-Type` is absent,
+/// matching RDF4J's own real behavior (`Rio.getParserFormatForMIMEType` has
+/// no such default either). The reference's own separate `Content-Type`-
+/// driven dispatch to SPARQL Update or a transaction-operation batch (both
+/// permanently out of scope for this facade -- the former a lower-value
+/// duplicate of `/update` under a different Content-Type; the latter
+/// squarely ADR-0030/stage-3) requires no explicit exclusion code: neither
+/// `application/sparql-update` nor RDF4J's transaction MIME type is a
+/// registered RDF serialization, so both already fail closed through the
+/// same `RdfFormat::from_media_type` lookup with the same, correctly
+/// honest `415`.
+///
+/// Refused on a read-only server exactly like `DELETE`.
+fn rdf4j_repository_statements_add(
+    request: &mut Request<Body>,
+    store: &Store,
+    read_only: bool,
+    replace_current: bool,
+) -> Result<Response<Body>, HttpError> {
+    if read_only {
+        return Err(the_server_is_read_only());
+    }
+    let content_type = request
+        .headers()
+        .get(CONTENT_TYPE)
+        .map(|value| {
+            value
+                .to_str()
+                .map(str::to_owned)
+                .map_err(|_| bad_request("The Content-Type header must contain visible ASCII"))
+        })
+        .transpose()?;
+    let format = content_type
+        .as_deref()
+        .and_then(RdfFormat::from_media_type)
+        .ok_or_else(|| unsupported_media_type(content_type.as_deref().unwrap_or_default()))?;
+
+    let mut args = RequestParams::from_request_url(request);
+    let contexts = args
+        .remove_all("context")
+        .into_iter()
+        .map(|value| rdf4j_parse_context_selector(&value))
+        .collect::<Result<Vec<_>, _>>()?;
+    if contexts.len() > 1 {
+        return Err(bad_request(
+            "Adding statements into more than one 'context' at a time is not yet supported",
+        ));
+    }
+    let base_uri = args.remove_single("baseURI")?;
+    let preserve_node_id = args.remove_single("preserveNodeId")?;
+    // RDF4J's own `ProtocolUtil.parseBooleanParam` uses `Boolean.parseBoolean`,
+    // which is true only for a case-insensitive match to "true" -- every other
+    // spelling (including "False", "0", "no") means false. Matching only the
+    // exact lowercase "false" would let those other false-meaning spellings
+    // silently fall through to the accepted (preserve) behavior, defeating
+    // the point of failing closed here.
+    if preserve_node_id
+        .as_deref()
+        .is_some_and(|value| !value.eq_ignore_ascii_case("true"))
+    {
+        return Err(bad_request(
+            "'preserveNodeId' set to anything other than 'true' is not yet supported",
+        ));
+    }
+    args.reject_unknown("statements")?;
+
+    let body = limited_body(request)?;
+
+    let mut transaction = graph_store::start_transaction(store, request)?;
+    match contexts.into_iter().next() {
+        Some(graph_name) => {
+            if replace_current {
+                transaction
+                    .clear_graph(&graph_name)
+                    .map_err(internal_server_error)?;
+            }
+            match &graph_name {
+                GraphName::NamedNode(node) => transaction.insert_named_graph(node.clone()),
+                GraphName::BlankNode(node) => transaction.insert_named_graph(node.clone()),
+                GraphName::DefaultGraph => {}
+            }
+            let mut parser = RdfParser::from_format(format)
+                .without_named_graphs()
+                .with_default_graph(graph_name);
+            if let Some(base_uri) = &base_uri {
+                parser = parser.with_base_iri(base_uri).map_err(bad_request)?;
+            }
+            transaction
+                .load_from_slice(parser, &body)
+                .map_err(loader_to_http_error)?;
+        }
+        None => {
+            if replace_current {
+                transaction.clear().map_err(internal_server_error)?;
+            }
+            let mut parser = RdfParser::from_format(format);
+            if let Some(base_uri) = &base_uri {
+                parser = parser.with_base_iri(base_uri).map_err(bad_request)?;
+            }
+            transaction
+                .load_from_slice(parser, &body)
+                .map_err(loader_to_http_error)?;
         }
     }
     graph_store::commit(transaction, request)?;
@@ -6276,19 +6461,321 @@ mod tests {
     }
 
     #[test]
-    fn rdf4j_repository_statements_add_and_replace_are_not_yet_implemented() -> Result<()> {
-        // POST (add-data)/PUT (replace) are a separate future slice; a
-        // disabled route falls through to the ordinary 404, the same as
-        // any other unimplemented method on an rdf4j-server path. DELETE
-        // is implemented (see the rdf4j_repository_statements_delete_*
-        // tests below) and is deliberately excluded here.
-        for method in [Method::POST, Method::PUT] {
+    fn rdf4j_repository_statements_post_disabled_by_default() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s> <http://example.com/p> <http://example.com/o> .")?;
+        ServerTest::new()?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_wrong_repository_id_not_found() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/rdf4j-server/repositories/other-repo/statements")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s> <http://example.com/p> <http://example.com/o> .")?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_rejects_an_unknown_parameter() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements?foo=bar")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s> <http://example.com/p> <http://example.com/o> .")?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_adds_data_without_a_context() -> Result<()> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s> <http://example.com/p> <http://example.com/o> .")?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        server.test_body(
+            request,
+            "<http://example.com/s> <http://example.com/p> <http://example.com/o> .\n",
+        )
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_with_one_context_forces_the_target_graph() -> Result<()> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/statements?context=%3Chttp://example.com/g1%3E",
+            )
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s> <http://example.com/p> <http://example.com/o> .")?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        server.test_body(
+            request,
+            "<http://example.com/s> <http://example.com/p> <http://example.com/o> <http://example.com/g1> .\n",
+        )
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_rejects_more_than_one_context() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/statements?context=%3Chttp://example.com/g1%3E&context=%3Chttp://example.com/g2%3E",
+            )
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s> <http://example.com/p> <http://example.com/o> .")?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_rejects_an_unsupported_content_type() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(CONTENT_TYPE, "application/octet-stream")
+            .body("not RDF")?;
+        ServerTest::with_rdf4j("test-repo")?
+            .test_status(request, StatusCode::UNSUPPORTED_MEDIA_TYPE)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_missing_content_type_is_unsupported_media_type()
+    -> Result<()> {
+        // Unlike the native Graph Store Protocol's own POST, RDF4J's real
+        // add-data has no default-to-RDF/XML fallback when Content-Type is
+        // absent.
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .body("<http://example.com/s> <http://example.com/p> <http://example.com/o> .")?;
+        ServerTest::with_rdf4j("test-repo")?
+            .test_status(request, StatusCode::UNSUPPORTED_MEDIA_TYPE)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_rejects_a_malformed_body() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("this is not valid turtle {{{")?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_rejects_preserve_node_id_false() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements?preserveNodeId=false")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s> <http://example.com/p> <http://example.com/o> .")?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_rejects_every_false_meaning_preserve_node_id_spelling()
+    -> Result<()> {
+        // RDF4J's own `Boolean.parseBoolean` is true only for a
+        // case-insensitive match to "true"; every other spelling means
+        // false and must be rejected too, not only the literal "false".
+        for value in ["False", "FALSE", "0", "no"] {
             let request = Request::builder()
-                .method(method)
-                .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
-                .body(())?;
-            ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NOT_FOUND)?;
+                .method(Method::POST)
+                .uri(format!(
+                    "http://localhost/rdf4j-server/repositories/test-repo/statements?preserveNodeId={value}"
+                ))
+                .header(CONTENT_TYPE, "text/turtle")
+                .body("<http://example.com/s> <http://example.com/p> <http://example.com/o> .")?;
+            ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)?;
         }
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_accepts_preserve_node_id_case_insensitively() -> Result<()>
+    {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements?preserveNodeId=True")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s> <http://example.com/p> <http://example.com/o> .")?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NO_CONTENT)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_with_one_context_rejects_a_dataset_format_with_its_own_graph_blocks()
+    -> Result<()> {
+        // The reference forces every parsed statement into the requested
+        // context regardless of the document's own graph assignment; this
+        // implementation cannot yet flatten a dataset format's own named
+        // graph blocks into the requested context (no RdfParser primitive
+        // does that), so it fails closed with 400 instead of silently
+        // discarding or misassigning the document's own graph. Graph-only
+        // formats (Turtle etc., used by every other test here) are
+        // unaffected since they have no competing graph assignment to lose.
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/statements?context=%3Chttp://example.com/g1%3E",
+            )
+            .header(CONTENT_TYPE, "application/trig")
+            .body(
+                "<http://example.com/g2> {\n\
+                 <http://example.com/s> <http://example.com/p> <http://example.com/o> .\n\
+                 }\n",
+            )?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_accepts_preserve_node_id_true() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements?preserveNodeId=true")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s> <http://example.com/p> <http://example.com/o> .")?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NO_CONTENT)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_with_base_uri_resolves_relative_iris() -> Result<()> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/statements?baseURI=http://example.com/",
+            )
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<s> <p> <o> .")?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        server.test_body(
+            request,
+            "<http://example.com/s> <http://example.com/p> <http://example.com/o> .\n",
+        )
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_post_is_refused_on_a_read_only_server() -> Result<()> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s> <http://example.com/p> <http://example.com/o> .")?;
+        let mut response = server.exec_read_only(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "Error message: {body}"
+        );
+
+        // The read-only refusal must be a no-op: nothing was added.
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        server.test_body(request, "")
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_put_replaces_the_selected_scope() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/statements?context=%3Chttp://example.com/g1%3E",
+            )
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s3> <http://example.com/p3> <http://example.com/o3> .")?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        // The default graph (s1) survives; g1's old content (s2) is
+        // replaced by the new content (s3).
+        assert!(body.contains("s1"), "body: {body}");
+        assert!(!body.contains("s2"), "body: {body}");
+        assert!(body.contains("s3"), "body: {body}");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_put_with_no_context_replaces_everything() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s3> <http://example.com/p3> <http://example.com/o3> .")?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        server.test_body(
+            request,
+            "<http://example.com/s3> <http://example.com/p3> <http://example.com/o3> .\n",
+        )
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_put_is_refused_on_a_read_only_server() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s3> <http://example.com/p3> <http://example.com/o3> .")?;
+        let mut response = server.exec_read_only(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "Error message: {body}"
+        );
+
+        // The read-only refusal must be a no-op: the existing data survives
+        // uncleared, and the new data was never added.
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert!(body.contains("s1"), "body: {body}");
+        assert!(!body.contains("s3"), "body: {body}");
         Ok(())
     }
 
