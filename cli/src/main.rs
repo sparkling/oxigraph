@@ -1999,6 +1999,15 @@ fn handle_request(
         {
             rdf4j_repository_statements(request, store)
         }
+        (path, "GET" | "HEAD")
+            if rdf4j
+                && path
+                    .strip_prefix("/rdf4j-server/repositories/")
+                    .and_then(|rest| rest.strip_suffix("/contexts"))
+                    == Some(rdf4j_repository_id) =>
+        {
+            rdf4j_repository_contexts(request, store)
+        }
         ("/", "HEAD") => Response::builder()
             .header(CONTENT_TYPE, "text/html")
             .body(Body::empty())
@@ -2303,6 +2312,75 @@ fn rdf4j_repositories(
             Some(Term::Literal((!read_only).into())),
         ])],
     );
+    let selected = query_results_content_negotiation(request, true)?;
+    let mut body = ResultBodyWriter::new(Vec::new(), request);
+    let mut serializer = selected
+        .serializer()?
+        .serialize_solutions_to_writer(&mut body, solutions.variables().to_vec())
+        .map_err(result_body::internal_error)?;
+    for solution in solutions {
+        let solution = solution.map_err(query_evaluation_error)?;
+        serializer
+            .serialize(&solution)
+            .map_err(|error| result_body::http_error(error, query_results_not_acceptable))?;
+    }
+    serializer.finish().map_err(result_body::internal_error)?;
+    let body = body.finish().map_err(result_body::internal_error)?;
+    Response::builder()
+        .header(CONTENT_TYPE, selected.media_type())
+        .body(body.into())
+        .map_err(internal_server_error)
+}
+
+/// ADR-0029 stage 1: `/repositories/{id}/contexts` lists every named graph
+/// that currently holds at least one statement, reusing `Store::
+/// named_graphs`/`quads_for_pattern` directly -- no new storage-layer code.
+/// Verified against RDF4J 6.0.0's own `ContextsController` source (fetched,
+/// not vendored): a single-column SPARQL tuple result named `contextID`,
+/// each row bound as the graph name's own term (an IRI or blank node, never
+/// a literal, matching the reference's own direct `Resource` binding), `GET`
+/// and `HEAD` only, no request parameters at all -- any given parameter is
+/// rejected explicitly via the existing `reject_unknown` sweep, matching
+/// the convention established for the sibling routes.
+///
+/// `Store::named_graphs` also returns Oxigraph's own explicitly-declared-
+/// but-empty named graphs (a real, independent registry -- see this ADR's
+/// own dated section on the `/size` slice, and `insert_named_graph`/
+/// `contains_named_graph` in `lib/oxigraph/src/storage/mod.rs`), which RDF4J
+/// has no concept of. This was the open question that deferred this route
+/// when `/size` was split out of this ADR's own combined endpoint-table
+/// row; it is resolved here by filtering to graphs with at least one
+/// matching quad, per this ADR's own already-stated Decision text: "RDF4J
+/// contexts do not by themselves carry Oxigraph's explicit empty
+/// named-graph topology." Declared-but-empty graphs are never surfaced,
+/// never deleted, and never fabricated -- exactly what that text requires.
+///
+/// Matched contexts are charged against `ResultRowBudget`, matching the
+/// admission-parity convention established for `/statements`: in the worst
+/// case (every quad in its own graph) this route's output can scale with
+/// the whole store, the same as that route's.
+fn rdf4j_repository_contexts(
+    request: &Request<Body>,
+    store: &Store,
+) -> Result<Response<Body>, HttpError> {
+    RequestParams::from_request_url(request).reject_unknown("contexts")?;
+    let variables: Arc<[Variable]> = Arc::from([Variable::new_unchecked("contextID")]);
+    let mut rows = ResultRowBudget::new(request);
+    let mut context_rows = Vec::new();
+    for graph_name in store.named_graphs() {
+        let graph_name = graph_name.map_err(internal_server_error)?;
+        let has_a_statement = store
+            .quads_for_pattern(None, None, None, Some(&GraphName::from(graph_name.clone())))
+            .next()
+            .is_some();
+        if !has_a_statement {
+            continue;
+        }
+        rows.charge().map_err(result_body::internal_error)?;
+        context_rows.push(vec![Some(Term::from(graph_name))]);
+    }
+    let solutions =
+        QuerySolutionIter::from_tuples(Arc::clone(&variables), context_rows.into_iter().map(Ok));
     let selected = query_results_content_negotiation(request, true)?;
     let mut body = ResultBodyWriter::new(Vec::new(), request);
     let mut serializer = selected
@@ -6108,6 +6186,128 @@ mod tests {
             let request = Request::builder()
                 .method(method)
                 .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+                .body(())?;
+            ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NOT_FOUND)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_contexts_disabled_by_default() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/contexts")
+            .body(())?;
+        ServerTest::new()?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_contexts_wrong_repository_id_not_found() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/other-repo/contexts")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_contexts_lists_none_when_empty() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/contexts")
+            .header(ACCEPT, "application/sparql-results+json")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_body(
+            request,
+            r#"{"head":{"vars":["contextID"]},"results":{"bindings":[]}}"#,
+        )
+    }
+
+    #[test]
+    fn rdf4j_repository_contexts_lists_only_named_graphs_holding_a_statement() -> Result<()> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/store")
+            .header(CONTENT_TYPE, "application/trig")
+            .body(
+                "<http://example.com/s1> <http://example.com/p1> <http://example.com/o1> .\n\
+                 <http://example.com/g1> {\n\
+                 <http://example.com/s2> <http://example.com/p2> <http://example.com/o2> .\n\
+                 }\n",
+            )?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/contexts")
+            .header(ACCEPT, "application/sparql-results+json")
+            .body(())?;
+        server.test_body(
+            request,
+            r#"{"head":{"vars":["contextID"]},"results":{"bindings":[{"contextID":{"type":"uri","value":"http://example.com/g1"}}]}}"#,
+        )
+    }
+
+    #[test]
+    fn rdf4j_repository_contexts_excludes_a_declared_but_empty_named_graph() -> Result<()> {
+        // Oxigraph's own explicit empty named-graph topology is never
+        // surfaced through this RDF4J-facing route, per this ADR's own
+        // "RDF4J contexts do not by themselves carry Oxigraph's explicit
+        // empty named-graph topology" Decision text.
+        let server = ServerTest::with_rdf4j("test-repo")?;
+        server
+            .store
+            .insert_named_graph(NamedNode::new("http://example.com/empty")?)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/contexts")
+            .header(ACCEPT, "application/sparql-results+json")
+            .body(())?;
+        server.test_body(
+            request,
+            r#"{"head":{"vars":["contextID"]},"results":{"bindings":[]}}"#,
+        )
+    }
+
+    #[test]
+    fn rdf4j_repository_contexts_rejects_unknown_parameters() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/contexts?foo=bar")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_contexts_head_returns_no_body_but_ok_status() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::HEAD)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/contexts")
+            .body(())?;
+        let mut response = ServerTest::with_rdf4j("test-repo")?.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body, "");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_contexts_works_on_a_read_only_server() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/contexts")
+            .header(ACCEPT, "application/sparql-results+json")
+            .body(())?;
+        let mut response = ServerTest::with_rdf4j("test-repo")?.exec_read_only(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_contexts_mutation_methods_are_not_implemented() -> Result<()> {
+        // Unlike /statements, this is a permanent divergence: /contexts is a
+        // read-only discovery view with no mutation semantics planned by
+        // this ADR at all, not a stage-1/stage-2 split.
+        for method in [Method::POST, Method::PUT, Method::DELETE] {
+            let request = Request::builder()
+                .method(method)
+                .uri("http://localhost/rdf4j-server/repositories/test-repo/contexts")
                 .body(())?;
             ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NOT_FOUND)?;
         }
