@@ -10,10 +10,12 @@
   commit `047cbbd4`), `GET`/`HEAD /rdf4j-server/repositories/{id}/size`
   (statement count, commit `865eaf5b`),
   `/rdf4j-server/repositories/{id}/namespaces[/prefix]` (list/get/set/remove
-  namespace mappings, commit `01628296`), and
+  namespace mappings, commit `01628296`),
   `GET`/`HEAD /rdf4j-server/repositories/{id}/statements` (pattern-based RDF
   export, commit `cab39657`; `POST`/`PUT`/`DELETE` on this same path remain
-  stage 2). `/contexts` and all of stages 2-4 remain unimplemented.
+  stage 2), and `GET`/`HEAD /rdf4j-server/repositories/{id}/contexts`
+  (named-graph discovery, commit `2f871e0f`). All of stage 1's endpoint
+  table is now implemented for reads; stages 2-4 remain unimplemented.
 - Programme task: `task-1787670632568-gk92vo` (G4.4)
 - **Depends on**:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
@@ -518,9 +520,61 @@ same path correctly fall through to the ordinary `404`.
 
 Remaining G4.4 stage-1 scope after this slice: `/statements`'s own
 `POST`/`PUT`/`DELETE` (add/replace/remove through an owned transaction,
-this ADR's own stage-2 scope) and `/contexts` (still blocked on its own
-recorded empty-named-graph-topology question). Both remain dependency-clear
-of ADR-0030/G4.5.
+this ADR's own stage-2 scope) and `/contexts` (its own empty-named-graph-
+topology question, resolved in the next section below). Both remain
+dependency-clear of ADR-0030/G4.5.
+
+### `GET`/`HEAD /repositories/{id}/contexts` implemented: G4.4's sixth landed slice, and the open question resolved (2026-09-18)
+
+This closes the open question recorded when `/size` was split out of this
+ADR's own combined "`/contexts` and `/size`" endpoint-table row: `Store::
+named_graphs` includes Oxigraph's own explicitly-declared-but-empty named
+graphs (a real, independent registry -- `insert_named_graph`/
+`contains_named_graph` in `lib/oxigraph/src/storage/mod.rs`), which RDF4J
+has no concept of. The resolution did not require a new decision: this
+ADR's own "Semantic and format boundary" section already states it --
+"RDF4J contexts do not by themselves carry Oxigraph's explicit empty
+named-graph topology. The facade never deletes or fabricates such graphs
+while serving statement operations." -- so declared-but-empty graphs are
+filtered out of `/contexts`'s listing entirely: never surfaced, never
+deleted from the store, never fabricated. Commit `2f871e0f`.
+
+Reuses `Store::named_graphs`/`quads_for_pattern` and the same SPARQL-
+tuple-result machinery already used for `/repositories` and `/namespaces`
+-- no new storage-layer or serialization code. Verified against RDF4J
+6.0.0's real `ContextsController` source (fetched, not vendored): a
+single-column tuple result named `contextID`, each row bound as an IRI or
+blank node term -- not a literal, a deliberate asymmetry from the sibling
+`/namespaces` route's own literal bindings, confirmed correct by reading
+the reference directly rather than assuming route-to-route consistency
+would hold. `GET`/`HEAD` only, no request parameters at all, so any given
+parameter is rejected via the existing `reject_unknown` sweep. Matched
+contexts are charged against `ResultRowBudget` after the empty-graph
+filter, matching the admission-parity convention the `/statements` review
+established.
+
+Independent review (elevated scrutiny, given the `/statements` review's
+own doc-comment precedent-citation error) verified every claim against
+primary sources rather than trusting the doc comment: the ADR quote is
+verbatim, the empty-graph registry citations exist at their claimed paths,
+the RDF4J wire-format claims match the fetched Java source, and the
+filtering logic is correct in both storage backends -- an ordinary named
+graph populated only by inserting quads (never separately declared) is
+registered in the same registry `named_graphs()` iterates, so it correctly
+still appears in `/contexts`; only genuinely statement-free graphs are
+skipped. Clean `ACCEPT`, no required fixes. Both non-blocking suggestions
+were applied in the same pass: a `POST`/`PUT`/`DELETE`-not-implemented
+pinning test (a permanent divergence for this read-only discovery route,
+not a stage-1/stage-2 split the way `/statements` has), and this section
+itself, closing the open question the `/size` and `/statements` sections
+both referenced.
+
+With this slice, every stage-1 endpoint-table row now has its read side
+implemented: discovery, query execution, size, namespaces (full CRUD),
+statement export, and context discovery. Remaining G4.4 scope is entirely
+write/mutation semantics: `/statements`'s own `POST`/`PUT`/`DELETE`
+(stage 2, owned-transaction add/replace/remove) and stages 2-4 more
+broadly (leased transactions depend on ADR-0030/G4.5, still at 0%).
 
 ## Consequences
 
