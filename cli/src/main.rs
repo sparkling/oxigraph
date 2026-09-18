@@ -1999,6 +1999,15 @@ fn handle_request(
         {
             rdf4j_repository_statements(request, store)
         }
+        (path, "DELETE")
+            if rdf4j
+                && path
+                    .strip_prefix("/rdf4j-server/repositories/")
+                    .and_then(|rest| rest.strip_suffix("/statements"))
+                    == Some(rdf4j_repository_id) =>
+        {
+            rdf4j_repository_statements_delete(request, store, read_only)
+        }
         (path, "GET" | "HEAD")
             if rdf4j
                 && path
@@ -2677,6 +2686,53 @@ fn rdf4j_parse_context_selector(value: &str) -> Result<GraphName, HttpError> {
     }
 }
 
+/// The parsed `subj`/`pred`/`obj`/`context` selectors shared by every
+/// `/repositories/{id}/statements` method (`GET`/`HEAD` here, `DELETE`
+/// below, and `POST`/`PUT` in a future slice) -- extracted so this parsing
+/// is written and reviewed once rather than duplicated per method. No
+/// context parameter means every graph, represented here as a single
+/// `None` entry rather than an empty list, matching `GET`'s own
+/// already-shipped, already-reviewed unscoped-export behavior exactly.
+struct Rdf4jStatementSelectors {
+    subject: Option<NamedOrBlankNode>,
+    predicate: Option<NamedNode>,
+    object: Option<Term>,
+    graph_names: Vec<Option<GraphName>>,
+}
+
+fn rdf4j_parse_statement_selectors(
+    args: &mut RequestParams,
+) -> Result<Rdf4jStatementSelectors, HttpError> {
+    let subject = args
+        .remove_single("subj")?
+        .map(|value| rdf4j_parse_subject_selector(&value))
+        .transpose()?;
+    let predicate = args
+        .remove_single("pred")?
+        .map(|value| rdf4j_parse_predicate_selector(&value))
+        .transpose()?;
+    let object = args
+        .remove_single("obj")?
+        .map(|value| rdf4j_parse_selector_term("obj", &value))
+        .transpose()?;
+    let contexts = args
+        .remove_all("context")
+        .into_iter()
+        .map(|value| rdf4j_parse_context_selector(&value))
+        .collect::<Result<Vec<_>, _>>()?;
+    let graph_names = if contexts.is_empty() {
+        vec![None]
+    } else {
+        contexts.into_iter().map(Some).collect()
+    };
+    Ok(Rdf4jStatementSelectors {
+        subject,
+        predicate,
+        object,
+        graph_names,
+    })
+}
+
 /// ADR-0029 stage 1: `/repositories/{id}/statements` (`GET`/`HEAD` only in
 /// this slice) exports matching quads as RDF. `POST`/`PUT`/`DELETE` (add,
 /// replace, remove through an owned transaction) are this ADR's own stage-2
@@ -2730,23 +2786,7 @@ fn rdf4j_repository_statements(
     store: &Store,
 ) -> Result<Response<Body>, HttpError> {
     let mut args = RequestParams::from_request_url(request);
-    let subject = args
-        .remove_single("subj")?
-        .map(|value| rdf4j_parse_subject_selector(&value))
-        .transpose()?;
-    let predicate = args
-        .remove_single("pred")?
-        .map(|value| rdf4j_parse_predicate_selector(&value))
-        .transpose()?;
-    let object = args
-        .remove_single("obj")?
-        .map(|value| rdf4j_parse_selector_term("obj", &value))
-        .transpose()?;
-    let contexts = args
-        .remove_all("context")
-        .into_iter()
-        .map(|value| rdf4j_parse_context_selector(&value))
-        .collect::<Result<Vec<_>, _>>()?;
+    let selectors = rdf4j_parse_statement_selectors(&mut args)?;
     args.reject_unknown("statements")?;
 
     let selected = rdf_content_negotiation(request)?;
@@ -2755,16 +2795,11 @@ fn rdf4j_repository_statements(
         .map_err(internal_server_error)?
         .for_writer(ResultBodyWriter::new(Vec::new(), request));
     let mut rows = ResultRowBudget::new(request);
-    let graph_names: Vec<Option<GraphName>> = if contexts.is_empty() {
-        vec![None]
-    } else {
-        contexts.into_iter().map(Some).collect()
-    };
-    for graph_name in &graph_names {
+    for graph_name in &selectors.graph_names {
         for quad in store.quads_for_pattern(
-            subject.as_ref(),
-            predicate.as_ref(),
-            object.as_ref(),
+            selectors.subject.as_ref(),
+            selectors.predicate.as_ref(),
+            selectors.object.as_ref(),
             graph_name.as_ref(),
         ) {
             let quad = quad.map_err(internal_server_error)?;
@@ -2790,6 +2825,70 @@ fn rdf4j_repository_statements(
     Response::builder()
         .header(CONTENT_TYPE, selected.media_type())
         .body(body.into())
+        .map_err(internal_server_error)
+}
+
+/// ADR-0029 stage 2: `/repositories/{id}/statements` `DELETE` removes every
+/// matching statement, reusing the exact `subj`/`pred`/`obj`/`context`
+/// selector parsing already shipped for the sibling `GET`/`HEAD` route
+/// (`cab39657`, factored out above into `rdf4j_parse_statement_selectors`)
+/// and `Store`'s own existing transactional `start_transaction`/
+/// `quads_for_pattern`/`remove`/`commit` API, reused verbatim from
+/// `graph_store::start_transaction`/`graph_store::commit` (the exact
+/// cancellation-checkpoint primitives the native Graph Store Protocol
+/// routes already use) -- no new transaction-lifecycle code. This ADR's own
+/// "owned transaction" language for `/statements` names exactly this: one
+/// atomic server-side commit, unrelated to ADR-0030's separate leased HTTP
+/// transactions (still stage 3, gated on G4.5 at 0%).
+///
+/// Verified against RDF4J 6.0.0's own `StatementsController` source
+/// (fetched, not vendored): `DELETE` calls
+/// `repositoryCon.remove(subj, pred, obj, contexts)` with exactly the same
+/// four selectors `GET` reads (no `infer`, since removal is never
+/// entailment-aware), no request body, and returns via `EmptySuccessView`
+/// (`204 No Content`), matching this facade's own existing convention for
+/// successful mutations.
+///
+/// **Given no selectors at all, this removes every statement in the
+/// repository.** This is real, faithful RDF4J behavior -- an absent
+/// selector means "match everything," exactly like `GET`'s own already-
+/// shipped unscoped export -- not a bug, but a uniquely dangerous default
+/// compared to every other mutating route in this facade so far (contrast
+/// `/namespaces`'s `DELETE`, which only ever clears namespace mappings,
+/// never RDF data). Refused on a read-only server exactly like
+/// `/namespaces`'s own mutations.
+fn rdf4j_repository_statements_delete(
+    request: &Request<Body>,
+    store: &Store,
+    read_only: bool,
+) -> Result<Response<Body>, HttpError> {
+    if read_only {
+        return Err(the_server_is_read_only());
+    }
+    let mut args = RequestParams::from_request_url(request);
+    let selectors = rdf4j_parse_statement_selectors(&mut args)?;
+    args.reject_unknown("statements")?;
+
+    let mut transaction = graph_store::start_transaction(store, request)?;
+    for graph_name in &selectors.graph_names {
+        let matches = transaction
+            .quads_for_pattern(
+                selectors.subject.as_ref(),
+                selectors.predicate.as_ref(),
+                selectors.object.as_ref(),
+                graph_name.as_ref(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(internal_server_error)?;
+        for quad in matches {
+            transaction.remove(&quad);
+        }
+    }
+    graph_store::commit(transaction, request)?;
+
+    Response::builder()
+        .status(StatusCode::NO_CONTENT)
+        .body(Body::empty())
         .map_err(internal_server_error)
 }
 
@@ -6177,18 +6276,177 @@ mod tests {
     }
 
     #[test]
-    fn rdf4j_repository_statements_mutation_methods_are_not_yet_implemented() -> Result<()> {
-        // POST/PUT/DELETE (add/replace/remove through an owned transaction)
-        // are this ADR's own stage-2 scope; a disabled route falls through
-        // to the ordinary 404, the same as any other unimplemented method
-        // on an rdf4j-server path.
-        for method in [Method::POST, Method::PUT, Method::DELETE] {
+    fn rdf4j_repository_statements_add_and_replace_are_not_yet_implemented() -> Result<()> {
+        // POST (add-data)/PUT (replace) are a separate future slice; a
+        // disabled route falls through to the ordinary 404, the same as
+        // any other unimplemented method on an rdf4j-server path. DELETE
+        // is implemented (see the rdf4j_repository_statements_delete_*
+        // tests below) and is deliberately excluded here.
+        for method in [Method::POST, Method::PUT] {
             let request = Request::builder()
                 .method(method)
                 .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
                 .body(())?;
             ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NOT_FOUND)?;
         }
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_delete_disabled_by_default() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .body(())?;
+        ServerTest::new()?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_delete_wrong_repository_id_not_found() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri("http://localhost/rdf4j-server/repositories/other-repo/statements")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_delete_removes_only_matching_statements() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/statements?subj=%3Chttp://example.com/s1%3E",
+            )
+            .body(())?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert!(!body.contains("s1"), "body: {body}");
+        assert!(body.contains("s2"), "body: {body}");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_delete_with_no_selectors_removes_everything() -> Result<()> {
+        // Real, faithful RDF4J behavior: an absent selector matches every
+        // statement, exactly like GET's own unscoped export.
+        let server = rdf4j_statements_test_server()?;
+
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .body(())?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        server.test_body(request, "")
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_delete_of_nothing_matching_still_succeeds() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/statements?subj=%3Chttp://example.com/does-not-exist%3E",
+            )
+            .body(())?;
+        server.test_status(request, StatusCode::NO_CONTENT)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_delete_context_null_only_removes_default_graph() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements?context=null")
+            .body(())?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert!(!body.contains("s1"), "body: {body}");
+        assert!(body.contains("s2"), "body: {body}");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_delete_context_iri_only_removes_that_named_graph() -> Result<()>
+    {
+        // Symmetric with the sibling GET route's own
+        // rdf4j_repository_statements_filters_by_context coverage.
+        let server = rdf4j_statements_test_server()?;
+
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/statements?context=%3Chttp://example.com/g1%3E",
+            )
+            .body(())?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert!(body.contains("s1"), "body: {body}");
+        assert!(!body.contains("s2"), "body: {body}");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_delete_rejects_the_infer_parameter() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements?infer=true")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_delete_is_refused_on_a_read_only_server() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .body(())?;
+        let mut response = server.exec_read_only(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "Error message: {body}"
+        );
+
+        // The read-only refusal must be a no-op: the data survives.
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert!(body.contains("s1"), "body: {body}");
         Ok(())
     }
 

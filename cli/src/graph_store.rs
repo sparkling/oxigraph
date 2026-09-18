@@ -368,14 +368,23 @@ fn load_multipart(
     Ok(())
 }
 
-fn commit(transaction: Transaction<'_>, request: &Request<Body>) -> Result<(), HttpError> {
+/// Commits a transaction begun with [`start_transaction`]. `pub` so the
+/// RDF4J facade (`cli/src/main.rs`) can reuse this exact cancellation
+/// checkpoint rather than duplicating it.
+pub fn commit(transaction: Transaction<'_>, request: &Request<Body>) -> Result<(), HttpError> {
     // The last cooperative checkpoint is BEFORE CommitAttempted. Never report
     // timeout/rollback merely because the clock expires after commit returns.
     crate::check_request(request)?;
     transaction.commit().map_err(internal_server_error)
 }
 
-fn start_transaction<'a>(
+/// Begins a cancellation-aware transaction. `pub` so the RDF4J facade
+/// (`cli/src/main.rs`) can reuse this exact "owned transaction" primitive
+/// rather than duplicating it -- this ADR's own "owned transaction"
+/// language for `/statements` names one atomic server-side commit, which
+/// this function and [`commit`] already fully provide, unrelated to
+/// ADR-0030's separate leased HTTP transactions.
+pub fn start_transaction<'a>(
     store: &'a Store,
     request: &Request<Body>,
 ) -> Result<Transaction<'a>, HttpError> {
