@@ -26,7 +26,7 @@ use oxigraph::sparql::{
     CancellationToken, QueryEntailment, QueryEntailmentOptions, QueryResults, QuerySolutionIter,
     SparqlEvaluator, SparqlVersion as LibrarySparqlVersion,
 };
-use oxigraph::store::{BulkLoader, LoaderError, Store};
+use oxigraph::store::{BulkLoader, LoaderError, Namespace, NamespacePrefix, Store};
 use oxiri::{Iri, IriRef};
 use oxstr::OxString;
 use rayon_core::ThreadPoolBuilder;
@@ -1970,6 +1970,26 @@ fn handle_request(
         {
             rdf4j_repository_size(request, store)
         }
+        (path, "GET" | "HEAD" | "DELETE")
+            if rdf4j
+                && path
+                    .strip_prefix("/rdf4j-server/repositories/")
+                    .and_then(|rest| rest.strip_suffix("/namespaces"))
+                    == Some(rdf4j_repository_id) =>
+        {
+            rdf4j_repository_namespaces(request, store, read_only)
+        }
+        (path, "GET" | "HEAD" | "PUT" | "DELETE")
+            if rdf4j && rdf4j_namespace_prefix_from_path(path, rdf4j_repository_id).is_some() =>
+        {
+            // Owned, not borrowed: `prefix` must outlive the `&mut request`
+            // borrow taken below (for reading the PUT body), but it derives
+            // from `path`, which itself borrows `request` immutably.
+            let prefix = rdf4j_namespace_prefix_from_path(path, rdf4j_repository_id)
+                .expect("guard already confirmed this path shape")
+                .to_owned();
+            rdf4j_repository_namespace(request, store, &prefix, read_only)
+        }
         ("/", "HEAD") => Response::builder()
             .header(CONTENT_TYPE, "text/html")
             .body(Body::empty())
@@ -2329,6 +2349,198 @@ fn rdf4j_repository_size(
         .header(CONTENT_TYPE, "text/plain; charset=UTF-8")
         .body(size.to_string().into())
         .map_err(internal_server_error)
+}
+
+/// ADR-0029 stage 1: `/repositories/{id}/namespaces` lists (`GET`/`HEAD`) or
+/// clears (`DELETE`) every store-global namespace mapping, reusing
+/// `Store::namespaces`/`clear_namespaces` directly -- no new storage-layer
+/// code. GET/HEAD reuse this server's existing SPARQL-tuple-result
+/// machinery (`QuerySolutionIter::from_tuples`,
+/// `query_results_content_negotiation`) exactly as `/repositories` already
+/// does, built from a real iterator rather than a synthetic fixed row.
+///
+/// Verified against RDF4J 6.0.0's own `NamespacesController` source
+/// (fetched, not vendored): head/binding order is `prefix, namespace`, and
+/// -- confirmed by reading the reference directly rather than assuming from
+/// the sibling `/repositories` route's own `uri`-as-IRI precedent -- BOTH
+/// bindings are plain literals; even the namespace IRI value itself is
+/// bound as a literal string, not an IRI term.
+///
+/// DELETE returns `204 No Content`, matching RDF4J's own `EmptySuccessView`
+/// and this server's existing convention for successful mutations (e.g.
+/// `PUT /store`), and is refused on a read-only server exactly like every
+/// other mutating route. Any other method on this path (the reference
+/// returns `405`) falls through to this server's ordinary `404` -- the same
+/// accepted, documented method-parity limitation as the two prior slices.
+fn rdf4j_repository_namespaces(
+    request: &Request<Body>,
+    store: &Store,
+    read_only: bool,
+) -> Result<Response<Body>, HttpError> {
+    if *request.method() == Method::DELETE {
+        if read_only {
+            return Err(the_server_is_read_only());
+        }
+        store.clear_namespaces().map_err(internal_server_error)?;
+        return Response::builder()
+            .status(StatusCode::NO_CONTENT)
+            .body(Body::empty())
+            .map_err(internal_server_error);
+    }
+    let variables: Arc<[Variable]> = Arc::from([
+        Variable::new_unchecked("prefix"),
+        Variable::new_unchecked("namespace"),
+    ]);
+    let rows = store
+        .namespaces()
+        .map(|namespace| {
+            namespace.map(|namespace| {
+                vec![
+                    Some(Term::Literal(Literal::new_simple_literal(
+                        namespace.prefix().as_str().to_owned(),
+                    ))),
+                    Some(Term::Literal(Literal::new_simple_literal(
+                        namespace.iri().as_str().to_owned(),
+                    ))),
+                ]
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(internal_server_error)?;
+    let solutions =
+        QuerySolutionIter::from_tuples(Arc::clone(&variables), rows.into_iter().map(Ok));
+    let selected = query_results_content_negotiation(request, true)?;
+    let mut body = ResultBodyWriter::new(Vec::new(), request);
+    let mut serializer = selected
+        .serializer()?
+        .serialize_solutions_to_writer(&mut body, solutions.variables().to_vec())
+        .map_err(result_body::internal_error)?;
+    for solution in solutions {
+        let solution = solution.map_err(query_evaluation_error)?;
+        serializer
+            .serialize(&solution)
+            .map_err(|error| result_body::http_error(error, query_results_not_acceptable))?;
+    }
+    serializer.finish().map_err(result_body::internal_error)?;
+    let body = body.finish().map_err(result_body::internal_error)?;
+    Response::builder()
+        .header(CONTENT_TYPE, selected.media_type())
+        .body(body.into())
+        .map_err(internal_server_error)
+}
+
+/// Extracts the `{prefix}` path segment for
+/// `/rdf4j-server/repositories/{id}/namespaces/{prefix}`, matched as an
+/// exact literal segment -- the same documented, not-yet-implemented
+/// percent-decoding limitation as the repository ID on the sibling routes.
+/// An empty result denotes RDF4J's own default-namespace prefix, which
+/// `NamespacePrefix::new` itself already accepts.
+fn rdf4j_namespace_prefix_from_path<'a>(path: &'a str, repository_id: &str) -> Option<&'a str> {
+    path.strip_prefix("/rdf4j-server/repositories/")?
+        .strip_prefix(repository_id)?
+        .strip_prefix("/namespaces/")
+}
+
+/// ADR-0029 stage 1: `/repositories/{id}/namespaces/{prefix}` gets, sets, or
+/// removes one store-global namespace mapping, reusing
+/// `Store::namespace`/`set_namespace`/`remove_namespace` directly -- no new
+/// storage-layer code. Verified against RDF4J 6.0.0's own
+/// `NamespaceController` source (fetched, not vendored):
+///
+/// - `GET`/`HEAD` return the mapped IRI as `text/plain; charset=UTF-8` (the
+///   same shape as `/size`), or `404` if the prefix is undefined.
+/// - `PUT` reads the new IRI from the request body (trimmed, matching the
+///   reference) and requires it to be non-empty and an absolute IRI --
+///   `NamedNode::new` already enforces the latter (empirically confirmed: it
+///   accepts `http://example.com/` and rejects a scheme-less `foo` or
+///   `relative/path`), so no separate validation code is needed. Only `PUT`
+///   validates the prefix against the `NamespacePrefix` grammar, matching
+///   the reference exactly: its own `NamespaceController` validates the
+///   prefix only inside its PUT handler, not GET or DELETE.
+/// - `DELETE` removes the mapping; a nonexistent OR grammar-invalid prefix
+///   is not an error (a grammar-invalid prefix can never exist in the
+///   store, since `NamespacePrefix::new` is the store's own only
+///   constructor, so it is trivially "missing" too), matching both
+///   `Store::remove_namespace`'s own documented "missing mappings are
+///   ignored" behavior and the reference's unconditional, unvalidated
+///   `removeNamespace` call.
+/// - `GET`/`HEAD` treat a grammar-invalid prefix identically to a valid but
+///   unregistered one (`404 Undefined prefix`), for the same reason: the
+///   reference's own GET performs no prefix-grammar validation either, so a
+///   grammar-invalid prefix there simply never matches an existing mapping.
+///
+/// All mutating responses are `204 No Content`, matching this server's
+/// existing convention and RDF4J's own `EmptySuccessView`. `PUT` and
+/// `DELETE` are refused on a read-only server exactly like every other
+/// mutating route; `GET`/`HEAD` are not gated, matching how reads work
+/// elsewhere on this server.
+///
+/// RDF4J's own real HEAD behavior for this specific route never even
+/// attempts the lookup (an unconditional empty `200`, regardless of whether
+/// the prefix exists). This implementation's HEAD instead goes through the
+/// same generic `finalize_response` draining already reviewed and accepted
+/// for `/size`, so an undefined prefix's HEAD response here is a `404`
+/// rather than RDF4J's own unconditional `200` -- a real, deliberate,
+/// documented divergence (unlike `/size`'s divergence, this one can change
+/// the status code, not only `Content-Length`), not a silent gap.
+fn rdf4j_repository_namespace(
+    request: &mut Request<Body>,
+    store: &Store,
+    prefix: &str,
+    read_only: bool,
+) -> Result<Response<Body>, HttpError> {
+    match *request.method() {
+        Method::GET | Method::HEAD => {
+            let Ok(prefix) = NamespacePrefix::new(prefix.to_owned()) else {
+                return Err((StatusCode::NOT_FOUND, format!("Undefined prefix: {prefix}")));
+            };
+            let namespace = store.namespace(&prefix).map_err(internal_server_error)?;
+            let Some(namespace) = namespace else {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    format!("Undefined prefix: {}", prefix.as_str()),
+                ));
+            };
+            Response::builder()
+                .header(CONTENT_TYPE, "text/plain; charset=UTF-8")
+                .body(namespace.iri().as_str().to_owned().into())
+                .map_err(internal_server_error)
+        }
+        Method::PUT => {
+            if read_only {
+                return Err(the_server_is_read_only());
+            }
+            let prefix = NamespacePrefix::new(prefix.to_owned()).map_err(bad_request)?;
+            let body = limited_string_body(request)?;
+            let iri = body.trim();
+            if iri.is_empty() {
+                return Err(bad_request("No namespace name found in request body"));
+            }
+            let iri = NamedNode::new(iri.to_owned()).map_err(bad_request)?;
+            store
+                .set_namespace(Namespace::new(prefix, iri))
+                .map_err(internal_server_error)?;
+            Response::builder()
+                .status(StatusCode::NO_CONTENT)
+                .body(Body::empty())
+                .map_err(internal_server_error)
+        }
+        Method::DELETE => {
+            if read_only {
+                return Err(the_server_is_read_only());
+            }
+            if let Ok(prefix) = NamespacePrefix::new(prefix.to_owned()) {
+                store
+                    .remove_namespace(&prefix)
+                    .map_err(internal_server_error)?;
+            }
+            Response::builder()
+                .status(StatusCode::NO_CONTENT)
+                .body(Body::empty())
+                .map_err(internal_server_error)
+        }
+        _ => unreachable!("the routing match arm only dispatches GET, HEAD, PUT, and DELETE here"),
+    }
 }
 
 fn method_not_allowed_response(
@@ -5347,6 +5559,312 @@ mod tests {
     fn rdf4j_repository_size_works_on_a_read_only_server() -> Result<()> {
         let request = Request::builder()
             .uri("http://localhost/rdf4j-server/repositories/test-repo/size")
+            .body(())?;
+        let mut response = ServerTest::with_rdf4j("test-repo")?.exec_read_only(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_namespaces_disabled_by_default() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces")
+            .body(())?;
+        ServerTest::new()?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_namespaces_wrong_repository_id_not_found() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/other-repo/namespaces")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_namespaces_lists_none_when_empty() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces")
+            .header(ACCEPT, "application/sparql-results+json")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_body(
+            request,
+            r#"{"head":{"vars":["prefix","namespace"]},"results":{"bindings":[]}}"#,
+        )
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_get_missing_prefix_is_not_found() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body(())?;
+        let mut response = ServerTest::with_rdf4j("test-repo")?.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert!(
+            body.contains("Undefined prefix: ex"),
+            "Error message: {body}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_put_then_get_round_trips() -> Result<()> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body("http://example.com/")?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert_eq!(body, "http://example.com/");
+        assert_eq!(
+            response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("text/plain; charset=UTF-8")
+        );
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces")
+            .header(ACCEPT, "application/sparql-results+json")
+            .body(())?;
+        server.test_body(
+            request,
+            r#"{"head":{"vars":["prefix","namespace"]},"results":{"bindings":[{"prefix":{"type":"literal","value":"ex"},"namespace":{"type":"literal","value":"http://example.com/"}}]}}"#,
+        )
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_put_rejects_an_empty_body() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body("")?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_put_rejects_a_relative_iri() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body("not-an-absolute-iri")?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_put_rejects_an_invalid_prefix() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/1bad")
+            .body("http://example.com/")?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_get_of_a_grammar_invalid_prefix_is_not_found() -> Result<()> {
+        // Only PUT validates the prefix grammar, matching RDF4J's own
+        // NamespaceController; GET treats a grammar-invalid prefix exactly
+        // like a valid-but-unregistered one.
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/1bad")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_delete_of_a_grammar_invalid_prefix_still_succeeds() -> Result<()>
+    {
+        // A grammar-invalid prefix can never exist in the store, so it is
+        // trivially "missing" too -- matching the reference's own DELETE,
+        // which performs no prefix-grammar validation at all.
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/1bad")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NO_CONTENT)
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_get_works_on_a_read_only_server() -> Result<()> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body("http://example.com/")?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body(())?;
+        let mut response = server.exec_read_only(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert_eq!(body, "http://example.com/");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_put_is_refused_on_a_read_only_server() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body("http://example.com/")?;
+        let mut response = ServerTest::with_rdf4j("test-repo")?.exec_read_only(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "Error message: {body}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_delete_removes_the_mapping() -> Result<()> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body("http://example.com/")?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body(())?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body(())?;
+        server.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_delete_of_an_undefined_prefix_still_succeeds() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/never-set")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NO_CONTENT)
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_delete_is_refused_on_a_read_only_server() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body(())?;
+        let mut response = ServerTest::with_rdf4j("test-repo")?.exec_read_only(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "Error message: {body}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_namespaces_delete_clears_every_mapping() -> Result<()> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+
+        for prefix in ["ex", "foaf"] {
+            let request = Request::builder()
+                .method(Method::PUT)
+                .uri(format!(
+                    "http://localhost/rdf4j-server/repositories/test-repo/namespaces/{prefix}"
+                ))
+                .body("http://example.com/")?;
+            server.test_status(request, StatusCode::NO_CONTENT)?;
+        }
+
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces")
+            .body(())?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces")
+            .header(ACCEPT, "application/sparql-results+json")
+            .body(())?;
+        server.test_body(
+            request,
+            r#"{"head":{"vars":["prefix","namespace"]},"results":{"bindings":[]}}"#,
+        )
+    }
+
+    #[test]
+    fn rdf4j_repository_namespaces_delete_is_refused_on_a_read_only_server() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces")
+            .body(())?;
+        let mut response = ServerTest::with_rdf4j("test-repo")?.exec_read_only(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "Error message: {body}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_default_prefix_is_supported() -> Result<()> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/")
+            .body("http://example.com/default/")?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/")
+            .body(())?;
+        server.test_body(request, "http://example.com/default/")
+    }
+
+    #[test]
+    fn rdf4j_repository_namespace_head_returns_no_body_but_ok_status() -> Result<()> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body("http://example.com/")?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .method(Method::HEAD)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces/ex")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body, "");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_namespaces_get_works_on_a_read_only_server() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/namespaces")
             .body(())?;
         let mut response = ServerTest::with_rdf4j("test-repo")?.exec_read_only(request);
         let body = read_to_string(response.body_mut())?;
