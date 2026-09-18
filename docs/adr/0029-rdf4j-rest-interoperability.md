@@ -12,12 +12,17 @@
   `/rdf4j-server/repositories/{id}/namespaces[/prefix]` (list/get/set/remove
   namespace mappings, commit `01628296`),
   `GET`/`HEAD /rdf4j-server/repositories/{id}/statements` (pattern-based RDF
-  export, commit `cab39657`) plus its own `DELETE` (remove matching
-  statements, commit `7fcb191b`; `POST`/`PUT` on this same path remain
-  unimplemented), and `GET`/`HEAD /rdf4j-server/repositories/{id}/contexts`
-  (named-graph discovery, commit `2f871e0f`). All of stage 1's endpoint
-  table is now implemented for reads, plus one stage-2 mutation method;
-  the rest of stages 2-4 remain unimplemented.
+  export, commit `cab39657`) plus its own `DELETE`/`POST`/`PUT` (remove,
+  add-data, and replace, commits `7fcb191b`/`a4e216f8`), and
+  `GET`/`HEAD /rdf4j-server/repositories/{id}/contexts` (named-graph
+  discovery, commit `2f871e0f`). All of stage 1's endpoint table is now
+  implemented for reads, and `/statements`' own pattern get/add/replace/
+  remove scope is fully implemented (with the multi-context fan-out and
+  dataset-format-plus-one-context cases explicitly deferred, not silently
+  unsupported -- see the 2026-09-18 dated section below). SPARQL-Update
+  and transaction-batch dispatch through `/statements`' own `Content-Type`
+  routing are permanently excluded per the endpoint table above. Stages 3-4
+  remain unimplemented.
 - Programme task: `task-1787670632568-gk92vo` (G4.4)
 - **Depends on**:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
@@ -65,7 +70,7 @@ only after the mandatory client matrix is green. Its endpoint mapping is:
 | `GET /protocol` | Return the receipted protocol number only |
 | `GET /repositories` | Return a SPARQL tuple result containing the one configured repository |
 | `GET`/`POST /repositories/{id}` | Execute SPARQL queries with RDF4J parameter and content-negotiation rules |
-| `/repositories/{id}/statements` | Pattern get/has, SPARQL Update, and RDF add, replace, or remove through an owned transaction |
+| `/repositories/{id}/statements` | Pattern get/has and RDF add, replace, or remove through an owned transaction. RDF4J's own `Content-Type`-driven dispatch of SPARQL Update through this same path is permanently out of scope: it would be a lower-value duplicate of `/update` under a different `Content-Type`, reachable only by RDF4J-specific clients (see the 2026-09-18 dated section below) |
 | `/repositories/{id}/contexts` and `/size` | Return exact context and statement-count views for the requested scope |
 | `/repositories/{id}/namespaces[/prefix]` | Use ADR-0020's transactional namespace registry |
 | `/repositories/{id}/transactions[/token]` | Translate begin, operation, ping, prepare, commit, rollback, and expiry onto ADR-0030 |
@@ -639,6 +644,72 @@ Remaining G4.4 scope: `/statements`'s own `POST`(add-data)/`PUT`(replace)
 (a real RDF-body-parsing slice closely mirroring the Graph Store Protocol's
 own precedent, per the scoping pass that identified `DELETE` as the
 smaller first cut) and stages 2-4 more broadly.
+
+### `POST`/`PUT /repositories/{id}/statements` implemented: `/statements`' own scope closed (2026-09-18)
+
+A dedicated scoping pass (going deeper than the `DELETE`-scoping pass above,
+which had only sketched the shape) resolved the concrete design questions
+needed to implement `POST` (add-data) and `PUT` (replace) together, sharing
+one function that differs only by whether the selected scope is cleared
+first -- mirroring RDF4J's own real `StatementsController.
+getAddDataResult(..., replaceCurrent)`, a single method both real HTTP
+methods call. Commit `a4e216f8`. This closes `/statements`' own complete
+`GET`/`HEAD`/`POST`/`PUT`/`DELETE` scope for this session; the endpoint
+table row above is updated to reflect that RDF4J's own `Content-Type`-
+driven SPARQL Update and transaction-batch dispatch through this same path
+are permanently excluded, not merely deferred -- the former a lower-value
+duplicate of `/update` reachable only by RDF4J-specific clients, the latter
+squarely ADR-0030/stage-3.
+
+Two design questions resolved by direct verification against RDF4J 6.0.0
+source rather than assumption, each catching a real error before
+implementation: the real parameter name is `Protocol.
+PRESERVE_BNODE_ID_PARAM_NAME = "preserveNodeId"` (singular "Id" -- an
+earlier draft of the scoping had assumed the more guessable plural
+"preserveNodeIds", which would have made the parameter completely
+unreachable under its real name, silently swept into the generic
+"unknown parameter" rejection instead of triggering the intended
+accept/reject logic); and `RepositoryConnection.add`'s own documented
+contract confirms that supplying one or more explicit contexts makes the
+reference discard the parsed document's own graph assignments entirely and
+force every statement into the given context(s) -- with two or more
+contexts, this means duplicating each parsed statement into every listed
+context (real data growth, not a bug).
+
+Two facade-specific limits are deliberately implemented as explicit `400`
+rejections rather than full reference fidelity, each with its own test:
+multiple repeated `context` values (the fan-out above is a distinct,
+higher-risk feature deferred to its own future slice, the same judgment
+already applied to `/repositories/{id}`'s deferred `infer` and `/size`'s
+deferred `context` filtering); and a dataset-capable format (TriG, N-Quads,
+JSON-LD) whose document contains its own named-graph blocks, combined with
+exactly one requested `context` -- no `RdfParser` primitive flattens a
+dataset's own graph assignments into a single requested target graph, so
+`RdfParser::without_named_graphs` (reused from the Graph Store Protocol's
+own `load_graph`) errors instead of either forcing the reference's own
+fidelity or silently discarding data. Graph-only formats (Turtle,
+RDF/XML, N-Triples) are unaffected, since they carry no competing graph
+assignment to lose.
+
+Independent review (elevated scrutiny, the largest and final G4.4 slice
+this session) verified every wire-format and semantic claim against real
+RDF4J 6.0.0 source and found two required fixes, both applied in the same
+pass: (1) the `preserveNodeId` rejection originally matched only the exact
+lowercase string `"false"`, but RDF4J's own `Boolean.parseBoolean` treats
+every non-"true" spelling (`"False"`, `"0"`, `"no"`) as false -- fixed to
+reject any value that is not case-insensitively `"true"`, with a test
+covering four such spellings, and the absent-parameter-vs-RDF4J's-own-
+false-default divergence is now explicitly documented rather than left
+implicit; (2) the doc comment overstated the one-context case's fidelity
+for dataset formats before the limit above was identified -- corrected,
+with a pinning test using TriG with an explicit graph block. One
+non-blocking suggestion (a `POST` unknown-parameter rejection test,
+matching `GET`'s and `DELETE`'s own coverage) was applied in the same
+pass.
+
+With this slice, ADR-0029's stage 1 read side and `/statements`' complete
+mutation surface are both fully implemented. Remaining scope is stage 3
+(leased HTTP transactions, blocked on ADR-0030/G4.5 at 0%) and stage 4.
 
 ## Consequences
 
