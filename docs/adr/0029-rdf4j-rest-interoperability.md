@@ -5,10 +5,11 @@
 - Updated: 2026-09-18
 - Deciders: Oxigraph parity programme
 - Implementation status: partially implemented; behind `--rdf4j` (off by
-  default): `GET /rdf4j-server/repositories` (discovery, commit `e62a33a6`)
-  and `GET`/`POST /rdf4j-server/repositories/{id}` (SPARQL query execution,
-  commit `047cbbd4`). `/statements`, `/contexts`, `/size`, `/namespaces`, and
-  all of stages 2-4 remain unimplemented.
+  default): `GET /rdf4j-server/repositories` (discovery, commit `e62a33a6`),
+  `GET`/`POST /rdf4j-server/repositories/{id}` (SPARQL query execution,
+  commit `047cbbd4`), and `GET`/`HEAD /rdf4j-server/repositories/{id}/size`
+  (statement count, commit `865eaf5b`). `/statements`, `/contexts`,
+  `/namespaces`, and all of stages 2-4 remain unimplemented.
 - Programme task: `task-1787670632568-gk92vo` (G4.4)
 - **Depends on**:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
@@ -341,6 +342,58 @@ behavior, not a new divergence introduced here.
 
 Remaining G4.4 stage-1 scope after this slice: `/statements`, `/contexts`,
 `/size`, `/namespaces`. All remain dependency-clear of ADR-0030/G4.5.
+
+### `GET`/`HEAD /repositories/{id}/size` implemented: G4.4's third landed slice (2026-09-18)
+
+This ADR's own endpoint table combines `/contexts` and `/size` into one row
+("Return exact context and statement-count views for the requested scope").
+This slice implements only `/size`, commit `865eaf5b`, after finding a real,
+not hypothetical, reason the two need separate decisions: `Store::
+named_graphs` enumerates Oxigraph's own explicitly-declared-but-empty named
+graphs (a genuine, independent registry -- `insert_named_graph`/
+`contains_named_graph` in `lib/oxigraph/src/storage/mod.rs` -- not merely
+graphs derived from quad presence). A real RDF4J client has no concept of an
+empty context and would never expect `/contexts` to list one. `/size` has no
+equivalent ambiguity: `Store::len()` counts quads directly, and a declared-
+but-empty graph correctly contributes zero to that count under either
+system's semantics. `/contexts` therefore needs its own explicit decision
+(document Oxigraph's divergence, filter empty graphs out to match RDF4J
+exactly, or something else) before it can be implemented honestly; `/size`
+did not need to wait for that decision.
+
+Both of this route's central correctness claims were independently verified
+against real RDF4J 6.0.0 source (`SizeController.java` and
+`SimpleResponseView.java`, fetched, not vendored), not assumed:
+
+- **Response shape**: `text/plain; charset=UTF-8`, a plain decimal
+  statement count, GET and HEAD supported -- confirmed exactly.
+- **The zero-`context`-means-count-everything equivalence.** RDF4J's real
+  `RepositoryConnection.size(Resource... contexts)` with no `context`
+  parameter counts every statement in the repository, which is exactly
+  `Store::len()`'s existing semantics (its own doc-comment example asserts
+  a count spanning both a named and the default graph). This is the single
+  claim on which the whole route's correctness rests, and review confirmed
+  it holds rather than assuming a Java varargs convention transfers cleanly.
+
+The review also surfaced and confirmed a genuine, deliberate divergence: real
+RDF4J skips computing the size entirely for HEAD requests and always reports
+`Content-Length: 0`, regardless of the true count. This implementation's HEAD
+response instead goes through this server's own generic `finalize_response`
+machinery, which computes the real body first and reports its true length --
+confirmed by review to be the more RFC-9110-correct HEAD behavior (a HEAD
+response's `Content-Length` should describe what GET would return), and
+harmless in practice since RDF4J's own `HTTPRepository` client never issues
+HEAD for `size()`. Documented as an accepted, reasoned divergence rather than
+matched byte-for-byte or left as a silent gap.
+
+As with the query-execution slice, RDF4J's own `context` parameter (its
+N-Triples-encoded statement-selector format, shared with the still-
+unimplemented `/statements` and `/contexts`) is explicitly rejected with a
+typed 400 rather than silently producing an unscoped, wrong answer.
+
+Remaining G4.4 stage-1 scope after this slice: `/statements`, `/contexts`
+(now with its own recorded open question about empty-named-graph topology),
+`/namespaces`. All remain dependency-clear of ADR-0030/G4.5.
 
 ## Consequences
 
