@@ -1990,6 +1990,15 @@ fn handle_request(
                 .to_owned();
             rdf4j_repository_namespace(request, store, &prefix, read_only)
         }
+        (path, "GET" | "HEAD")
+            if rdf4j
+                && path
+                    .strip_prefix("/rdf4j-server/repositories/")
+                    .and_then(|rest| rest.strip_suffix("/statements"))
+                    == Some(rdf4j_repository_id) =>
+        {
+            rdf4j_repository_statements(request, store)
+        }
         ("/", "HEAD") => Response::builder()
             .header(CONTENT_TYPE, "text/html")
             .body(Body::empty())
@@ -2541,6 +2550,169 @@ fn rdf4j_repository_namespace(
         }
         _ => unreachable!("the routing match arm only dispatches GET, HEAD, PUT, and DELETE here"),
     }
+}
+
+/// Parses one RDF4J statement-selector value (`subj`, `pred`, `obj`, or
+/// `context`) from its N-Triples term encoding, per this ADR's own Decision
+/// text ("Statement selectors parse RDF4J's N-Triples-encoded `subj`,
+/// `pred`, `obj`, and repeated `context` values"). Reuses `Term`'s existing
+/// `FromStr` implementation (`lib/oxrdf/src/parser.rs`) directly -- this is
+/// exact N-Triples term syntax (e.g. `<http://example.com>`, `_:b1`,
+/// `"a literal"`), not a bare IRI, and already has real, unrelated consumers
+/// elsewhere in this codebase, so this is not new, purpose-built parsing
+/// machinery kept alive only for this one caller.
+fn rdf4j_parse_selector_term(field: &str, value: &str) -> Result<Term, HttpError> {
+    value
+        .parse()
+        .map_err(|error| bad_request(format!("Invalid '{field}' N-Triples term: {error}")))
+}
+
+fn rdf4j_parse_subject_selector(value: &str) -> Result<NamedOrBlankNode, HttpError> {
+    match rdf4j_parse_selector_term("subj", value)? {
+        Term::NamedNode(node) => Ok(NamedOrBlankNode::NamedNode(node)),
+        Term::BlankNode(node) => Ok(NamedOrBlankNode::BlankNode(node)),
+        _ => Err(bad_request(
+            "The 'subj' selector must be an IRI or a blank node",
+        )),
+    }
+}
+
+fn rdf4j_parse_predicate_selector(value: &str) -> Result<NamedNode, HttpError> {
+    match rdf4j_parse_selector_term("pred", value)? {
+        Term::NamedNode(node) => Ok(node),
+        _ => Err(bad_request("The 'pred' selector must be an IRI")),
+    }
+}
+
+/// The literal string `null` selects only the default graph, per this ADR's
+/// own Decision text; any other value is an N-Triples-encoded graph name.
+fn rdf4j_parse_context_selector(value: &str) -> Result<GraphName, HttpError> {
+    if value == "null" {
+        return Ok(GraphName::DefaultGraph);
+    }
+    match rdf4j_parse_selector_term("context", value)? {
+        Term::NamedNode(node) => Ok(GraphName::NamedNode(node)),
+        Term::BlankNode(node) => Ok(GraphName::BlankNode(node)),
+        _ => Err(bad_request(
+            "The 'context' selector must be an IRI, a blank node, or the literal 'null'",
+        )),
+    }
+}
+
+/// ADR-0029 stage 1: `/repositories/{id}/statements` (`GET`/`HEAD` only in
+/// this slice) exports matching quads as RDF. `POST`/`PUT`/`DELETE` (add,
+/// replace, remove through an owned transaction) are this ADR's own stage-2
+/// scope, per its "Staged implementation and evaluator gates" section
+/// ("Discovery and read profile" is stage 1; "prove add/replace/remove...
+/// through owned transactions" is stage 2) -- not implemented here.
+///
+/// Verified against RDF4J 6.0.0's own `StatementsController`/
+/// `ExportStatementsView` source (fetched, not vendored): `subj`, `pred`,
+/// `obj` select at most one term each; repeated `context` values scope the
+/// match to specific named graphs (or the default graph via the literal
+/// `null`); omitting `context` entirely means every graph. The reference's
+/// `infer` parameter (default `true`) is not implemented -- this facade has
+/// no entailment wiring for `/statements` yet -- and is rejected explicitly
+/// via the existing `reject_unknown` sweep rather than silently ignored,
+/// the same convention established for `/repositories/{id}`'s own
+/// unsupported RDF4J parameters.
+///
+/// The response reuses `rdf_content_negotiation` and `Store::
+/// quads_for_pattern` directly -- no new content-negotiation or
+/// pattern-matching code. A dataset-capable format (TriG, N-Quads, JSON-LD)
+/// preserves which graph each match came from via `RdfSerializer::
+/// serialize_quad`. A non-dataset format (Turtle, RDF/XML, N-Triples)
+/// succeeds only if every match is in the default graph; a matched quad
+/// outside the default graph is explicitly rejected with `406` before
+/// serialization is attempted, mirroring the native Graph Store dataset
+/// route's own pre-negotiation check (`cli/src/graph_store/
+/// representation.rs`) rather than falling through to `RdfSerializer`'s own
+/// generic `500` I/O error for the same condition -- that error exists for
+/// a genuine server-side encoding fault, not a client's Accept-header
+/// choice, and this route's own result set is unknown until the pattern is
+/// evaluated, so the check is applied per matched quad rather than
+/// pre-emptively like the Graph Store route's static, request-time check.
+///
+/// Matched quads are charged against `ResultRowBudget`, exactly like the
+/// native Graph Store dataset route and SPARQL result serialization --
+/// this is the first facade route whose output size is proportional to the
+/// store rather than a single row or a bounded list, so ADR-0029's own
+/// requirement that facade routes inherit the same admission controls as
+/// native routes applies here for the first time.
+///
+/// Unlike the reference (always `200`, since an empty match is simply an
+/// empty RDF document), `HEAD` here goes through the same generic
+/// `finalize_response` draining already reviewed and accepted for `/size`
+/// and `/namespaces/{prefix}` -- computing the real body first rather than
+/// RDF4J's own real behavior of skipping the lookup entirely and always
+/// reporting `Content-Length: 0`. Documented, not silent, matching every
+/// prior HEAD divergence in this facade.
+fn rdf4j_repository_statements(
+    request: &Request<Body>,
+    store: &Store,
+) -> Result<Response<Body>, HttpError> {
+    let mut args = RequestParams::from_request_url(request);
+    let subject = args
+        .remove_single("subj")?
+        .map(|value| rdf4j_parse_subject_selector(&value))
+        .transpose()?;
+    let predicate = args
+        .remove_single("pred")?
+        .map(|value| rdf4j_parse_predicate_selector(&value))
+        .transpose()?;
+    let object = args
+        .remove_single("obj")?
+        .map(|value| rdf4j_parse_selector_term("obj", &value))
+        .transpose()?;
+    let contexts = args
+        .remove_all("context")
+        .into_iter()
+        .map(|value| rdf4j_parse_context_selector(&value))
+        .collect::<Result<Vec<_>, _>>()?;
+    args.reject_unknown("statements")?;
+
+    let selected = rdf_content_negotiation(request)?;
+    let mut serializer = selected
+        .serializer()
+        .map_err(internal_server_error)?
+        .for_writer(ResultBodyWriter::new(Vec::new(), request));
+    let mut rows = ResultRowBudget::new(request);
+    let graph_names: Vec<Option<GraphName>> = if contexts.is_empty() {
+        vec![None]
+    } else {
+        contexts.into_iter().map(Some).collect()
+    };
+    for graph_name in &graph_names {
+        for quad in store.quads_for_pattern(
+            subject.as_ref(),
+            predicate.as_ref(),
+            object.as_ref(),
+            graph_name.as_ref(),
+        ) {
+            let quad = quad.map_err(internal_server_error)?;
+            selected
+                .ensure_quad(&quad)
+                .map_err(rdf_response_not_acceptable)?;
+            if !selected.format().supports_datasets() && !quad.graph_name.is_default_graph() {
+                return Err(rdf_response_not_acceptable(
+                    "the selected RDF representation cannot encode a non-default-graph statement",
+                ));
+            }
+            rows.charge().map_err(result_body::internal_error)?;
+            serializer
+                .serialize_quad(&quad)
+                .map_err(result_body::internal_error)?;
+        }
+    }
+    let body = serializer
+        .finish()
+        .map_err(result_body::internal_error)?
+        .finish()
+        .map_err(result_body::internal_error)?;
+    Response::builder()
+        .header(CONTENT_TYPE, selected.media_type())
+        .body(body.into())
+        .map_err(internal_server_error)
 }
 
 fn method_not_allowed_response(
@@ -5712,6 +5884,233 @@ mod tests {
         let body = read_to_string(response.body_mut())?;
         assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
         assert_eq!(body, "http://example.com/");
+        Ok(())
+    }
+
+    fn rdf4j_statements_test_server() -> Result<ServerTest> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/store")
+            .header(CONTENT_TYPE, "application/trig")
+            .body(
+                "<http://example.com/s1> <http://example.com/p1> <http://example.com/o1> .\n\
+                 <http://example.com/g1> {\n\
+                 <http://example.com/s2> <http://example.com/p2> <http://example.com/o2> .\n\
+                 }\n",
+            )?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+        Ok(server)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_disabled_by_default() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .body(())?;
+        ServerTest::new()?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_wrong_repository_id_not_found() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/other-repo/statements")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_exports_every_quad_when_unscoped() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert!(
+            body.contains(
+                "<http://example.com/s1> <http://example.com/p1> <http://example.com/o1> .\n"
+            ),
+            "body: {body}"
+        );
+        assert!(
+            body.contains(
+                "<http://example.com/s2> <http://example.com/p2> <http://example.com/o2> <http://example.com/g1> .\n"
+            ),
+            "body: {body}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_filters_by_subject() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+        let request = Request::builder()
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/statements?subj=%3Chttp://example.com/s1%3E",
+            )
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert!(body.contains("s1"), "body: {body}");
+        assert!(!body.contains("s2"), "body: {body}");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_filters_by_context() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+        let request = Request::builder()
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/statements?context=%3Chttp://example.com/g1%3E",
+            )
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert!(body.contains("s2"), "body: {body}");
+        assert!(!body.contains("s1"), "body: {body}");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_context_null_selects_the_default_graph() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements?context=null")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert!(body.contains("s1"), "body: {body}");
+        assert!(!body.contains("s2"), "body: {body}");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_matching_nothing_is_an_empty_document() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+        let request = Request::builder()
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/statements?subj=%3Chttp://example.com/does-not-exist%3E",
+            )
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        server.test_body(request, "")
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_rejects_a_malformed_subj_term() -> Result<()> {
+        let request = Request::builder()
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/statements?subj=not-n-triples",
+            )
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_rejects_a_literal_as_subject() -> Result<()> {
+        let request = Request::builder()
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/statements?subj=%22a+literal%22",
+            )
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_rejects_the_infer_parameter() -> Result<()> {
+        // `infer` is a real RDF4J extension parameter this stage does not
+        // implement; it must fail explicitly rather than be silently
+        // ignored, matching the discipline established for the sibling
+        // query-execution route.
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements?infer=true")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_non_default_graph_is_not_acceptable_in_a_non_dataset_format()
+    -> Result<()> {
+        // Turtle cannot represent a non-default graph; the client's Accept
+        // choice is rejected with 406 before serialization is attempted,
+        // matching the native Graph Store dataset route's own convention
+        // (a client mistake, not a server encoding fault).
+        let server = rdf4j_statements_test_server()?;
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "text/turtle")
+            .body(())?;
+        server.test_status(request, StatusCode::NOT_ACCEPTABLE)
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_default_graph_only_match_succeeds_in_a_non_dataset_format()
+    -> Result<()> {
+        // The 406 above is data-dependent, not a blanket rejection of
+        // non-dataset formats: a selector scoped to the default graph never
+        // reaches the topology check, so Turtle succeeds.
+        let server = rdf4j_statements_test_server()?;
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements?context=null")
+            .header(ACCEPT, "text/turtle")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert!(body.contains("s1"), "body: {body}");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_head_returns_no_body_but_ok_status() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+        let request = Request::builder()
+            .method(Method::HEAD)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body, "");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_works_on_a_read_only_server() -> Result<()> {
+        let server = rdf4j_statements_test_server()?;
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+            .header(ACCEPT, "application/n-quads")
+            .body(())?;
+        let mut response = server.exec_read_only(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_statements_mutation_methods_are_not_yet_implemented() -> Result<()> {
+        // POST/PUT/DELETE (add/replace/remove through an owned transaction)
+        // are this ADR's own stage-2 scope; a disabled route falls through
+        // to the ordinary 404, the same as any other unimplemented method
+        // on an rdf4j-server path.
+        for method in [Method::POST, Method::PUT, Method::DELETE] {
+            let request = Request::builder()
+                .method(method)
+                .uri("http://localhost/rdf4j-server/repositories/test-repo/statements")
+                .body(())?;
+            ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NOT_FOUND)?;
+        }
         Ok(())
     }
 
