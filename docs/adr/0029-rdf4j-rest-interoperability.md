@@ -12,10 +12,12 @@
   `/rdf4j-server/repositories/{id}/namespaces[/prefix]` (list/get/set/remove
   namespace mappings, commit `01628296`),
   `GET`/`HEAD /rdf4j-server/repositories/{id}/statements` (pattern-based RDF
-  export, commit `cab39657`; `POST`/`PUT`/`DELETE` on this same path remain
-  stage 2), and `GET`/`HEAD /rdf4j-server/repositories/{id}/contexts`
+  export, commit `cab39657`) plus its own `DELETE` (remove matching
+  statements, commit `7fcb191b`; `POST`/`PUT` on this same path remain
+  unimplemented), and `GET`/`HEAD /rdf4j-server/repositories/{id}/contexts`
   (named-graph discovery, commit `2f871e0f`). All of stage 1's endpoint
-  table is now implemented for reads; stages 2-4 remain unimplemented.
+  table is now implemented for reads, plus one stage-2 mutation method;
+  the rest of stages 2-4 remain unimplemented.
 - Programme task: `task-1787670632568-gk92vo` (G4.4)
 - **Depends on**:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
@@ -571,10 +573,72 @@ both referenced.
 
 With this slice, every stage-1 endpoint-table row now has its read side
 implemented: discovery, query execution, size, namespaces (full CRUD),
-statement export, and context discovery. Remaining G4.4 scope is entirely
+statement export, and context discovery. Remaining G4.4 scope is
 write/mutation semantics: `/statements`'s own `POST`/`PUT`/`DELETE`
 (stage 2, owned-transaction add/replace/remove) and stages 2-4 more
 broadly (leased transactions depend on ADR-0030/G4.5, still at 0%).
+
+### `DELETE /repositories/{id}/statements` implemented: the first stage-2 mutation method (2026-09-18)
+
+A dedicated scoping pass (mirroring the `GET`-before-writes and
+`/size`-before-`/contexts` pattern already used twice this session) found
+`DELETE` alone a well-sized first sub-slice of `/statements`'s own
+`POST`/`PUT`/`DELETE` scope: unlike `POST`/`PUT`, it needs no RDF body
+parsing at all, and it reuses the exact `subj`/`pred`/`obj`/`context`
+selector parsing already shipped for `GET`/`HEAD` (`cab39657`) verbatim --
+extracted into a shared `rdf4j_parse_statement_selectors` helper, since the
+same parsing is now needed a second time and will be needed a third time
+when `POST`/`PUT` eventually land. Commit `7fcb191b`.
+
+This ADR's own "owned transaction" language for `/statements` required no
+new transaction-lifecycle code: `Store`'s existing `start_transaction`/
+`quads_for_pattern`/`remove`/`commit` API already provides exactly one
+atomic server-side commit, reused via `graph_store::start_transaction`/
+`graph_store::commit` (changed from private to `pub` with no other changes,
+so the facade shares the exact cancellation-checkpoint primitives the
+native Graph Store Protocol routes already use, rather than duplicating
+subtle correctness-critical logic). This is unrelated to ADR-0030's
+separate leased HTTP transactions, still stage 3 and gated on G4.5 at 0%.
+
+Verified against RDF4J 6.0.0's real `StatementsController` source (fetched,
+not vendored): `DELETE` reads exactly the same four selectors as `GET` (no
+`infer`, since removal is never entailment-aware), no request body, and
+returns `204 No Content` via `EmptySuccessView`, matching this facade's own
+existing convention. Given no selectors at all, this removes every
+statement in the repository -- real, faithful RDF4J behavior (an absent
+selector matches everything, exactly like `GET`'s own already-shipped
+unscoped export), documented prominently as the first genuinely
+destructive-by-default route in this facade, since every other mutating
+route so far (`/namespaces`) only ever touched metadata, never RDF data.
+
+Independent review (elevated scrutiny, given both the destructive-by-
+default semantics and the refactor of already-shipped, five-times-reviewed
+`GET`/`HEAD` code) verified: the refactor is byte-for-byte
+behavior-preserving; the collect-into-`Vec`-then-mutate pattern the
+implementation uses is required by Rust's own borrow rules (`quads_for_
+pattern` borrows immutably, `remove` needs `&mut`), not decorative, and
+matches both `Transaction::quads_for_pattern`'s own doc example and the
+SPARQL update evaluator's identical shape; and the safeguard level (the
+`read_only` gate plus the explicit `--rdf4j` opt-in, with no additional
+confirmation step) matches this codebase's own existing convention for
+destructive operations -- the native Graph Store Protocol's own
+dataset-wide `DELETE`/`PUT`-replace are gated by nothing more than
+`read_only`, so this route is actually gated by one more flag than the
+native equivalents it was compared against. Clean `ACCEPT`, zero required
+fixes. The one non-blocking suggestion (a `context=<IRI>`-scoped `DELETE`
+test, symmetric with `GET`'s own tested filter coverage) was applied in the
+same pass. A second non-blocking observation -- an unscoped `DELETE`
+materializes every matching quad into an unbounded `Vec` with no admission
+control, unlike `GET`'s `ResultRowBudget` charging -- was left unfixed on
+review's own finding that the native SPARQL `DELETE WHERE` path already
+does the identical unbounded materialization, so this follows existing
+convention rather than introducing a new gap; worth revisiting only if
+admission controls are ever extended to cover mutations generally.
+
+Remaining G4.4 scope: `/statements`'s own `POST`(add-data)/`PUT`(replace)
+(a real RDF-body-parsing slice closely mirroring the Graph Store Protocol's
+own precedent, per the scoping pass that identified `DELETE` as the
+smaller first cut) and stages 2-4 more broadly.
 
 ## Consequences
 
