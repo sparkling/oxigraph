@@ -7,9 +7,11 @@
 - Implementation status: partially implemented; behind `--rdf4j` (off by
   default): `GET /rdf4j-server/repositories` (discovery, commit `e62a33a6`),
   `GET`/`POST /rdf4j-server/repositories/{id}` (SPARQL query execution,
-  commit `047cbbd4`), and `GET`/`HEAD /rdf4j-server/repositories/{id}/size`
-  (statement count, commit `865eaf5b`). `/statements`, `/contexts`,
-  `/namespaces`, and all of stages 2-4 remain unimplemented.
+  commit `047cbbd4`), `GET`/`HEAD /rdf4j-server/repositories/{id}/size`
+  (statement count, commit `865eaf5b`), and
+  `/rdf4j-server/repositories/{id}/namespaces[/prefix]` (list/get/set/remove
+  namespace mappings, commit `01628296`). `/statements`, `/contexts`, and
+  all of stages 2-4 remain unimplemented.
 - Programme task: `task-1787670632568-gk92vo` (G4.4)
 - **Depends on**:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
@@ -394,6 +396,71 @@ typed 400 rather than silently producing an unscoped, wrong answer.
 Remaining G4.4 stage-1 scope after this slice: `/statements`, `/contexts`
 (now with its own recorded open question about empty-named-graph topology),
 `/namespaces`. All remain dependency-clear of ADR-0030/G4.5.
+
+### `/repositories/{id}/namespaces[/prefix]` implemented: G4.4's fourth landed slice, first mutation-capable route (2026-09-18)
+
+Implements `GET`/`HEAD`/`DELETE` on the namespaces collection and
+`GET`/`HEAD`/`PUT`/`DELETE` on a single prefix, commit `01628296`. Every
+storage-layer operation reuses Oxigraph's own pre-existing
+`Store::namespaces`/`namespace`/`set_namespace`/`remove_namespace`/
+`clear_namespaces` API (`lib/oxigraph/src/store.rs`) directly -- no new
+storage-layer code, matching this ADR's own reference to "ADR-0020's
+transactional namespace registry" in the endpoint table.
+
+This is the first route in the facade with real mutation semantics. `PUT`
+and `DELETE` are refused with `403` on a read-only server, exactly like
+`/update` and the graph-store routes; `GET`/`HEAD` are not gated. Review
+(elevated scrutiny, given this is the largest and first mutation-capable
+slice) traced every path-matching guard by hand against adversarial input
+(trailing slashes, a repository ID or prefix containing `namespaces` or
+`/`, the empty-prefix default-namespace case) and confirmed no ungated
+mutation path and no route collision or mis-dispatch.
+
+Wire format verified against RDF4J 6.0.0's real `NamespacesController`,
+`NamespaceController`, and `EmptySuccessView` source (fetched, not
+vendored). One assumption from the `/repositories` slice was deliberately
+NOT carried over and checked instead: `/repositories`'s `uri` binding is an
+IRI term, but the real `NamespacesController` binds BOTH the namespace
+collection's `prefix` and `namespace` values as plain literals -- including
+the namespace IRI value itself, which is a literal string here, not an IRI
+term. Confirmed by reading the reference source directly rather than
+assuming precedent transfers. Successful mutations return `204 No Content`,
+matching this server's own existing convention and RDF4J's own
+`EmptySuccessView`. `PUT`'s absolute-IRI requirement reuses `NamedNode::new`
+directly (empirically confirmed to reject relative IRIs) rather than
+writing separate validation.
+
+Review found one required fix: a grammar-invalid prefix (failing
+`NamespacePrefix`'s own PN_PREFIX grammar) was returning `400` uniformly
+across all four methods, because prefix parsing happened once before method
+dispatch. The real `NamespaceController` validates the prefix grammar only
+inside its own `PUT` handler -- `GET` and `DELETE` never validate it at all.
+Fixed by moving prefix parsing inside each method's own branch: `GET`/`HEAD`
+now treat a grammar-invalid prefix exactly like a valid-but-unregistered one
+(`404 Undefined prefix`, since such a prefix can never exist in the store
+either way), `DELETE` treats it as a trivial no-op (`204`, for the same
+reason), and only `PUT` still returns `400` on a grammar-invalid prefix --
+matching the reference exactly rather than only documenting the divergence,
+consistent with this session's preference for a cheap correctness fix over
+a documentation-only patch when both are available. Two tests pin this
+alignment; a third fills a read-only single-prefix `GET` coverage gap the
+review flagged.
+
+One deliberate, documented divergence remains, distinct from `/size`'s
+Content-Length-only divergence: the real `NamespaceController`'s `HEAD`
+never even attempts the lookup (an unconditional empty `200` regardless of
+whether the prefix exists), whereas this implementation's `HEAD` goes
+through the same generic `finalize_response` draining reviewed and accepted
+for `/size`, so an undefined prefix's `HEAD` response here is `404` rather
+than RDF4J's own unconditional `200` -- this one can change the status
+code, not only `Content-Length`.
+
+Remaining G4.4 stage-1 scope after this slice: `/statements` (the largest
+remaining piece, since it introduces the shared N-Triples-encoded
+statement-selector parsing this ADR's own Decision text names, plus real
+transaction semantics) and `/contexts` (still blocked on its own recorded
+empty-named-graph-topology question from the `/size` slice). Both remain
+dependency-clear of ADR-0030/G4.5.
 
 ## Consequences
 
