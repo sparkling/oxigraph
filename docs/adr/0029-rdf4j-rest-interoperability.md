@@ -8,10 +8,12 @@
   default): `GET /rdf4j-server/repositories` (discovery, commit `e62a33a6`),
   `GET`/`POST /rdf4j-server/repositories/{id}` (SPARQL query execution,
   commit `047cbbd4`), `GET`/`HEAD /rdf4j-server/repositories/{id}/size`
-  (statement count, commit `865eaf5b`), and
+  (statement count, commit `865eaf5b`),
   `/rdf4j-server/repositories/{id}/namespaces[/prefix]` (list/get/set/remove
-  namespace mappings, commit `01628296`). `/statements`, `/contexts`, and
-  all of stages 2-4 remain unimplemented.
+  namespace mappings, commit `01628296`), and
+  `GET`/`HEAD /rdf4j-server/repositories/{id}/statements` (pattern-based RDF
+  export, commit `cab39657`; `POST`/`PUT`/`DELETE` on this same path remain
+  stage 2). `/contexts` and all of stages 2-4 remain unimplemented.
 - Programme task: `task-1787670632568-gk92vo` (G4.4)
 - **Depends on**:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
@@ -461,6 +463,64 @@ statement-selector parsing this ADR's own Decision text names, plus real
 transaction semantics) and `/contexts` (still blocked on its own recorded
 empty-named-graph-topology question from the `/size` slice). Both remain
 dependency-clear of ADR-0030/G4.5.
+
+### `GET`/`HEAD /repositories/{id}/statements` implemented: G4.4's fifth landed slice (2026-09-18)
+
+A scoping investigation found this endpoint smaller than the prior section
+feared: the "shared N-Triples-encoded statement-selector parsing" this
+ADR's own Decision text names already exists in the codebase (`Term`'s
+`FromStr` implementation, `lib/oxrdf/src/parser.rs`, with real unrelated
+production consumers elsewhere), so it is not unconsumed scaffolding the
+way an equivalent parser would have been for G3.5's declined federation
+catalog. `RdfSerializer::serialize_quad` also already has the exact
+fail-explicit behavior this ADR requires for a dataset-spanning export,
+with no new code. This ADR's own "Staged implementation and evaluator
+gates" section independently confirms the resulting scope split: statement
+pattern reads are stage 1, add/replace/remove through owned transactions
+are stage 2 -- so implementing only `GET`/`HEAD` here follows the ADR's own
+boundary, not an ad hoc cut. Commit `cab39657`.
+
+Independent review (elevated scrutiny) traced both central reuse claims
+into `lib/oxrdf/src/parser.rs` and `lib/oxrdfio/src/serializer.rs` directly
+and found two required fixes, both applied in the same pass:
+
+1. **Wrong status code, wrong justification.** A non-dataset format
+   (Turtle, RDF/XML, N-Triples) asked to serialize a matched quad outside
+   the default graph originally fell through to `RdfSerializer`'s own
+   generic `500` I/O error. The doc comment justified this by citing the
+   SPARQL CONSTRUCT-result path as using "the identical condition" --
+   review found that citation false: CONSTRUCT results are triples only,
+   so the condition can never occur there, and the doc comment's own
+   verification claim was simply wrong. The real precedent is the native
+   Graph Store dataset route (`cli/src/graph_store/representation.rs`),
+   which rejects an incompatible Accept choice with `406` before
+   serialization runs at all -- a client's format choice, not a server
+   encoding fault. Fixed by checking format/graph compatibility per
+   matched quad (this route's result set, unlike the Graph Store route's,
+   is not known until the pattern is evaluated, so the check cannot be
+   made once up front) and returning `406` explicitly. A new test pins
+   that this is data-dependent, not a blanket rejection: Turtle still
+   succeeds when the match is scoped to the default graph.
+2. **Missing resource-admission parity.** This is the first facade route
+   whose output size is proportional to the whole store rather than a
+   single row or a bounded list, and it was not charging matched quads
+   against `ResultRowBudget` the way the native Graph Store dataset route
+   and SPARQL result serialization already do -- a real, narrow gap
+   against this ADR's own requirement that facade routes pass through the
+   same admission controls as native routes. Fixed with the same charge
+   call already used elsewhere in this file.
+
+`infer` and any other unsupported RDF4J parameter fail explicitly via the
+existing `reject_unknown` sweep, the same convention established for the
+query-execution route. `GET`/`HEAD` are not gated by `read_only`, since
+this route has no mutation semantics at all. `POST`/`PUT`/`DELETE` on this
+same path correctly fall through to the ordinary `404`.
+
+Remaining G4.4 stage-1 scope after this slice: `/statements`'s own
+`POST`/`PUT`/`DELETE` (add/replace/remove through an owned transaction,
+this ADR's own stage-2 scope) and `/contexts` (still blocked on its own
+recorded empty-named-graph-topology question). Both remain dependency-clear
+of ADR-0030/G4.5.
 
 ## Consequences
 
