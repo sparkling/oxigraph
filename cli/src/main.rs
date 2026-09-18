@@ -1961,6 +1961,15 @@ fn handle_request(
                 Err(unsupported_media_type(&content_type.media_type))
             }
         }
+        (path, "GET" | "HEAD")
+            if rdf4j
+                && path
+                    .strip_prefix("/rdf4j-server/repositories/")
+                    .and_then(|rest| rest.strip_suffix("/size"))
+                    == Some(rdf4j_repository_id) =>
+        {
+            rdf4j_repository_size(request, store)
+        }
         ("/", "HEAD") => Response::builder()
             .header(CONTENT_TYPE, "text/html")
             .body(Body::empty())
@@ -2282,6 +2291,43 @@ fn rdf4j_repositories(
     Response::builder()
         .header(CONTENT_TYPE, selected.media_type())
         .body(body.into())
+        .map_err(internal_server_error)
+}
+
+/// ADR-0029 stage 1: `/repositories/{id}/size` returns the exact statement
+/// count for the whole repository, reusing `Store::len` directly. Verified
+/// against RDF4J 6.0.0's own `SizeController`/`SimpleResponseView` source
+/// (fetched, not vendored in this repository): `text/plain; charset=UTF-8`,
+/// a plain decimal statement count, GET and HEAD supported.
+///
+/// The reference parses an optional, repeated `context` parameter (RDF4J's
+/// own N-Triples-encoded statement-selector format, shared with
+/// `/statements` and `/contexts`) to scope the count to specific named
+/// graphs. That selector format is not implemented in this slice; a
+/// `context` parameter is rejected explicitly with a typed error rather
+/// than silently ignored or misinterpreted as an unscoped count, matching
+/// this ADR's own "unsupported values fail explicitly" requirement. Only
+/// the unscoped, whole-repository count (RDF4J's own behavior when no
+/// `context` parameter is given) is implemented.
+///
+/// HEAD is handled generically by this server's own `finalize_response`
+/// (same headers, empty body) rather than RDF4J's own real behavior, which
+/// skips computing the count for HEAD and always reports `Content-Length: 0`
+/// regardless of the true size -- a deliberate, documented divergence, not a
+/// silent gap.
+fn rdf4j_repository_size(
+    request: &Request<Body>,
+    store: &Store,
+) -> Result<Response<Body>, HttpError> {
+    if url_has_query_parameter(request, "context") {
+        return Err(bad_request(
+            "The RDF4J 'context' parameter is not yet supported by /size",
+        ));
+    }
+    let size = store.len().map_err(internal_server_error)?;
+    Response::builder()
+        .header(CONTENT_TYPE, "text/plain; charset=UTF-8")
+        .body(size.to_string().into())
         .map_err(internal_server_error)
 }
 
@@ -5212,6 +5258,95 @@ mod tests {
     fn rdf4j_repository_query_works_on_a_read_only_server() -> Result<()> {
         let request = Request::builder()
             .uri("http://localhost/rdf4j-server/repositories/test-repo?query=ASK%20{}")
+            .body(())?;
+        let mut response = ServerTest::with_rdf4j("test-repo")?.exec_read_only(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_size_disabled_by_default() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/size")
+            .body(())?;
+        ServerTest::new()?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_size_wrong_repository_id_not_found() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/other-repo/size")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::NOT_FOUND)
+    }
+
+    #[test]
+    fn rdf4j_repository_size_of_an_empty_store_is_zero() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/size")
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_body(request, "0")
+    }
+
+    #[test]
+    fn rdf4j_repository_size_reports_the_exact_statement_count() -> Result<()> {
+        let server = ServerTest::with_rdf4j("test-repo")?;
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/store")
+            .header(CONTENT_TYPE, "application/trig")
+            .body(
+                "<http://example.com/s1> <http://example.com/p> <http://example.com/o1> .\n\
+                 <http://example.com/s2> <http://example.com/p> <http://example.com/o2> .",
+            )?;
+        server.test_status(request, StatusCode::NO_CONTENT)?;
+
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/size")
+            .body(())?;
+        let mut response = server.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK, "Error message: {body}");
+        assert_eq!(body, "2");
+        assert_eq!(
+            response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("text/plain; charset=UTF-8")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_size_rejects_the_context_parameter() -> Result<()> {
+        let request = Request::builder()
+            .uri(
+                "http://localhost/rdf4j-server/repositories/test-repo/size?context=%3Chttp://example.com/g%3E",
+            )
+            .body(())?;
+        ServerTest::with_rdf4j("test-repo")?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[test]
+    fn rdf4j_repository_size_head_returns_no_body_but_ok_status() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::HEAD)
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/size")
+            .body(())?;
+        let mut response = ServerTest::with_rdf4j("test-repo")?.exec(request);
+        let body = read_to_string(response.body_mut())?;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body, "");
+        Ok(())
+    }
+
+    #[test]
+    fn rdf4j_repository_size_works_on_a_read_only_server() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/rdf4j-server/repositories/test-repo/size")
             .body(())?;
         let mut response = ServerTest::with_rdf4j("test-repo")?.exec_read_only(request);
         let body = read_to_string(response.body_mut())?;
