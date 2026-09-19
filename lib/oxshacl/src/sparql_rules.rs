@@ -24,6 +24,7 @@ const SH_RULE: &str = "http://www.w3.org/ns/shacl#rule";
 const SH_CONSTRUCT: &str = "http://www.w3.org/ns/shacl#construct";
 const SH_CONDITION: &str = "http://www.w3.org/ns/shacl#condition";
 const SH_DEACTIVATED: &str = "http://www.w3.org/ns/shacl#deactivated";
+const SH_RULE_PROCESSOR: &str = "http://www.w3.org/ns/shacl#ruleProcessor";
 const SH_ORDER: &str = "http://www.w3.org/ns/shacl#order";
 const XSD_BOOLEAN: &str = "http://www.w3.org/2001/XMLSchema#boolean";
 const XSD_DECIMAL: &str = "http://www.w3.org/2001/XMLSchema#decimal";
@@ -61,6 +62,7 @@ impl SparqlRuleSet {
     ) -> Result<Self, RuleError> {
         require_profiles(&profiles)?;
         check_rules_graph_subjects(source)?;
+        check_rule_processors(source)?;
         if source.triple_count() > options.limits.max_shape_quads {
             return Err(ValidationError::LimitExceeded {
                 kind: LimitKind::ShapeQuads,
@@ -162,6 +164,20 @@ fn check_rules_graph_subjects(source: &GraphSnapshot) -> Result<(), RuleError> {
         ));
     }
     Ok(())
+}
+
+fn check_rule_processors(source: &GraphSnapshot) -> Result<(), RuleError> {
+    let Some(processor) = source
+        .triples()
+        .find(|triple| triple.predicate.as_str() == SH_RULE_PROCESSOR)
+        .map(|triple| triple.object)
+    else {
+        return Ok(());
+    };
+    Err(ValidationError::UnsupportedFeature(format!(
+        "sh:ruleProcessor `{processor}` is not supported by this SHACL-SPARQL rules engine"
+    ))
+    .into())
 }
 
 fn compile_rule(

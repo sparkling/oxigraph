@@ -175,19 +175,39 @@ fn inline_blank_nodes_cannot_alias_external_blank_nodes() {
 }
 
 #[test]
-fn issue_only_execution_constructs_fail_closed() {
-    for source in [
-        "PREFIX : <http://example/> IMPORTS :other RULE {} WHERE {}",
-        "PREFIX : <http://example/> RULE {} WHERE DATA {}",
-        "PREFIX : <http://example/> RULE {} WHERE { NOT DATA {} }",
-    ] {
-        let error = execute_srl_rules(
-            &parse(source),
+fn imports_without_a_resolver_fail_closed() {
+    let rules = parse("PREFIX : <http://example/> IMPORTS :other RULE {} WHERE {}");
+    assert!(matches!(
+        execute_srl_rules(
+            &rules,
             &GraphSnapshot::default_graph(Dataset::new()),
             &ValidationOptions::default(),
-        )
-        .unwrap_err();
-        assert!(matches!(error, SrlError::Unsupported(_)));
+        ),
+        Err(SrlError::Unsupported(reason)) if reason.contains("IMPORTS")
+    ));
+}
+
+#[test]
+fn data_graph_execution_constructs_are_accepted() {
+    let rules = parse(concat!(
+        "PREFIX : <http://example/> ",
+        "DATA { :s :p :o } ",
+        "RULE { :s :whereData :o } WHERE DATA { :s :p :o } ",
+        "RULE { :s :notData :o } WHERE { :s :p :o . NOT DATA { :s :missing :o } }",
+    ));
+    let execution = execute_srl_rules(
+        &rules,
+        &GraphSnapshot::default_graph(Dataset::new()),
+        &ValidationOptions::default(),
+    )
+    .unwrap();
+    for predicate in ["whereData", "notData"] {
+        assert!(execution.inference().dataset().contains(&Quad::new(
+            NamedNode::new_unchecked("http://example/s"),
+            NamedNode::new_unchecked(format!("http://example/{predicate}")),
+            NamedNode::new_unchecked("http://example/o"),
+            GraphName::DefaultGraph,
+        )));
     }
 }
 

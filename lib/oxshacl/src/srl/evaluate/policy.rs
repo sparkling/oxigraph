@@ -2,16 +2,6 @@ use crate::srl::{SrlBodyElement, SrlConstant, SrlError, SrlNode, SrlPredicate, S
 
 pub(super) fn reject_unimplemented_constructs(rule_set: &SrlRuleSet) -> Result<(), SrlError> {
     for source in rules(rule_set) {
-        if source.data_only {
-            return Err(SrlError::Unsupported(
-                "WHERE DATA matching, specified upstream (issue #960 resolved) but not yet implemented here".to_owned(),
-            ));
-        }
-        if contains_data_negation(&source.body) {
-            return Err(SrlError::Unsupported(
-                "NOT DATA matching, specified upstream (issue #960 resolved) but not yet implemented here".to_owned(),
-            ));
-        }
         reject_body_abbreviations(&source.body)?;
     }
     Ok(())
@@ -63,18 +53,6 @@ fn query_goal_error(detail: &str) -> SrlError {
     SrlError::Unsupported(format!(
         "Rules QUERY goal must be one abstract triple pattern without {detail}"
     ))
-}
-
-fn contains_data_negation(body: &[SrlBodyElement]) -> bool {
-    body.iter().any(|element| match element {
-        SrlBodyElement::Negation {
-            data_only: true, ..
-        } => true,
-        SrlBodyElement::Negation { body, .. } => contains_data_negation(body),
-        SrlBodyElement::Triple(_)
-        | SrlBodyElement::Filter(_)
-        | SrlBodyElement::Assignment { .. } => false,
-    })
 }
 
 fn reject_body_abbreviations(body: &[SrlBodyElement]) -> Result<(), SrlError> {

@@ -13,6 +13,8 @@ use std::time::Instant;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use web_time::Instant;
 
+const ESTIMATED_QUAD_BYTES: usize = 160;
+
 pub(super) type Solution = BTreeMap<String, Term>;
 
 pub(super) struct NativeResult {
@@ -28,8 +30,11 @@ impl NativeResult {
 }
 
 pub(super) fn required(rule_set: &SrlRuleSet) -> bool {
-    rules(rule_set)
-        .any(|rule| rule.body.iter().any(rich_body_element) || rule.head.iter().any(rich_triple))
+    rules(rule_set).any(|rule| {
+        rule_uses_data_graph(rule)
+            || rule.body.iter().any(rich_body_element)
+            || rule.head.iter().any(rich_triple)
+    })
 }
 
 pub(super) fn evaluate(
@@ -46,6 +51,13 @@ pub(super) fn evaluate(
         .filter(|quad| !base.contains(quad))
         .collect::<Dataset>();
     let mut guard = ExecutionGuard::new(options, &working)?;
+    let data = if rules(rule_set).any(rule_uses_data_graph) {
+        // Enforce the memory limit before allocating the frozen GD copy.
+        guard.memory(working.len().saturating_mul(ESTIMATED_QUAD_BYTES))?;
+        Some(working.clone())
+    } else {
+        None
+    };
     guard.derived(inference.len())?;
     let expressions = ExpressionRuntime::new();
     let source_rules = rules(rule_set).collect::<Vec<_>>();
@@ -59,6 +71,7 @@ pub(super) fn evaluate(
             apply_rule(
                 *index,
                 source_rules[*index],
+                data.as_ref(),
                 &mut working,
                 &mut inference,
                 &mut heads,
@@ -76,6 +89,7 @@ pub(super) fn evaluate(
                 changed |= apply_rule(
                     *index,
                     source_rules[*index],
+                    data.as_ref(),
                     &mut working,
                     &mut inference,
                     &mut heads,
@@ -107,16 +121,23 @@ pub(super) fn query(
 fn apply_rule(
     rule_index: usize,
     rule: &SrlRule,
+    data: Option<&Dataset>,
     working: &mut Dataset,
     inference: &mut Dataset,
     heads: &mut HeadBuilder,
     expressions: &ExpressionRuntime,
     guard: &mut ExecutionGuard<'_>,
 ) -> Result<bool, SrlError> {
+    let graph = if rule.data_only {
+        require_data_graph(data)?
+    } else {
+        &*working
+    };
     let solutions = evaluate_elements(
         &rule.body,
         vec![Solution::new()],
-        working,
+        graph,
+        data,
         expressions,
         guard,
         &format!("r{rule_index}"),
@@ -139,6 +160,7 @@ fn evaluate_elements(
     elements: &[SrlBodyElement],
     mut solutions: Vec<Solution>,
     graph: &Dataset,
+    data: Option<&Dataset>,
     expressions: &ExpressionRuntime,
     guard: &mut ExecutionGuard<'_>,
     scope: &str,
@@ -179,16 +201,19 @@ fn evaluate_elements(
                 }
                 solutions = next;
             }
-            SrlBodyElement::Negation {
-                data_only: false,
-                body,
-            } => {
+            SrlBodyElement::Negation { data_only, body } => {
+                let nested_graph = if *data_only {
+                    require_data_graph(data)?
+                } else {
+                    graph
+                };
                 let mut next = Vec::new();
                 for solution in solutions {
                     let nested = evaluate_elements(
                         body,
                         vec![solution.clone()],
-                        graph,
+                        nested_graph,
+                        data,
                         expressions,
                         guard,
                         &format!("{scope}:n{index}"),
@@ -200,19 +225,34 @@ fn evaluate_elements(
                 }
                 solutions = next;
             }
-            SrlBodyElement::Negation {
-                data_only: true, ..
-            } => {
-                return Err(SrlError::Unsupported(
-                    "NOT DATA matching, specified upstream (issue #960 resolved) but not yet implemented here".to_owned(),
-                ));
-            }
         }
         if solutions.is_empty() {
             break;
         }
     }
     Ok(solutions)
+}
+
+fn rule_uses_data_graph(rule: &SrlRule) -> bool {
+    rule.data_only || contains_data_only(&rule.body)
+}
+
+fn contains_data_only(body: &[SrlBodyElement]) -> bool {
+    body.iter().any(|element| match element {
+        SrlBodyElement::Negation {
+            data_only: true, ..
+        } => true,
+        SrlBodyElement::Negation { body, .. } => contains_data_only(body),
+        SrlBodyElement::Triple(_)
+        | SrlBodyElement::Filter(_)
+        | SrlBodyElement::Assignment { .. } => false,
+    })
+}
+
+fn require_data_graph(data: Option<&Dataset>) -> Result<&Dataset, SrlError> {
+    data.ok_or_else(|| {
+        SrlError::Unsupported("SRL DATA matching without a frozen data graph".to_owned())
+    })
 }
 
 fn rich_body_element(element: &SrlBodyElement) -> bool {
@@ -263,7 +303,7 @@ impl<'a> ExecutionGuard<'a> {
         let mut output = Self {
             options,
             started: Instant::now(),
-            estimated_memory: graph.len().saturating_mul(160),
+            estimated_memory: graph.len().saturating_mul(ESTIMATED_QUAD_BYTES),
         };
         output.memory(0)?;
         output.check()?;

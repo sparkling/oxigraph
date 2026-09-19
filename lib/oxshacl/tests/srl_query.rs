@@ -228,24 +228,23 @@ fn query_accepts_only_one_abstract_triple_pattern() {
 }
 
 #[test]
-fn query_obeys_execution_limits_and_unimplemented_constructs() {
-    let rules = parse("PREFIX : <http://example/> RULE {} WHERE DATA {}");
-    let error = query_srl_rules(
-        &rules,
-        &GraphSnapshot::default_graph(Dataset::new()),
-        &goal(
-            SrlNode::Variable("subject".to_owned()),
-            iri_node("predicate"),
-            SrlNode::Variable("object".to_owned()),
-        ),
-        &ValidationOptions::default(),
-    )
-    .unwrap_err();
-    // The fixture above is `WHERE DATA {}`, so this is the WHERE DATA path.
-    // Assert the substance, not the issue number: WHERE DATA is specified
-    // upstream (issue #960 was resolved) and simply not implemented here yet.
-    // A bare "#960" match would still pass against the old, wrong framing that
-    // called this draft-open.
-    assert!(matches!(error, SrlError::Unsupported(reason)
-            if reason.contains("WHERE DATA") && reason.contains("not yet implemented")));
+fn query_executes_where_data_rules() {
+    let rules = parse(concat!(
+        "PREFIX : <http://example/> ",
+        "DATA { :subject :source :object } ",
+        "RULE { :subject :derived :object } WHERE DATA { :subject :source :object }",
+    ));
+    assert!(
+        query_srl_rules(
+            &rules,
+            &GraphSnapshot::default_graph(Dataset::new()),
+            &goal(
+                iri_node("subject"),
+                iri_node("derived"),
+                iri_node("object"),
+            ),
+            &ValidationOptions::default(),
+        )
+        .unwrap()
+    );
 }

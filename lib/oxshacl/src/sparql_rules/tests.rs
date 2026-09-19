@@ -141,6 +141,81 @@ fn rule_syntax_fails_closed_for_types_nodes_and_datatypes() {
 }
 
 #[test]
+fn rule_processor_absence_preserves_default_processing() {
+    let mut dataset = Dataset::new();
+    add_global_rule(
+        &mut dataset,
+        "default-processor",
+        Literal::from("CONSTRUCT { <urn:s> <urn:p> <urn:o> } WHERE { }"),
+    );
+
+    assert_eq!(compile(dataset).unwrap().len(), 1);
+}
+
+#[test]
+fn rule_processor_declarations_fail_closed() {
+    let query = Literal::from("CONSTRUCT { <urn:s> <urn:p> <urn:o> } WHERE { }");
+
+    let mut iri_processor = Dataset::new();
+    let rule = add_global_rule(&mut iri_processor, "iri-processor", query.clone());
+    insert(
+        &mut iri_processor,
+        rule,
+        NamedNode::new_unchecked(SH_RULE_PROCESSOR),
+        named("unknown-processor"),
+    );
+    assert!(
+        compile(iri_processor)
+            .unwrap_err()
+            .to_string()
+            .contains("sh:ruleProcessor")
+    );
+
+    let mut string_processor = Dataset::new();
+    let rule = add_global_rule(&mut string_processor, "string-processor", query.clone());
+    insert(
+        &mut string_processor,
+        rule,
+        NamedNode::new_unchecked(SH_RULE_PROCESSOR),
+        Literal::from("SRL 1.2"),
+    );
+    assert!(
+        compile(string_processor)
+            .unwrap_err()
+            .to_string()
+            .contains("sh:ruleProcessor")
+    );
+
+    let mut rule_set_processor = Dataset::new();
+    let rule = add_global_rule(&mut rule_set_processor, "rule-set-member", query);
+    let rule_set = named("rule-set");
+    insert(
+        &mut rule_set_processor,
+        rule_set.clone(),
+        NamedNode::new_unchecked(RDF_TYPE),
+        NamedNode::new_unchecked("http://www.w3.org/ns/shacl#RuleSet"),
+    );
+    insert(
+        &mut rule_set_processor,
+        rule_set.clone(),
+        NamedNode::new_unchecked("http://www.w3.org/ns/shacl#hasRule"),
+        rule,
+    );
+    insert(
+        &mut rule_set_processor,
+        rule_set,
+        NamedNode::new_unchecked(SH_RULE_PROCESSOR),
+        named("unknown-rule-set-processor"),
+    );
+    assert!(
+        compile(rule_set_processor)
+            .unwrap_err()
+            .to_string()
+            .contains("sh:ruleProcessor")
+    );
+}
+
+#[test]
 fn rules_graph_identifiers_and_global_conditions_fail_closed() {
     let query = Literal::from("CONSTRUCT { <urn:s> <urn:p> <urn:o> } WHERE { }");
     let mut blank_rules_graph = Dataset::new();
