@@ -139,7 +139,9 @@ const inventory = {
       core: "https://w3c.github.io/data-shapes/shacl12-core/",
       nodeExpressions: "https://w3c.github.io/data-shapes/shacl12-node-expr/",
       sparql: "https://w3c.github.io/data-shapes/shacl12-sparql/",
-      rules: "https://w3c.github.io/data-shapes/shacl12-rules/",
+      // shacl12-rules/ was deleted upstream and now 404s (ADR-0046). Its rule
+      // language is the standalone SPARQL-RL spec, which our SRL lane targets.
+      rules: "https://w3c.github.io/data-shapes/sparql12-rl/",
       compact: "https://w3c.github.io/data-shapes/shacl12-compact-syntax/",
     },
     testSuite:

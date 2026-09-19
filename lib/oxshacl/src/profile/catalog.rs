@@ -123,6 +123,13 @@ const SPARQL: ProfileDescriptor = ProfileDescriptor {
     required_feature: Some("sparql"),
 };
 
+// The pinned 2026-07-27 draft below was published at shacl12-rules/, which the
+// Working Group has since deleted: its language moved to the standalone
+// SPARQL-RL spec (https://w3c.github.io/data-shapes/sparql12-rl/, commit
+// df4ee468) and a separate shacl12-inference-rules/ document was created for
+// the SHACL-branded rule surfaces. The IRI here is retained because this
+// descriptor records which document this subset was pinned against, and that
+// document was shacl12-rules/ at the time. It no longer resolves; see ADR-0046.
 const RULES: ProfileDescriptor = ProfileDescriptor {
     id: ProfileId::Rules12Subset20260727,
     label: "OxSHACL SHACL 1.2 Rules subset",
@@ -269,7 +276,11 @@ impl SpecificationProfileId {
             Self::Core => Some("https://w3c.github.io/data-shapes/shacl12-core/"),
             Self::Sparql => Some("https://w3c.github.io/data-shapes/shacl12-sparql/"),
             Self::NodeExpressions => Some("https://w3c.github.io/data-shapes/shacl12-node-expr/"),
-            Self::Rules => Some("https://w3c.github.io/data-shapes/shacl12-rules/"),
+            // shacl12-rules/ was deleted upstream (ADR-0046). Its rule language
+            // became the standalone SPARQL-RL spec, which is what our SRL
+            // surface implements; the SHACL-branded rule surfaces are governed
+            // by the separate shacl12-inference-rules/ document.
+            Self::Rules => Some("https://w3c.github.io/data-shapes/sparql12-rl/"),
             Self::Ui => Some("https://w3c.github.io/data-shapes/shacl12-ui/"),
             Self::Profiling => Some("https://w3c.github.io/data-shapes/shacl12-profiling/"),
             Self::Union => None,

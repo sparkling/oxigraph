@@ -21,7 +21,7 @@ use oxrdf::{NamedNode, Term};
 use std::collections::BTreeSet;
 
 use self::data::inline_data;
-use self::policy::{reject_draft_open_constructs, reject_query_goal};
+use self::policy::{reject_query_goal, reject_unimplemented_constructs};
 
 /// Materialized base, inferred, and entailed graphs from one SRL execution.
 #[derive(Clone, Debug)]
@@ -137,7 +137,7 @@ fn execute_resolved(
                 .join(", "),
         ));
     }
-    reject_draft_open_constructs(rule_set)?;
+    reject_unimplemented_constructs(rule_set)?;
     let isolated_base = base.isolated_default_dataset();
     let inline = inline_data(rule_set, &isolated_base)?;
     let mut working = isolated_base.clone();
@@ -209,12 +209,12 @@ fn compile_program(rule_set: &SrlRuleSet) -> Result<Program, SrlError> {
     for (rule_index, source) in rules(rule_set).enumerate() {
         if source.for_clause.is_some() {
             return Err(SrlError::Unsupported(
-                "FOR/IN shape integration (draft issue #1074)".to_owned(),
+                "FOR/IN shape integration, removed from the SPARQL-RL grammar 2026-08-12 (was issue #1074)".to_owned(),
             ));
         }
         if source.data_only {
             return Err(SrlError::Unsupported(
-                "WHERE DATA matching (draft issue #960)".to_owned(),
+                "WHERE DATA matching, specified upstream (issue #960 resolved) but not yet implemented here".to_owned(),
             ));
         }
         for element in &source.body {
@@ -223,7 +223,7 @@ fn compile_program(rule_set: &SrlRuleSet) -> Result<Program, SrlError> {
                     data_only: true, ..
                 } => {
                     return Err(SrlError::Unsupported(
-                        "NOT DATA matching (draft issue #960)".to_owned(),
+                        "NOT DATA matching, specified upstream (issue #960 resolved) but not yet implemented here".to_owned(),
                     ));
                 }
                 SrlBodyElement::Filter(_) => {
@@ -258,7 +258,7 @@ fn compile_program(rule_set: &SrlRuleSet) -> Result<Program, SrlError> {
                 SrlBodyElement::Negation { data_only, body } => {
                     if *data_only {
                         return Err(SrlError::Unsupported(
-                            "NOT DATA matching (draft issue #960)".to_owned(),
+                            "NOT DATA matching, specified upstream (issue #960 resolved) but not yet implemented here".to_owned(),
                         ));
                     }
                     let helper =

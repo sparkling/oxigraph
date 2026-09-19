@@ -228,7 +228,7 @@ fn query_accepts_only_one_abstract_triple_pattern() {
 }
 
 #[test]
-fn query_obeys_execution_limits_and_draft_open_constructs() {
+fn query_obeys_execution_limits_and_unimplemented_constructs() {
     let rules = parse("PREFIX : <http://example/> RULE {} WHERE DATA {}");
     let error = query_srl_rules(
         &rules,
@@ -241,5 +241,11 @@ fn query_obeys_execution_limits_and_draft_open_constructs() {
         &ValidationOptions::default(),
     )
     .unwrap_err();
-    assert!(matches!(error, SrlError::Unsupported(reason) if reason.contains("#960")));
+    // The fixture above is `WHERE DATA {}`, so this is the WHERE DATA path.
+    // Assert the substance, not the issue number: WHERE DATA is specified
+    // upstream (issue #960 was resolved) and simply not implemented here yet.
+    // A bare "#960" match would still pass against the old, wrong framing that
+    // called this draft-open.
+    assert!(matches!(error, SrlError::Unsupported(reason)
+            if reason.contains("WHERE DATA") && reason.contains("not yet implemented")));
 }

@@ -212,9 +212,14 @@ fn profile_catalog_export_is_canonical_and_machine_readable() {
     assert_eq!(json.matches("\"completeImplemented\":false").count(), 7);
     assert_eq!(json.matches("\"implementedSubset\":null").count(), 3);
     assert!(!json.contains("\"complete\":true"));
+    // Re-pinned 2026-09-19 (ADR-0046): SpecificationProfileId::Rules's live
+    // editor's-draft IRI moved from shacl12-rules/ (deleted upstream, now 404)
+    // to sparql12-rl/. The RULES descriptor's own specification_iri is
+    // deliberately unchanged -- it records which document that 2026-07-27
+    // subset was pinned against, which really was shacl12-rules/.
     assert_eq!(
         sha256_hex(json.as_bytes()),
-        "1bc87e57198754e659d73b75077ea1f180a1d1a45330756a20414263a84e1a4e"
+        "ef6099321d92cb3e782cf3055aedbf2e318675d4286383dd07d73d50f6d480fb"
     );
 
     let selected = ProfileSet::new([

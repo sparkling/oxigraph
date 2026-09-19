@@ -204,7 +204,7 @@ fn evaluate_elements(
                 data_only: true, ..
             } => {
                 return Err(SrlError::Unsupported(
-                    "NOT DATA matching remains draft issue #960".to_owned(),
+                    "NOT DATA matching, specified upstream (issue #960 resolved) but not yet implemented here".to_owned(),
                 ));
             }
         }
