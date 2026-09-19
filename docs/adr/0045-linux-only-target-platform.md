@@ -30,9 +30,11 @@ blocked work, it is work that should not be on the list.
 ADR-0044 recorded a second Class B item on the same grounds: a separate
 authorized isolated host for delegated qualification runs (ADR-0039). That
 requirement was dropped separately on the same day, for the same reason and by
-the same reasoning — no such host exists or will — so ADR-0039 now qualifies on
-this programme's own Linux host, with only its reboot and power-cut receipts
-remaining unavailable. This record does not itself resolve that item; see
+the same reasoning — no such host exists or will — as were the reboot and
+power-cut receipts that briefly survived it. ADR-0039 now qualifies fully on
+this programme's own Linux host, and reboot/power-loss behavior sits outside
+what qualification claims rather than inside it as a permanent gap. This record
+does not itself resolve that item; see
 [ADR-0039's amendment](0039-delegated-host-containment-qualification-and-readiness.md#amended-2026-09-19-the-delegated-host-is-this-server).
 
 ## Decision

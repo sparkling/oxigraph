@@ -678,12 +678,12 @@ Implementation requires:
   independent native, ABI, compatibility, and security review.
 
 The ordinary local suite may compile and exercise non-delegating process paths.
-Actual delegated-cgroup, reboot, power-cut, and production-unit execution is
-reserved for ADR-0039's qualification run. Amended 2026-09-19: that ADR's
-isolated-host precondition is dropped and qualification runs on this
-programme's own Linux host, which supplies the required cgroup2 delegation;
-reboot and power-cut controls remain unexecutable there, so those two receipts
-stay unavailable. See
+Actual delegated-cgroup and production-unit execution is reserved for
+ADR-0039's qualification run. Amended 2026-09-19: that ADR's isolated-host
+precondition is dropped and qualification runs on this programme's own Linux
+host, which supplies the required cgroup2 delegation. Reboot and power-cut were
+dropped from that gate the same day and are no longer part of qualification at
+all — their behavior is unproved, not proved sound. See
 [ADR-0039's amendment](0039-delegated-host-containment-qualification-and-readiness.md#amended-2026-09-19-the-delegated-host-is-this-server).
 
 ## Consequences

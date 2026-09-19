@@ -32,10 +32,13 @@
 ADRs 0035 through 0038 can freeze and locally exercise exact contracts,
 filesystem sequencing, executable bytes, and native mechanics. They cannot
 prove that a production host supplies the required cgroup delegation,
-filesystem behavior, kernel interfaces, service-manager launch root,
-permissions, reboot behavior, or power-loss durability. Making the candidate
-owner report verified readiness from local tests or version strings would turn
-assumptions into authority.
+filesystem behavior, kernel interfaces, service-manager launch root, or
+permissions. Making the candidate owner report verified readiness from local
+tests or version strings would turn assumptions into authority.
+
+Reboot behavior and power-loss durability were originally in that list. Both
+were dropped from this gate on 2026-09-19; they are now outside what this
+qualification claims to cover, and remain unproved rather than assumed sound.
 
 This qualification is also distinct from ADR-0022's product-facing liveness,
 readiness, backup, and restore contract. It qualifies the engineering harness's
@@ -75,14 +78,22 @@ What that changes, and what it deliberately does not:
   parent is constructible without root; kernel 6.8 supplies `clone3`, pidfds,
   exclusive wait, and `cgroup.kill`; user namespaces are available. KVM is
   present if a guest is ever wanted for a specific control.
-- **Reboot and power-cut controls remain unexecutable** on a shared development
-  server, and the existing rule that "a profile that cannot execute a required
-  destructive or power-cycle control remains unqualified; it cannot weaken the
-  requirement or substitute a simulation" is retained verbatim. The consequence
-  is that this host can qualify the cgroup, lock, lifecycle, quiescence and
-  process-boundary matrices but **cannot** produce the reboot or power-cut
-  receipts. Those two remain genuinely unavailable, and the qualification is
-  partial and must say so rather than claiming a completeness it lacks.
+- **Reboot and power-cut are dropped from the gate entirely**, amended later the
+  same day. They were the last two items keeping qualification incomplete, and
+  a shared development server can neither reboot nor lose power on command, so
+  retaining them would have reintroduced exactly the permanently-undischargeable
+  scope this amendment set out to remove. Qualification now covers the cgroup,
+  lock, lifecycle, quiescence, death-injection and process-boundary matrices,
+  and that set is what a passing receipt attests to.
+
+  This is a reduction in **scope**, not a durability finding. Nothing here
+  asserts that the containment state survives a reboot or an unclean power
+  loss; the programme simply produces no evidence either way, and readiness
+  output must not imply otherwise. ADR-0020's existing prohibition on
+  power-loss qualification claims and ADR-0022's separate product-facing
+  durability contract are untouched by this decision — this ADR only ever
+  qualified the engineering harness's containment host, never the store's
+  crash durability.
 - Everything upstream of execution — the qualification contract itself, the
   evaluators, the feature probes, the receipt schema — was always ordinary
   buildable work under
@@ -109,10 +120,13 @@ and prevention of unowned migration or process creation in the subtree.
 
 The classified state filesystem must prove the local open-file-description lock
 and held-directory operations used by ADR-0037. Crash, manager death, guardian
-death, supervisor death, restart, reboot, and power-cut cases receive separate
-write-once receipts. A profile that cannot execute a required destructive or
-power-cycle control remains unqualified; it cannot weaken the requirement or
-substitute a simulation.
+death, supervisor death, and restart cases receive separate write-once receipts.
+A profile that cannot execute a required destructive control remains
+unqualified; it cannot weaken the requirement or substitute a simulation.
+
+Reboot and power-cut are **removed from the qualification gate** as of
+2026-09-19 (see the amendment below). Their absence is a stated limit on what
+qualification covers, never an assertion that the behavior is sound.
 
 Qualification runs are separate from G1.7. They cannot use G1.7 control,
 benchmark, final-decision, qualification, or promotion authority, and their
@@ -221,11 +235,13 @@ The gate requires:
   injection before and after every intent, effect, observation, durable record,
   release, reap, move, removal, and close boundary;
 - controller restart with a live guardian, guardian death without invented
-  direct-child authority, same-boot recovery, one-through-four proved reboots,
-  migration attempts, unexpected descendants, delegation revocation, unknown
-  entries, timeouts, permission loss, and quarantine/operator-block behavior;
-- isolated crash, reboot, and power-cut receipts for the exact classified
-  filesystem profile and current-state verification after restart;
+  direct-child authority, same-boot recovery, migration attempts, unexpected
+  descendants, delegation revocation, unknown entries, timeouts, permission
+  loss, and quarantine/operator-block behavior (the "one-through-four proved
+  reboots" clause is dropped with the reboot gate, 2026-09-19);
+- crash receipts for the exact classified filesystem profile, and current-state
+  verification after process restart (reboot and power-cut receipts dropped
+  2026-09-19; same-boot recovery is still proved);
 - exact receipt binding to all source, artifact, recipe, host, boot, root,
   contract, test, and result identities, with stale/cross-host/cross-boot/
   cross-artifact substitution controls;

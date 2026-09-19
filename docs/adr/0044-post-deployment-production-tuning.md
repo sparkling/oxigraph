@@ -154,20 +154,26 @@ Class C does not cover, and must never be cited to defer:
 
 This record owns no implementation task. Each Class C item remains recorded in
 its originating ADR's own acceptance section, and its status there is unchanged
-by this classification. The current Class B list is: reboot and power-cut
-receipts for the containment qualification, which a shared development server
-cannot produce and which ADR-0039 forbids simulating; and the unresolved
-upstream RDF Rules draft dispositions behind two invalid SHACL fixtures
-(semantic-parity plan item 2, issues 1069 and 1074).
+by this classification. The current Class B list has exactly one entry: the
+unresolved upstream RDF Rules draft dispositions behind two invalid SHACL
+fixtures (semantic-parity plan item 2, issues 1069 and 1074). Nothing else in
+the programme is externally blocked.
 
-Narrowed 2026-09-19: this list previously carried "a separate authorized
-isolated host for delegated qualification runs (ADR-0039)" in full. That
-precondition is dropped and qualification now runs on this programme's own
-Linux host, whose cgroup2 delegation, controller set, and kernel-6.8 feature
-availability were verified by direct probe rather than assumed. Only the two
-power-cycle controls survive as genuinely unavailable, so what was a whole
-blocked gate is now two specific missing receipts — and the qualification must
-report itself partial rather than claim a completeness it lacks.
+Narrowed twice on 2026-09-19. This list first carried "a separate authorized
+isolated host for delegated qualification runs (ADR-0039)"; that precondition
+was dropped and qualification moved to this programme's own Linux host, whose
+cgroup2 delegation, controller set, and kernel-6.8 feature availability were
+verified by direct probe rather than assumed. That left reboot and power-cut
+receipts as the residue, and those were then dropped from ADR-0039's gate
+outright — a shared development server can neither reboot nor lose power on
+command, so keeping them would have preserved the very
+permanently-undischargeable shape this record exists to eliminate.
+
+That second drop is a reduction in claimed scope, not a durability finding.
+Reboot and power-loss behavior of the containment state is now simply unproved,
+and no readiness output may imply otherwise. ADR-0020's prohibition on
+power-loss qualification claims and ADR-0022's product-facing durability
+contract are unaffected.
 
 Amended 2026-09-19: this list originally also carried macOS and Windows
 reproduction runners. Classifying them as Class B was accurate but the wrong
