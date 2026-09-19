@@ -23,10 +23,17 @@ Three traps made this hard to see, and all three caught this session's own
 earlier analysis before the swarm corrected it. They are recorded because each
 would recur:
 
-1. **A deleted spec still serves HTTP 200.** `w3.org/TR/shacl12-rules/` returns
-   a frozen snapshot of a document whose source directory was deleted upstream
-   (`gh api contents/shacl12-rules?ref=gh-pages` → 404). Reading the TR yields a
-   dead spec with no warning.
+1. **A `curl -sL` hides a rename.** `w3.org/TR/shacl12-rules/` responds **301 →
+   `w3.org/TR/sparql12-rl/`**, so `curl -sL` reports `200` and the redirect
+   passes unnoticed. Corrected 2026-09-19: an earlier revision of this record
+   claimed the old URL "serves a frozen snapshot of a deleted document." It does
+   not — W3C handled the rename correctly, and the failure was mine for
+   following a redirect silently and reporting the final status as if it were
+   the original's. The editor's path `w3c.github.io/data-shapes/shacl12-rules/`
+   **does** hard-404, and `gh api contents/shacl12-rules?ref=gh-pages` confirms
+   the directory is gone. Check redirects explicitly (`curl -sI`, or
+   `-w '%{url_effective} %{num_redirects}'`) before concluding what a URL
+   serves.
 2. **Keyword-scanning a rendering misleads in both directions.** On the dead TR,
    `stratum` appearing 57 times wrongly implied our model matched. On a live
    draft, `fixpoint` appearing zero times wrongly implied the model had been
@@ -150,10 +157,40 @@ landable and independently reviewable.
    which cites the deleted `rules-rdf-syntax/` material and the wrong governing
    document. Documentation only, no behavior change.
 
-2. **Implement `WHERE DATA` / `NOT DATA` execution** — base-graph-only pattern
-   matching. The `data_only` field already exists structurally; `evaluate.rs`
-   and `policy.rs` need real semantics in place of `Unsupported`. This closes a
-   stable, resolved-since-August gap and is the highest-value code change.
+2. **Implement `WHERE DATA` / `NOT DATA` execution.** Highest-value code change.
+   A second review round (2026-09-19) derived the semantics from the spec's own
+   `evalRule`/`evalRuleElements` pseudocode, which is worth recording because
+   the surface prose is misleading:
+
+   - `GD` = base graph ∪ all inline `DATA{}` blocks, **frozen for the whole
+     evaluation** and never mutated by derivation. `GE` (the evaluation graph)
+     starts at `GD` and accumulates derived triples stratum by stratum.
+   - `WHERE DATA` pins *both* graph arguments to `GD`, which makes it **sticky**:
+     every nested element of that rule — including a plain `NOT{}` carrying no
+     `DATA` keyword — inherits `GD`-only matching. Upstream fixture
+     `eval-dft-value-where-01.srl` exercises exactly this.
+   - `NOT DATA` inside an ordinary rule overrides only that one negation to
+     `GD`; the rest of the body still sees `GE`.
+   - **The Component-Notation prose table contradicts the algorithm** on the
+     direction of `rule.data`. The pseudocode is authoritative; the table is
+     inverted. Do not implement from the table.
+
+   Where the change goes: `native.rs`, not the Datalog lowering. Any rule
+   containing a Filter, Assignment, or Negation flips `native::required()`
+   (`native.rs:30-33, 218-230`), routing the entire rule set to the native
+   path — so `compile_program`'s own `data_only` guards
+   (`evaluate.rs:210-238, 268-276, 330-339`) are **unreachable dead code**
+   today. Thread the already-in-scope frozen `base` alongside `working` through
+   `evaluate_elements`/`match_pattern`, selecting per
+   `rule.data_only`/`negation.data_only`. Extend `required()` to also return
+   true for those flags so the Datalog path is never selected for them.
+   `check.rs` needs **no** change: the spec's own dependency-graph algorithm
+   ignores `rule.data`/`negation.data`, and ours already does the same.
+
+   The 19 fixtures in the new upstream `eval2/` directory are precisely this
+   feature's suite (`eval-dft-value-where-*`, `eval-dft-value-neg-*`,
+   `link-1/2-*`) and all 19 fail today, from either this rejection or the
+   abbreviation gap in item 3.
 
 3. **Accept body abbreviations** — collections, blank-node property lists,
    reifiers and annotation blocks in rule bodies, mirroring the existing
@@ -170,13 +207,39 @@ landable and independently reviewable.
    `suiteContentSha256`/`specificationSha256` values. Do this *after* 1–4 so
    the new corpus measures corrected behavior.
 
-6. **Separately review `rules.rs` and `sparql_rules.rs` against
-   `shacl12-inference-rules`.** This review targeted SPARQL-RL once the
-   document identity was corrected; the inference-rules conformance of our
-   other two rule surfaces has not had an equivalent pass. Decide explicitly
-   whether the Datalog surface's missing rule metamodel (order, condition,
-   deactivated, layer) is an intended scope line — and if so, say so in
-   ADR-0008 instead of leaving it implicit.
+6. **`shacl12-inference-rules` conformance — pass completed 2026-09-19.** The
+   SPARQL rule surface fares well: `sh:order`, `sh:condition` (including the
+   spec-required rejection of conditions on global rules), and `sh:deactivated`
+   all match, at `sparql_rules.rs:352-370, 213-220, 88-93, 222-234` and
+   `execution.rs:73-119, 227-244, 159-161`. Outstanding, in priority order:
+
+   - **`sh:ruleProcessor` fail-closed** — the one MUST-level clause we actively
+     violate. An unrecognized processor value must force failure; we ignore it
+     silently. Small, correctness-relevant.
+   - **`sh:layer`** on the SPARQL surface — a real, stable-clause gap. Our
+     fixpoint is flat rather than per-layer, which is the same root cause as
+     the `sh:runOnce` absence, not a separate defect.
+   - **Reword ADR-0008's Datalog claim.** The gap there is not "missing
+     order/condition/deactivated/layer" — `rules.rs` has no RDF compiler for
+     `sh:TripleRule` at all; it is a programmatic Rust API never fed from RDF.
+     "Supported triple rules compiled to Datalog" currently reads as if the RDF
+     syntax is supported. Clarify the wording rather than logging a code gap.
+   - Do not chase: `sh:runOnce` (already covered by ADR-0008's issue-1069
+     exclusion), `sh:SPARQLRuleTemplate` (one day old),
+     `sh:expectedPredicate`/`sh:sourceRule`/`sh:tempTriple` (all MAY-level).
+
+   Caveat carried honestly: the reviewer checked for at-risk markers by prose
+   extraction and did not diff raw HTML for `class="issue"` spans, so "no
+   at-risk items" is provisional for that document, not confirmed.
+
+7. **Smaller SPARQL-RL gaps** surfaced by the full grammar walk, recorded so
+   they are not rediscovered: `TripleTermData` as a `DATA`-block subject is
+   rejected (`data.rs:67-71`) though grammar `[42]` permits it; `BNODE()` is
+   unsupported (`expression.rs:191-194`). Also note `reject_query_goal`'s
+   position-by-position restrictions (`policy.rs:25-65`) are **our own
+   invention** — the spec leaves goal syntax entirely undefined — which is
+   defensible as RDF well-formedness but should not be described as
+   spec-mandated.
 
 ## Consequences
 
