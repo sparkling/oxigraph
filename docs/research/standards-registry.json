@@ -340,10 +340,12 @@
         },
         {
           "id": "shacl12-rules",
-          "title": "SHACL 1.2 Rules",
-          "url": "https://www.w3.org/TR/shacl12-rules/",
+          "title": "SHACL 1.2 Rules (renamed to SPARQL-RL 2026-08-19)",
+          "url": "https://www.w3.org/TR/sparql12-rl/",
           "publication": "W3C Working Draft",
-          "publishedAt": "2026-07-27"
+          "publishedAt": "2026-07-27",
+          "renamedTo": "sparql12-rl",
+          "renameNote": "Commit df4ee468 moved shacl12-rules/ to sparql12-rl/. The old TR URL 301-redirects here. A separate shacl12-inference-rules document governs sh:TripleRule and sh:SPARQLRule. See ADR-0046."
         },
         {
           "id": "shacl12-ui",

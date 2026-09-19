@@ -57,9 +57,9 @@ mapping.
 
 The index contains 46 decisions. ADR-0046 realigns the SHACL 1.2 work to the
 live editor's drafts: our SRL surface is now governed by the separate SPARQL-RL
-specification, `shacl12-rules` was deleted upstream while its frozen TR
-snapshot still serves, and two "draft-open" rejections are stale in opposite
-directions. ADR-0045 narrows the target platform to Linux
+specification, `shacl12-rules` was renamed upstream (its TR URL 301-redirects
+and its editor's-draft path 404s), and two "draft-open" rejections are stale in
+opposite directions. ADR-0045 narrows the target platform to Linux
 x86_64, removing the Apple and Windows legs outright instead of leaving them as
 permanently undischargeable scope. ADR-0044 draws the boundary the other records
 depend on: promotion decisions, numeric default calibration, and independent

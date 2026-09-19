@@ -120,7 +120,10 @@ OWL-profile evidence, not evidence for the RDF/SPARQL/SHACL aggregate.
 - [RDF 1.2 Semantics](https://www.w3.org/TR/rdf12-semantics/)
 - [SPARQL 1.2 Query](https://www.w3.org/TR/sparql12-query/)
 - [SHACL 1.2 Core](https://www.w3.org/TR/shacl12-core/)
-- [SHACL 1.2 Rules](https://www.w3.org/TR/shacl12-rules/)
+- [SPARQL-RL](https://www.w3.org/TR/sparql12-rl/) — the rule language our SRL
+  surface implements; `shacl12-rules` was renamed to this on 2026-08-19
+- [SHACL 1.2 Inference Rules](https://www.w3.org/TR/shacl12-inference-rules/) —
+  the separate document governing `sh:TripleRule` and `sh:SPARQLRule`
 - [W3C RDF/SPARQL tests](https://github.com/w3c/rdf-tests)
 - [W3C Data Shapes tests](https://github.com/w3c/data-shapes)
 - [W3C OWL 2 RL approved test export](https://www.w3.org/2009/11/owl-test/approved/profile-RL.rdf)

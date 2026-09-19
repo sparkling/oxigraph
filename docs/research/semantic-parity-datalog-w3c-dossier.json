@@ -95,7 +95,8 @@
         "date": "2026-07-25",
         "requires": "fixpoint, recursion, stratification, run-once rules"
       },
-      "sources": ["https://www.w3.org/TR/shacl12-rules/"]
+      "sources": ["https://www.w3.org/TR/sparql12-rl/"],
+      "renameNote": "Captured as shacl12-rules on 2026-07-25; renamed to SPARQL-RL upstream 2026-08-19 (ADR-0046)."
     },
     {
       "id": "owl2-rl",

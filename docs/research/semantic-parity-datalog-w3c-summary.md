@@ -250,7 +250,10 @@ normative requirement and family gate passes.
 - [SHACL 1.2 Core](https://www.w3.org/TR/shacl12-core/)
 - [SHACL 1.2 Node Expressions](https://www.w3.org/TR/shacl12-node-expr/)
 - [SHACL 1.2 SPARQL Extensions](https://www.w3.org/TR/shacl12-sparql/)
-- [SHACL 1.2 Rules](https://www.w3.org/TR/shacl12-rules/)
+- [SPARQL-RL](https://www.w3.org/TR/sparql12-rl/) — the rule language our SRL
+  surface implements; `shacl12-rules` was renamed to this on 2026-08-19
+- [SHACL 1.2 Inference Rules](https://www.w3.org/TR/shacl12-inference-rules/) —
+  the separate document governing `sh:TripleRule` and `sh:SPARQLRule`
 - [OWL 2 Profiles](https://www.w3.org/TR/owl2-profiles/)
 - [OWL 2 Conformance](https://www.w3.org/TR/owl2-conformance/)
 - [W3C RDF tests](https://github.com/w3c/rdf-tests)

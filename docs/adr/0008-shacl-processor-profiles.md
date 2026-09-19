@@ -40,7 +40,7 @@ feature-set profiles:
 | `shacl-1.2-core-2026-07-23-subset-v1` | Core targets, paths, constraints, reports, and RDF 1.2 additions |
 | `shacl-1.2-node-expressions-2026-01-08-subset-v1` | Bounded node-expression evaluation |
 | `shacl-1.2-sparql-extensions-2026-01-30-subset-v1` | Sandboxed SPARQL constraints and custom validators |
-| `shacl-1.2-rules-2026-07-27-subset-v1` | Supported triple rules compiled to Datalog plus bounded SRL `Infer` and `QUERY` operations |
+| `shacl-1.2-rules-2026-07-27-subset-v1` | A programmatic Rust triple-rule API compiled to Datalog (**not** an `sh:TripleRule` RDF parser — see below) plus bounded SRL `Infer` and `QUERY` operations |
 | `shacl-1.2-compact-syntax-2025-10-30-subset-v1` | Bounded SHACL-C parsing and RDF mapping |
 
 These identifiers retain the implementation snapshots they name; they are not
@@ -151,19 +151,59 @@ stratification, and result-graph cases are supplemental evidence rather than
 root-manifest approval. The six legacy SHACL-SPARQL `Infer` cases remain a
 separately named compatibility lane.
 
+That 171 is measured at pin `eedda09f` and is not a current figure. Upstream has
+since moved the corpus to `sparql12-rl/` (manifest renamed to
+`manifest-sparql-rl.ttl`) and grown it to 290 fixtures, including a new `eval2/`
+directory of 19 `WHERE DATA` cases we do not yet pass. Re-pinning is sequenced
+deliberately after the corresponding implementation work — see
+[ADR-0046](0046-shacl-12-editors-draft-realignment.md).
+
 The 32 Compact Syntax inputs are positive, unmanifested fixtures associated
 with an editor-only draft. Upstream provides no normative negative corpus.
 Local negative syntax, limit, parse/RDF/serialization round-trip tests and the
 32/32 Jena differential strengthen the bounded implementation evidence, but
 prove only the recorded translation compatibility.
 
-The Rules draft still leaves the RDF Rules Syntax mapping as placeholder text
-and does not provide a stable RDF mapping for concrete body abbreviations.
-FOR/IN shape integration remains tied to data-shapes issue 1074, and repeated
-firing remains draft-open in issue 1069; the bounded fixpoint is an
-implementation choice, not a claimed normative resolution. Blank-node body
-matching fails closed. Neither the Rules nor Compact Syntax lane closes the
-corresponding normative clause inventory.
+Rewritten 2026-09-19 (see [ADR-0046](0046-shacl-12-editors-draft-realignment.md)).
+The paragraph this replaces described a document that no longer exists and
+three issues whose status it stated wrongly.
+
+The rule language this profile implements is no longer part of SHACL: the
+`shacl12-rules` document was renamed to **SPARQL-RL** on 2026-08-19 (commit
+`df4ee468`), with its own `.srl` extension and `application/sparql-rl` media
+type. A separate, newer `shacl12-inference-rules` document governs
+`sh:TripleRule` and `sh:SPARQLRule`. Our evidence above is pinned at
+`eedda09f`, which predates both changes.
+
+Against the live SPARQL-RL draft, our stratification terminology, run-once
+derivation, the stratification condition, and bounded fixpoint iteration all
+match — the bounded fixpoint is **no longer** merely an implementation choice
+for the iteration model itself, though the interaction with repeated firing
+below remains open. Current divergences, stated honestly:
+
+- **`WHERE DATA` / `NOT DATA`** is specified upstream (grammar 2026-07-07,
+  evaluation semantics 2026-08-12, closing issue 960) and **not yet implemented
+  here**. It is not draft-open.
+- **`FOR`/`IN` was removed** from the grammar on 2026-08-12. It is not a pending
+  obligation; our parser still accepts the syntax and should stop.
+- **Body abbreviations** — collections, blank-node property lists, reifiers and
+  annotation blocks — are permitted by grammar productions `[69]`–`[79]` and we
+  reject them. Blank-node body matching failing closed is part of this gap, not
+  a separate deliberate exclusion.
+- **Repeated firing** remains genuinely draft-open in issue 1069, and
+  `sh:runOnce` in the inference-rules document is the surface that would settle
+  it. This one exclusion stands as originally written.
+
+The Datalog triple-rule surface (`lib/oxshacl/src/rules.rs`) is a programmatic
+Rust API. It has **no `sh:TripleRule` RDF compiler at all**, so its lack of
+`sh:order`/`sh:condition`/`sh:deactivated`/`sh:layer` is not a set of missing
+fields but an absent ingestion path. The `sh:SPARQLRule` surface does implement
+`sh:order`, `sh:condition` (including the required rejection of conditions on
+global rules) and `sh:deactivated`; it lacks `sh:layer`, and does not fail
+closed on an unrecognized `sh:ruleProcessor`, which is a MUST-level clause.
+
+Neither the Rules nor Compact Syntax lane closes the corresponding normative
+clause inventory.
 
 ## Consequences
 
@@ -188,7 +228,10 @@ corresponding normative clause inventory.
 - [SHACL 1.2 Core](https://www.w3.org/TR/shacl12-core/)
 - [SHACL 1.2 Node Expressions](https://www.w3.org/TR/shacl12-node-expr/)
 - [SHACL 1.2 SPARQL Extensions](https://www.w3.org/TR/shacl12-sparql/)
-- [SHACL 1.2 Rules](https://www.w3.org/TR/shacl12-rules/)
+- [SPARQL-RL](https://www.w3.org/TR/sparql12-rl/) — the rule language our SRL
+  surface implements; `shacl12-rules` was renamed to this on 2026-08-19
+- [SHACL 1.2 Inference Rules](https://www.w3.org/TR/shacl12-inference-rules/) —
+  the separate document governing `sh:TripleRule` and `sh:SPARQLRule`
 
 ## Acceptance boundary
 

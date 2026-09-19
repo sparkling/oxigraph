@@ -125,7 +125,10 @@ whose protected-source hash does not match the release source is invalid.
 - [Datafrog](https://github.com/rust-lang/datafrog)
 - [Soufflé](https://souffle-lang.github.io/)
 - [RIF Core](https://www.w3.org/TR/rif-core/)
-- [SHACL 1.2 Rules](https://www.w3.org/TR/shacl12-rules/)
+- [SPARQL-RL](https://www.w3.org/TR/sparql12-rl/) — the rule language our SRL
+  surface implements; `shacl12-rules` was renamed to this on 2026-08-19
+- [SHACL 1.2 Inference Rules](https://www.w3.org/TR/shacl12-inference-rules/) —
+  the separate document governing `sh:TripleRule` and `sh:SPARQLRule`
 
 ## Acceptance boundary
 

@@ -469,7 +469,7 @@ export function validateJsonDocuments(documents, errors) {
       ["core", "shacl12-core"],
       ["nodeExpressions", "shacl12-node-expr"],
       ["sparql", "shacl12-sparql"],
-      ["rules", "shacl12-rules"],
+      ["rules", "sparql12-rl"],
       ["compact", "shacl12-compact-syntax"],
     ]) {
       equal(
