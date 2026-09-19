@@ -155,9 +155,23 @@ Class C does not cover, and must never be cited to defer:
 This record owns no implementation task. Each Class C item remains recorded in
 its originating ADR's own acceptance section, and its status there is unchanged
 by this classification. The current Class B list has exactly one entry: the
-unresolved upstream RDF Rules draft dispositions behind two invalid SHACL
-fixtures (semantic-parity plan item 2, issues 1069 and 1074). Nothing else in
-the programme is externally blocked.
+unresolved SHACL 1.2 draft dispositions for RDF Rules mapping, concrete
+body-abbreviation mapping, FOR/IN (data-shapes issue 1074), repeated firing
+(issue 1069), and blank-node body matching. Those concern Rules semantics this
+profile deliberately excludes, and they wait on the W3C drafts supplying stable
+normative answers. Nothing else in the programme is externally blocked.
+
+Corrected 2026-09-19: this entry previously read "the unresolved upstream RDF
+Rules draft dispositions **behind two invalid SHACL fixtures**," which welded
+together two unrelated things. The two fixtures —
+`core/node/in-002.ttl` and `core/node/in-003.ttl` in the pinned
+`w3c/data-shapes` suite — are mechanical defects, not draft questions:
+`in-003` omits a `@prefix shsh:` declaration for terms that the real
+`http://www.w3.org/ns/shacl-shacl#` namespace does define, and `in-002`
+expects a source shape that the file never declares. Both are fixable here and
+are Class A. The draft dispositions above are a separate, genuinely blocked
+item that happens to live in the same backlog bullet. See semantic-parity plan
+item 2 for the full reading.
 
 Narrowed twice on 2026-09-19. This list first carried "a separate authorized
 isolated host for delegated qualification runs (ADR-0039)"; that precondition

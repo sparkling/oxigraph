@@ -309,10 +309,37 @@ downstream receipts and restarts from the earliest affected step.
    IDs and assign reviewed evidence or an explicit disposition to every clause.
 2. Close the two invalid upstream SHACL fixtures and complete normative-clause
    mapping around the executed supplemental 171-case Rules lane and informative
-   32-pair SHACL-C lane. Preserve the open RDF Rules mapping, concrete
-   body-abbreviation, FOR/IN issue 1074, repeated-firing issue 1069, and
-   blank-node body-matching dispositions until the drafts supply stable
-   normative answers.
+   32-pair SHACL-C lane.
+
+   Corrected 2026-09-19: these two fixtures had been recorded as blocked on the
+   draft dispositions listed below. They are not. Both are mechanical defects
+   in the pinned `w3c/data-shapes` test files at commit `eedda09f`, verified by
+   reading them directly:
+
+   - `core/node/in-003.ttl` uses `shsh:inSubjectsShape` and
+     `shsh:inSubjectsShapeInPropertyShape` but never declares `@prefix shsh:`,
+     so the file is not parseable Turtle. The terms themselves are legitimate —
+     `http://www.w3.org/ns/shacl-shacl#` is a real W3C namespace and was
+     confirmed to define both of them — so the fixture's intent is sound and
+     the fault is a single missing prefix line.
+   - `core/node/in-002.ttl` asserts `ex:Instance a ex:TestShape` and expects a
+     violation citing `sh:sourceShape ex:TestShape`, but `ex:TestShape` is
+     never defined anywhere in the file; the only shape present,
+     `ex:TestInUnsatisfiableShape`, has no target. There is neither a focus
+     node nor the expected source shape.
+
+   Both are fixable here by rebasing the fixtures with a documented local
+   correction, or by reporting them upstream, and neither waits on anyone. The
+   runner already excludes them by exact content hash
+   (`lib/oxshacl/examples/w3c_runner.rs`), so an upstream repair breaks the
+   exclusion loudly instead of passing silently — that mechanism is correct and
+   should be kept.
+
+   Genuinely still open, and unrelated to those two files: the RDF Rules
+   mapping, concrete body-abbreviation mapping, FOR/IN issue 1074,
+   repeated-firing issue 1069, and blank-node body matching. Those concern
+   Rules semantics this profile deliberately excludes, and they do wait on the
+   drafts supplying stable normative answers. Do not conflate the two again.
 3. Implement or explicitly reject every remaining SPARQL protocol, service,
    federation, result-format, update, graph-store, and entailment interface
    requirement.
