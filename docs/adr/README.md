@@ -53,8 +53,13 @@ mapping.
 | [ADR-0043 — Delivery recovery and proportional release boundary](0043-delivery-recovery-and-proportional-release-boundary.md) | Implemented | Deliver a reproducible, tested application; defer non-gating harness work and review progress across milestones |
 | [ADR-0044 — Post-deployment production tuning](0044-post-deployment-production-tuning.md) | Accepted | Classify every remaining obligation as buildable now, externally blocked, or post-deployment tuning; only the third waits on a live production setting, and it blocks no development or deployment |
 | [ADR-0045 — Linux-only target platform](0045-linux-only-target-platform.md) | Accepted | Target Linux x86_64 only; remove Apple and Windows CI jobs and release artifacts rather than carry platform obligations no available host can discharge |
+| [ADR-0046 — SHACL 1.2 editor's-draft realignment](0046-shacl-12-editors-draft-realignment.md) | Accepted | Record which live specification governs each rule surface after the Working Group's reorganization, correct two stale draft-open rejections, and sequence the re-pin behind the fixes |
 
-The index contains 45 decisions. ADR-0045 narrows the target platform to Linux
+The index contains 46 decisions. ADR-0046 realigns the SHACL 1.2 work to the
+live editor's drafts: our SRL surface is now governed by the separate SPARQL-RL
+specification, `shacl12-rules` was deleted upstream while its frozen TR
+snapshot still serves, and two "draft-open" rejections are stale in opposite
+directions. ADR-0045 narrows the target platform to Linux
 x86_64, removing the Apple and Windows legs outright instead of leaving them as
 permanently undischargeable scope. ADR-0044 draws the boundary the other records
 depend on: promotion decisions, numeric default calibration, and independent
