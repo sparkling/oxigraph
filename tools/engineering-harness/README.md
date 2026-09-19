@@ -280,6 +280,10 @@ unavailability is returned with the exact client, model, and error. This does
 not switch the owner's active conversation model. The September 12 Astra/Low
 specification and all previously completed Claude or Codex runs retain their
 original identities.
+These are starting policies, not proven speed or token winners. Bounded task
+packets state why a stronger route is needed. Efficiency evidence from ordinary
+work includes necessary context, review, failed attempts and repair; missing
+usage stays unknown. No separate model experiment programme is required.
 Ruflo's Claude-only model-outcome enum cannot truthfully record Codex outcomes:
 store the actual native model and result in repository memory, without
 training under a false model name or claiming measured savings.

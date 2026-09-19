@@ -12,6 +12,17 @@ Select parallel work from ready dependencies and file ownership; preserve the
 single integration writer and existing build/resource isolation. Historical
 in-session capacity observations are not a global model-session limit.
 
+Use the existing engineering delivery workflow's contributor proposals for
+parallel native work: each contributor owns exclusive proposal paths and an
+exact source identity; one root applies the aggregate after independent review.
+Dispatch dependency-ready work immediately and assign review help when acceptance
+is waiting. The 32-core host is a build resource, not a model-session limit.
+The command owner must exclude overlapping builds/tests that share Cargo outputs
+for their full lifetime; the current delivery wrapper does not enforce that lock.
+Use configured task-specific model defaults, escalating concrete hard decisions.
+Balance accepted correctness, elapsed time and total reported context/review/repair
+tokens from ordinary work, without quota gates or a benchmark programme.
+
 ## Precedence and evidence
 
 Active system, developer, and user instructions take priority, followed by the
