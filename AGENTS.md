@@ -126,6 +126,48 @@ Use focused Rust integration tests and independent fixtures for fork-specific
 API, protocol, persistence, recovery, and operational behavior not represented
 by those suites.
 
+## Repository-specific hazards
+
+Four traps in this repository that cost real debugging time. Each was diagnosed
+empirically here; none is obvious from the code.
+
+**`cargo fmt -p <pkg>` is not scoped to that package.** Unlike `build -p` and
+`test -p`, it reformats every workspace member. `rustfmt.toml` sets nightly-only
+options (`imports_granularity`, `normalize_comments`, and others) that stable
+rustfmt silently ignores, so a stable `cargo fmt` rewrites files away from their
+checked-in nightly-produced form — workspace-wide. Prefer the read-only
+`-- --check`. After any writing run, `git status --short` and revert unrelated
+churn before staging.
+
+**Never run a second `cargo` command against a package while its tests are
+running.** The schema-upgrade crash tests re-exec `std::env::current_exe()` to
+model real process kills, and `cargo test` reuses one binary path for the whole
+package. A concurrent build truncates that binary mid-flight; already-running
+tests then re-exec a half-written file. This produces failures that look like
+genuine regressions in unrelated tests (observed: 12 of 27 failing, all
+spurious). Finish isolated verification *before* starting a full run, or use a
+separate `--target-dir`. Suspect this race first when unrelated tests fail
+immediately after another cargo invocation.
+
+**Do not follow redirects silently when checking a specification URL.**
+`curl -sL` reports the *destination's* status as though it were the original's,
+which hides an upstream rename. `w3.org/TR/shacl12-rules/` returns 301 to
+`TR/sparql12-rl/`; a `-sL` check reports 200 and the rename passes unnoticed.
+Use `curl -sI`, or `-w '%{url_effective} %{num_redirects}'`. Equally, do not
+conclude anything from keyword-counting a rendered draft: a term appearing many
+times on a superseded document falsely implies alignment, and appearing zero
+times on a live one falsely implies abandonment when the concept is specified in
+prose under another name. Read the prose, or diff the source. See ADR-0046.
+
+**Distinguish a historical pin from a live pointer before repointing a URL.**
+`tools/shacl-tests/inventory.mjs`, `clause-audit.mjs`, and the `RULES`
+descriptor's `specification_iri` in `lib/oxshacl/src/profile/catalog.rs` all
+name `shacl12-rules/`, which no longer resolves upstream. They are correct:
+they read from the pinned `eedda09f` checkout where that file exists and hashes
+to the recorded value. Repointing them at the live document would break the pin
+while looking like a cleanup. The accessor documented as returning the *live*
+draft was repointed; the pin records were not.
+
 ## Fuzz testing
 
 When modifying a listed crate, run each relevant target for one minute:

@@ -154,12 +154,30 @@ Class C does not cover, and must never be cited to defer:
 
 This record owns no implementation task. Each Class C item remains recorded in
 its originating ADR's own acceptance section, and its status there is unchanged
-by this classification. The current Class B list has exactly one entry: the
-unresolved SHACL 1.2 draft dispositions for RDF Rules mapping, concrete
-body-abbreviation mapping, FOR/IN (data-shapes issue 1074), repeated firing
-(issue 1069), and blank-node body matching. Those concern Rules semantics this
-profile deliberately excludes, and they wait on the W3C drafts supplying stable
-normative answers. Nothing else in the programme is externally blocked.
+by this classification. The current Class B list has exactly one entry:
+**repeated rule firing, data-shapes issue #1069**, which waits on the W3C
+Working Group supplying a stable normative answer. Nothing else in the
+programme is externally blocked.
+
+Narrowed again 2026-09-19 by [ADR-0046](0046-shacl-12-editors-draft-realignment.md).
+This entry previously listed five SHACL Rules items as jointly blocked: RDF
+Rules mapping, body-abbreviation mapping, FOR/IN (issue #1074), repeated firing
+(#1069), and blank-node body matching. A review against the live editor's
+drafts found four of the five were never blocked, or had stopped being so:
+
+- **RDF Rules mapping** — the `rules-rdf-syntax/` tree was deleted upstream.
+  There is no pending disposition; the obligation does not exist.
+- **Body abbreviations** — specified by SPARQL-RL grammar productions
+  `[69]`–`[79]`. We reject currently-specified syntax. Class A.
+- **FOR/IN (#1074)** — *removed* from the grammar 2026-08-12, not left pending.
+  Class A (stop accepting it).
+- **Blank-node body matching** — part of the same abbreviation gap, not a
+  separate draft question. Class A.
+
+Only repeated firing is genuinely waiting on the Working Group. The others sat
+in Class B because the whole bullet was classified as one unit and never
+re-read after the upstream drafts moved — the same conflation this record was
+written to prevent, reproduced inside the record itself.
 
 Corrected 2026-09-19: this entry previously read "the unresolved upstream RDF
 Rules draft dispositions **behind two invalid SHACL fixtures**," which welded

@@ -15,7 +15,10 @@
 
 Our SHACL evidence is pinned to `w3c/data-shapes` commit `eedda09f`. A
 four-reviewer swarm compared the live editor's drafts against `lib/oxshacl` on
-2026-09-19. The pin is **176 commits behind** `gh-pages`, and in that window the
+2026-09-19. The pin is **177 commits behind** `gh-pages` as of that date
+(`gh api compare`, verified directly; the review first reported 176, and the
+figure rises as upstream moves — treat it as dated, not fixed), and in that
+window the
 Working Group reorganized the rules specifications twice. Several of our
 exclusions and error messages now describe a world that no longer exists.
 
@@ -131,9 +134,16 @@ Verified against `sparql12-rl`'s own `sparql-rl-grammar.bnf` and prose:
      `manifest-rules.ttl`, renamed to `manifest-sparql-rl.ttl` (directory *and*
      filename)
 
-   The SRL corpus grew from 166 fixtures to 290, with two new subdirectories
-   (`eval2/`, `wellformed/`). `core/` is untouched; `node-expr/` has one fixture
-   edit. Our root-validate lane is insulated from upstream's new root-manifest
+   The SRL corpus grew substantially, with two new subdirectories (`eval2/`,
+   `wellformed/`). `core/` is untouched; `node-expr/` has one fixture edit.
+
+   Counts corrected 2026-09-19 by direct `gh api` listing. This read "grew from
+   166 fixtures to 290"; 290 was 288 files plus 2 manifests, not a test count.
+   Upstream `shacl12-test-suite/tests/sparql-rl/` currently holds **198 `.srl`
+   test cases** across 288 files: `eval` 30, `eval2` 6, `examples` 5,
+   `stratification` 10, `syntax` 139, `wellformed` 8. The re-pin in item 5 must
+   recount against `.srl` cases and the manifest, never a file listing — this
+   same file-vs-case conflation appeared three times in the round-one review. Our root-validate lane is insulated from upstream's new root-manifest
    `mf:include` because `w3c_runner.rs:40` scans an explicit allowlist
    (`["core", "node-expr", "sparql"]`) rather than chasing includes.
 
@@ -187,10 +197,16 @@ landable and independently reviewable.
    `check.rs` needs **no** change: the spec's own dependency-graph algorithm
    ignores `rule.data`/`negation.data`, and ours already does the same.
 
-   The 19 fixtures in the new upstream `eval2/` directory are precisely this
-   feature's suite (`eval-dft-value-where-*`, `eval-dft-value-neg-*`,
-   `link-1/2-*`) and all 19 fail today, from either this rejection or the
-   abbreviation gap in item 3.
+   The new upstream `eval2/` directory is precisely this feature's suite:
+   **6 test cases** — `eval-dft-value-where-01/02`, `eval-dft-value-neg-01/02`,
+   `link-1-path`, `link-2-path` — each with its own `-data.ttl` and
+   `-results.ttl`, so 19 files plus `manifest.ttl`. All 6 fail today, from
+   either this rejection or the abbreviation gap in item 3.
+
+   Count corrected 2026-09-19: this said "19 fixtures … all 19 fail", which
+   counted files rather than test cases. Verified by direct `gh api` listing of
+   `shacl12-test-suite/tests/sparql-rl/eval2`. The set of cases was right; only
+   the number was wrong.
 
 3. **Accept body abbreviations** — collections, blank-node property lists,
    reifiers and annotation blocks in rule bodies, mirroring the existing
@@ -233,9 +249,14 @@ landable and independently reviewable.
    at-risk items" is provisional for that document, not confirmed.
 
 7. **Smaller SPARQL-RL gaps** surfaced by the full grammar walk, recorded so
-   they are not rediscovered: `TripleTermData` as a `DATA`-block subject is
-   rejected (`data.rs:67-71`) though grammar `[42]` permits it; `BNODE()` is
-   unsupported (`expression.rs:191-194`). Also note `reject_query_goal`'s
+   they are not rediscovered: an RDF triple term is rejected as a `DATA`-block
+   subject (`src/srl/evaluate/data.rs:67-71`, *"RDF triple-term subjects in SRL
+   DATA evaluation"*) though grammar production `[42]` `TripleTermData` permits
+   it; `BNODE()` is unsupported (`src/srl/evaluate/expression.rs:191-194`).
+   Path corrected 2026-09-19: both were first recorded as bare `data.rs` /
+   `expression.rs`, which do not exist at that level — and
+   `lib/oxshacl/src/expression.rs` does exist while being a different file.
+   Also note `reject_query_goal`'s
    position-by-position restrictions (`policy.rs:25-65`) are **our own
    invention** — the spec leaves goal syntax entirely undefined — which is
    defensible as RDF well-formedness but should not be described as

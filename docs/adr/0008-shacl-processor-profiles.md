@@ -152,11 +152,16 @@ root-manifest approval. The six legacy SHACL-SPARQL `Infer` cases remain a
 separately named compatibility lane.
 
 That 171 is measured at pin `eedda09f` and is not a current figure. Upstream has
-since moved the corpus to `sparql12-rl/` (manifest renamed to
-`manifest-sparql-rl.ttl`) and grown it to 290 fixtures, including a new `eval2/`
-directory of 19 `WHERE DATA` cases we do not yet pass. Re-pinning is sequenced
-deliberately after the corresponding implementation work — see
+since moved the corpus to `shacl12-test-suite/tests/sparql-rl/` (manifest
+renamed to `manifest-sparql-rl.ttl`) and grown it to **198 `.srl` test cases**
+across 288 files, including a new `eval2/` directory whose 6 `WHERE DATA` cases
+we do not yet pass. Re-pinning is sequenced deliberately after the
+corresponding implementation work — see
 [ADR-0046](0046-shacl-12-editors-draft-realignment.md).
+
+Counts verified 2026-09-19 by direct `gh api` listing. An earlier revision of
+this paragraph said "290 fixtures … 19 `WHERE DATA` cases", both of which were
+file counts inherited from the round-one review rather than test counts.
 
 The 32 Compact Syntax inputs are positive, unmanifested fixtures associated
 with an editor-only draft. Upstream provides no normative negative corpus.
