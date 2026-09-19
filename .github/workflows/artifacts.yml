@@ -120,118 +120,10 @@ jobs:
           path: target/wheels/pyoxigraph-*.whl
       - run: uvx twine check target/wheels/*
 
-  wheel_mac:
-    strategy:
-      matrix:
-        include:
-          - arch: x86_64
-            target: x86_64-apple-darwin
-            deployment_target: '10.14'
-          - arch: aarch64
-            target: aarch64-apple-darwin
-            deployment_target: '11.0'
-    continue-on-error: true
-    runs-on: macos-latest
-    permissions:
-      contents: write
-    env:
-      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
-          persist-credentials: false
-      - uses: ./.github/actions/setup-rust
-        with:
-          target: ${{ matrix.target }}
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          python-version: "3.15"
-          enable-cache: false
-      - run: uv run --locked --only-dev maturin develop --release --features abi3
-        working-directory: ./python
-      - run: uv run --locked --only-dev python generate_stubs.py pyoxigraph pyoxigraph.pyi --ruff
-        working-directory: ./python
-      - run: rm -rf target/wheels
-      - run: uv run --locked --only-dev maturin build --release --features abi3 --target ${{ matrix.target }} --compatibility pypi
-        working-directory: ./python
-      - run: uv run --locked --only-dev maturin build --release --features abi3t --target ${{ matrix.target }} --compatibility pypi
-        working-directory: ./python
-      - run: uvx maturin build --release --target ${{ matrix.target }} --compatibility pypi
-        working-directory: ./cli
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: pyoxigraph_apple_${{ matrix.arch }}
-          path: target/wheels/pyoxigraph-*.whl
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: oxigraph_pypi_apple_${{ matrix.arch }}
-          path: target/wheels/oxigraph-*.whl
-      - run: unzip target/wheels/oxigraph-*.whl
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: oxigraph_${{ matrix.arch }}_apple
-          path: oxigraph-*.data/scripts/oxigraph
-      - run: mv oxigraph-*.data/scripts/oxigraph oxigraph_${GITHUB_REF_NAME}_${{ matrix.arch }}_apple
-        if: github.event_name == 'release'
-      - run: gh release upload ${GITHUB_REF_NAME} oxigraph_${GITHUB_REF_NAME}_${{ matrix.arch }}_apple
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        if: github.event_name == 'release'
-      - run: uvx twine check target/wheels/*
-
-  wheel_windows:
-    strategy:
-      matrix:
-        include:
-          - arch: x86_64
-            runner: windows-latest
-          - arch: aarch64
-            runner: windows-11-arm
-    continue-on-error: true
-    runs-on: ${{ matrix.runner }}
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
-          persist-credentials: false
-      - uses: ./.github/actions/setup-rust
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          python-version: "3.15"
-          enable-cache: false
-      - run: uv run --locked --only-dev maturin develop --release --features abi3
-        working-directory: ./python
-      - run: uv run --locked --only-dev python generate_stubs.py pyoxigraph pyoxigraph.pyi --ruff
-        working-directory: ./python
-      - run: uv run --locked --only-dev maturin build --release --features abi3 --compatibility pypi
-        working-directory: ./python
-      - run: uv run --locked --only-dev maturin build --release --features abi3t --compatibility pypi
-        working-directory: ./python
-      - run: uvx maturin build --release --compatibility pypi
-        working-directory: ./cli
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: pyoxigraph_windows_${{ matrix.arch }}
-          path: target/wheels/pyoxigraph-*.whl
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: oxigraph_pypi_windows_${{ matrix.arch }}
-          path: target/wheels/oxigraph-*.whl
-      - run: unzip target/wheels/oxigraph-*.whl
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: oxigraph_${{ matrix.arch }}_windows
-          path: oxigraph-*.data/scripts/oxigraph.exe
-      - run: mv oxigraph-*.data/scripts/oxigraph.exe oxigraph_${GITHUB_REF_NAME}_${{ matrix.arch }}_windows_msvc.exe
-        if: github.event_name == 'release'
-      - run: gh release upload ${GITHUB_REF_NAME} oxigraph_${GITHUB_REF_NAME}_${{ matrix.arch }}_windows_msvc.exe
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        if: github.event_name == 'release'
-      - run: uvx twine check target/wheels/*
+  # wheel_mac and wheel_windows removed 2026-09-19: this programme targets
+  # Linux x86_64 only (ADR-0045). Linux glibc and musl wheels above remain the
+  # complete release matrix; no Apple or Windows artifact is produced or
+  # published.
 
   publish_pyoxigraph_pypi:
     if: github.event_name == 'release'
@@ -243,8 +135,6 @@ jobs:
       id-token: write
     needs:
       - python_sdist
-      - wheel_windows
-      - wheel_mac
       - wheel_linux
       - wheel_linux_musl
     steps:
@@ -268,8 +158,6 @@ jobs:
       id-token: write
     needs:
       - python_sdist
-      - wheel_windows
-      - wheel_mac
       - wheel_linux
       - wheel_linux_musl
     steps:

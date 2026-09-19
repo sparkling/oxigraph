@@ -155,7 +155,15 @@ Class C does not cover, and must never be cited to defer:
 This record owns no implementation task. Each Class C item remains recorded in
 its originating ADR's own acceptance section, and its status there is unchanged
 by this classification. The current Class B list is: a separate authorized
-isolated host for delegated qualification runs (ADR-0039), macOS and Windows
-reproduction runners (semantic-parity plan item 7 — the Linux leg is Class A),
-and the unresolved upstream RDF Rules draft dispositions behind two invalid
-SHACL fixtures (semantic-parity plan item 2, issues 1069 and 1074).
+isolated host for delegated qualification runs (ADR-0039), and the unresolved
+upstream RDF Rules draft dispositions behind two invalid SHACL fixtures
+(semantic-parity plan item 2, issues 1069 and 1074).
+
+Amended 2026-09-19: this list originally also carried macOS and Windows
+reproduction runners. Classifying them as Class B was accurate but the wrong
+remedy — an obligation that can never be discharged does not belong in an
+acceptance list at all. Those platforms are now out of scope entirely and the
+target is Linux x86_64 only, per
+[ADR-0045](0045-linux-only-target-platform.md). Class B is for a dependency
+that is absent *now* and could plausibly arrive; permanently unreachable scope
+gets removed instead.

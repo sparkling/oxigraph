@@ -321,7 +321,12 @@ downstream receipts and restarts from the earliest affected step.
 5. Define and review any desired Jena capability scope beyond the closed
    76-scenario/198-assertion outcome intersection before expanding its matrix.
 6. Add edge-lane drift automation and reviewed baseline advancement.
-7. Add platform reproducibility evidence for Linux, macOS, and Windows.
+7. Add platform reproducibility evidence for Linux x86_64. Narrowed from
+   Linux/macOS/Windows on 2026-09-19: no Apple or Windows host is available to
+   this programme and none will be provisioned, so those legs were removed
+   rather than left as permanently undischargeable obligations
+   ([ADR-0045](../adr/0045-linux-only-target-platform.md)). The Linux leg is
+   ordinary buildable work.
 
 ## Definition of done
 

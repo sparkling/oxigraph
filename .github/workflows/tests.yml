@@ -219,34 +219,10 @@ jobs:
       - run: bash .github/workflows/install_rocksdb.sh
       - run: cargo semver-checks check-release --exclude oxrocksdb-sys --exclude oxigraph-js --exclude pyoxigraph --exclude oxigraph-testsuite --exclude oxigraph-cli
 
-  test_macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
-          persist-credentials: false
-      - uses: ./.github/actions/setup-rust
-      - run: cargo test --features rdf-12
-
-  test_windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
-          persist-credentials: false
-      - uses: ./.github/actions/setup-rust
-      - run: cargo test --features rdf-12
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: tools/agentic-qe/package-lock.json
-      - run: npm ci --ignore-scripts
-        working-directory: ./tools/agentic-qe
-      - run: npm run test:adapter
-        working-directory: ./tools/agentic-qe
+  # test_macos and test_windows removed 2026-09-19: this programme targets
+  # Linux x86_64 only (ADR-0045). The agentic-qe adapter suite the Windows job
+  # also ran is already covered by the Linux semantic-parity job's
+  # `npm run test:adapter` step.
 
   test_rdf_no_default_features:
     runs-on: ubuntu-latest
@@ -530,14 +506,18 @@ jobs:
       - run: uv run --locked sphinx-lint docs
         working-directory: ./python
 
-  python_msv_windows:
-    runs-on: windows-latest
+  # Ported from python_msv_windows 2026-09-19 (Linux-only target, ADR-0045).
+  # test_linux_msv covers the Rust minimum-supported-version path; this keeps
+  # the Python minimal-dependency unittest leg, which was unique to the removed
+  # Windows job.
+  python_msv_linux:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
           persist-credentials: false
-      - run: echo "rust-version=$(sed -ne 's/rust-version *= *\"\(.*\)\"/\1/p' Cargo.toml)" >> $GITHUB_OUTPUT
+      - run: echo "rust-version=$(sed -ne 's/rust-version *= *\"\(.*\)\"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
         id: metadata
       - uses: ./.github/actions/setup-rust
         with:
