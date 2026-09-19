@@ -3,7 +3,7 @@ import { realpathSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import { isContained } from "../paths.mjs";
-import { nativeChildEnvironment } from "../native/environment.mjs";
+import { CLAUDE_CONFIGURATION_ENV, nativeChildEnvironment } from "../native/environment.mjs";
 import {
   claudeWorkerOutputSchema,
   workerOutputSchemaPath,
@@ -159,14 +159,14 @@ export function validateProviderInvocation({
   }
   const executionRoot = validateExecutionRoot(cwd);
   for (const name of Object.keys(environment)) {
-    if (blockedChildEnvironmentName(name)) {
+    if (blockedChildEnvironmentName(name) && !(provider === "claude" && CLAUDE_CONFIGURATION_ENV.includes(name))) {
       throw new Error(
         `${provider} child environment retains prohibited authority: ${name}`,
       );
     }
   }
   if (
-    JSON.stringify(environment) !== JSON.stringify(nativeChildEnvironment())
+    JSON.stringify(environment) !== JSON.stringify(nativeChildEnvironment(provider))
   ) {
     throw new Error(
       `${provider} child environment is not the canonical minimal environment`,

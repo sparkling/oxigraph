@@ -8,6 +8,14 @@ The package requests current upstream `latest` dist-tags. Its committed npm
 lock binds exact registry tarballs and SHA-512 integrity, and `.npmrc` disables
 lifecycle scripts. Runtime publication and OpenRouter transport are forbidden.
 
+## Configured subscription transport
+
+Codex and Claude use their normal user configuration, including the user's
+subscription through 9router. Claude children preserve `CLAUDE_CONFIG_DIR`,
+`ANTHROPIC_BASE_URL` and the gateway credential in `ANTHROPIC_AUTH_TOKEN`.
+Model and tool restrictions still come from the harness. Provider API keys
+and OpenRouter remain prohibited; the generic tool environment stays scrubbed.
+
 ## Ordinary delivery: use for every programme build and test
 
 The mandatory everyday entry point is

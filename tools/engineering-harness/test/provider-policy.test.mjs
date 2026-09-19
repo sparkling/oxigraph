@@ -228,3 +228,34 @@ test("native Codex invocation binds each Astra effort in one canonical configura
     rmSync(executionRoot, { recursive: true, force: true });
   }
 });
+
+test("Claude inherits configured gateway transport while Codex and tools stay separate", () => {
+  const values = {
+    CLAUDE_CONFIG_DIR: "/tmp/claude-config",
+    ANTHROPIC_BASE_URL: "http://localhost:20128",
+    ANTHROPIC_AUTH_TOKEN: "gateway-canary",
+    ANTHROPIC_API_KEY: "provider-key-canary",
+  };
+  const before = Object.fromEntries(Object.keys(values).map(name => [name, process.env[name]]));
+  const executionRoot = mkdtempSync(join(tmpdir(), "oxigraph-provider-test-"));
+  try {
+    Object.assign(process.env, values);
+    const claude = claudeInvocation({ executionRoot, model: "opus", prompt: "inspect" });
+    assert.equal(validateProviderInvocation(claude), true);
+    for (const name of ["CLAUDE_CONFIG_DIR", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"]) {
+      assert.equal(claude.environment[name], values[name]);
+    }
+    assert.equal(claude.environment.ANTHROPIC_API_KEY, undefined);
+    const codex = codexInvocation({ executionRoot, model: "gpt-test", prompt: "inspect" });
+    assert.equal(codex.environment.ANTHROPIC_AUTH_TOKEN, undefined);
+    assert.throws(() => validateProviderInvocation({
+      ...claude, environment: { ...claude.environment, ANTHROPIC_BASE_URL: "http://changed.invalid" },
+    }), /canonical minimal environment/);
+  } finally {
+    for (const [name, value] of Object.entries(before)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    rmSync(executionRoot, { recursive: true, force: true });
+  }
+});

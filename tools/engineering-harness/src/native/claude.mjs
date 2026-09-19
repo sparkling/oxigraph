@@ -9,7 +9,7 @@ export function claudeInvocation({
   prompt,
   workerSchemaVersion = 1,
 }) {
-  const environment = nativeChildEnvironment();
+  const environment = nativeChildEnvironment("claude");
   const attestation = resolveNativeExecutable("claude");
   const schema = claudeWorkerOutputSchema(workerSchemaVersion);
   const args = [
