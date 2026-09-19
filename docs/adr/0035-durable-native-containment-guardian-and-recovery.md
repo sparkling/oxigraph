@@ -3353,8 +3353,13 @@ containment.
 
 Actual delegation, cgroup creation/readback/kill/removal, guardian and
 supervisor death injection, `clone3` placement, migration resistance, reboot,
-and power-cut behavior require an explicit isolated delegated host or VM and
-separate receipts. Those runs are not G1.7 and cannot activate production,
+and power-cut behavior require a host-bound qualification run and separate
+receipts. Amended 2026-09-19: ADR-0039's isolated-host precondition is dropped,
+so this programme's own Linux host may perform that run — it supplies cgroup2
+with `nsdelegate`, every required controller in `subtree_control`, and kernel
+6.8's `clone3`/pidfd/`cgroup.kill`. Reboot and power-cut remain unexecutable on
+a shared development server, so those two behaviors stay unqualified rather
+than simulated. Those runs are not G1.7 and cannot activate production,
 application receipts, task/profile registration, qualification, promotion, or
 publication.
 

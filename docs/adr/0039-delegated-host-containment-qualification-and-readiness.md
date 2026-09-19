@@ -44,9 +44,50 @@ containment host; it does not make the RDF store operationally ready.
 ## Decision
 
 Keep production containment readiness exactly
-`{status:"unavailable",reason:"native-adapter-unavailable"}` until an explicitly
-authorized isolated delegated host or VM passes one exact qualification
-contract for the complete ADR-0035 through ADR-0038 physical graph.
+`{status:"unavailable",reason:"native-adapter-unavailable"}` until this
+programme's Linux x86-64 host passes one exact qualification contract for the
+complete ADR-0035 through ADR-0038 physical graph.
+
+### Amended 2026-09-19: the delegated host is this server
+
+This ADR originally required "an explicitly authorized isolated delegated host
+or VM." No such host exists for this programme and none will be provisioned, so
+that clause made the entire qualification permanently undischargeable — the same
+error ADR-0045 corrected for Apple and Windows. The isolated-host requirement is
+**dropped**. Qualification runs on this server.
+
+What that changes, and what it deliberately does not:
+
+- The host-binding requirement **stands unchanged**. Receipts still bind the
+  exact state-root identity and filesystem profile, kernel and architecture
+  profile, cgroup2 mount and namespace, delegated-root identity, controller and
+  permission observations, and service-manager launch configuration of the
+  machine that actually ran them. A kernel version string, administrator
+  assertion, earlier receipt, copied artifact, or replay on a different host
+  remains insufficient. Dropping "isolated" removes a precondition on *which*
+  host may qualify; it does not weaken what a receipt must prove about the host
+  that did.
+- The feature gate is satisfiable here, verified by direct probe rather than
+  assumed: cgroup v2 (`cgroup2fs`) mounted with `nsdelegate` and
+  `memory_recursiveprot`; `cpuset cpu io memory hugetlb pids rdma misc` all
+  present in both `cgroup.controllers` and `cgroup.subtree_control`; subtree
+  creation under this user's own slice succeeds, so a process-empty delegated
+  parent is constructible without root; kernel 6.8 supplies `clone3`, pidfds,
+  exclusive wait, and `cgroup.kill`; user namespaces are available. KVM is
+  present if a guest is ever wanted for a specific control.
+- **Reboot and power-cut controls remain unexecutable** on a shared development
+  server, and the existing rule that "a profile that cannot execute a required
+  destructive or power-cycle control remains unqualified; it cannot weaken the
+  requirement or substitute a simulation" is retained verbatim. The consequence
+  is that this host can qualify the cgroup, lock, lifecycle, quiescence and
+  process-boundary matrices but **cannot** produce the reboot or power-cut
+  receipts. Those two remain genuinely unavailable, and the qualification is
+  partial and must say so rather than claiming a completeness it lacks.
+- Everything upstream of execution — the qualification contract itself, the
+  evaluators, the feature probes, the receipt schema — was always ordinary
+  buildable work under
+  [ADR-0044](0044-post-deployment-production-tuning.md) and is unaffected by
+  this amendment.
 
 The qualification contract binds the exact manager, guardian, trampoline,
 supervisor, adapter, pure-contract requirements, state-root identity and

@@ -27,10 +27,13 @@ the grounds that the hosts are physically absent. That classification was
 accurate but incomplete: an obligation that can never be discharged is not
 blocked work, it is work that should not be on the list.
 
-Separately, ADR-0044 recorded a second Class B item: a separate authorized
-isolated host for delegated qualification runs (ADR-0039). That item is
-unaffected by this decision and remains open — this record narrows the target
-platform, it does not resolve host isolation.
+ADR-0044 recorded a second Class B item on the same grounds: a separate
+authorized isolated host for delegated qualification runs (ADR-0039). That
+requirement was dropped separately on the same day, for the same reason and by
+the same reasoning — no such host exists or will — so ADR-0039 now qualifies on
+this programme's own Linux host, with only its reboot and power-cut receipts
+remaining unavailable. This record does not itself resolve that item; see
+[ADR-0039's amendment](0039-delegated-host-containment-qualification-and-readiness.md#amended-2026-09-19-the-delegated-host-is-this-server).
 
 ## Decision
 
