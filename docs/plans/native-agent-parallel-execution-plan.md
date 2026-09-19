@@ -1,6 +1,7 @@
 # Native Codex and Claude parallel execution
 
-Date: 2026-09-19. Source inspected: `f6b33199` on canonical `main`.
+Date: 2026-09-19. Source inspected: `f6b33199` on canonical `main`, with the
+Claude transport instructions updated for owner commit `8db8797a`.
 Status: orchestration audit and operating plan; application execution paused.
 
 ## Decision
@@ -248,8 +249,11 @@ These commands are a runbook, not commands executed by this audit.
    expected values as readback. CLI alone has no MCP transport.
 5. On `native-worker`, dispatch the exact route. For Claude use a native session
    with `Agent` available, not the frozen `--tools ''` adapter. Reuse
-   `nativeChildEnvironment()` from `src/native/environment.mjs` to launch with
-   native subscription authentication and a minimal environment. A launch
+   `nativeChildEnvironment("claude")` from `src/native/environment.mjs` to
+   preserve the configured subscription transport. This retains
+   `CLAUDE_CONFIG_DIR`, `ANTHROPIC_BASE_URL` and the gateway credential in
+   `ANTHROPIC_AUTH_TOKEN` for Claude only, as documented in the harness README.
+   Provider API keys and OpenRouter remain prohibited. A launch
    template is given below. Supply the exact request, repository/personal
    instructions and ownership plan; safe mode disables automatic custom
    instruction/plugin loading. The Claude lead returns its actual identity
@@ -309,7 +313,7 @@ const child = spawn('/home/claude/.local/bin/claude', [
   '--tools', 'Read,Grep,Glob,Agent',
   '--allowedTools', 'Read,Grep,Glob,Agent',
   '--output-format', 'json'
-], { cwd: process.cwd(), env: nativeChildEnvironment(), stdio: ['pipe', 'inherit', 'inherit'] });
+], { cwd: process.cwd(), env: nativeChildEnvironment('claude'), stdio: ['pipe', 'inherit', 'inherit'] });
 child.on('error', error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
 child.stdin.on('error', error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
 child.on('exit', code => { process.exitCode = code ?? 1; });
