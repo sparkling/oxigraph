@@ -51,8 +51,12 @@ mapping.
 | [ADR-0041 — G1.7 private co-located build issuer and physical owner chain](0041-g17-private-co-located-build-issuer.md)                         | Proposed    | Add version-distinct private build-owner v3 and product-owner v4 behind the qualified shared containment stack without granting G1.7 authority      |
 | [ADR-0042 — Retain RocksDB and gate replacement-backend experiments](0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)           | Accepted    | Keep RocksDB as the sole production-intended persistent backend; TurboKV remains historical evidence and is excluded from active work               |
 | [ADR-0043 — Delivery recovery and proportional release boundary](0043-delivery-recovery-and-proportional-release-boundary.md) | Implemented | Deliver a reproducible, tested application; defer non-gating harness work and review progress across milestones |
+| [ADR-0044 — Post-deployment production tuning](0044-post-deployment-production-tuning.md) | Accepted | Classify every remaining obligation as buildable now, externally blocked, or post-deployment tuning; only the third waits on a live production setting, and it blocks no development or deployment |
 
-The index contains 43 decisions. ADR-0043 is the current delivery-recovery
+The index contains 44 decisions. ADR-0044 draws the boundary the other records
+depend on: promotion decisions, numeric default calibration, and independent
+production probes are post-deployment tuning, while every evaluator, fixture,
+and benchmark harness that feeds them is ordinary buildable work. ADR-0043 is the current delivery-recovery
 decision: direct product tests, reproducible dependencies, a usable application
 artifact, and authorized handoff determine R1 completion. An unresolved release
 hold never satisfies acceptance. The six-hour review continues across

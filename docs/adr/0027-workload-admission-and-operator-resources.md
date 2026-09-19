@@ -1095,6 +1095,52 @@ probe that cannot inspect implementation counters directly. Numeric defaults
 and regression ceilings are frozen only after parent-first baselining; this
 ADR does not invent production capacity values.
 
+### Classifying the four items above, and correcting a misreading (2026-09-19)
+
+All four items were previously treated as one authorization-gated bucket, and
+G4.2 was repeatedly declined on that basis. That was wrong, and it stalled real
+work. Under [ADR-0044](0044-post-deployment-production-tuning.md)'s
+classification:
+
+Items 1-3 are **buildable now** in full — they are tests. Item 4's harness,
+and running it on a development host to record demo-grade throughput, queue
+latency and peak memory, is **also buildable now**. Only two things here are
+post-deployment: freezing the numeric defaults and regression ceilings against
+real production load, and the independent no-counter resource probe, which the
+paragraph above scopes to promotion rather than to measurement.
+
+Current state of the buildable remainder, audited directly against the code
+rather than inferred from this list:
+
+- Item 1 is largely satisfied already. A deterministic-clock seam exists —
+  `AdmissionController`'s entry/enqueue/eligibility/purge surface is drivable
+  against an explicit `now`, as `deterministic_fifo_eligible_class_and_expiry_boundary`
+  does — and roughly seventy tests in `cli/src/workload/tests.rs` cover FIFO,
+  aging, head protection, queue bounds, cancellation, timeout, global-versus-class
+  rejection and reserved capacity. The one uncovered clause is **slot release on
+  panic**: no test asserts a panicking holder returns its slot.
+- Item 2 has substantial wire coverage (chunked bodies, gzip/deflate encodings,
+  invalid multipart, socket-reset queue release, lease-side budget binding). Two
+  clauses remain uncovered: a fixture asserting the **zero-transaction-opens**
+  invariant on denial, and decompression *expansion* as a budget overrun rather
+  than merely as a transport encoding.
+- Item 3 is now complete for the seven operator budgets. Six had dedicated
+  end-to-end files; `aggregate_distinct` was wired and charged but proven only
+  at the counter level, so `lib/oxigraph/tests/aggregate_distinct_budget.rs`
+  (commit `3e58f77f`) closes it — a `COUNT(DISTINCT ?o)` over more distinct keys
+  than the cap, plus the zero-limit, under-limit, independence-from-solution-
+  DISTINCT, and shared-latch cases. `SERVICE` and `LOAD` adversarial coverage
+  remains unwritten.
+- Item 4 splits on instrumentation. Queue latency is computable from the
+  existing eight-bucket `QueueWaitHistogram`, though only as a bracket ("p95
+  falls in (1ms, 10ms]") rather than a point estimate, since fixed decade
+  buckets carry no finer resolution. **Cancellation latency is not instrumented
+  at all** — there is no histogram of cancel-signal to observed-stop — so that
+  clause needs instrumentation before it can be measured. Peak RSS sampling is
+  reusable from ADR-0028's operational drill, carrying its whole-process
+  high-water-mark caveat. A bounded concurrent driver over `acquire` is a small
+  extension of the thread-spawn pattern already used in several admission tests.
+
 ## Consequences
 
 - Overload becomes a bounded, typed, observable state instead of accidental
