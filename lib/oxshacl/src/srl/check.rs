@@ -10,11 +10,7 @@ const RDF_REIFIES: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies";
 
 pub(super) fn well_formed(rule_set: &SrlRuleSet) -> Result<(), SrlError> {
     for (index, rule) in rules(rule_set).enumerate() {
-        let mut bound = rule
-            .for_clause
-            .as_ref()
-            .map(|(variable, _)| BTreeSet::from([variable.clone()]))
-            .unwrap_or_default();
+        let mut bound = BTreeSet::new();
         check_sequence(&rule.body, &mut bound, index)?;
         let mut head_variables = BTreeSet::new();
         for triple in &rule.head {

@@ -2,11 +2,6 @@ use crate::srl::{SrlBodyElement, SrlConstant, SrlError, SrlNode, SrlPredicate, S
 
 pub(super) fn reject_unimplemented_constructs(rule_set: &SrlRuleSet) -> Result<(), SrlError> {
     for source in rules(rule_set) {
-        if source.for_clause.is_some() {
-            return Err(SrlError::Unsupported(
-                "FOR/IN shape integration, removed from the SPARQL-RL grammar 2026-08-12 (was issue #1074)".to_owned(),
-            ));
-        }
         if source.data_only {
             return Err(SrlError::Unsupported(
                 "WHERE DATA matching, specified upstream (issue #960 resolved) but not yet implemented here".to_owned(),

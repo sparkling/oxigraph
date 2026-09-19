@@ -180,7 +180,6 @@ fn issue_only_execution_constructs_fail_closed() {
         "PREFIX : <http://example/> IMPORTS :other RULE {} WHERE {}",
         "PREFIX : <http://example/> RULE {} WHERE DATA {}",
         "PREFIX : <http://example/> RULE {} WHERE { NOT DATA {} }",
-        "PREFIX : <http://example/> RULE {} FOR ?this IN :Shape WHERE {}",
     ] {
         let error = execute_srl_rules(
             &parse(source),
@@ -189,6 +188,19 @@ fn issue_only_execution_constructs_fail_closed() {
         )
         .unwrap_err();
         assert!(matches!(error, SrlError::Unsupported(_)));
+    }
+}
+
+#[test]
+fn removed_for_in_clauses_are_rejected_during_parsing() {
+    for source in [
+        "PREFIX : <http://example/> RULE {} FOR ?this IN :Shape WHERE {}",
+        "PREFIX : <http://example/> IF FOR ?this IN :Shape {} THEN {}",
+    ] {
+        assert!(matches!(
+            SrlRuleSet::parse(source, None, profiles()),
+            Err(SrlError::Syntax { .. })
+        ));
     }
 }
 

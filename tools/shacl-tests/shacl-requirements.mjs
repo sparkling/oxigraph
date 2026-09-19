@@ -280,7 +280,7 @@ export const shaclRequirementMappings = [
       "lib/oxshacl/tests/srl_query.rs",
       "target/w3c/shacl-1.2/run-cases.json",
     ],
-    "All 16 pinned evaluation cases pass. Inference, QUERY, inline data, imports, negation, FILTER, SET, expressions, tuple matching, and RDF 1.2 heads have native coverage. FOR/IN shape integration (draft issue 1074), blank-node body matching, and unsupported head surfaces fail closed.",
+    "All 16 pinned evaluation cases pass. Inference, QUERY, inline data, imports, negation, FILTER, SET, expressions, tuple matching, and RDF 1.2 heads have native coverage. Removed FOR/IN clauses fail during parsing; blank-node body matching and unsupported head surfaces fail closed during execution.",
   ),
   mapping(
     "SHACL12-RULES-CONFORMANCE",
@@ -293,7 +293,7 @@ export const shaclRequirementMappings = [
       "lib/oxshacl/tests/srl_query.rs",
       "target/w3c/shacl-1.2/run-receipt.json",
     ],
-    "The 171-case supplemental SRL corpus is not root-reachable and has unspecified mf:approval. Public Infer and abstract single-triple QUERY roles are implemented, but placeholder RDF mapping, concrete body abbreviation, FOR/IN issue 1074, and draft-open issue 1069 prevent a conformance claim.",
+    "The 171-case supplemental SRL corpus is not root-reachable and has unspecified mf:approval. Public Infer and abstract single-triple QUERY roles are implemented, but placeholder RDF mapping, concrete body abbreviations, and draft-open issue 1069 prevent a conformance claim. Removed FOR/IN clauses are rejected as syntax.",
   ),
   mapping(
     "SHACL12-UI-METADATA",

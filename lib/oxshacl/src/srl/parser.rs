@@ -139,7 +139,6 @@ impl Parser {
             Some(self.iri()?)
         };
         let head = self.triple_block(NodeMode::Template, TokenKind::RightBrace)?;
-        let for_clause = self.for_clause()?;
         self.expect_keyword("WHERE")?;
         let data_only = self.take_keyword("DATA");
         let body = self.body()?;
@@ -147,21 +146,16 @@ impl Parser {
             id,
             head,
             body,
-            for_clause,
             data_only,
         })
     }
 
     fn rule_two(&mut self) -> Result<SrlRule, SrlError> {
-        let id = if self.peek_is(&TokenKind::LeftBrace)
-            || self.peek_keyword("FOR")
-            || self.peek_keyword("DATA")
-        {
+        let id = if self.peek_is(&TokenKind::LeftBrace) || self.peek_keyword("DATA") {
             None
         } else {
             Some(self.iri()?)
         };
-        let for_clause = self.for_clause()?;
         let data_only = self.take_keyword("DATA");
         let body = self.body()?;
         self.expect_keyword("THEN")?;
@@ -170,18 +164,8 @@ impl Parser {
             id,
             head,
             body,
-            for_clause,
             data_only,
         })
-    }
-
-    fn for_clause(&mut self) -> Result<Option<(String, String)>, SrlError> {
-        if !self.take_keyword("FOR") {
-            return Ok(None);
-        }
-        let variable = self.variable()?;
-        self.expect_keyword("IN")?;
-        Ok(Some((variable, self.iri()?)))
     }
 
     fn body(&mut self) -> Result<Vec<SrlBodyElement>, SrlError> {

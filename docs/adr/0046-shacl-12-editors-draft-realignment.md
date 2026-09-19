@@ -111,13 +111,11 @@ Verified against `sparql12-rl`'s own `sparql-rl-grammar.bnf` and prose:
    (`evaluate.rs:215-218`, `policy.rs:10-19`). The parser already carries a
    `data_only` field (`srl.rs:233,258`); only execution is missing.
 
-3. **`FOR`/`IN` is a stale rejection of the opposite kind.** The construct was
+3. **`FOR`/`IN` was a stale rejection of the opposite kind.** The construct was
    *removed* from the grammar on 2026-08-12, not left pending. The only `FOR`
-   tokens remaining in the BNF are `ENCODE_FOR_URI` and `STRBEFORE`. Our parser
-   still accepts a `for_clause` (`srl.rs:256`) and rejects it at execution
-   citing "#1074" as draft-open (`evaluate.rs:210-213`, `policy.rs:5-9`). The
-   outcome is right; the reason is wrong, and we accept syntax the grammar no
-   longer defines.
+   tokens remaining in the BNF are `ENCODE_FOR_URI` and `STRBEFORE`. Resolved
+   2026-09-19: the parser no longer accepts a `for_clause`; removed syntax now
+   fails as syntax instead of surviving to an execution-time unsupported error.
 
 4. **`shacl12-inference-rules` surfaces we do not implement**: `sh:layer`,
    `sh:runOnce`, `sh:expectedPredicate`, `sh:sourceRule`, and
@@ -213,9 +211,9 @@ landable and independently reviewable.
    `expanded_head` auxiliary-triple approach rather than blanket-rejecting in
    `reject_pattern_node`.
 
-4. **Decide `FOR`/`IN` parsing.** Either stop accepting syntax the grammar no
-   longer defines, or keep it for back-compatibility with an honest message.
-   Prefer removal; record whichever is chosen.
+4. ~~**Decide `FOR`/`IN` parsing.**~~ **Done.** Removed syntax is rejected by
+   the parser. No compatibility extension is retained for a construct absent
+   from the governing grammar.
 
 5. **Re-pin the test suite.** Not data-only: it needs the three path fixes in
    (5) above, a recount of the `sparqlRulesInfer` and `srlRules` lanes, a

@@ -252,8 +252,6 @@ pub struct SrlRule {
     pub head: Vec<SrlTriple>,
     /// Rule body evaluated as a conjunction.
     pub body: Vec<SrlBodyElement>,
-    /// Optional `FOR` variable and class IRI.
-    pub for_clause: Option<(String, String)>,
     /// Whether the whole rule reads only from the input data graph.
     pub data_only: bool,
 }

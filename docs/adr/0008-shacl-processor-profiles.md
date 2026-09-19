@@ -190,7 +190,8 @@ below remains open. Current divergences, stated honestly:
   evaluation semantics 2026-08-12, closing issue 960) and **not yet implemented
   here**. It is not draft-open.
 - **`FOR`/`IN` was removed** from the grammar on 2026-08-12. It is not a pending
-  obligation; our parser still accepts the syntax and should stop.
+  obligation; our parser rejects the removed syntax instead of carrying it to
+  execution as an unsupported extension.
 - **Body abbreviations** — collections, blank-node property lists, reifiers and
   annotation blocks — are permitted by grammar productions `[69]`–`[79]` and we
   reject them. Blank-node body matching failing closed is part of this gap, not

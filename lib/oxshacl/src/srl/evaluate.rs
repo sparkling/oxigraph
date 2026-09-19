@@ -207,11 +207,6 @@ fn execute_resolved(
 fn compile_program(rule_set: &SrlRuleSet) -> Result<Program, SrlError> {
     let mut output = Vec::new();
     for (rule_index, source) in rules(rule_set).enumerate() {
-        if source.for_clause.is_some() {
-            return Err(SrlError::Unsupported(
-                "FOR/IN shape integration, removed from the SPARQL-RL grammar 2026-08-12 (was issue #1074)".to_owned(),
-            ));
-        }
         if source.data_only {
             return Err(SrlError::Unsupported(
                 "WHERE DATA matching, specified upstream (issue #960 resolved) but not yet implemented here".to_owned(),
