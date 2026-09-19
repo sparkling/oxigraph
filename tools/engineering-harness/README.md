@@ -1011,22 +1011,32 @@ verifier-session artifacts, not application receipts. The contract remains
 `localOnly: true` and `promotionAuthority: false`; acceptance neither qualifies
 semantics nor authorizes product promotion or publication.
 
-Install and verify from this directory:
+Install and verify setup from this directory:
 
 ```bash
 npm ci --ignore-scripts
-npm test
+node --test test/delivery.test.mjs test/workflow.test.mjs test/astra-routing.test.mjs test/provider-policy.test.mjs test/router-history.test.mjs test/dependency-binding.test.mjs test/doctor.test.mjs ../agentic-qe/process-runner.test.mjs
 npm run doctor
-npm run g1.3:preflight
-npm run g1.4:preflight
-npm run g1.5:preflight
-npm run g1.5b:preflight
-npm run g1.5c:preflight
-npm run g1.6:preflight
-npm run g1.7:preflight
 ```
 
-At the current fail-closed checkpoint, `npm test` reports 1,118 tests: 1,106
+Repeat the focused tests with Node 20. Setup validation does not start an
+application workflow. Application implementation, builds, tests, repairs and
+reviews use the ordinary `oxigraph-delivery.mjs` workflow described above when
+application work is requested. The broad `npm test` includes historical G1.7
+evaluators; it is not the setup validation command. G1.7 preflight and execution
+require their separate explicit authority.
+
+The 2026-09-19 setup audit passes the 68 delivery/workflow/Astra/process tests
+and the 19 provider/history/dependency/doctor tests on both Node 24.14.1 and
+Node 20.20.2. Both native client interfaces pass the doctor checks. These
+checks inspect executable identity, version and help; they do not establish
+subscription authentication or availability of a particular model. The
+doctor's legacy `realDualProviderProofRecorded: false` is a fixed field, not
+a search of historical receipts; ADR-0017 records the accepted G1.2 dual-provider
+run separately. The active conversation's authentication is also separate from
+the environment used by a newly launched CLI process.
+
+At the historical pre-C15 fail-closed checkpoint, `npm test` reported 1,118 tests: 1,106
 pass, two fail, three intentional live-host tests are skipped, and seven are
 TODO. One failure is ADR-0036's deliberate absent-candidate stop. The other is
 the G1.7 identity gate refusing product paths changed after its sealed `e9`
