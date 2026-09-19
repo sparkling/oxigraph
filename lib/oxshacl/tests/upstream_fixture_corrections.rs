@@ -9,11 +9,18 @@
 //!
 //! The pinned upstream files cannot be executed at all:
 //!
-//! - `core/node/in-003.ttl` references `shsh:inSubjectsShape` and
-//!   `shsh:inSubjectsShapeInPropertyShape` without declaring `@prefix shsh:`,
-//!   so it is not parseable Turtle. The terms are legitimate —
-//!   `http://www.w3.org/ns/shacl-shacl#` really does define both — so the
-//!   fixture's intent is sound and one missing line is the whole defect.
+//! - `core/node/in-003.ttl` has **two** defects, because it is `xone-003.ttl`
+//!   copied with the prefix line dropped and one term left un-renamed. It
+//!   references `shsh:` terms without declaring `@prefix shsh:`, so it is not
+//!   parseable Turtle; and its `sh:property` points at
+//!   `shsh:inSubjectsShapeXonePropertyShape`, a term defined neither in the
+//!   fixture nor in the `shacl-shacl` namespace, while the shape it actually
+//!   defines and the expected result both name the `In` variant. Declaring the
+//!   prefix alone makes the file parse while leaving that reference dangling,
+//!   so both lines are corrected. The `shsh:` terms themselves are legitimate —
+//!   `http://www.w3.org/ns/shacl-shacl#` really does define
+//!   `inSubjectsShape` and `inSubjectsShapeInPropertyShape` (and
+//!   `xoneSubjectsShapeXonePropertyShape`, the name the copy came from).
 //! - `core/node/in-002.ttl` types its instance as `ex:TestShape` and expects a
 //!   result citing `sh:sourceShape ex:TestShape`, but only defines
 //!   `ex:TestInUnsatisfiableShape`. Sibling `in-001.ttl` shows the intended
@@ -21,11 +28,12 @@
 //!   it is its own implicit class target.
 //!
 //! The corrected copies in `fixtures/upstream-corrections/` differ from the
-//! pinned bytes by exactly one line each. They are **local corrections, not
-//! upstream evidence**: the W3C runner still excludes both originals by exact
-//! content hash, so this file adds coverage without ever letting a repaired
-//! fixture masquerade as a passing upstream case. If upstream fixes the files,
-//! the runner's hash exclusions break loudly and both can be retired together.
+//! pinned bytes by two lines (`in-003`) and one line (`in-002`). They are
+//! **local corrections, not upstream evidence**: the W3C runner still excludes
+//! both originals by exact content hash, so this file adds coverage without
+//! ever letting a repaired fixture masquerade as a passing upstream case. If
+//! upstream fixes the files, the runner's hash exclusions break loudly and both
+//! can be retired together.
 
 use oxrdf::{Dataset, GraphName, NamedNode, Quad, Term};
 use oxshacl::{GraphSnapshot, ProfileSet, ShapesGraph, ValidationOptions, validate};
@@ -87,6 +95,26 @@ fn corrected_in_003_parses_where_the_pinned_fixture_cannot() {
             .any(|s| s == &format!("<{SHSH}inSubjectsShapeInPropertyShape>")),
         "expected shsh:inSubjectsShapeInPropertyShape to resolve"
     );
+    // The pinned fixture is xone-003.ttl with the prefix line dropped and one
+    // term left un-renamed, so it also pointed sh:property at
+    // shsh:inSubjectsShapeXonePropertyShape -- a term defined neither here nor
+    // in the shacl-shacl namespace. Declaring the prefix alone would leave that
+    // reference dangling, so assert every sh:property object actually resolves
+    // to a subject in this graph.
+    let sh_property = NamedNode::new_unchecked(format!("{SH}property"));
+    let targets = dataset
+        .iter()
+        .filter(|quad| quad.predicate == sh_property.as_ref())
+        .map(|quad| quad.object.to_string())
+        .collect::<Vec<_>>();
+    assert!(!targets.is_empty(), "fixture should declare sh:property");
+    for target in &targets {
+        assert!(
+            subjects.contains(target),
+            "sh:property points at {target}, which nothing defines; \
+             the upstream Xone/In copy-paste slip is not fully corrected"
+        );
+    }
 }
 
 /// `sh:in ()` is unsatisfiable, so the instance the shape targets must violate

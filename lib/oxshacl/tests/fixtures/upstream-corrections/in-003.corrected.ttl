@@ -17,7 +17,7 @@ ex:TestInUnsatisfiableShape
 shsh:inSubjectsShape
   a sh:NodeShape ;
   rdfs:isDefinedBy shsh: ;
-  sh:property shsh:inSubjectsShapeXonePropertyShape ;
+  sh:property shsh:inSubjectsShapeInPropertyShape ;
   sh:targetSubjectsOf sh:in ;
   .
 shsh:inSubjectsShapeInPropertyShape
