@@ -23,7 +23,6 @@ export function codexInvocation({
     "--sandbox",
     "read-only",
     "--ephemeral",
-    "--ignore-user-config",
     "--ignore-rules",
     "--strict-config",
     ...codexFeatureArguments(validatedEffort),

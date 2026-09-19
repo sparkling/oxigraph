@@ -23,7 +23,8 @@ test("native invocations are explicit, read-only, ephemeral, and provider-local"
     assert.equal(validateProviderInvocation(codex), true);
     assert.equal(validateProviderInvocation(claude), true);
     assert.ok(codex.args.includes("read-only"));
-    assert.ok(codex.args.includes("--ignore-user-config"));
+    assert.ok(!codex.args.includes("--ignore-user-config"));
+    assert.equal(codex.args[codex.args.indexOf("--model") + 1], "gpt-5.6-sol");
     assert.ok(!codex.args.includes("--enable"));
     assert.ok(codex.args.includes("shell_tool"));
     assert.ok(claude.args.includes("--safe-mode"));

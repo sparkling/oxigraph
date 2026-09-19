@@ -207,7 +207,6 @@ export function validateProviderInvocation({
         "--sandbox",
         "read-only",
         "--ephemeral",
-        "--ignore-user-config",
         "--ignore-rules",
         "--strict-config",
         ...codexFeatureArguments(reasoningEffort),

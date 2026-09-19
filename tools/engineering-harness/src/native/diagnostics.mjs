@@ -9,7 +9,6 @@ const definitions = Object.freeze({
     helpArgs: Object.freeze(["exec", "--help"]),
     requiredHelp: Object.freeze([
       "--sandbox",
-      "--ignore-user-config",
       "--disable",
       "--output-schema",
     ]),
