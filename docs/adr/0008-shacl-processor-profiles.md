@@ -155,7 +155,7 @@ That 171 is measured at pin `eedda09f` and is not a current figure. Upstream has
 since moved the corpus to `shacl12-test-suite/tests/sparql-rl/` (manifest
 renamed to `manifest-sparql-rl.ttl`) and grown it to **198 `.srl` test cases**
 across 288 files, including a new `eval2/` directory whose 6 `WHERE DATA` cases
-we do not yet pass. Re-pinning is sequenced deliberately after the
+have not yet been revalidated against a new pin. Re-pinning follows the
 corresponding implementation work — see
 [ADR-0046](0046-shacl-12-editors-draft-realignment.md).
 
@@ -184,11 +184,12 @@ Against the live SPARQL-RL draft, our stratification terminology, run-once
 derivation, the stratification condition, and bounded fixpoint iteration all
 match — the bounded fixpoint is **no longer** merely an implementation choice
 for the iteration model itself, though the interaction with repeated firing
-below remains open. Current divergences, stated honestly:
+below remains open. Current alignment and remaining divergences:
 
-- **`WHERE DATA` / `NOT DATA`** is specified upstream (grammar 2026-07-07,
-  evaluation semantics 2026-08-12, closing issue 960) and **not yet implemented
-  here**. It is not draft-open.
+- **`WHERE DATA` / `NOT DATA`** is implemented in `e9a285c8` (2026-09-20):
+  frozen base-plus-inline GD, accumulating GE, sticky WHERE DATA and local
+  NOT DATA. Focused and feature-matrix evidence is recorded in ADR-0046;
+  the upstream suite repin remains separate.
 - **`FOR`/`IN` was removed** from the grammar on 2026-08-12. It is not a pending
   obligation; our parser rejects the removed syntax instead of carrying it to
   execution as an unsupported extension.
@@ -205,8 +206,10 @@ Rust API. It has **no `sh:TripleRule` RDF compiler at all**, so its lack of
 `sh:order`/`sh:condition`/`sh:deactivated`/`sh:layer` is not a set of missing
 fields but an absent ingestion path. The `sh:SPARQLRule` surface does implement
 `sh:order`, `sh:condition` (including the required rejection of conditions on
-global rules) and `sh:deactivated`; it lacks `sh:layer`, and does not fail
-closed on an unrecognized `sh:ruleProcessor`, which is a MUST-level clause.
+global rules) and `sh:deactivated`; it lacks `sh:layer` and requires uniform
+within-layer ordering across global and shape-attached rules. Since `e9a285c8`
+it fails closed on explicit `sh:ruleProcessor` declarations on rules and rule
+sets. No custom processor identifier is supported; absence uses the default.
 
 Neither the Rules nor Compact Syntax lane closes the corresponding normative
 clause inventory.

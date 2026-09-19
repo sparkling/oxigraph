@@ -299,7 +299,13 @@ either native subscription client without substitution. Max/Ultra again require
 an explicit owner or unresolved selection. Historical Claude and Codex runs,
 including the September 12 Astra/Low selection, retain their original identities.
 
-Do not inherit a Max/Ultra coordinator's settings into routine workers. Select
+On 2026-09-20 the owner selected `gpt-6-astra` / `xhigh` for programme
+coordination. The native coordinator owns sequencing, model allocation and
+acceptance decisions; root retains source application and the workflow bridge.
+This selection is recorded in the live programme control and repository
+instructions. It leaves the restored task-specific worker defaults intact.
+
+Do not inherit a coordinator's settings into routine workers. Select
 their model/effort explicitly and pass only the relevant contract, files and
 acceptance checks. Return subsequent routine tasks to the faster defaults after
 an escalation resolves its question. This does not silently change a running

@@ -1,8 +1,10 @@
 # Native-agent strategy: speed, token efficiency and accuracy
 
-Started: 2026-09-19. Updated: 2026-09-20. Source: `2d23f875`, canonical `main`.
-Status: completed swarm discussion, operating plan and contributor-contract
-update. Application execution remains paused; routing defaults are unchanged.
+Started: 2026-09-19. Updated: 2026-09-20. Initial source: `2d23f875`;
+latest product delivery: `e9a285c8`, canonical `main`.
+Status: ordinary application execution authorized and active. A+C delivered in
+`e9a285c8`; B+D is next. The owner selected Astra/xhigh programme coordination;
+task-specific worker routing defaults are unchanged.
 
 This incorporates both owner amendments: independent Codex sessions (`c63b1fef`)
 and independent Claude sessions (`2d23f875`). It supersedes the recommendations in
@@ -179,6 +181,7 @@ More specific owner model selections take precedence.
 
 | Work | Codex starting route | Explicit Claude candidate |
 | --- | --- | --- |
+| Programme coordination (owner selection, 2026-09-20) | `gpt-6-astra` / `xhigh` | Owner selected Codex for this role |
 | Build, test, format check, exact comparison | Deterministic tools through harness; no model | Same |
 | Narrow extraction or sourced documentation | `gpt-5.6-luna` / `low` | `claude-sonnet-5` / `low` |
 | Bounded implementation or test authoring with settled interfaces | `gpt-5.6-terra` / `medium` | `claude-sonnet-5` / `medium` |
@@ -186,8 +189,13 @@ More specific owner model selections take precedence.
 | Difficult Rust or semantic implementation | `gpt-5.6-sol` / `high` | `claude-opus-5` / `high` |
 | Consequential judgment or unresolved correctness | `gpt-6-astra` / `high` | `claude-fable-5-1` / `high` for targeted review; Opus/high for implementation |
 
-Keep the active coordinating conversation unchanged. Do not automatically pass
-its model, effort or full history to every worker. Give each worker the relevant
+Dispatch the selected coordinator through the native host with explicit
+`model: "gpt-6-astra"`, `reasoning_effort: "xhigh"`, and a bounded context
+(`fork_turns: "none"` on `collaboration.spawn_agent`). Record its actual ID in
+the live programme control's `programmeCoordinator` field. Root remains the
+source writer and workflow host. This delegated selection does not switch the
+parent conversation's model. Do not automatically pass the coordinator's
+model, effort or full history to every worker. Give each worker the relevant
 contract, source references, exact source identity and acceptance checks.
 Avoid repeated full-repository scans and full-conversation forks for small jobs.
 Use deterministic tools directly for mechanical lookups when delegation itself
@@ -211,7 +219,16 @@ model/effort pair cannot be expressed by the available child tool. Preserve
 `nativeChildEnvironment("claude")` for its configured subscription gateway and
 `nativeChildEnvironment("codex")` for Codex; do not read or print credentials.
 
-## Concrete next allocation, once application execution is requested
+## First allocation: A+C (delivered)
+
+Completed in `e9a285c8` through workflow
+`a0bf1946-47fb-43ab-b212-6bba1a90ac67`. Three native contributors produced the
+seven-file aggregate; Astra/xhigh reviewed proposals before application and a
+fresh Sol/medium reviewer accepted the tested candidate. The four check counts
+were 8, 2, 186 and 124. One grammar-invalid test was repaired through the same
+workflow; its failed run is retained. Native usage counters were not supplied,
+so this run establishes accepted delivery, not comparative model efficiency.
+The allocation below records that first execution.
 
 Use one ordinary A+C workflow with the seven-path union below. The governing
 behavior and detailed acceptance come from
@@ -250,7 +267,7 @@ paths. Completed FOR/IN removal is not reopened.
 
 | State/boundary | Ready work | What remains dependent |
 | --- | --- | --- |
-| S0: current committed source | A semantic implementation, independent A oracle and C implementation. A fixture generation follows agreement on the independently derived contract. | B/D source proposals wait for A/C; final review waits for applied source and checks. |
+| S0: original pre-A+C source | A semantic implementation, independent A oracle and C implementation. A fixture generation follows agreement on the independently derived contract. | B/D source proposals wait for A/C; final review waits for applied source and checks. |
 | S0: useful extra preparation | A fourth worker can settle B's next interface. Further independent workers can prepare D's contract, E's non-mutating inventory, one selected G3 oracle and the G4.2 cancellation-observation seam. These eight assignments are an example ready queue, not a target size or cap. | Each preparation task needs a named deliverable and source-labelled packet. Do not duplicate an already answered question. Respect the three active delivery-task policy by keeping these bounded subtasks of selected delivery/research work. |
 | Candidate S0': aggregate applied | Root runs checks; independent reviewers inspect the fixed candidate when results are available. Free workers can finish relevant acceptance preparation. | No checkout edits or commits during source-bound checks/review. Live-source readers must finish or pause before another application boundary. |
 | S1: A+C verified and committed | B and D proposals with released, exclusive shared paths. Reconcile earlier preparation against S1. | B's protected clause-inventory contract needs its narrow review; E repin waits for corrected behavior and exact evidence authority. |
@@ -262,15 +279,58 @@ G4.3 gap. Each has its own evidence and ownership. Redirect capacity as review
 or integration becomes the limiting stage; do not generate a pile of obsolete
 full-file proposals.
 
+## Next allocation: B+D
+
+Capture a fresh source identity after the A+C commit and its documentation
+update. The following nine paths fit one ordinary workflow. No source proposal
+from the earlier source may be relabelled without reconciliation.
+
+| Assignment | Exclusive proposal paths | Route |
+| --- | --- | --- |
+| B implementation and aggregate synthesis | `lib/oxshacl/src/srl/check.rs`, `lib/oxshacl/src/srl/evaluate/matching.rs`, `lib/oxshacl/src/srl/evaluate/policy.rs`, `lib/oxshacl/src/srl/evaluate/native.rs` | Sol/high |
+| B independent oracle and fixtures | New `lib/oxshacl/tests/srl_body_abbreviations.rs`, narrow body-policy assertion in `lib/oxshacl/tests/srl_clause_inventory.rs` | Sol/medium |
+| D layers and uniform ordering | `lib/oxshacl/src/sparql_rules.rs`, `lib/oxshacl/src/sparql_rules/execution.rs` | Sol/high |
+| D independent oracle and fixtures | `lib/oxshacl/src/sparql_rules/tests.rs` | Sol/medium |
+
+B publishes the shared pattern-expansion interface before dependent fixture
+integration. D is independent of that interface. Use independent native sessions
+for ready assignments exceeding this host's child slots, or refill released
+slots promptly; record the actual dispatch and any readiness or host constraint.
+Astra coordinates interfaces and acceptance. Root applies one reviewed aggregate,
+serializes Cargo checks, then dispatches a fresh Sol/medium final reviewer.
+
+B acceptance compares abbreviations with explicit triples, including auxiliary
+dependencies, failed matches, blank-label scope, negation, DATA graph selection
+and RDF 1.2 feature behavior. Preserve pinned grammar evidence and head identity
+assertions. The stale body-rejection assertion is the only intended inventory
+test change; its FILTER expression must retain feature-aware expectations.
+
+D acceptance includes absent/zero, negative/fractional and malformed layers,
+lower-layer closure, no reactivation of completed layers, cumulative limits,
+and equal-order isolation across global and shape-attached rules. Use
+nonmonotonic absence queries to distinguish a shared snapshot from the old
+global-first partition. Conflicting shape orders cannot override rule order.
+
+Run the focused `srl_body_abbreviations` and `srl_clause_inventory` integration
+tests and `--lib rule_layer`, then the all-features and no-default-features
+oxshacl matrices. All commands run through the existing workflow.
+
+E requires review of the exact old/new upstream revision, source diffs, hashes,
+manifest-derived case inventories, lane roots, approval/reachability and
+exclusions. Preserve upstream expected results and historical receipts. Before
+E execution, add only its exact tooling paths/commands to the ordinary harness,
+with contract checks under current Node and Node 20; do not bypass the harness.
+
 ## Comparison with the remaining programme
 
-The priority below is a proposed dispatch order, not application authorization.
+The owner has authorized programme execution through the engineering harness.
+The priority below is the remaining dispatch order after A+C.
 Source checks override stale backlog wording. "Buildable" describes development
 readiness; it does not establish that the current tests pass or grant promotion.
 
 | Remaining lane | Dependency and useful parallel work | Starting model allocation |
 | --- | --- | --- |
-| SHACL A+C, then B+D | Highest-priority concrete wave above. Shared evaluation and SPARQL-rule files force successive source states; independent oracle/fixture work overlaps implementation. Repin follows corrected behavior and exact evidence review. | Sol/high for semantic implementation; Sol/medium for the combined A oracle/fixture task; Terra/medium for C and later settled fixture-only tasks; fresh Sol/medium final review. |
+| SHACL B+D, then reviewed repin | A+C is delivered. B must share abbreviation expansion between matching and dependency analysis. D must implement layers and uniform within-layer ordering across global and shape-attached rules together. Repin follows corrected behavior and exact evidence review. | Sol/high for semantic implementation; Sol/medium for independent oracle/fixtures; fresh Sol/medium final review. |
 | G4.2 cancellation measurement | Define cancellation-signal-to-observed-stop instrumentation, then a drill that measures it. Likely seams: `cli/src/workload/metrics.rs`, `cli/src/workload/resource_metrics.rs`, `cli/src/workload.rs`; establish the exact observation seam before assigning edits. Workload/acceptance design can proceed independently; measurement execution waits for instrumentation and the build/resource lane. | Sol/high for measurement semantics; Terra/medium for settled fixtures. No model for the actual drill. |
 | G3 acceptance evidence | G3.2 differential harness; G3.4 indexed-versus-oracle evaluation across 24 relations; G3.5 controlled-loopback SERVICE fixtures. Existing test surfaces include `lib/oxigraph/tests/bounded_join_planning.rs`, `spatial_index.rs`, `spatial_service.rs`. Independent oracle/fixture design is useful alongside SHACL; actual runs remain serialized where resources compete. | Terra/medium for bounded fixtures; Sol/high for planner/differential interpretation; independent Sol/medium evidence review. |
 | G3.5 federation planner | Endpoint catalog with a real consumer, source selection, bound-join batching and telemetry. Explicit HTTP SERVICE is already the baseline. Settle the planner/consumer interface before distributing code; arbitrate overlap with G3.2 optimizer/evaluator work. | Sol/high interface/implementation; Terra/medium independent loopback fixtures. No unused catalog scaffolding. |
@@ -308,7 +368,7 @@ numeric calibration and promotion are separate operational decisions; G1.7 is
 not a prerequisite for ordinary application progress.
 
 The practical consequence is **more independent acceptance preparation**, not
-more writers. Once application execution is requested, SHACL delivery can
+more writers. During authorized execution, SHACL delivery can
 coexist with bounded G3 oracle and G4 measurement-design tasks within the existing
 three-active-delivery-task policy. Only dependency-ready work is dispatched;
 shared-source implementation still enters the one workflow/integration lane.
@@ -388,7 +448,7 @@ it is the frozen candidate quality router, uses equal sentinel prices, and has
 a different history/acceptance contract. No new scheduler, learned model router,
 token-usage schema, API transport or global concurrency setting is introduced here.
 
-Before the first authorized delivery, prepare the actual task spec, current
+For each authorized delivery, prepare the actual task spec, current
 source contract, ownership packet and exact native route for each contributor.
 Use the existing `workflow --spec` controller, `relayWorkflowHost`, root-only
 application and `run` checks. The first useful run resolves telemetry, launch

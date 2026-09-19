@@ -3,7 +3,9 @@
 - **Status**: Accepted
 - **Date**: 2026-09-19
 - Deciders: Oxigraph parity programme
-- Implementation status: findings recorded; no code changed by this record. The
+- Implementation status: DATA execution and fail-closed `sh:ruleProcessor`
+  handling (A+C) delivered in `e9a285c8` on 2026-09-20. Body abbreviations,
+  inference-rule layers/ordering and the reviewed suite repin remain open. The
   plan below is ordinary buildable work under
   [ADR-0044](0044-post-deployment-production-tuning.md), not a gated backlog.
 - **Related**:
@@ -283,6 +285,43 @@ landable and independently reviewable.
   unrelated properties in a different document.
 
 ## Evidence and task ownership
+
+### A+C ordinary delivery, 2026-09-20
+
+Commit `e9a285c8` implements frozen base-plus-inline GD, accumulating GE,
+sticky `WHERE DATA` and local `NOT DATA`. The extra frozen copy is allocated
+only for DATA-bearing rule sets and charged before cloning. The SPARQL-rule
+compiler rejects explicit processor declarations on rules and rule sets;
+no custom processor identity is advertised, and absence retains the default.
+
+Engineering workflow `a0bf1946-47fb-43ab-b212-6bba1a90ac67` completed with
+independent review and exact MCP evidence readback under
+`programme-task-evidence/workflow-a0bf1946-47fb-43ab-b212-6bba1a90ac67`.
+Its local records are in `target/engineering-delivery/workflow-mum0th/`.
+The focused DATA and processor checks passed 8 and 2 tests; the full oxshacl
+all-features and no-default-features lanes passed 186 and 124 tests.
+
+The first focused run exposed an invalid test containing NOT inside NOT.
+Grammar productions [21]-[23] admit only triples and FILTER inside a NOT body;
+the parser was correct. The reviewed replacement tests the valid combination
+of WHERE DATA and NOT DATA with both a GE-only blocker and a GD blocker.
+The failed attempt remains in the workflow history. These are ordinary native
+test results; no suite pin, protected expected result or qualification changed.
+
+### Next B+D contract
+
+Body abbreviation expansion must serve both matching and dependency analysis,
+including auxiliary predicates and blank-label scope. For SHACL-SPARQL,
+implement layers and uniform rule ordering together: each equal
+`(layer, rule order)` group shares one input snapshot across global and
+shape-attached rules, then merges its inferred union. A global-first or
+shape-order-first partition would preserve a mismatch with the current
+inference-rules ordering clause. Complete lower layers before advancing,
+with cumulative resource limits; preserve the separate repeated-firing
+exclusion. The suite repin follows corrected behavior and explicit review of
+the exact old/new evidence packet.
+
+### Original investigation
 
 Swarm findings are recorded in the `programme-reviews` memory namespace under
 `shacl12-editors-draft-core-nodeexpr-verified-2026-09-19`,

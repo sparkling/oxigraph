@@ -20,6 +20,10 @@ is waiting. The 32-core host is a build resource, not a model-session limit.
 The command owner must exclude overlapping builds/tests that share Cargo outputs
 for their full lifetime; the current delivery wrapper does not enforce that lock.
 Use configured task-specific model defaults, escalating concrete hard decisions.
+The owner selected native Codex `gpt-6-astra` with `xhigh` reasoning for the
+programme coordinator on 2026-09-20. It owns dependency sequencing, worker/model
+allocation and acceptance decisions. Root remains the sole source writer and
+engineering-workflow host. Select worker and reviewer routes independently.
 Balance accepted correctness, elapsed time and total reported context/review/repair
 tokens from ordinary work, without quota gates or a benchmark programme.
 

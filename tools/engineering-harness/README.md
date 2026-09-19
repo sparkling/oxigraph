@@ -103,6 +103,15 @@ model/effort and `error`; the controller stops without substituting a model.
 
 ### Native parallel contributors
 
+The programme coordinator uses native Codex `gpt-6-astra` / `xhigh`, selected
+by the owner on 2026-09-20. The native host dispatches this coordination agent
+with explicit model and reasoning effort; the delivery controller does not
+switch the active conversation's model. The live `programmeCoordinator` field
+under `programme-controls/oxigraph-six-hour-delivery-course-correction-v1`
+records the actual agent ID and selection. Root services the workflow bridge
+and applies reviewed proposals; existing worker and reviewer defaults remain
+task-specific. No additional scheduler or delivery role is needed.
+
 Choose parallel work from ready dependencies and exclusive proposal ownership,
 not a repository-wide provider/session cap. Native child slots and independent
 `codex exec`/Claude sessions are distinct execution paths. The active host
