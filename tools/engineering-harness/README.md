@@ -200,29 +200,23 @@ sandbox or hostile-concurrency guarantee. Shell access is not globally
 intercepted: this is the required programme execution path, not an OS-wide ban.
 Legacy build instructions remain recipes to pass through this entry point.
 
-Model roles are executable policy in `src/delivery.mjs`: no model for build/test.
-Since 2026-09-15 the Codex subscription is unavailable and the owner directed
-Claude-only routing. Following Anthropic's effort guidance (one model tier per
-route with effort by role, exact model IDs, no cost cascade — subscription use
-has no cost budget), the defaults are: `claude-opus-5`/xhigh for bounded
-implementation, `claude-opus-5`/low for documentation, `claude-fable-5-1`/high
-for independent review (never weaker than the implementer),
-`claude-fable-5-1`/xhigh for difficult implementation, and
-`claude-fable-5-1`/max for consequential decisions. Claude efforts are
-`low`..`max`; `ultra` is Codex-only orchestration. Aliases (`opus`, `fable`)
-and effort-less Haiku are not admitted. Codex models (`gpt-5.6-*`,
-`gpt-6-astra`) remain admissible only as explicit overrides with a reason, and
-their unavailability is reported with exact client/model/error, never
-substituted; a safety refusal is reported the same way. An explicit supported
-model/effort override needs its reason and completion check; Max/Ultra outside
-the decision role also require `--selection owner` or `--selection unresolved`
-for that bounded exception. This does not switch the owner's active model. The
-route's `nativeDispatch.provider` tells the host which native client to use
-(`claude -p --model M --effort E` for Claude; native Codex agent tools for
-Codex). Higher effort lengthens single worker turns; the 30-minute host action
-bound still applies, so split proposals that cannot complete in one turn.
-Superseded Codex-bound runs and the September 12 Astra/Low specification
-retain their own original identities.
+Model roles are executable policy in `src/delivery.mjs`: no model for build/test;
+Terra/Medium for bounded implementation, Luna/Low for documentation, Sol/Medium
+for routine review, Sol/High for difficult implementation, and Astra/High for
+consequential decisions. These are the exact native Codex defaults that preceded
+the temporary 2026-09-15 Claude-only interval and were restored when the owner's
+ChatGPT/Codex subscription became available again on 2026-09-19. Exact native
+Claude models remain supported as explicit overrides: `claude-sonnet-5`,
+`claude-opus-5`, and `claude-fable-5-1`, with efforts from `low` through `max`.
+Aliases and effort-less Haiku are not admitted. An explicit supported
+model/effort override needs its reason and completion check; Max/Ultra also
+require `--selection owner` or `--selection unresolved` for that bounded
+exception. The route's `nativeDispatch.provider` tells the host which native
+subscription client to use; neither provider is a fallback for the other, and
+unavailability is returned with the exact client, model, and error. This does
+not switch the owner's active conversation model. The September 12 Astra/Low
+specification and all previously completed Claude or Codex runs retain their
+original identities.
 Ruflo's Claude-only model-outcome enum cannot truthfully record Codex outcomes:
 store the actual native model and result in repository memory, without
 training under a false model name or claiming measured savings.

@@ -276,20 +276,28 @@ review is unchanged. The prior Sol-bound attempt was stopped before application,
 not relabelled as an Astra execution. This does not switch the conversation
 model or change deterministic build/test execution.
 
-On 2026-09-15 the owner reported that the Codex subscription is unavailable for
-roughly four to five days and directed Claude-only execution. The ordinary
-delivery defaults in `tools/engineering-harness/src/delivery.mjs` therefore
-route each row above to an exact native Claude model with effort by role,
-following Anthropic's published effort guidance rather than a cost ladder
-(subscription use carries no cost budget): `claude-opus-5` at xhigh for bounded
+From 2026-09-15 until 2026-09-19 the owner reported that the Codex subscription
+was unavailable and directed temporary Claude-only execution. During that
+interval the ordinary-delivery defaults routed each row above to an exact
+native Claude model with effort by role: `claude-opus-5` at xhigh for bounded
 implementation and at low for documentation, `claude-fable-5-1` at high for
 independent review, at xhigh for difficult implementation, and at max for
-consequential decisions. Aliases and effort-less Haiku are not admitted. Claude
-efforts run `low` to `max`; Ultra remains Codex-only. Codex models stay
-admissible as explicit overrides so the September 12 Astra/Low selection can be
-restored when the subscription returns; until then an unavailable Codex route
-is reported, not substituted. The two failed Astra-bound schema-upgrade
-workflows keep their original identities and are not relabelled.
+consequential decisions. Aliases and effort-less Haiku were not admitted.
+Claude efforts ran `low` to `max`; Ultra remained Codex-only. The two failed
+Astra-bound schema-upgrade workflows keep their original identities and are not
+relabelled.
+
+On 2026-09-19 the owner reported that the ChatGPT/Codex subscription was
+available again and directed restoration of the preceding mixed native-provider
+policy. `tools/engineering-harness/src/delivery.mjs` therefore restores the
+exact earlier defaults: Terra Medium for bounded implementation, Luna Low for
+documentation, Sol Medium for routine review, Sol High for difficult
+implementation, and Astra High for consequential decisions. Exact native Claude
+models remain admissible as explicit overrides, and the route retains the
+provider field introduced during the temporary interval so the host can dispatch
+either native subscription client without substitution. Max/Ultra again require
+an explicit owner or unresolved selection. Historical Claude and Codex runs,
+including the September 12 Astra/Low selection, retain their original identities.
 
 Do not inherit a Max/Ultra coordinator's settings into routine workers. Select
 their model/effort explicitly and pass only the relevant contract, files and

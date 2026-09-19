@@ -14,17 +14,16 @@ import { scrubbedChildEnvironment } from "../../child-environment.mjs";
 
 export const repository = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../.."));
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
-// Claude-only defaults while the Codex subscription is unavailable (owner, 2026-09-15).
-// Exact model IDs, one model tier per route with effort by role; no cost cascade.
-// Codex models stay admissible as explicit overrides; unavailability is reported, never substituted.
+// Restored native Codex defaults (owner, 2026-09-19), with exact native Claude
+// models retained as explicit overrides. Native providers never substitute for one another.
 const roles = Object.freeze({
   build: [null, null],
   test: [null, null],
-  implement: ["claude-opus-5", "xhigh"],
-  documentation: ["claude-opus-5", "low"],
-  review: ["claude-fable-5-1", "high"],
-  difficult: ["claude-fable-5-1", "xhigh"],
-  decision: ["claude-fable-5-1", "max"],
+  implement: ["gpt-5.6-terra", "medium"],
+  documentation: ["gpt-5.6-luna", "low"],
+  review: ["gpt-5.6-sol", "medium"],
+  difficult: ["gpt-5.6-sol", "high"],
+  decision: ["gpt-6-astra", "high"],
 });
 const efforts = {
   "claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
@@ -50,7 +49,7 @@ export function routeDelivery({ role, taskId, completionCheck, model, effort, re
   }
   const selectedModel = model ?? defaultModel;
   const selectedEffort = effort ?? defaultEffort;
-  if (["max", "ultra"].includes(selectedEffort) && role !== "decision" && !["owner", "unresolved"].includes(selection)) {
+  if (["max", "ultra"].includes(selectedEffort) && !["owner", "unresolved"].includes(selection)) {
     throw new Error("Max/Ultra need selection=owner or selection=unresolved, plus reason and completion check");
   }
   return {
