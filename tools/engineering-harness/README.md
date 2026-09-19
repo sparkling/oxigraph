@@ -101,6 +101,61 @@ must be `[]`, and its worker ID must differ from every implementing worker.
 For unavailability return `status: "unavailable"` with exact client, requested
 model/effort and `error`; the controller stops without substituting a model.
 
+### Native parallel contributors
+
+Choose parallel work from ready dependencies and exclusive proposal ownership,
+not a repository-wide provider/session cap. Native child slots and independent
+`codex exec`/Claude sessions are distinct execution paths. The active host
+dispatches workers, handles completions and returns one aggregate result through
+the existing bridge; no additional scheduler or concurrent writer is introduced.
+See the [strategy and remaining-work comparison](../../docs/plans/native-agent-strategy-reassessment.md).
+
+When delegation occurs, include every additional participant in the native
+result's optional `contributors` array, excluding the aggregate worker itself:
+
+```json
+{
+  "contributors": [{
+    "client": "actual native client",
+    "workerId": "actual-native-session-id",
+    "model": "gpt-5.6-terra",
+    "effort": "medium",
+    "paths": ["tools/engineering-harness/src/workflow-host.mjs"],
+    "sourceSha256": "COPY-THE-CURRENT-REQUEST-SOURCE-DIGEST-AFTER-VERIFICATION",
+    "reason": "Bounded adapter change with a settled interface and focused acceptance checks"
+  }]
+}
+```
+
+Omitting this field declares a single worker, preserving existing callers.
+Use unique actual worker IDs, exact supported models/efforts and paths from the
+workflow inventory. Bind each contribution to the request's current
+`sourceSha256`; stale contributions require actual reconciliation, not digest
+relabelling. Implementation contributors have exclusive proposed-file
+ownership; `paths: []` records an analysis-only participant. Review scopes may
+overlap. A concrete model/effort `reason` is required; optional `selection`
+uses the existing route policy. Max/Ultra contributors require the existing
+explicit selection. These are
+actual contributors, not queued assignments or claims of observed concurrency.
+
+The controller accumulates all aggregate and contributor implementation IDs
+across repairs. It supplies `implementationWorkerIds` to review and rejects any
+aggregate reviewer or review contributor in that set. This includes analysts
+who contributed to implementation. Full attribution remains in the content-bound
+events for every attempt, including rejected and repaired candidates; compact
+handoff evidence also carries `implementationWorkerIds` and review contributors.
+Do not treat the deduplicated ID list as an attempt or usage ledger. Identities,
+client/provider attribution and completeness are still host-supplied and
+inspected, not independently authenticated. Root must inspect real native
+execution evidence; an omitted hidden participant cannot be detected by JSON
+validation alone.
+
+Keep one source-stable workflow, one root writer and one competing build lane.
+Group coupled changes rather than allocating one model per file. Role defaults
+are starting policies, not measured speed/token rankings; use explicit overrides
+for difficult work, bounded context and independent evidence-derived review.
+Record actual native usage when available without quotas or billing estimates.
+
 Keep the host process attached while answering requests. Pipes are preferred;
 a dedicated PTY must disable echo and canonical line buffering before launch
 because full-file JSON responses exceed terminal line limits. EOF, malformed

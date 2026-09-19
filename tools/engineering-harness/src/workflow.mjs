@@ -131,8 +131,8 @@ export class NativeHostUnavailable extends Error {
   }
 }
 
-function workerOutput(result, route) {
-  ownKeys(result, ["status", "client", "workerId", "model", "effort", "error", "summary", "verdict", "findings", "changes"], "native result");
+function workerOutput(result, route, paths, sourceSha256) {
+  ownKeys(result, ["status", "client", "workerId", "model", "effort", "error", "summary", "verdict", "findings", "changes", "contributors"], "native result");
   if (!text(result.client) || result.model !== route.model || result.effort !== route.effort) throw new Error("Native route/result mismatch");
   if (Buffer.byteLength(JSON.stringify(result)) > 1024 * 1024) throw new Error("Native result exceeds structural limit");
   if (result.status === "unavailable" && text(result.error)) throw new NativeHostUnavailable(result);
@@ -141,8 +141,35 @@ function workerOutput(result, route) {
       result.findings.length > 32 || result.findings.some((finding) => !text(finding) || finding.length > 2048) ||
       !Array.isArray(result.changes) || result.changes.length > 16) throw new Error("Incomplete or unbounded native result");
   if (route.role === "review" && result.changes.length) throw new Error("Reviewer must not propose source changes");
+  if (result.contributors !== undefined) {
+    if (!Array.isArray(result.contributors)) throw new Error("Native contributors must be an array");
+    const identities = new Set([result.workerId]);
+    const owned = new Set();
+    for (const contributor of result.contributors) {
+      ownKeys(contributor, ["client", "workerId", "model", "effort", "paths", "sourceSha256", "reason", "selection"], "native contributor");
+      if (![contributor.client, contributor.workerId, contributor.model, contributor.effort].every(
+        (value) => text(value) && value.length <= 256,
+      ) || identities.has(contributor.workerId) || !Array.isArray(contributor.paths) ||
+          contributor.paths.some((path) => !paths.includes(path)) ||
+          new Set(contributor.paths).size !== contributor.paths.length ||
+          contributor.sourceSha256 !== sourceSha256 || !text(contributor.reason) || contributor.reason.length > 2048) {
+        throw new Error("Native contributor needs a unique identity, current source, route reason and in-scope paths");
+      }
+      routeDelivery({ role: route.role, taskId: route.taskId, completionCheck: route.completionCheck,
+        model: contributor.model, effort: contributor.effort,
+        reason: contributor.reason, selection: contributor.selection });
+      identities.add(contributor.workerId);
+      // Review scopes may overlap; implementation proposal ownership may not.
+      for (const path of contributor.paths) {
+        if (route.role !== "review" && owned.has(path)) throw new Error("Native contributor proposal ownership overlaps");
+        owned.add(path);
+      }
+    }
+  }
   return result;
 }
+
+const participantIds = (result) => [result.workerId, ...(result.contributors ?? []).map(({ workerId }) => workerId)];
 
 // Full command observations stay local. Worker feedback carries exact evidence
 // identity and inspectable log paths, not unbounded process text in its prompt.
@@ -166,7 +193,8 @@ async function nativeStage(route, payload, host) {
   const kernel = new HarnessKernel({
     router: new AlgorithmRouter({ ordinary: { intent: "ordinary", steps: [{ kind }] } }),
     pool: new AgentPool([{ id: `host-${kind}`, model: route.model, handles: [kind], run: async () => {
-      const output = workerOutput((await host("native-worker", { route, ...payload })).result, route);
+      const output = workerOutput((await host("native-worker", { route, ...payload })).result, route,
+        payload.files.map(({ path }) => path), payload.sourceSha256);
       return { output, quality: 0, confidence: 1, risk: 0, costUsd: 0, latencyMs: 0 };
     } }], { explore: 0, rng: () => 0 }),
     verifiers: new VerifierRegistry().register(predicateVerifier("host-result", "custom", (output) => output?.status === "completed", "Missing native completion")),
@@ -246,9 +274,9 @@ export async function runWorkflow(rawSpec, host, io = {}) {
     const beforeFiles = files();
     const route = routeDelivery({ ...spec.implement, role: "implement", taskId: spec.taskId, completionCheck: spec.completionCheck });
     const proposal = await nativeStage(route, { goal: spec.goal, completionCheck: spec.completionCheck,
-      files: beforeFiles, feedback, instructions: "Read-only native worker; propose full UTF-8 file contents as changes [{path, content}]. Never write files or run builds/tests. Root alone applies changes. No publication." }, request);
+      files: beforeFiles, sourceSha256: digest(before), feedback, instructions: "Read-only native worker; propose full UTF-8 file contents as changes [{path, content}]. Native children or independent native sessions may contribute bounded ready work; no provider-wide session cap is inferred from this host's child slots. Return one aggregate result and disclose every additional participant in contributors [{client, workerId, model, effort, paths, sourceSha256, reason}], with exclusive proposal paths (or [] for analysis), the current source identity and a concrete model/effort selection reason. Reconcile stale contributions against this source before returning; never merely relabel them. Omitting contributors declares sole execution. Keep exact requested models and native subscription transport. Never write files or run builds/tests. Root alone applies changes. No publication." }, request);
     stable(before);
-    workerIds.add(proposal.workerId);
+    for (const workerId of participantIds(proposal)) workerIds.add(workerId);
     if (proposal.verdict !== "ACCEPT") throw new Error(`Implementation ${proposal.verdict}: ${proposal.summary}`);
     const changed = new Set();
     for (const change of proposal.changes) {
@@ -299,9 +327,10 @@ export async function runWorkflow(rawSpec, host, io = {}) {
       stable(candidate);
       const reviewRoute = routeDelivery({ ...spec.review, role: "review", taskId: spec.taskId, completionCheck: spec.completionCheck });
       const review = await nativeStage(reviewRoute, { goal: spec.goal, completionCheck: spec.completionCheck,
-        files: files(), initialFiles, checks: checks.map((run) => ({ ...checkFeedback(run), kind: "check-result" })), instructions: "Independent read-only review. Check the exact source and results. Return ACCEPT, REJECT with findings, or INCONCLUSIVE. No edits or build/test commands; changes must be []." }, request);
+        files: files(), initialFiles, sourceSha256: digest(candidate), implementationWorkerIds: [...workerIds],
+        checks: checks.map((run) => ({ ...checkFeedback(run), kind: "check-result" })), instructions: "Independent read-only review. Check the exact source and results against governing evidence. Every reviewer must be independent of all implementationWorkerIds, including earlier repair contributors. Disclose additional reviewers in contributors [{client, workerId, model, effort, paths, sourceSha256, reason}], bound to the current candidate with a concrete route reason; review scopes may overlap. Omitting contributors declares sole execution. Return ACCEPT, REJECT with findings, or INCONCLUSIVE. No edits or build/test commands; changes must be []." }, request);
       stable(candidate);
-      if (workerIds.has(review.workerId)) throw new Error("Reviewer is not independent of implementation");
+      if (participantIds(review).some((workerId) => workerIds.has(workerId))) throw new Error("Reviewer is not independent of implementation");
       if (review.verdict === "INCONCLUSIVE") throw new Error(`Review inconclusive: ${review.summary}`);
       if (review.verdict === "ACCEPT") {
         if (equal(initialFiles, files())) throw new Error("No source change was delivered");
@@ -318,10 +347,12 @@ export async function runWorkflow(rawSpec, host, io = {}) {
         const compactReview = {
           client: review.client, workerId: review.workerId, model: review.model, effort: review.effort,
           verdict: review.verdict, summary: review.summary, findings: review.findings,
+          ...(review.contributors !== undefined ? { contributors: review.contributors } : {}),
           resultSha256: digest(review),
         };
         const evidence = { schema: "ordinary-workflow-v2", runId, taskId: spec.taskId, specSha256,
           status: "verified-local", source: candidate, checks: compactChecks, review: compactReview,
+          implementationWorkerIds: [...workerIds],
           eventReferences, checkReferences: allCheckReferences,
           eventsSha256: digest(eventReferences),
           qualification: false, publication: false, attribution: "native-host-supplied; inspected, not independently authenticated" };

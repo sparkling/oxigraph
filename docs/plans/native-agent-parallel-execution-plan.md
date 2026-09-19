@@ -2,9 +2,15 @@
 
 Date: 2026-09-19. Source inspected: `f6b33199` on canonical `main`, with the
 Claude transport instructions updated for owner commit `8db8797a`.
-Status: orchestration audit and operating plan; application execution paused.
+Status: historical audit and superseded operating plan; application execution
+paused. The owner's independent-session amendment `c63b1fef` removes the
+capacity premise behind the provider allocation below. Use
+[the swarm reassessment](native-agent-strategy-reassessment.md) for current
+recommendations. Preserve this document's inspected facts and task inventory;
+its Claude-lead allocation and launch runbook are historical options, not the
+current default.
 
-## Decision
+## Superseded decision
 
 Use the existing ordinary engineering workflow, with a native Claude lead
 delegating bounded read-only proposals and Codex providing integration and

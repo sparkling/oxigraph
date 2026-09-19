@@ -177,6 +177,139 @@ test("reviewer must be distinct, MCP readback must match, and no-op cannot compl
     await assert.rejects(runWorkflow(spec, f.host, f.io));
   }
 });
+
+const contributor = (workerId, paths = [path], extra = {}) => ({
+  client: "native-test-double", workerId, model: "gpt-5.6-terra", effort: "medium", paths,
+  reason: "Bounded work against an independently specified contract", ...extra,
+});
+const attributedHost = (f, update) => async (request) => {
+  const response = await f.host(request);
+  if (request.action === "native-worker") {
+    update(response.result, request, f.counters());
+    for (const entry of Array.isArray(response.result.contributors) ? response.result.contributors : []) {
+      if (entry && !Object.hasOwn(entry, "sourceSha256")) entry.sourceSha256 = request.sourceSha256;
+    }
+  }
+  return response;
+};
+
+test("flat native contributors retain exact attribution without a provider-wide worker cap", async () => {
+  const f = setup();
+  const implementers = [contributor("file-owner"), ...Array.from({ length: 4 }, (_, i) =>
+    contributor(`analyst-${i}`, [], { model: "claude-sonnet-5", effort: "high" }))];
+  const reviewers = [contributor("review-child-1"), contributor("review-child-2")];
+  const host = attributedHost(f, (result, request) => {
+    const review = request.payload.route.role === "review";
+    if (review) assert.deepEqual(request.payload.implementationWorkerIds, ["implementation", ...implementers.map(c => c.workerId)]);
+    result.contributors = review ? reviewers : implementers;
+  });
+  let implementationEvent;
+  const event = f.io.event;
+  f.io.event = (value) => {
+    if (value.request.payload?.route?.role === "implement") implementationEvent = value;
+    return event(value);
+  };
+  const result = await runWorkflow(spec, host, f.io);
+  assert.equal(result.status, "ready-for-owner-review");
+  assert.deepEqual(result.implementationWorkerIds, ["implementation", ...implementers.map(c => c.workerId)]);
+  assert.deepEqual(implementationEvent.result.contributors, implementers);
+  assert.deepEqual(result.review.contributors, reviewers);
+  assert.equal(result.mcpReadback, true);
+});
+
+test("every implementation participant is excluded from aggregate and delegated review", async () => {
+  for (const aggregate of [true, false]) {
+    const f = setup();
+    const host = attributedHost(f, (result, request) => {
+      if (request.payload.route.role !== "review") result.contributors = [contributor("implementation-child")];
+      else if (aggregate) result.workerId = "implementation-child";
+      else result.contributors = [contributor("implementation-child")];
+    });
+    await assert.rejects(runWorkflow(spec, host, f.io), /not independent/);
+    assert.ok(!f.actions.includes("mcp-handoff"));
+  }
+});
+
+test("contributors from failed attempts cannot review repaired candidates", async () => {
+  const f = setup({ failChecks: 1 });
+  const host = attributedHost(f, (result, request, counts) => {
+    if (request.payload.route.role === "review") result.contributors = [contributor("first-attempt-analyst", [])];
+    else result.contributors = counts.implementations === 1 ? [contributor("first-attempt-analyst", [])] : [];
+  });
+  await assert.rejects(runWorkflow(spec, host, f.io), /not independent/);
+  assert.equal(f.counters().implementations, 2);
+  assert.ok(!f.actions.includes("mcp-handoff"));
+});
+
+test("invalid contributor identities, routes and ownership fail before application", async () => {
+  for (const contributors of [
+    {}, [null], [contributor("implementation")],
+    [contributor("duplicate", []), contributor("duplicate", [])],
+    [contributor("one"), contributor("two")],
+    [contributor("outside", ["AGENTS.md"])],
+    [contributor("duplicate-path", [path, path])],
+    [contributor("missing-client", [], { client: "" })],
+    [contributor("unsupported-model", [], { model: "unrequested-model" })],
+    [contributor("unsupported-effort", [], { effort: "infinite" })],
+    [contributor("missing-source", [], { sourceSha256: undefined })],
+    [contributor("stale-source", [], { sourceSha256: "f".repeat(64) })],
+    [contributor("missing-reason", [], { reason: "" })],
+    [contributor("unselected-max", [], { effort: "max" })],
+    [contributor("extra", [], { providerKey: "not-admitted" })],
+  ]) {
+    const f = setup();
+    const host = attributedHost(f, result => { result.contributors = contributors; });
+    await assert.rejects(runWorkflow(spec, host, f.io));
+    assert.ok(!f.actions.includes("root-apply"));
+    assert.equal(f.counters().checks, 0);
+  }
+});
+
+test("explicit contributor effort selection remains available without changing aggregate route", async () => {
+  const f = setup();
+  const host = attributedHost(f, (result, request) => {
+    if (request.payload.route.role === "implement") result.contributors = [contributor("selected", [], {
+      model: "gpt-6-astra", effort: "ultra", selection: "owner", reason: "Owner-selected invariant analysis",
+    })];
+  });
+  const result = await runWorkflow(spec, host, f.io);
+  assert.ok(result.implementationWorkerIds.includes("selected"));
+  assert.equal(result.review.model, "gpt-5.6-sol");
+});
+
+test("delegated proposals do not relax global source stability", async () => {
+  const f = setup({ proposalDrift: true });
+  const host = attributedHost(f, result => { result.contributors = [contributor("child")]; });
+  await assert.rejects(runWorkflow(spec, host, f.io), /Source changed/);
+  assert.ok(!f.actions.includes("root-apply"));
+});
+
+test("review contributors must bind the applied candidate rather than the implementation source", async () => {
+  const f = setup();
+  let implementationSource;
+  const host = attributedHost(f, (result, request) => {
+    assert.equal(request.payload.sourceSha256, request.sourceSha256);
+    if (request.payload.route.role === "implement") implementationSource = request.sourceSha256;
+    else result.contributors = [contributor("stale-reviewer", [], { sourceSha256: implementationSource })];
+  });
+  await assert.rejects(runWorkflow(spec, host, f.io));
+  assert.ok(!f.actions.includes("mcp-handoff"));
+});
+
+test("review rejection does not release earlier contributors for later candidate review", async () => {
+  const f = setup({ rejectReviews: 1 });
+  const host = attributedHost(f, (result, request, counts) => {
+    if (request.payload.route.role === "implement" && counts.implementations === 1) {
+      result.contributors = [contributor("earlier-owner")];
+    } else if (request.payload.route.role === "review" && counts.reviews === 2) {
+      result.workerId = "earlier-owner";
+    }
+  });
+  await assert.rejects(runWorkflow(spec, host, f.io), /not independent/);
+  assert.equal(f.counters().reviews, 2);
+  assert.ok(!f.actions.includes("mcp-handoff"));
+});
+
 test("native unavailability reports exact client/model/error without substitution or repair", async () => {
   const f = setup({ unavailable: true });
   await assert.rejects(runWorkflow(spec, f.host, f.io), /Codex native collaboration; model=gpt-5.6-terra; fixture: requested model unavailable/);
