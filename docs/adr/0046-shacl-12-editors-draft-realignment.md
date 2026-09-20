@@ -6,7 +6,9 @@
 - Implementation status: DATA execution and fail-closed `sh:ruleProcessor`
   handling (A+C) delivered in `e9a285c8` on 2026-09-20. Body abbreviations and
   inference-rule layers/ordering (B+D) delivered in `6e933eea` the same day.
-  The reviewed suite repin and smaller language gaps remain open. The
+  Core value union/default semantics delivered in `6c317a9a`; expected-predicate
+  layer lifecycle and scalar-expression absence handling delivered in `85580fc9`.
+  The reviewed suite evidence transition and smaller language gaps remain open. The
   plan below is ordinary buildable work under
   [ADR-0044](0044-post-deployment-production-tuning.md), not a gated backlog.
 - **Related**:
@@ -370,7 +372,40 @@ The rejected attempt remains recorded: `.expect` introduced a new lint and
 was replaced with the existing test `.unwrap` idiom. These checks did not run
 the candidate upstream suite or change historical evidence.
 
-### Next: semantic repairs and reviewed suite update
+### Core values and expected predicates delivered, 2026-09-20
+
+Commit `6c317a9a` unions path and computed property values before lazily
+evaluating a default for an empty combined set. Workflow
+`a6ec0b01-3ed6-4623-9af8-a32a5a649666` passed 9 focused tests in each feature
+configuration, 214/142 full-package tests and both Clippy configurations.
+
+Commit `85580fc9` prepares expected-predicate values once at each layer's
+start, propagates direct and nested property focus, and shares the operation's
+resource controls. Temporary derived values expire after the layer; base data
+and independently inferred overlap remain. RDF 1.2 cleanup preserves earlier
+durable reifier metadata and rejects a reifier shared by expired and retained
+triples rather than deleting retained associations. Preparation is one pass
+over the layer-start snapshot, not a computed-property fixpoint.
+
+The same slice lifts absent required strict scalar operands to empty output
+while preserving absence-aware functional forms, unsupported-function errors,
+all-bound evaluation errors and generic SELECT failure behavior. Its oracle
+requires compilation to succeed before runtime-error assertions are evaluated.
+Workflow `2cc39143-3b2a-4b5a-95ae-c1278bb91cd9` passed all nine commands:
+node-expression checks 14/14, expected-predicate checks 16/11, full-package
+checks 236/217/142 and two all-target Clippy checks, with zero warnings in
+complete logs. Independent Sol/high review accepted the cumulative change from
+`6c317a9a`; exact MCP evidence was stored and read back before commit under
+`programme-task-evidence/workflow-2cc39143-3b2a-4b5a-95ae-c1278bb91cd9`.
+Rejected attempts and their repairs remain in the local workflow history.
+
+This supersedes the earlier plan's decision not to implement
+`sh:expectedPredicate`. RDF `sh:runOnce`, `sh:tempTriple`, `sh:TripleRule`,
+`sh:SPARQLRuleTemplate`, custom processors and optional `sh:sourceRule`
+provenance remain separate boundaries. No upstream candidate suite ran and
+no historical pin, profile, expected graph or qualification claim changed.
+
+### Next: reviewed suite update and remaining language semantics
 
 The narrow ordinary-harness admission task `task-1789864711141-06ypsp`
 completed in `2b2de51b`. Workflow `4af7e5c5-1deb-4377-acc2-70678bf29044`
@@ -392,7 +427,8 @@ new `sparql-rl-tests#` namespace and six included manifests, not just renamed
 paths. Review the exact inventory, hashes, root reachability and exclusions;
 preserve historical receipts and upstream expected results.
 
-Subsequent Astra/xhigh source review identified two required semantic repairs:
+Subsequent Astra/xhigh source review identified two required semantic repairs,
+now delivered by the commits above:
 Core property values must union path and sh:values results before applying a
 default to an empty set; sh:expectedPredicate needs derived-value preparation
 and cleanup across rule layers. The selected expectedPredicate example remains
@@ -405,8 +441,15 @@ evalRule with G0. Preserve the accepted A+C implementation and record this
 source ambiguity as a limit on literal algorithm-equivalence claims. Do not
 silently rebaseline DATA semantics or change fixtures to resolve it.
 
-The reviewed sequence is Core values, expectedPredicate, candidate evidence
-tooling, candidate clause mappings, then ordinary suite execution. Independent
+The remaining sequence is candidate evidence tooling, complete ground DATA
+materialization and BNODE evaluation, candidate clause mappings, then ordinary
+suite execution against the final clean implementation. DATA and BNODE need
+independent semantic oracles: the candidate's inline triple-term DATA coverage
+is syntax-only and it has no BNODE `.srl` fixture. The exact bounded language
+decision is
+`target/engineering-delivery/adr0046-repin-research/coordinator-language-residuals.md`,
+SHA-256 `b1a822fd1fad599ca2ac0e0de2bad543ae39f497c329d66e114d00e4f68f3a98`.
+Independent
 tooling preparation may overlap semantic work; root applies and verifies one
 source-stable workflow at a time. The exact local coordination decision is
 `target/engineering-delivery/adr0046-repin-research/coordinator-e-semantic-sequence.md`,

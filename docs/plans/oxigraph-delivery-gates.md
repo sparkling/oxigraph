@@ -2,10 +2,11 @@
 
 - Reviewed: 2026-09-11; latest source identity is recorded in the bounded
   inspection evidence below.
-- Latest completed product task: `task-1789873474779-kuhb0k` (SHACL lint
-  cleanup, `9f0cdfcc`, 2026-09-20), following E1 transport in `c40b57f2`.
-  The exact harness adapter is delivered in `2b2de51b`. Next: Core value-union
-  and expectedPredicate repairs, then the reviewed suite evidence transition.
+- Latest completed product task: `task-1789897660043-nyiwp5` (SHACL
+  expected-predicate lifecycle, `85580fc9`, 2026-09-20), following Core value
+  union/default semantics in `6c317a9a`. The exact harness adapter is delivered
+  in `2b2de51b`. Next: candidate evidence tooling, ground DATA and BNODE
+  semantics, clause mappings, then the reviewed ordinary suite execution.
 - Scope: current execution/acceptance projection, not a replacement for the two
   [parity](persistence-write-and-linked-data-parity-plan.md) and
   [evolution](linked-data-store-evolution-harness-plan.md) scope catalogues.
@@ -25,7 +26,7 @@ workflow records. Keep detailed command output in the referenced local run.
 Update this checklist and the owning ADR contract when reality changes; both
 programme plans link here instead of copying another status narrative.
 
-## SHACL realignment: A+C, B+D and E1 delivered
+## SHACL realignment: A+C, B+D, E1, Core values and expected predicates delivered
 
 [ADR-0046](../adr/0046-shacl-12-editors-draft-realignment.md) records A+C
 implementation in `e9a285c8`: frozen DATA graph semantics and explicit
@@ -48,8 +49,19 @@ local runner tests and independent review. The separate cleanup in `9f0cdfcc`
 passed DATA/body checks 8/8/8/9 and both all-target Clippy configurations with
 zero warnings; independent review and exact MCP evidence readback completed.
 
-Remaining: Core value-union, expectedPredicate lifecycle, the reviewed suite
-evidence transition and ADR-0046's smaller language gaps. Inline DATA
+Core value union/default semantics landed in `6c317a9a`: 9/9 focused tests,
+214/142 full-package tests and both Clippy configurations passed. Expected
+predicate preparation, durable-overlap retention, layer cleanup and scalar
+absence/error handling landed in `85580fc9`. Workflow
+`2cc39143-3b2a-4b5a-95ae-c1278bb91cd9` passed node-expression checks 14/14,
+expected-predicate checks 16/11, full-package checks 236/217/142 and both
+all-target Clippy configurations with zero warnings. Independent Sol/high
+review accepted the full change; exact MCP evidence readback preceded commit.
+The one-pass layer-start derivation and conservative shared-reifier refusal
+remain explicit limits, not complete inference-language conformance.
+
+Remaining: the reviewed suite evidence transition and complete ground DATA
+materialization and BNODE evaluation under ADR-0046. Inline DATA
 triple terms are unsupported even as objects, as the B+D fixture setup exposed.
 The accepted implementation candidate has 203 manifest-listed SRL cases, not the
 198 `.srl` files previously described as cases. No new pin is applied yet.
