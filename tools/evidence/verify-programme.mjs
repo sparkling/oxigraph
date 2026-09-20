@@ -8,15 +8,18 @@ import {
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   agenticGeneratedWithinQualificationWindow,
   documentClaims,
+  expectedCandidateShacl,
   expectedN3MaintenanceReceipt,
   expectedPins,
   semanticCommandIds,
   validateAdrIndex,
+  validateCandidateShaclEvidence,
   validateDependencyClaims,
   validateDocumentClaims,
   validateFullReceipts,
@@ -25,6 +28,7 @@ import {
   validateNormativeClaims,
   validateRegistryPins,
 } from "./policy.mjs";
+import { candidateShaclRevision } from "../shacl-tests/inventory.mjs";
 import {
   agenticRuntimeContentHash,
   implementationSnapshot as agenticImplementationSnapshot,
@@ -132,6 +136,201 @@ function gitHead(path) {
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+
+const CANDIDATE_COMMIT = /^[0-9a-f]{40}$/u;
+const CANDIDATE_SHA256 = /^[0-9a-f]{64}$/u;
+const CANDIDATE_RUN_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+function candidateArtifactRef(value, label) {
+  const keys = value && typeof value === "object" && !Array.isArray(value)
+    ? Object.keys(value).sort()
+    : [];
+  if (JSON.stringify(keys) !== JSON.stringify(["bytes", "path", "sha256"])) {
+    throw new Error(`${label} is not an exact ArtifactRef`);
+  }
+  if (
+    typeof value.path !== "string" ||
+    !value.path ||
+    isAbsolute(value.path) ||
+    value.path.includes("\\") ||
+    value.path.split("/").some((part) => !part || part === "." || part === "..")
+  ) {
+    throw new Error(`${label} path is not repository-relative POSIX`);
+  }
+  if (!CANDIDATE_SHA256.test(value.sha256)) {
+    throw new Error(`${label} SHA-256 is invalid`);
+  }
+  if (!Number.isSafeInteger(value.bytes) || value.bytes < 0) {
+    throw new Error(`${label} byte length is invalid`);
+  }
+  return value;
+}
+
+function candidateRegularPath(root, relativePath) {
+  const lexical = resolve(root, relativePath);
+  if (!inside(root, lexical)) throw new Error(`${relativePath} escapes repository`);
+  let current = root;
+  for (const component of relative(root, lexical).split(sep).filter(Boolean)) {
+    current = resolve(current, component);
+    if (lstatSync(current).isSymbolicLink()) {
+      throw new Error(`${relativePath} contains a symbolic-link path component`);
+    }
+  }
+  return regularPath(root, relativePath);
+}
+
+function readCandidateArtifact(root, reference, label, receiptMtime) {
+  candidateArtifactRef(reference, label);
+  const path = candidateRegularPath(root, reference.path);
+  const metadata = lstatSync(path);
+  if (metadata.mtimeMs > receiptMtime) {
+    throw new Error(`${label} is newer than its receipt`);
+  }
+  const bytes = readFileSync(path);
+  if (bytes.byteLength !== reference.bytes) {
+    throw new Error(`${label} byte length does not match its ref`);
+  }
+  if (sha256(bytes) !== reference.sha256) {
+    throw new Error(`${label} SHA-256 does not match its ref`);
+  }
+  return { bytes, path };
+}
+
+function parseCanonicalCandidateJson(bytes, label) {
+  let value;
+  try {
+    value = JSON.parse(bytes.toString("utf8"));
+  } catch (error) {
+    throw new Error(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const canonical = Buffer.from(`${JSON.stringify(value, null, 2)}\n`, "utf8");
+  if (!bytes.equals(canonical)) throw new Error(`${label} is not canonical JSON with one trailing newline`);
+  return value;
+}
+
+function candidateRunDirectory(kind, suiteCommit, implementationCommit, runId) {
+  const base = kind === "jena-compact"
+    ? "target/datalog-oracles/jena-shaclc/revisions"
+    : "target/w3c/shacl-1.2/revisions";
+  return `${base}/${suiteCommit}/${implementationCommit}/${runId}`;
+}
+
+function verifyCandidateDescriptor(errors) {
+  if (!isDeepStrictEqual(candidateShaclRevision, expectedCandidateShacl.revision)) {
+    errors.push("candidate SHACL revision descriptor differs from independent policy");
+  }
+}
+
+export function verifyShaclCandidateArtifacts(
+  rootInput,
+  { receiptRef, expectedImplementationCommit } = {},
+) {
+  const errors = [];
+  const root = collect(errors, "candidate repository root", () => realpathSync(rootInput));
+  if (!CANDIDATE_COMMIT.test(expectedImplementationCommit ?? "")) {
+    errors.push("candidate expected implementation commit is not a full lowercase Git commit");
+  }
+  if (root === undefined) return { ok: false, errors };
+
+  let receipt;
+  let receiptPath;
+  let receiptMtime;
+  const receiptArtifact = collect(errors, "candidate receipt", () => {
+    candidateArtifactRef(receiptRef, "candidate receipt ref");
+    const path = candidateRegularPath(root, receiptRef.path);
+    const metadata = lstatSync(path);
+    const bytes = readFileSync(path);
+    if (bytes.byteLength !== receiptRef.bytes || sha256(bytes) !== receiptRef.sha256) {
+      throw new Error("candidate receipt bytes do not match their explicit ref");
+    }
+    return { bytes, path, mtimeMs: metadata.mtimeMs };
+  });
+  if (receiptArtifact === undefined) return { ok: false, errors };
+  receiptPath = receiptArtifact.path;
+  receiptMtime = receiptArtifact.mtimeMs;
+  receipt = collect(errors, "candidate receipt JSON", () =>
+    parseCanonicalCandidateJson(receiptArtifact.bytes, receiptRef.path),
+  );
+  if (receipt === undefined) return { ok: false, errors };
+
+  if (!CANDIDATE_RUN_ID.test(receipt?.runId ?? "")) errors.push("candidate receipt run ID is invalid");
+  if (!CANDIDATE_COMMIT.test(receipt?.implementationCommit ?? "")) {
+    errors.push("candidate receipt implementation commit is invalid");
+  }
+  if (receipt?.implementationCommit !== expectedImplementationCommit) {
+    errors.push("candidate receipt implementation commit differs from the expected source");
+  }
+  if (receipt?.suiteCommit !== expectedCandidateShacl.revision.suiteCommit) {
+    errors.push("candidate receipt suite commit differs from the frozen revision");
+  }
+  if (!["rust-suite", "jena-compact", "clause-audit"].includes(receipt?.kind)) {
+    errors.push("candidate receipt kind is invalid");
+  }
+  const runDirectory = candidateRunDirectory(
+    receipt?.kind,
+    receipt?.suiteCommit,
+    receipt?.implementationCommit,
+    receipt?.runId,
+  );
+  if (receiptRef.path !== `${runDirectory}/receipt.json`) {
+    errors.push("candidate receipt path disagrees with its revision/source/run identity");
+  }
+  if (receiptPath !== resolve(root, receiptRef.path)) {
+    errors.push("candidate receipt canonical path disagrees with its ref");
+  }
+
+  if (receipt?.kind === "clause-audit") {
+    errors.push("candidate clause-audit evidence is unsupported until its E3 contract is independently frozen");
+  }
+  const boundReferences = [
+    ["candidate inventory artifact", receipt?.inventoryArtifact, true, null, null],
+    ["candidate cases artifact", receipt?.casesArtifact, true, null, null],
+  ];
+  for (const [laneName, lane] of Object.entries(receipt?.lanes ?? {})) {
+    boundReferences.push([`candidate ${laneName} stdout artifact`, lane?.stdoutArtifact, false, laneName, "stdout"]);
+    boundReferences.push([`candidate ${laneName} stderr artifact`, lane?.stderrArtifact, false, laneName, "stderr"]);
+  }
+  const seenPaths = new Set([receiptRef.path]);
+  const loaded = new Map();
+  const raw = {};
+  for (const [label, reference, jsonArtifact, laneName, stream] of boundReferences) {
+    const artifact = collect(errors, label, () => {
+      candidateArtifactRef(reference, label);
+      if (dirname(reference.path) !== runDirectory) {
+        throw new Error(`${label} is not a direct child of the receipt run directory`);
+      }
+      if (seenPaths.has(reference.path)) throw new Error(`${label} duplicates a bound artifact path`);
+      seenPaths.add(reference.path);
+      return readCandidateArtifact(root, reference, label, receiptMtime);
+    });
+    if (artifact !== undefined) {
+      if (jsonArtifact) {
+        loaded.set(label, collect(errors, `${label} JSON`, () => parseCanonicalCandidateJson(artifact.bytes, reference.path)));
+      } else {
+        raw[laneName] ??= {};
+        raw[laneName][stream] = new TextDecoder("utf-8", { fatal: true }).decode(artifact.bytes);
+      }
+    }
+  }
+  const inventory = loaded.get("candidate inventory artifact");
+  const cases = loaded.get("candidate cases artifact");
+  if (inventory !== undefined && cases !== undefined) {
+    collect(errors, "candidate evidence policy", () =>
+      validateCandidateShaclEvidence({
+        receipt,
+        inventory,
+        cases,
+        raw,
+        repositoryRoot: root,
+        checkoutPath: `${root}/target/w3c/shacl-1.2/data-shapes-${expectedCandidateShacl.revision.suiteCommit.slice(0, 12)}`,
+        runDirectory,
+      }, errors),
+    );
+  }
+  return { ok: errors.length === 0, errors };
 }
 
 const allCurrentClaims = documentClaims;
@@ -516,6 +715,7 @@ export function verifyProgramme(
     throw new Error(`unsupported mode: ${mode}`);
   const root = realpathSync(rootInput);
   const errors = [];
+  verifyCandidateDescriptor(errors);
   const documents = readResearchJson(root, errors);
   validateJsonDocuments(documents, errors);
   verifyN3MaintenanceReceiptIntegrity(root, errors);

@@ -7,7 +7,8 @@ use oxshacl::{
     GraphSnapshot, ProfileId, ProfileSet, SparqlRuleSet, ValidationOptions, execute_sparql_rules,
 };
 use oxttl::TurtleParser;
-use std::collections::BTreeSet;
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -36,6 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cases = discover_inference_cases(&root)?;
     let profiles = ProfileSet::new([
         ProfileId::Core12Subset20260723,
+        ProfileId::NodeExpressions12Subset20260108,
         ProfileId::SparqlExtensions12Subset20260130,
         ProfileId::Rules12Subset20260727,
     ])?;
@@ -44,17 +46,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut totals = Totals::default();
     for case in cases {
         totals.discovered += 1;
-        match run_case(&case, profiles.clone(), &options) {
-            Ok(()) => {
-                totals.passed += 1;
+        totals.eligible += 1;
+        match predeclared_unsupported(&case) {
+            Ok(Some(disposition)) => {
+                totals.unsupported += 1;
                 emit(
-                    "PASS",
+                    "UNSUPPORTED",
                     &case.root,
                     &case.manifest_path,
                     &case_id(&case.root, &case.test),
-                    "",
+                    disposition.requirement,
                 );
             }
+            Ok(None) => match run_case(&case, profiles.clone(), &options) {
+                Ok(()) => {
+                    totals.passed += 1;
+                    emit(
+                        "PASS",
+                        &case.root,
+                        &case.manifest_path,
+                        &case_id(&case.root, &case.test),
+                        "",
+                    );
+                }
+                Err(error) => {
+                    totals.failed += 1;
+                    emit(
+                        "FAIL",
+                        &case.root,
+                        &case.manifest_path,
+                        &case_id(&case.root, &case.test),
+                        &error,
+                    );
+                }
+            },
             Err(error) => {
                 totals.failed += 1;
                 emit(
@@ -68,14 +93,104 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     println!(
-        "SUMMARY discovered={} eligible={} passed={} unsupported=0 failed={} excluded=0",
-        totals.discovered, totals.discovered, totals.passed, totals.failed
+        "SUMMARY discovered={} eligible={} passed={} unsupported={} failed={} excluded={}",
+        totals.discovered,
+        totals.eligible,
+        totals.passed,
+        totals.unsupported,
+        totals.failed,
+        totals.excluded,
     );
-    if totals.discovered == 0 || totals.failed > 0 {
-        std::process::exit(1);
+    let code = exit_code(&totals);
+    if code != 0 {
+        std::process::exit(code);
     }
     Ok(())
 }
+
+struct ExpectedSource {
+    relative_path: &'static str,
+    sha256: &'static str,
+}
+
+struct UnsupportedDisposition {
+    relative_path: &'static str,
+    test_id: &'static str,
+    requirement: &'static str,
+    sources: &'static [ExpectedSource],
+}
+
+const UNSUPPORTED_INFERENCE_CASES: &[UnsupportedDisposition] = &[
+    UnsupportedDisposition {
+        relative_path: "layers-example.ttl",
+        test_id: "layers-example",
+        requirement: "requires-sh:layer-and-sh:runOnce",
+        sources: &[
+            ExpectedSource {
+                relative_path: "layers-example.ttl",
+                sha256: "fefcdee5d947442a7d7825a207cbd622a5ca1275d9168ec8bb147a090ab561c8",
+            },
+            ExpectedSource {
+                relative_path: "layers-example-results.ttl",
+                sha256: "69e69b78d907ec43ce900369f13acf4b08a6794057fb7d05cbef7500dcf9ca48",
+            },
+        ],
+    },
+    UnsupportedDisposition {
+        relative_path: "run-once-example.ttl",
+        test_id: "run-once-example",
+        requirement: "requires-sh:runOnce",
+        sources: &[ExpectedSource {
+            relative_path: "run-once-example.ttl",
+            sha256: "740a64ee711a34a905dc57646ce756d8790de0ad5cc67fb91aec87c56113c45b",
+        }],
+    },
+    UnsupportedDisposition {
+        relative_path: "SPARQLRuleTemplate-example-Multiply.ttl",
+        test_id: "SPARQLRuleTemplate-example-Multiply",
+        requirement: "requires-sh:SPARQLRuleTemplate",
+        sources: &[ExpectedSource {
+            relative_path: "SPARQLRuleTemplate-example-Multiply.ttl",
+            sha256: "643639cb9ccdc476114c86f33c1e85b1d150b808e54678ab5d348a4227bee974",
+        }],
+    },
+    UnsupportedDisposition {
+        relative_path: "SPARQLRuleTemplate-example-SymmetricProperty.ttl",
+        test_id: "SPARQLRuleTemplate-example-SymmetricProperty",
+        requirement: "requires-sh:SPARQLRuleTemplate",
+        sources: &[ExpectedSource {
+            relative_path: "SPARQLRuleTemplate-example-SymmetricProperty.ttl",
+            sha256: "4b90244c027c66adf80021355cf3819c4fc12f716a4d9b070ae66473f6f4f22b",
+        }],
+    },
+    UnsupportedDisposition {
+        relative_path: "temp-triples-example.ttl",
+        test_id: "temp-triples-example",
+        requirement: "requires-temporary-triple-semantics",
+        sources: &[ExpectedSource {
+            relative_path: "temp-triples-example.ttl",
+            sha256: "392e4dd847c678ba3560ddca4aaaba0f8f3fe0b817d36d45c419ee99bddf1f91",
+        }],
+    },
+    UnsupportedDisposition {
+        relative_path: "TripleRule-example-childCount.ttl",
+        test_id: "TripleRule-example-childCount",
+        requirement: "requires-rdf-sh:TripleRule-compilation",
+        sources: &[ExpectedSource {
+            relative_path: "TripleRule-example-childCount.ttl",
+            sha256: "17a9f7bdbaaad63c4c2ee4c58eb4d143aff4c645cddaab22a6b1bce02d91c475",
+        }],
+    },
+    UnsupportedDisposition {
+        relative_path: "TripleRule-example-squares.ttl",
+        test_id: "TripleRule-example-squares",
+        requirement: "requires-rdf-sh:TripleRule-compilation",
+        sources: &[ExpectedSource {
+            relative_path: "TripleRule-example-squares.ttl",
+            sha256: "560b9f62c5876ff84cf04f87770df5f537fa4465fdad522e305f9b0080b6e3b8",
+        }],
+    },
+];
 
 fn run_case(
     case: &Case,
@@ -261,6 +376,128 @@ fn manifest_entries(document: &ParsedDocument) -> Result<Vec<NamedOrBlankNode>, 
             "manifest has {} mf:entries values",
             heads.len()
         )),
+    }
+}
+
+fn predeclared_unsupported(
+    case: &Case,
+) -> Result<Option<&'static UnsupportedDisposition>, String> {
+    let relative_path = relative_path(&case.root, &case.manifest_path)?;
+    let test_id = case_id(&case.root, &case.test);
+    let path_match = UNSUPPORTED_INFERENCE_CASES
+        .iter()
+        .find(|disposition| disposition.relative_path == relative_path);
+    let identity_match = UNSUPPORTED_INFERENCE_CASES
+        .iter()
+        .find(|disposition| disposition.test_id == test_id);
+    match path_match {
+        Some(disposition) if disposition.test_id == test_id => {
+            verify_case_sources(case, disposition.sources)?;
+            Ok(Some(disposition))
+        }
+        None if identity_match.is_none() => Ok(None),
+        _ => Err(format!(
+            "predeclared unsupported inference identity mismatch: path={relative_path} test={test_id}"
+        )),
+    }
+}
+
+fn verify_case_sources(case: &Case, expected: &[ExpectedSource]) -> Result<(), String> {
+    let mut expected_hashes = BTreeMap::new();
+    for source in expected {
+        if expected_hashes
+            .insert(source.relative_path, source.sha256)
+            .is_some()
+        {
+            return Err(format!(
+                "predeclared unsupported inference case has duplicate source {}",
+                source.relative_path
+            ));
+        }
+    }
+
+    let mut actual_hashes = BTreeMap::new();
+    for path in resolved_source_paths(case)? {
+        let relative_path = relative_path(&case.root, &path)?;
+        let hash = sha256_file(&path)?;
+        if actual_hashes.insert(relative_path.clone(), hash).is_some() {
+            return Err(format!(
+                "inference case resolves duplicate source {relative_path}"
+            ));
+        }
+    }
+    if actual_hashes.len() != expected_hashes.len() {
+        return Err(format!(
+            "predeclared unsupported inference source set changed: expected {:?}, got {:?}",
+            expected_hashes.keys().collect::<Vec<_>>(),
+            actual_hashes.keys().collect::<Vec<_>>(),
+        ));
+    }
+    for (relative_path, expected_hash) in expected_hashes {
+        match actual_hashes.get(relative_path) {
+            Some(actual_hash) if actual_hash.as_str() == expected_hash => {}
+            Some(actual_hash) => {
+                return Err(format!(
+                    "predeclared unsupported inference source hash changed for {relative_path}: expected {expected_hash}, got {actual_hash}"
+                ));
+            }
+            None => {
+                return Err(format!(
+                    "predeclared unsupported inference source is missing: {relative_path}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn resolved_source_paths(case: &Case) -> Result<BTreeSet<PathBuf>, String> {
+    let action = as_subject(one_object(&case.graph, &case.test, MF_ACTION)?)
+        .ok_or("test action is not an RDF node")?;
+    let data_reference = one_object(&case.graph, &action, SHT_DATA)?;
+    let shapes_reference = one_object(&case.graph, &action, SHT_SHAPES)?;
+    let result_reference = one_object(&case.graph, &case.test, MF_RESULT)?;
+    let mut paths = BTreeSet::from([case.manifest_path.clone()]);
+    paths.insert(reference_path(&case.manifest_path, &data_reference, &case.root)?);
+    paths.insert(reference_path(&case.manifest_path, &shapes_reference, &case.root)?);
+    if !matches!(&result_reference, Term::NamedNode(node) if node.as_str() == RDF_NIL)
+        && matches!(&result_reference, Term::NamedNode(_))
+    {
+        paths.insert(reference_path(&case.manifest_path, &result_reference, &case.root)?);
+    }
+    Ok(paths)
+}
+
+fn relative_path(root: &Path, path: &Path) -> Result<String, String> {
+    path.strip_prefix(root)
+        .map_err(|_| format!("inference source escapes pinned root: {}", path.display()))
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let bytes = fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let digest = Sha256::digest(bytes);
+    let mut output = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    Ok(output)
+}
+
+fn totals_are_conserved(totals: &Totals) -> bool {
+    totals.discovered == totals.eligible + totals.excluded
+        && totals.eligible == totals.passed + totals.unsupported + totals.failed
+}
+
+fn exit_code(totals: &Totals) -> i32 {
+    if totals.discovered == 0 || totals.failed > 0 || !totals_are_conserved(totals) {
+        1
+    } else if totals.unsupported > 0 {
+        2
+    } else {
+        0
     }
 }
 
@@ -493,6 +730,9 @@ mod tests;
 #[derive(Default)]
 struct Totals {
     discovered: usize,
+    eligible: usize,
     passed: usize,
+    unsupported: usize,
     failed: usize,
+    excluded: usize,
 }

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { trustedRealGateValid } from "../metaharness/evidence.mjs";
 const EXPECTED = Object.freeze({
   rdf: 575,
@@ -224,6 +225,720 @@ export const expectedShaclIntegrity = Object.freeze({
   grammarSha256:
     "d0ccc4594b88a19c021ae4a50719b35ff6f2eebc774f0187a4f8e02ecfbced04",
 });
+
+
+function freezeCandidateContract(value) {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) freezeCandidateContract(child);
+  }
+  return value;
+}
+
+export const expectedCandidateShacl = freezeCandidateContract({
+  revision: {
+    repository: "https://github.com/w3c/data-shapes.git",
+    suiteCommit: "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+    suiteContentSha256:
+      "fa1ff95904600c553036123fd6eef66ad281a934830673ee7e9402b3257a3376",
+    specificationFiles: {
+      overview: "shacl12-overview/index.html",
+      core: "shacl12-core/index.html",
+      nodeExpressions: "shacl12-node-expr/index.html",
+      sparql: "shacl12-sparql/index.html",
+      sparqlRl: "sparql12-rl/index.html",
+      inferenceRules: "shacl12-inference-rules/index.html",
+      compact: "shacl12-cs/index.html",
+      ui: "shacl12-ui/index.html",
+      profiling: "shacl12-profiling/index.html",
+    },
+    specificationSha256: {
+      overview: "b6030ce909fa3364e9afb21a6c68fee9c5256a28b9bb8d0962023f7b5b5c67c8",
+      core: "295a3ef4a18471369e7605eb08558bfac0986919aa0e857339733604356506b9",
+      nodeExpressions:
+        "24be3d6a35983bb795f282da462b52583e6330e5452996187ded39e0080802ea",
+      sparql: "cae9dbeab7a626c131f4d99e6ad09b7a2cc46e1d8d7c4bfbbe4da1d529f878d8",
+      sparqlRl: "524c7d69e61f926e5bf5e82b0019c088dfb6da950517eea9bb1673f47facbc74",
+      inferenceRules:
+        "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+      compact: "f6db1b05cd0201e7afb16dcc5b02c9306c7568cfbdf487b81c19ee14e34151cd",
+      ui: "aeacbe7e229b41f0c533d2943ca5f73de0341c40dfa86f0caf4abf35d5ddaeea",
+      profiling:
+        "0c74dd12c4d19be4601b91c3204a78353f1e6fc7204cc8adc02e1a3e8961b0cf",
+    },
+    grammarFiles: {
+      sparqlRl: "sparql12-rl/sparql-rl-grammar.bnf",
+      compact: "shacl12-cs/SHACLC.g4",
+    },
+    grammarSha256: {
+      sparqlRl: "511e88cfa9e33f7d38ee9379bf77c0db56bacfbd5858b7b55b4ca7a39f237a9e",
+      compact: "d0ccc4594b88a19c021ae4a50719b35ff6f2eebc774f0187a4f8e02ecfbced04",
+    },
+    declarationRows: 569,
+    declarationBytes: 235376,
+    declarationSha256:
+      "25730098efb04ac9be0f853439843b7874784428ae712a73cc0d05bdcbc1909a",
+  },
+  counts: {
+    validate: 170,
+    nodeExpressions: 143,
+    inferenceRules: 21,
+    srl: 203,
+    compactSyntax: 32,
+  },
+  declarations: {
+    validate: { selected: 168, unsupported: 0, excluded: 2 },
+    nodeExpressions: { selected: 143, unsupported: 0, excluded: 0 },
+    inferenceRules: { selected: 14, unsupported: 7, excluded: 0 },
+    srl: { selected: 203, unsupported: 0, excluded: 0 },
+    compactSyntax: { selected: 32, unsupported: 0, excluded: 0 },
+  },
+  knownInferenceOrphan: {
+    path: "shacl12-test-suite/tests/inference-rules/rdfs/rdfs1.ttl",
+    sha256: "ad5003e7aabafcf5a5ff2647f08584da7c6ea4831f322f6e437eaac2855fdfe6",
+    reason:
+      "not reachable through inference-rules/manifest.ttl; excluded from manifest inventory",
+  },
+  fixedCoreExclusions: [
+    {
+      stableId: "shacl12-test-suite/tests/core/node/in-002.ttl#<in-002>",
+      path: "shacl12-test-suite/tests/core/node/in-002.ttl",
+      sha256: "9fbabda6e0d4eddbbf0cbb71b83ac1ba434368a5fca30869fc3e6f06d07e640d",
+      requiredCapability: "Core/NodeExpr/SPARQL-validation",
+      reason: "no-focus-node-and-absent-expected-source-shape",
+    },
+    {
+      stableId:
+        "shacl12-test-suite/tests/core/node/in-003.ttl#unparsed-approved-case",
+      path: "shacl12-test-suite/tests/core/node/in-003.ttl",
+      sha256: "3b6f11aec2bdb76b042b4b788064036ef4e9d3ae736efed28b3644b4caad4db3",
+      requiredCapability: "valid-Turtle-fixture",
+      reason: "undeclared-shsh-prefix",
+    },
+  ],
+  unsupportedInference: [
+    {
+      stableId:
+        "shacl12-test-suite/tests/inference-rules/SPARQLRuleTemplate-example-Multiply.ttl#<SPARQLRuleTemplate-example-Multiply>",
+      path: "shacl12-test-suite/tests/inference-rules/SPARQLRuleTemplate-example-Multiply.ttl",
+      sha256: "643639cb9ccdc476114c86f33c1e85b1d150b808e54678ab5d348a4227bee974",
+      requirement: "requires-sh:SPARQLRuleTemplate",
+    },
+    {
+      stableId:
+        "shacl12-test-suite/tests/inference-rules/SPARQLRuleTemplate-example-SymmetricProperty.ttl#<SPARQLRuleTemplate-example-SymmetricProperty>",
+      path: "shacl12-test-suite/tests/inference-rules/SPARQLRuleTemplate-example-SymmetricProperty.ttl",
+      sha256: "4b90244c027c66adf80021355cf3819c4fc12f716a4d9b070ae66473f6f4f22b",
+      requirement: "requires-sh:SPARQLRuleTemplate",
+    },
+    {
+      stableId:
+        "shacl12-test-suite/tests/inference-rules/TripleRule-example-childCount.ttl#<TripleRule-example-childCount>",
+      path: "shacl12-test-suite/tests/inference-rules/TripleRule-example-childCount.ttl",
+      sha256: "17a9f7bdbaaad63c4c2ee4c58eb4d143aff4c645cddaab22a6b1bce02d91c475",
+      requirement: "requires-rdf-sh:TripleRule-compilation",
+    },
+    {
+      stableId:
+        "shacl12-test-suite/tests/inference-rules/TripleRule-example-squares.ttl#<TripleRule-example-squares>",
+      path: "shacl12-test-suite/tests/inference-rules/TripleRule-example-squares.ttl",
+      sha256: "560b9f62c5876ff84cf04f87770df5f537fa4465fdad522e305f9b0080b6e3b8",
+      requirement: "requires-rdf-sh:TripleRule-compilation",
+    },
+    {
+      stableId:
+        "shacl12-test-suite/tests/inference-rules/run-once-example.ttl#<run-once-example>",
+      path: "shacl12-test-suite/tests/inference-rules/run-once-example.ttl",
+      sha256: "740a64ee711a34a905dc57646ce756d8790de0ad5cc67fb91aec87c56113c45b",
+      requirement: "requires-sh:runOnce",
+    },
+    {
+      stableId:
+        "shacl12-test-suite/tests/inference-rules/temp-triples-example.ttl#<temp-triples-example>",
+      path: "shacl12-test-suite/tests/inference-rules/temp-triples-example.ttl",
+      sha256: "392e4dd847c678ba3560ddca4aaaba0f8f3fe0b817d36d45c419ee99bddf1f91",
+      requirement: "requires-temporary-triple-semantics",
+    },
+    {
+      stableId:
+        "shacl12-test-suite/tests/inference-rules/layers-example.ttl#<layers-example>",
+      path: "shacl12-test-suite/tests/inference-rules/layers-example.ttl",
+      sha256: "fefcdee5d947442a7d7825a207cbd622a5ca1275d9168ec8bb147a090ab561c8",
+      requirement: "requires-sh:layer-and-sh:runOnce",
+    },
+  ],
+  evidence: {
+    rustSuite: {
+      lanes: {
+        validate: {
+          inventoryLane: "validate",
+          counts: { discovered: 170, eligible: 168, passed: 168, unsupported: 0, failed: 0, excluded: 2 },
+          exitCode: 0,
+          command: { example: "w3c_runner", root: ["shacl12-test-suite", "tests"] },
+          artifactName: "validate",
+        },
+        nodeExpressions: {
+          inventoryLane: "nodeExpressions",
+          counts: { discovered: 143, eligible: 143, passed: 143, unsupported: 0, failed: 0, excluded: 0 },
+          exitCode: 0,
+          command: { example: "w3c_node_expr_runner", root: ["shacl12-test-suite", "tests", "node-expr"] },
+          artifactName: "node-expressions",
+        },
+        sparqlRulesInfer: {
+          inventoryLane: "inferenceRules",
+          counts: { discovered: 21, eligible: 21, passed: 14, unsupported: 7, failed: 0, excluded: 0 },
+          exitCode: 2,
+          command: { example: "w3c_sparql_rules_runner", root: ["shacl12-test-suite", "tests", "inference-rules"] },
+          artifactName: "sparql-rules-infer",
+        },
+        srlRules: {
+          inventoryLane: "srl",
+          counts: { discovered: 203, eligible: 203, passed: 203, unsupported: 0, failed: 0, excluded: 0 },
+          exitCode: 0,
+          command: { example: "w3c_srl_rules_runner", root: ["shacl12-test-suite", "tests", "sparql-rl"] },
+          artifactName: "srl-rules",
+        },
+        compactSyntax: {
+          inventoryLane: "compactSyntax",
+          counts: { discovered: 32, eligible: 32, passed: 32, unsupported: 0, failed: 0, excluded: 0 },
+          exitCode: 0,
+          command: { example: "w3c_compact_runner", root: ["shacl12-cs", "tests", "valid"] },
+          artifactName: "compact-syntax",
+        },
+      },
+      aggregateCounts: { discovered: 569, eligible: 567, passed: 560, unsupported: 7, failed: 0, excluded: 2 },
+    },
+    jenaCompact: {
+      lanes: {
+        jenaCompact: {
+          inventoryLane: "compactSyntax",
+          counts: { discovered: 32, eligible: 32, passed: 32, unsupported: 0, failed: 0, excluded: 0 },
+          exitCode: 0,
+          command: { program: "mvn" },
+          artifactName: "jena-compact",
+        },
+      },
+      aggregateCounts: { discovered: 32, eligible: 32, passed: 32, unsupported: 0, failed: 0, excluded: 0 },
+    },
+  },
+});
+
+const CANDIDATE_COUNT_FIELDS = Object.freeze([
+  "discovered",
+  "eligible",
+  "passed",
+  "unsupported",
+  "failed",
+  "excluded",
+]);
+const CANDIDATE_SHA256 = /^[0-9a-f]{64}$/u;
+const CANDIDATE_COMMIT = /^[0-9a-f]{40}$/u;
+const CANDIDATE_OUTCOME = Object.freeze({
+  selected: "PASS",
+  unsupported: "UNSUPPORTED",
+  excluded: "EXCLUDED",
+});
+
+function candidateRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function candidateExactKeys(errors, label, value, expected) {
+  const actual = candidateRecord(value) ? Object.keys(value).sort() : [];
+  equal(errors, `${label} keys`, JSON.stringify(actual), JSON.stringify([...expected].sort()));
+}
+
+function candidateDeepEqual(left, right) {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => candidateDeepEqual(value, right[index]))
+    );
+  }
+  if (!candidateRecord(left) || !candidateRecord(right)) return false;
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return (
+    candidateDeepEqual(leftKeys, rightKeys) &&
+    leftKeys.every((key) => candidateDeepEqual(left[key], right[key]))
+  );
+}
+
+function candidateEqualValue(errors, label, actual, expected) {
+  if (!candidateDeepEqual(actual, expected)) {
+    errors.push(`${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  }
+}
+
+function candidateRelativePath(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    !value.startsWith("/") &&
+    !value.includes("\\") &&
+    value.split("/").every((part) => part && part !== "." && part !== "..")
+  );
+}
+
+function validateCandidateCounts(label, value, errors) {
+  candidateExactKeys(errors, label, value, CANDIDATE_COUNT_FIELDS);
+  for (const field of CANDIDATE_COUNT_FIELDS) {
+    if (!Number.isSafeInteger(value?.[field]) || value[field] < 0) {
+      errors.push(`${label} ${field} is not a non-negative safe integer`);
+    }
+  }
+  equal(
+    errors,
+    `${label} discovered conservation`,
+    value?.discovered,
+    (value?.eligible ?? NaN) + (value?.excluded ?? NaN),
+  );
+  equal(
+    errors,
+    `${label} eligible conservation`,
+    value?.eligible,
+    (value?.passed ?? NaN) + (value?.unsupported ?? NaN) + (value?.failed ?? NaN),
+  );
+}
+
+function candidateProjection(lanes) {
+  const rows = Object.entries(lanes ?? {}).flatMap(([lane, cases]) =>
+    (Array.isArray(cases) ? cases : []).map((entry) => {
+      const sources = new Map();
+      for (const source of Array.isArray(entry?.sources) ? entry.sources : []) {
+        sources.set(`${source?.path}\0${source?.sha256}`, [source?.path, source?.sha256]);
+      }
+      return [
+        lane,
+        entry?.stableId ?? entry?.id,
+        entry?.type,
+        entry?.status,
+        entry?.declaration,
+        [...(Array.isArray(entry?.profileIds) ? entry.profileIds : [])].sort(),
+        [...sources.values()].sort((left, right) =>
+          left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : left[1] < right[1] ? -1 : left[1] > right[1] ? 1 : 0,
+        ),
+      ];
+    }),
+  );
+  rows.sort((left, right) =>
+    left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : left[1] < right[1] ? -1 : left[1] > right[1] ? 1 : 0,
+  );
+  const bytes = Buffer.from(rows.map((row) => `${JSON.stringify(row)}\n`).join(""), "utf8");
+  return {
+    rows: rows.length,
+    bytes: bytes.byteLength,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
+}
+
+function candidateSpecialIdentity(entry) {
+  const source = (entry?.sources ?? []).find((item) => item?.path === entry?.manifest?.path) ?? entry?.sources?.[0];
+  return {
+    stableId: entry?.stableId ?? entry?.id,
+    path: source?.path,
+    sha256: source?.sha256,
+    requiredCapability: entry?.requiredCapability,
+    reason: entry?.exclusion,
+    requirement: entry?.requiredCapability,
+  };
+}
+
+export function validateCandidateShaclInventory(value, errors) {
+  candidateExactKeys(errors, "candidate inventory", value, [
+    "schema",
+    "source",
+    "integrity",
+    "lanes",
+    "counts",
+    "knownInferenceOrphan",
+    "fixedCoreExclusions",
+    "completeConformance",
+    "qualified",
+    "promoted",
+  ]);
+  equal(errors, "candidate inventory schema", value?.schema, "oxigraph.shacl-candidate-inventory/v1");
+  candidateExactKeys(errors, "candidate inventory source", value?.source, [
+    "repository",
+    "suiteCommit",
+    "implementationCommit",
+  ]);
+  equal(errors, "candidate repository", value?.source?.repository, expectedCandidateShacl.revision.repository);
+  equal(errors, "candidate suite commit", value?.source?.suiteCommit, expectedCandidateShacl.revision.suiteCommit);
+  if (!CANDIDATE_COMMIT.test(value?.source?.implementationCommit ?? "")) {
+    errors.push("candidate implementation commit is not a full lowercase Git commit");
+  }
+  equal(errors, "candidate suite-content hash", value?.integrity?.suiteContentSha256, expectedCandidateShacl.revision.suiteContentSha256);
+  candidateEqualValue(errors, "candidate specification hashes", value?.integrity?.specificationSha256, expectedCandidateShacl.revision.specificationSha256);
+  candidateEqualValue(errors, "candidate grammar hashes", value?.integrity?.grammarSha256, expectedCandidateShacl.revision.grammarSha256);
+  candidateEqualValue(errors, "candidate lane counts", value?.counts, expectedCandidateShacl.counts);
+  equal(errors, "candidate complete-conformance claim", value?.completeConformance, false);
+  equal(errors, "candidate qualified claim", value?.qualified, false);
+  equal(errors, "candidate promoted claim", value?.promoted, false);
+
+  const laneNames = Object.keys(expectedCandidateShacl.counts);
+  candidateExactKeys(errors, "candidate inventory lanes", value?.lanes, laneNames);
+  const observedIdentities = new Set();
+  const dispositions = Object.fromEntries(
+    laneNames.map((lane) => [lane, { selected: 0, unsupported: 0, excluded: 0 }]),
+  );
+  const excluded = [];
+  const unsupported = [];
+  for (const lane of laneNames) {
+    const cases = value?.lanes?.[lane];
+    equal(errors, `candidate ${lane} count`, cases?.length, expectedCandidateShacl.counts[lane]);
+    if (!Array.isArray(cases)) continue;
+    for (const [index, entry] of cases.entries()) {
+      const label = `candidate ${lane}[${index}]`;
+      const identity = entry?.stableId ?? entry?.id;
+      if (typeof identity !== "string" || !identity) errors.push(`${label} has no stable identity`);
+      else if (observedIdentities.has(identity)) errors.push(`${label} duplicates identity ${identity}`);
+      else observedIdentities.add(identity);
+      equal(errors, `${label} lane`, entry?.lane, lane);
+      if (!Object.hasOwn(dispositions[lane], entry?.declaration)) {
+        errors.push(`${label} has invalid declaration ${JSON.stringify(entry?.declaration)}`);
+      } else {
+        dispositions[lane][entry.declaration] += 1;
+      }
+      if (!Array.isArray(entry?.profileIds)) errors.push(`${label} profileIds is not an array`);
+      if (!Array.isArray(entry?.sources) || entry.sources.length === 0) {
+        errors.push(`${label} sources is empty`);
+      } else {
+        const seenSources = new Set();
+        for (const source of entry.sources) {
+          const key = `${source?.path}\0${source?.sha256}`;
+          if (!candidateRelativePath(source?.path) || !CANDIDATE_SHA256.test(source?.sha256 ?? "")) {
+            errors.push(`${label} contains an invalid source reference`);
+          } else if (seenSources.has(key)) {
+            errors.push(`${label} contains a duplicate source reference`);
+          }
+          seenSources.add(key);
+        }
+        for (const reference of entry?.references ?? []) {
+          if (
+            typeof reference?.role !== "string" ||
+            typeof reference?.disposition !== "string" ||
+            !seenSources.has(`${reference?.path}\0${reference?.sha256}`)
+          ) {
+            errors.push(`${label} contains a reference not bound by sources`);
+          }
+        }
+      }
+      if (
+        !candidateRelativePath(entry?.runnerIdentity?.file) ||
+        typeof entry?.runnerIdentity?.testId !== "string" ||
+        !entry.runnerIdentity.testId
+      ) {
+        errors.push(`${label} has an invalid runner identity`);
+      }
+      if (entry?.declaration === "excluded") excluded.push(candidateSpecialIdentity(entry));
+      if (entry?.declaration === "unsupported") unsupported.push(candidateSpecialIdentity(entry));
+    }
+  }
+  candidateEqualValue(errors, "candidate declarations", dispositions, expectedCandidateShacl.declarations);
+
+  const expectedExcluded = expectedCandidateShacl.fixedCoreExclusions.map((entry) => ({
+    stableId: entry.stableId,
+    path: entry.path,
+    sha256: entry.sha256,
+    requiredCapability: entry.requiredCapability,
+    reason: entry.reason,
+    requirement: entry.requiredCapability,
+  })).sort((left, right) => left.stableId.localeCompare(right.stableId));
+  excluded.sort((left, right) => String(left.stableId).localeCompare(String(right.stableId)));
+  candidateEqualValue(errors, "candidate excluded identities", excluded, expectedExcluded);
+  const expectedUnsupported = expectedCandidateShacl.unsupportedInference.map((entry) => ({
+    stableId: entry.stableId,
+    path: entry.path,
+    sha256: entry.sha256,
+    requiredCapability: entry.requirement,
+    reason: undefined,
+    requirement: entry.requirement,
+  })).sort((left, right) => left.stableId.localeCompare(right.stableId));
+  unsupported.sort((left, right) => String(left.stableId).localeCompare(String(right.stableId)));
+  candidateEqualValue(errors, "candidate unsupported identities", unsupported, expectedUnsupported);
+  candidateEqualValue(
+    errors,
+    "candidate fixed exclusions",
+    value?.fixedCoreExclusions,
+    expectedCandidateShacl.fixedCoreExclusions.map(({ path, sha256, reason }) => ({ path, sha256, reason })),
+  );
+  candidateEqualValue(
+    errors,
+    "candidate known inference orphan",
+    value?.knownInferenceOrphan,
+    expectedCandidateShacl.knownInferenceOrphan,
+  );
+
+  const projection = candidateProjection(value?.lanes);
+  candidateEqualValue(errors, "candidate declaration projection", projection, {
+    rows: expectedCandidateShacl.revision.declarationRows,
+    bytes: expectedCandidateShacl.revision.declarationBytes,
+    sha256: expectedCandidateShacl.revision.declarationSha256,
+  });
+  candidateEqualValue(errors, "candidate recorded declaration projection", value?.integrity?.declarationProjection, projection);
+}
+
+function candidateCasesByIdentity(inventory) {
+  return new Map(
+    Object.values(inventory?.lanes ?? {}).flatMap((cases) =>
+      (Array.isArray(cases) ? cases : []).map((entry) => [entry.stableId ?? entry.id, entry]),
+    ),
+  );
+}
+
+function candidateRawEvidence(name, stdout, errors) {
+  if (typeof stdout !== "string") {
+    errors.push(`candidate lane ${name} stdout is not UTF-8 text`);
+    return { counts: undefined, cases: [] };
+  }
+  const lines = stdout.split(/\r?\n/u);
+  const cases = [];
+  for (const line of lines) {
+    if (!/^(?:PASS|FAIL|UNSUPPORTED|EXCLUDED)\t/u.test(line)) continue;
+    const fields = line.split("\t");
+    if (fields.length !== 4) {
+      errors.push(`candidate lane ${name} emitted a case line without exactly four fields`);
+      continue;
+    }
+    const [kind, file, testId, detail] = fields;
+    if (
+      !candidateRelativePath(file) ||
+      !testId ||
+      /[\r\n\0]/u.test(testId) ||
+      /[\r\n\0]/u.test(detail)
+    ) {
+      errors.push(`candidate lane ${name} emitted an invalid case identity`);
+      continue;
+    }
+    cases.push({ kind, file, testId, detail });
+  }
+  const summaries = lines.filter((line) => line.startsWith("SUMMARY "));
+  if (summaries.length !== 1) {
+    errors.push(`candidate lane ${name} emitted ${summaries.length} summary lines instead of one`);
+    return { counts: undefined, cases };
+  }
+  const match =
+    /^SUMMARY discovered=(\d+) eligible=(\d+) passed=(\d+) unsupported=(\d+) failed=(\d+) excluded=(\d+)$/u.exec(
+      summaries[0],
+    );
+  if (!match) {
+    errors.push(`candidate lane ${name} emitted a malformed six-field summary`);
+    return { counts: undefined, cases };
+  }
+  const counts = Object.fromEntries(
+    CANDIDATE_COUNT_FIELDS.map((field, index) => [field, Number(match[index + 1])]),
+  );
+  validateCandidateCounts(`candidate lane ${name} raw counts`, counts, errors);
+  const byKind = { PASS: 0, FAIL: 0, UNSUPPORTED: 0, EXCLUDED: 0 };
+  for (const entry of cases) byKind[entry.kind] += 1;
+  for (const [kind, field] of [["PASS", "passed"], ["FAIL", "failed"], ["UNSUPPORTED", "unsupported"], ["EXCLUDED", "excluded"]]) {
+    equal(errors, `candidate lane ${name} raw ${kind} count`, byKind[kind], counts[field]);
+  }
+  equal(errors, `candidate lane ${name} raw discovered cases`, cases.length, counts.discovered);
+  return { counts, cases };
+}
+
+function validateCandidateCommand(name, value, expected, checkoutPath, repositoryRoot, errors) {
+  const command = value?.command;
+  if (expected.command.program === "mvn") {
+    equal(errors, `candidate lane ${name} command program`, command?.program, "mvn");
+    candidateEqualValue(errors, `candidate lane ${name} command arguments`, command?.args, [
+      "-q",
+      "-f",
+      `${repositoryRoot}/tools/shacl-tests/jena-compact/pom.xml`,
+      "compile",
+      "exec:java",
+      `-Dexec.args=${checkoutPath}/shacl12-cs/tests/valid`,
+    ]);
+    return;
+  }
+  equal(errors, `candidate lane ${name} command program`, command?.program, "cargo");
+  candidateEqualValue(errors, `candidate lane ${name} command arguments`, command?.args, [
+    "run",
+    "--locked",
+    "-p",
+    "oxshacl",
+    "--example",
+    expected.command.example,
+    "--features",
+    "w3c-tests,rdf-12",
+    "--",
+    `${checkoutPath}/${expected.command.root.join("/")}`,
+  ]);
+}
+
+function validateCandidateLaneReceipt(name, value, expected, raw, checkoutPath, repositoryRoot, runDirectory, errors) {
+  candidateExactKeys(errors, `candidate lane ${name}`, value, [
+    "inventoryLane", "command", "status", "stdoutArtifact", "stderrArtifact",
+    "counts", "complete", "errors",
+  ]);
+  candidateExactKeys(errors, `candidate lane ${name} command`, value?.command, ["program", "args"]);
+  candidateExactKeys(errors, `candidate lane ${name} status`, value?.status, ["code", "signal", "error"]);
+  equal(errors, `candidate lane ${name} stdout path`, value?.stdoutArtifact?.path, `${runDirectory}/${expected.artifactName}.stdout.log`);
+  equal(errors, `candidate lane ${name} stderr path`, value?.stderrArtifact?.path, `${runDirectory}/${expected.artifactName}.stderr.log`);
+  equal(errors, `candidate lane ${name} inventory lane`, value?.inventoryLane, expected.inventoryLane);
+  validateCandidateCounts(`candidate lane ${name} counts`, value?.counts, errors);
+  candidateEqualValue(errors, `candidate lane ${name} exact counts`, value?.counts, expected.counts);
+  equal(errors, `candidate lane ${name} exit code`, value?.status?.code, expected.exitCode);
+  equal(errors, `candidate lane ${name} signal`, value?.status?.signal, null);
+  equal(errors, `candidate lane ${name} spawn error`, value?.status?.error, null);
+  equal(errors, `candidate lane ${name} complete`, value?.complete, true);
+  candidateEqualValue(errors, `candidate lane ${name} errors`, value?.errors, []);
+  validateCandidateCommand(name, value, expected, checkoutPath, repositoryRoot, errors);
+  const rawEvidence = candidateRawEvidence(name, raw?.stdout, errors);
+  candidateEqualValue(errors, `candidate lane ${name} raw/receipt counts`, rawEvidence.counts, value?.counts);
+  return rawEvidence.cases;
+}
+
+export function validateCandidateShaclEvidence(bundle, errors) {
+  const receipt = bundle?.receipt;
+  const inventory = bundle?.inventory;
+  const casesArtifact = bundle?.cases;
+  const raw = bundle?.raw;
+  const checkoutPath = bundle?.checkoutPath;
+  const repositoryRoot = bundle?.repositoryRoot;
+  const runDirectory = bundle?.runDirectory;
+  validateCandidateShaclInventory(inventory, errors);
+  candidateExactKeys(errors, "candidate receipt", receipt, [
+    "schema", "kind", "suiteCommit", "implementationCommit", "runId",
+    "inventoryArtifact", "casesArtifact", "lanes", "aggregateCounts",
+    "sourceBefore", "sourceAfter", "complete", "errors",
+    "completeConformance", "qualified", "promoted",
+  ]);
+  equal(errors, "candidate receipt schema", receipt?.schema, "oxigraph.shacl-candidate-run/v1");
+  if (!["rust-suite", "jena-compact", "clause-audit"].includes(receipt?.kind)) {
+    errors.push(`candidate receipt kind is invalid: ${JSON.stringify(receipt?.kind)}`);
+  }
+  if (!CANDIDATE_COMMIT.test(receipt?.implementationCommit ?? "")) {
+    errors.push("candidate receipt implementation commit is not a full lowercase Git commit");
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(receipt?.runId ?? "")) {
+    errors.push("candidate receipt run ID is not a lowercase UUID v4");
+  }
+  for (const [label, actual, expected] of [
+    ["inventory suite", inventory?.source?.suiteCommit, receipt?.suiteCommit],
+    ["cases suite", casesArtifact?.suiteCommit, receipt?.suiteCommit],
+    ["receipt suite", receipt?.suiteCommit, expectedCandidateShacl.revision.suiteCommit],
+    ["inventory implementation", inventory?.source?.implementationCommit, receipt?.implementationCommit],
+    ["cases implementation", casesArtifact?.implementationCommit, receipt?.implementationCommit],
+    ["cases run", casesArtifact?.runId, receipt?.runId],
+  ]) equal(errors, `candidate ${label}`, actual, expected);
+  candidateExactKeys(errors, "candidate cases artifact", casesArtifact, [
+    "schema", "suiteCommit", "implementationCommit", "runId", "cases",
+  ]);
+  equal(errors, "candidate inventory artifact path", receipt?.inventoryArtifact?.path, `${runDirectory}/inventory.json`);
+  equal(errors, "candidate cases artifact path", receipt?.casesArtifact?.path, `${runDirectory}/cases.json`);
+  equal(errors, "candidate cases schema", casesArtifact?.schema, "oxigraph.shacl-candidate-cases/v1");
+  equal(errors, "candidate complete", receipt?.complete, true);
+  candidateEqualValue(errors, "candidate receipt errors", receipt?.errors, []);
+  equal(errors, "candidate receipt complete-conformance claim", receipt?.completeConformance, false);
+  equal(errors, "candidate receipt qualified claim", receipt?.qualified, false);
+  equal(errors, "candidate receipt promoted claim", receipt?.promoted, false);
+  for (const [label, source] of [["before", receipt?.sourceBefore], ["after", receipt?.sourceAfter]]) {
+    candidateExactKeys(errors, `candidate source ${label}`, source, ["commit", "branch", "status"]);
+    equal(errors, `candidate source ${label} commit`, source?.commit, receipt?.implementationCommit);
+    equal(errors, `candidate source ${label} branch`, source?.branch, "main");
+    equal(errors, `candidate source ${label} status`, source?.status, "");
+  }
+  candidateEqualValue(errors, "candidate source identity stability", receipt?.sourceAfter, receipt?.sourceBefore);
+
+  const declarationByIdentity = candidateCasesByIdentity(inventory);
+  const observedCases = Array.isArray(casesArtifact?.cases) ? casesArtifact.cases : [];
+  if (!Array.isArray(casesArtifact?.cases)) errors.push("candidate cases is not an array");
+  const observedIdentities = new Set();
+  const observedCounts = { discovered: 0, eligible: 0, passed: 0, unsupported: 0, failed: 0, excluded: 0 };
+  for (const [index, observed] of observedCases.entries()) {
+    const label = `candidate observed case[${index}]`;
+    const expectedCaseKeys = [
+      "kind", "file", "testId", "detail", "inventoryLane", "stableId", "id",
+      "type", "status", "profileIds", "declaration", "sources", "references",
+      "runnerIdentity",
+      ...(receipt?.kind === "rust-suite" ? ["requiredCapability"] : []),
+    ];
+    candidateExactKeys(errors, label, observed, expectedCaseKeys);
+    const identity = observed?.stableId;
+    if (typeof identity !== "string" || !identity) errors.push(`${label} has no stableId`);
+    else if (observedIdentities.has(identity)) errors.push(`${label} duplicates ${identity}`);
+    else observedIdentities.add(identity);
+    const declaration = declarationByIdentity.get(identity);
+    if (!declaration) {
+      errors.push(`${label} is not present in the bound inventory`);
+      continue;
+    }
+    const requiredKind = CANDIDATE_OUTCOME[declaration.declaration];
+    equal(errors, `${label} outcome`, observed?.kind, requiredKind);
+    if (declaration.declaration === "unsupported") {
+      equal(
+        errors,
+        `${label} unsupported detail`,
+        observed?.detail,
+        declaration.requiredCapability,
+      );
+    }
+    equal(errors, `${label} inventory lane`, observed?.inventoryLane, declaration.lane);
+    equal(errors, `${label} file`, observed?.file, declaration.runnerIdentity?.file);
+    equal(errors, `${label} test ID`, observed?.testId, declaration.runnerIdentity?.testId);
+    if (receipt?.kind === "rust-suite") {
+      candidateEqualValue(
+        errors,
+        `${label} requiredCapability`,
+        observed?.requiredCapability,
+        declaration.requiredCapability,
+      );
+    }
+    for (const field of ["id", "type", "status", "profileIds", "declaration", "sources", "references", "runnerIdentity"]) {
+      candidateEqualValue(errors, `${label} ${field}`, observed?.[field], field === "references" ? declaration[field] ?? [] : declaration[field]);
+    }
+    observedCounts.discovered += 1;
+    if (observed.kind === "EXCLUDED") observedCounts.excluded += 1;
+    else {
+      observedCounts.eligible += 1;
+      if (observed.kind === "PASS") observedCounts.passed += 1;
+      else if (observed.kind === "UNSUPPORTED") observedCounts.unsupported += 1;
+      else if (observed.kind === "FAIL") observedCounts.failed += 1;
+    }
+  }
+  validateCandidateCounts("candidate observed counts", observedCounts, errors);
+  candidateEqualValue(errors, "candidate aggregate counts from cases", receipt?.aggregateCounts, observedCounts);
+  validateCandidateCounts("candidate aggregate counts", receipt?.aggregateCounts, errors);
+
+  let expectedEvidence;
+  if (receipt?.kind === "rust-suite") expectedEvidence = expectedCandidateShacl.evidence.rustSuite;
+  else if (receipt?.kind === "jena-compact") expectedEvidence = expectedCandidateShacl.evidence.jenaCompact;
+  if (expectedEvidence) {
+    candidateExactKeys(errors, "candidate receipt lanes", receipt?.lanes, Object.keys(expectedEvidence.lanes));
+    const rawCases = new Map();
+    for (const [name, expected] of Object.entries(expectedEvidence.lanes)) {
+      const parsed = validateCandidateLaneReceipt(
+        name,
+        receipt?.lanes?.[name],
+        expected,
+        raw?.[name],
+        checkoutPath,
+        repositoryRoot,
+        runDirectory,
+        errors,
+      );
+      rawCases.set(name, parsed);
+      const joined = observedCases
+        .filter((entry) => entry?.inventoryLane === expected.inventoryLane)
+        .map(({ kind, file, testId, detail }) => ({ kind, file, testId, detail }));
+      candidateEqualValue(errors, `candidate lane ${name} raw/joined cases`, parsed, joined);
+    }
+    candidateEqualValue(errors, "candidate exact aggregate counts", receipt?.aggregateCounts, expectedEvidence.aggregateCounts);
+    const expectedInventoryLanes = new Set(Object.values(expectedEvidence.lanes).map((lane) => lane.inventoryLane));
+    const expectedCaseCount = Object.entries(inventory?.lanes ?? {})
+      .filter(([lane]) => expectedInventoryLanes.has(lane))
+      .reduce((sum, [, cases]) => sum + (Array.isArray(cases) ? cases.length : 0), 0);
+    equal(errors, "candidate observed case total", observedCases.length, expectedCaseCount);
+  } else if (receipt?.kind === "clause-audit") {
+    errors.push("candidate clause-audit evidence is unsupported until its E3 contract is independently frozen");
+  }
+}
 
 function equal(errors, label, actual, expected) {
   if (actual !== expected) {
