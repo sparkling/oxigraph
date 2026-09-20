@@ -2,8 +2,9 @@
 
 - Reviewed: 2026-09-11; latest source identity is recorded in the bounded
   inspection evidence below.
-- Latest completed product task: `task-1789858958069-32ux4h` (SHACL A+C,
-  `e9a285c8`, 2026-09-20). Next: SHACL B+D through the engineering harness.
+- Latest completed product task: `task-1789862065008-jv0ka6` (SHACL B+D,
+  `6e933eea`, 2026-09-20). Next: the exact harness adapter, then reviewed suite
+  update, through the engineering harness.
 - Scope: current execution/acceptance projection, not a replacement for the two
   [parity](persistence-write-and-linked-data-parity-plan.md) and
   [evolution](linked-data-store-evolution-harness-plan.md) scope catalogues.
@@ -23,7 +24,7 @@ workflow records. Keep detailed command output in the referenced local run.
 Update this checklist and the owning ADR contract when reality changes; both
 programme plans link here instead of copying another status narrative.
 
-## SHACL realignment: A+C delivered, B+D next
+## SHACL realignment: A+C and B+D delivered
 
 [ADR-0046](../adr/0046-shacl-12-editors-draft-realignment.md) records A+C
 implementation in `e9a285c8`: frozen DATA graph semantics and explicit
@@ -32,9 +33,18 @@ passed 8 focused DATA tests, 2 processor tests, 186 all-features tests and
 124 no-default-features tests. Fresh independent Sol/medium review accepted
 the exact candidate; MCP read back its evidence before commit.
 
-Remaining: body abbreviations with shared matching/dependency expansion;
-layers and uniform rule ordering across global and shape-attached rules;
-then the explicitly reviewed suite repin and its admitted harness adapter.
+Commit `6e933eea` delivers body abbreviations with shared matching/dependency
+expansion, standalone pattern parsing, and layers with uniform rule ordering
+across global and shape-attached rules. Workflow
+`29ec2875-a6f3-42be-bcf7-7004b77ea68d` passed 8 abbreviation, 9 clause-inventory,
+11 layer, 205 all-features and 133 no-default-features tests. Fresh independent
+Sol/medium review accepted the exact candidate; MCP evidence readback completed.
+
+Remaining: the explicitly reviewed suite repin and its exact harness adapter
+(`task-1789864711141-06ypsp`), plus ADR-0046's smaller language gaps. Inline DATA
+triple terms are unsupported even as objects, as the B+D fixture setup exposed.
+The proposed upstream inventory has 203 manifest-listed SRL cases, not the
+198 `.srl` files previously described as cases. No new pin is applied yet.
 The wider G3/G4 programme remains open. These ordinary tests make no new
 semantic-qualification, promotion or publication claim.
 

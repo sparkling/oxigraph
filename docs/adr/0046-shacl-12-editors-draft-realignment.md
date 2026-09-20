@@ -4,8 +4,9 @@
 - **Date**: 2026-09-19
 - Deciders: Oxigraph parity programme
 - Implementation status: DATA execution and fail-closed `sh:ruleProcessor`
-  handling (A+C) delivered in `e9a285c8` on 2026-09-20. Body abbreviations,
-  inference-rule layers/ordering and the reviewed suite repin remain open. The
+  handling (A+C) delivered in `e9a285c8` on 2026-09-20. Body abbreviations and
+  inference-rule layers/ordering (B+D) delivered in `6e933eea` the same day.
+  The reviewed suite repin and smaller language gaps remain open. The
   plan below is ordinary buildable work under
   [ADR-0044](0044-post-deployment-production-tuning.md), not a gated backlog.
 - **Related**:
@@ -139,8 +140,8 @@ Verified against `sparql12-rl`'s own `sparql-rl-grammar.bnf` and prose:
 
    Counts corrected 2026-09-19 by direct `gh api` listing. This read "grew from
    166 fixtures to 290"; 290 was 288 files plus 2 manifests, not a test count.
-   Upstream `shacl12-test-suite/tests/sparql-rl/` currently holds **198 `.srl`
-   test cases** across 288 files: `eval` 30, `eval2` 6, `examples` 5,
+   The September 19 listing of `shacl12-test-suite/tests/sparql-rl/` held
+   **198 `.srl` files** across 288 files: `eval` 30, `eval2` 6, `examples` 5,
    `stratification` 10, `syntax` 139, `wellformed` 8. The re-pin in item 5 must
    recount against `.srl` cases and the manifest, never a file listing — this
    same file-vs-case conflation appeared three times in the round-one review. Our root-validate lane is insulated from upstream's new root-manifest
@@ -249,10 +250,13 @@ landable and independently reviewable.
    at-risk items" is provisional for that document, not confirmed.
 
 7. **Smaller SPARQL-RL gaps** surfaced by the full grammar walk, recorded so
-   they are not rediscovered: an RDF triple term is rejected as a `DATA`-block
-   subject (`src/srl/evaluate/data.rs:67-71`, *"RDF triple-term subjects in SRL
-   DATA evaluation"*) though grammar production `[42]` `TripleTermData` permits
-   it; `BNODE()` is unsupported (`src/srl/evaluate/expression.rs:191-194`).
+   they are not rediscovered: inline `DATA` triple-term lowering is unsupported,
+   including object position (`src/srl/evaluate/data.rs::ground_term`). B+D's
+   first fixture run established this broader boundary; the earlier note
+   mentioned only the separate triple-term subject restriction. Grammar
+   production `[42]` permits `TripleTermData`; the required RDF subject model
+   must be checked separately. `BNODE()` is also unsupported
+   (`src/srl/evaluate/expression.rs:191-194`).
    Path corrected 2026-09-19: both were first recorded as bare `data.rs` /
    `expression.rs`, which do not exist at that level — and
    `lib/oxshacl/src/expression.rs` does exist while being a different file.
@@ -308,7 +312,32 @@ of WHERE DATA and NOT DATA with both a GE-only blocker and a GD blocker.
 The failed attempt remains in the workflow history. These are ordinary native
 test results; no suite pin, protected expected result or qualification changed.
 
-### Next B+D contract
+### B+D ordinary delivery, 2026-09-20
+
+Commit `6e933eea` implements the following contract through workflow
+`29ec2875-a6f3-42be-bcf7-7004b77ea68d`, with exact MCP evidence at
+`programme-task-evidence/workflow-29ec2875-a6f3-42be-bcf7-7004b77ea68d`.
+The original nine-path proposal exposed a parser gap: standalone collections
+and reified patterns were discarded. The replacement ten-path workflow
+explicitly admitted `src/srl/parser/nodes.rs` before application.
+
+Shared expansion now serves body matching and dependency analysis, including
+rule-wide existential blank labels and auxiliary triples. Reified syntax does
+not assert its referenced triple; annotations do assert their containing triple.
+RDF 1.2 capability checks run before matching, including empty negation and
+short-circuited bodies. Numeric layers close in ascending order, and all rules
+of equal order within a layer share a snapshot regardless of attachment scope.
+Inactive-only layers consume no iterations; resource limits remain cumulative.
+
+Focused abbreviation, clause-inventory and layer checks passed 8, 9 and 11
+tests; full all-features and no-default-features checks passed 205 and 133.
+A fresh Sol/medium reviewer accepted the exact candidate with no findings.
+The workflow retains the failed inline-DATA fixture setup, test-helper lifetime
+errors and incorrect diagnostic spelling. Repairs preserved the body oracle's
+five base triples and eight assertions, using an external graph for the existing
+DATA limitation. No pinned inventory, expected graph or qualification changed.
+
+### Delivered B+D contract
 
 Body abbreviation expansion must serve both matching and dependency analysis,
 including auxiliary predicates and blank-label scope. For SHACL-SPARQL,
@@ -320,6 +349,21 @@ inference-rules ordering clause. Complete lower layers before advancing,
 with cumulative resource limits; preserve the separate repeated-firing
 exclusion. The suite repin follows corrected behavior and explicit review of
 the exact old/new evidence packet.
+
+### Next: reviewed suite update
+
+The narrow ordinary-harness admission task is `task-1789864711141-06ypsp`.
+It must admit exact source paths and commands with current-Node and Node 20
+contract checks before the suite update executes.
+
+Read-only research identified candidate upstream commit
+`0ccfab4f28324edaac59a1227f8c60ad5b7bbf89` (178 commits after the historical
+pin). It is not an approved or applied pin. Its SPARQL-RL manifests list
+**203 cases**, including 35 `eval` cases, while the tree has 198 `.srl` files.
+Its inference-rules manifests list 21 cases. The runner update also needs the
+new `sparql-rl-tests#` namespace and six included manifests, not just renamed
+paths. Review the exact inventory, hashes, root reachability and exclusions;
+preserve historical receipts and upstream expected results.
 
 ### Original investigation
 

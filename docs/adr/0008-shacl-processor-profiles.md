@@ -153,15 +153,17 @@ separately named compatibility lane.
 
 That 171 is measured at pin `eedda09f` and is not a current figure. Upstream has
 since moved the corpus to `shacl12-test-suite/tests/sparql-rl/` (manifest
-renamed to `manifest-sparql-rl.ttl`) and grown it to **198 `.srl` test cases**
-across 288 files, including a new `eval2/` directory whose 6 `WHERE DATA` cases
+renamed to `manifest-sparql-rl.ttl`). The September 19 listing contained
+**198 `.srl` files**, including a new `eval2/` directory whose 6 `WHERE DATA` cases
 have not yet been revalidated against a new pin. Re-pinning follows the
 corresponding implementation work — see
 [ADR-0046](0046-shacl-12-editors-draft-realignment.md).
 
-Counts verified 2026-09-19 by direct `gh api` listing. An earlier revision of
-this paragraph said "290 fixtures … 19 `WHERE DATA` cases", both of which were
-file counts inherited from the round-one review rather than test counts.
+The listing did not establish a manifest case count. September 20 research at
+proposed revision `0ccfab4f28324edaac59a1227f8c60ad5b7bbf89` counted **203
+manifest-listed SRL cases** against 198 `.srl` files. The exact candidate remains
+subject to the reviewed repin. Earlier counts of "290 fixtures", "19 WHERE DATA
+cases", and "198 test cases" conflated files with cases.
 
 The 32 Compact Syntax inputs are positive, unmanifested fixtures associated
 with an editor-only draft. Upstream provides no normative negative corpus.
@@ -194,9 +196,11 @@ below remains open. Current alignment and remaining divergences:
   obligation; our parser rejects the removed syntax instead of carrying it to
   execution as an unsupported extension.
 - **Body abbreviations** — collections, blank-node property lists, reifiers and
-  annotation blocks — are permitted by grammar productions `[69]`–`[79]` and we
-  reject them. Blank-node body matching failing closed is part of this gap, not
-  a separate deliberate exclusion.
+  annotation blocks — are implemented in `6e933eea`, including standalone
+  collection/reified patterns and rule-wide existential blank labels. Matching
+  and dependency analysis share expansion; RDF 1.2 constructs fail closed before
+  matching when the feature is disabled. Inline DATA triple-term lowering remains
+  a separate gap; see ADR-0046's delivered scope and checks.
 - **Repeated firing** remains genuinely draft-open in issue 1069, and
   `sh:runOnce` in the inference-rules document is the surface that would settle
   it. This one exclusion stands as originally written.
@@ -206,8 +210,10 @@ Rust API. It has **no `sh:TripleRule` RDF compiler at all**, so its lack of
 `sh:order`/`sh:condition`/`sh:deactivated`/`sh:layer` is not a set of missing
 fields but an absent ingestion path. The `sh:SPARQLRule` surface does implement
 `sh:order`, `sh:condition` (including the required rejection of conditions on
-global rules) and `sh:deactivated`; it lacks `sh:layer` and requires uniform
-within-layer ordering across global and shape-attached rules. Since `e9a285c8`
+global rules) and `sh:deactivated`. Since `6e933eea`, it supports numeric
+`sh:layer`, closes layers before advancing, and uses uniform rule ordering with
+equal-order snapshot isolation across global and shape-attached rules.
+Since `e9a285c8`
 it fails closed on explicit `sh:ruleProcessor` declarations on rules and rule
 sets. No custom processor identifier is supported; absence uses the default.
 

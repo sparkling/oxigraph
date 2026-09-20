@@ -1,9 +1,10 @@
 # Native-agent strategy: speed, token efficiency and accuracy
 
 Started: 2026-09-19. Updated: 2026-09-20. Initial source: `2d23f875`;
-latest product delivery: `e9a285c8`, canonical `main`.
-Status: ordinary application execution authorized and active. A+C delivered in
-`e9a285c8`; B+D is next. The owner selected Astra/xhigh programme coordination;
+latest product delivery: `6e933eea`, canonical `main`.
+Status: ordinary application execution authorized and active. A+C and B+D are
+delivered; the exact harness adapter and reviewed suite update are next.
+The owner selected Astra/xhigh programme coordination;
 task-specific worker routing defaults are unchanged.
 
 This incorporates both owner amendments: independent Codex sessions (`c63b1fef`)
@@ -279,15 +280,15 @@ G4.3 gap. Each has its own evidence and ownership. Redirect capacity as review
 or integration becomes the limiting stage; do not generate a pile of obsolete
 full-file proposals.
 
-## Next allocation: B+D
+## B+D allocation (delivered)
 
 Capture a fresh source identity after the A+C commit and its documentation
-update. The following nine paths fit one ordinary workflow. No source proposal
+update. The following ten paths fit one ordinary workflow. No source proposal
 from the earlier source may be relabelled without reconciliation.
 
 | Assignment | Exclusive proposal paths | Route |
 | --- | --- | --- |
-| B implementation and aggregate synthesis | `lib/oxshacl/src/srl/check.rs`, `lib/oxshacl/src/srl/evaluate/matching.rs`, `lib/oxshacl/src/srl/evaluate/policy.rs`, `lib/oxshacl/src/srl/evaluate/native.rs` | Sol/high |
+| B implementation and aggregate synthesis | `lib/oxshacl/src/srl/check.rs`, `lib/oxshacl/src/srl/evaluate/matching.rs`, `lib/oxshacl/src/srl/evaluate/policy.rs`, `lib/oxshacl/src/srl/evaluate/native.rs`, `lib/oxshacl/src/srl/parser/nodes.rs` | Sol/high |
 | B independent oracle and fixtures | New `lib/oxshacl/tests/srl_body_abbreviations.rs`, narrow body-policy assertion in `lib/oxshacl/tests/srl_clause_inventory.rs` | Sol/medium |
 | D layers and uniform ordering | `lib/oxshacl/src/sparql_rules.rs`, `lib/oxshacl/src/sparql_rules/execution.rs` | Sol/high |
 | D independent oracle and fixtures | `lib/oxshacl/src/sparql_rules/tests.rs` | Sol/medium |
@@ -321,6 +322,21 @@ exclusions. Preserve upstream expected results and historical receipts. Before
 E execution, add only its exact tooling paths/commands to the ordinary harness,
 with contract checks under current Node and Node 20; do not bypass the harness.
 
+Delivered in `6e933eea` through workflow
+`29ec2875-a6f3-42be-bcf7-7004b77ea68d`: checks passed 8, 9, 11, 205 and 133,
+followed by fresh independent Sol/medium acceptance. Four useful native workers
+ran concurrently: three children plus an independent Codex session for D's
+oracle. This demonstrates that allocation, not unlimited capacity or comparative
+throughput. Astra/xhigh reviewed semantic proposals before application. The
+workflow retained fixture setup, lifetime and diagnostic repairs. The parser
+discovery expanded the original nine-file scope explicitly before application.
+
+E adapter preparation is task `task-1789864711141-06ypsp`. Independent Terra/medium
+research found 203 manifest-listed SRL cases at the proposed new revision,
+distinct from 198 `.srl` files; exact revision/hashes and runner namespace changes
+still require review before any repin. Existing inline DATA triple-term lowering
+also remains open; B's external-graph oracle does not claim to implement it.
+
 ## Comparison with the remaining programme
 
 The owner has authorized programme execution through the engineering harness.
@@ -330,7 +346,7 @@ readiness; it does not establish that the current tests pass or grant promotion.
 
 | Remaining lane | Dependency and useful parallel work | Starting model allocation |
 | --- | --- | --- |
-| SHACL B+D, then reviewed repin | A+C is delivered. B must share abbreviation expansion between matching and dependency analysis. D must implement layers and uniform within-layer ordering across global and shape-attached rules together. Repin follows corrected behavior and exact evidence review. | Sol/high for semantic implementation; Sol/medium for independent oracle/fixtures; fresh Sol/medium final review. |
+| SHACL reviewed repin and remaining language gaps | A+C and B+D are delivered. Admit exact tooling, review the old/new evidence packet, then update the suite. Inline DATA triple-term lowering and BNODE remain open. | Terra/medium for bounded adapter/inventory work; Sol/high for semantic implementation; fresh Sol/medium review. |
 | G4.2 cancellation measurement | Define cancellation-signal-to-observed-stop instrumentation, then a drill that measures it. Likely seams: `cli/src/workload/metrics.rs`, `cli/src/workload/resource_metrics.rs`, `cli/src/workload.rs`; establish the exact observation seam before assigning edits. Workload/acceptance design can proceed independently; measurement execution waits for instrumentation and the build/resource lane. | Sol/high for measurement semantics; Terra/medium for settled fixtures. No model for the actual drill. |
 | G3 acceptance evidence | G3.2 differential harness; G3.4 indexed-versus-oracle evaluation across 24 relations; G3.5 controlled-loopback SERVICE fixtures. Existing test surfaces include `lib/oxigraph/tests/bounded_join_planning.rs`, `spatial_index.rs`, `spatial_service.rs`. Independent oracle/fixture design is useful alongside SHACL; actual runs remain serialized where resources compete. | Terra/medium for bounded fixtures; Sol/high for planner/differential interpretation; independent Sol/medium evidence review. |
 | G3.5 federation planner | Endpoint catalog with a real consumer, source selection, bound-join batching and telemetry. Explicit HTTP SERVICE is already the baseline. Settle the planner/consumer interface before distributing code; arbitrate overlap with G3.2 optimizer/evaluator work. | Sol/high interface/implementation; Terra/medium independent loopback fixtures. No unused catalog scaffolding. |
