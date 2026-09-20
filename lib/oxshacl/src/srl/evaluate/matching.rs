@@ -24,7 +24,7 @@ pub(super) fn match_pattern(
             if quad.graph_name != GraphName::DefaultGraph {
                 continue;
             }
-            let mut candidate = solution.clone();
+            let mut candidate = solution.fork(guard.solution_identity());
             if match_node(
                 &pattern.subject,
                 Term::from(quad.subject),

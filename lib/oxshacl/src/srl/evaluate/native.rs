@@ -15,7 +15,51 @@ use web_time::Instant;
 
 pub(super) const ESTIMATED_QUAD_BYTES: usize = 160;
 
-pub(super) type Solution = BTreeMap<String, Term>;
+#[derive(Clone)]
+pub(super) struct Solution {
+    #[cfg(feature = "sparql")]
+    id: u64,
+    bindings: BTreeMap<String, Term>,
+}
+
+impl Solution {
+    pub(super) fn new(id: u64) -> Self {
+        #[cfg(not(feature = "sparql"))]
+        let _ = id;
+        Self {
+            #[cfg(feature = "sparql")]
+            id,
+            bindings: BTreeMap::new(),
+        }
+    }
+
+    #[cfg(feature = "sparql")]
+    pub(super) const fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub(super) fn fork(&self, id: u64) -> Self {
+        #[cfg(not(feature = "sparql"))]
+        let _ = id;
+        Self {
+            #[cfg(feature = "sparql")]
+            id,
+            bindings: self.bindings.clone(),
+        }
+    }
+
+    pub(super) fn get(&self, variable: &str) -> Option<&Term> {
+        self.bindings.get(variable)
+    }
+
+    pub(super) fn insert(&mut self, variable: String, value: Term) -> Option<Term> {
+        self.bindings.insert(variable, value)
+    }
+
+    pub(super) fn iter(&self) -> impl Iterator<Item = (&String, &Term)> {
+        self.bindings.iter()
+    }
+}
 
 pub(super) struct NativeResult {
     inference: Dataset,
@@ -59,7 +103,7 @@ pub(super) fn evaluate(
         None
     };
     guard.derived(inference.len())?;
-    let expressions = ExpressionRuntime::new();
+    let expressions = ExpressionRuntime::new(heads.blank_allocator());
     let source_rules = rules(rule_set).collect::<Vec<_>>();
     let expanded_bodies = source_rules
         .iter()
@@ -121,7 +165,8 @@ pub(super) fn query(
     options: &ValidationOptions,
 ) -> Result<bool, SrlError> {
     let mut guard = ExecutionGuard::new(options, graph)?;
-    Ok(!match_pattern(goal, graph, &[Solution::new()], "query-goal", &mut guard)?.is_empty())
+    let initial = Solution::new(guard.solution_identity());
+    Ok(!match_pattern(goal, graph, &[initial], "query-goal", &mut guard)?.is_empty())
 }
 
 fn apply_rule(
@@ -142,7 +187,7 @@ fn apply_rule(
     };
     let solutions = evaluate_elements(
         body,
-        vec![Solution::new()],
+        vec![Solution::new(guard.solution_identity())],
         graph,
         data,
         expressions,
@@ -229,7 +274,7 @@ fn evaluate_elements(
                 for solution in solutions {
                     let nested = evaluate_elements(
                         body,
-                        vec![solution.clone()],
+                        vec![solution.fork(guard.solution_identity())],
                         nested_graph,
                         data,
                         expressions,
@@ -314,6 +359,8 @@ pub(super) struct ExecutionGuard<'a> {
     options: &'a ValidationOptions,
     started: Instant,
     estimated_memory: usize,
+    query_solutions: usize,
+    next_solution_identity: u64,
 }
 
 impl<'a> ExecutionGuard<'a> {
@@ -322,6 +369,8 @@ impl<'a> ExecutionGuard<'a> {
             options,
             started: Instant::now(),
             estimated_memory: graph.len().saturating_mul(ESTIMATED_QUAD_BYTES),
+            query_solutions: 0,
+            next_solution_identity: 0,
         };
         output.memory(0)?;
         output.check()?;
@@ -344,7 +393,21 @@ impl<'a> ExecutionGuard<'a> {
         Ok(())
     }
 
+    pub(super) fn solution_identity(&mut self) -> u64 {
+        let identity = self.next_solution_identity;
+        self.next_solution_identity = self.next_solution_identity.saturating_add(1);
+        identity
+    }
+
     pub(super) fn row(&mut self, solution: &Solution) -> Result<(), SrlError> {
+        self.query_solutions = self.query_solutions.saturating_add(1);
+        if self.query_solutions > self.options.limits.max_query_solutions {
+            return Err(ValidationError::LimitExceeded {
+                kind: LimitKind::QuerySolutions,
+                limit: self.options.limits.max_query_solutions,
+            }
+            .into());
+        }
         let bytes = solution
             .iter()
             .map(|(name, value)| name.len().saturating_add(value.to_string().len() + 64))
@@ -423,6 +486,34 @@ impl<'a> ExecutionGuard<'a> {
             .map(|timeout| timeout.saturating_sub(self.started.elapsed()))
     }
 
+    #[cfg(feature = "sparql")]
+    pub(super) fn callback_cancellation_token(&self) -> crate::CancellationToken {
+        self.options.cancellation_token.clone()
+    }
+
+    #[cfg(feature = "sparql")]
+    pub(super) fn callback_timeout(&self) -> Option<(std::time::Duration, usize)> {
+        self.options.limits.timeout.map(|timeout| {
+            (
+                timeout.saturating_sub(self.started.elapsed()),
+                timeout.as_millis().try_into().unwrap_or(usize::MAX),
+            )
+        })
+    }
+
+    #[cfg(feature = "sparql")]
+    pub(super) fn remaining_allocation_memory(&self) -> usize {
+        self.options
+            .limits
+            .max_estimated_memory_bytes
+            .saturating_sub(self.estimated_memory)
+    }
+
+    #[cfg(feature = "sparql")]
+    pub(super) fn memory_limit(&self) -> usize {
+        self.options.limits.max_estimated_memory_bytes
+    }
+
     fn iteration(&self, iterations: &mut usize) -> Result<(), SrlError> {
         *iterations = iterations.saturating_add(1);
         if *iterations > self.options.limits.max_rule_iterations {
@@ -444,5 +535,56 @@ impl<'a> ExecutionGuard<'a> {
             .into());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "sparql")]
+mod tests {
+    use super::*;
+    use crate::srl::SrlConstant;
+    use oxrdf::Literal;
+
+    #[test]
+    fn equal_binding_occurrences_have_distinct_bnode_string_identity() {
+        let graph = Dataset::new();
+        let heads = HeadBuilder::new(&graph);
+        let expressions = ExpressionRuntime::new(heads.blank_allocator());
+        let options = ValidationOptions::default();
+        let mut guard = ExecutionGuard::new(&options, &graph).unwrap();
+        let mut first = Solution::new(guard.solution_identity());
+        let mut second = Solution::new(guard.solution_identity());
+        let shared_binding: Term = Literal::from("equal binding").into();
+        first.insert("value".to_owned(), shared_binding.clone());
+        second.insert("value".to_owned(), shared_binding);
+        assert_eq!(first.bindings, second.bindings);
+
+        let expression = crate::srl::SrlExpression::Call {
+            function: "BNODE".to_owned(),
+            arguments: vec![crate::srl::SrlExpression::Node(SrlNode::Constant(
+                SrlConstant::Literal {
+                    lexical: "same".to_owned(),
+                    language: None,
+                    direction: None,
+                    datatype: None,
+                },
+            ))],
+        };
+        let first_once = expressions
+            .term(&expression, &first, &mut guard)
+            .unwrap()
+            .unwrap();
+        let first_again = expressions
+            .term(&expression, &first, &mut guard)
+            .unwrap()
+            .unwrap();
+        let second_once = expressions
+            .term(&expression, &second, &mut guard)
+            .unwrap()
+            .unwrap();
+
+        assert!(matches!(first_once, Term::BlankNode(_)));
+        assert_eq!(first_once, first_again);
+        assert_ne!(first_once, second_once);
     }
 }
