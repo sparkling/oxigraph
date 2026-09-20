@@ -350,7 +350,27 @@ with cumulative resource limits; preserve the separate repeated-firing
 exclusion. The suite repin follows corrected behavior and explicit review of
 the exact old/new evidence packet.
 
-### Next: reviewed suite update
+### E1 runner transport and cleanup, 2026-09-20
+
+Commit `c40b57f2` delivers manifest-driven inference discovery, bounded local
+external data/shapes/result graphs, strict graph comparison, and explicit
+historical/current SRL manifest and namespace support. Workflow
+`df768642-e5ba-49b1-bad5-63bb7df68dfe` passed 9/12/9/12 local example tests
+across all-features and no-default-features with w3c-tests. Independent
+Sol/medium review accepted the exact source after mechanical warning repairs.
+MCP evidence is `programme-task-evidence/workflow-df768642-e5ba-49b1-bad5-63bb7df68dfe`.
+
+Commit `9f0cdfcc` separately clears the five-path SHACL implementation/test
+Clippy backlog without changing behavior or assertions. Workflow
+`14666add-0129-484b-97d6-61f5930de044` passed the DATA/body checks 8/8/8/9 and
+both all-target Clippy configurations (all-features; no-default-features with
+w3c-tests) with zero warnings in complete logs. Fresh independent Sol/medium
+review accepted it; MCP stored and read back the exact workflow evidence.
+The rejected attempt remains recorded: `.expect` introduced a new lint and
+was replaced with the existing test `.unwrap` idiom. These checks did not run
+the candidate upstream suite or change historical evidence.
+
+### Next: semantic repairs and reviewed suite update
 
 The narrow ordinary-harness admission task `task-1789864711141-06ypsp`
 completed in `2b2de51b`. Workflow `4af7e5c5-1deb-4377-acc2-70678bf29044`
@@ -371,6 +391,27 @@ Its inference-rules manifests list 21 cases. The runner update also needs the
 new `sparql-rl-tests#` namespace and six included manifests, not just renamed
 paths. Review the exact inventory, hashes, root reachability and exclusions;
 preserve historical receipts and upstream expected results.
+
+Subsequent Astra/xhigh source review identified two required semantic repairs:
+Core property values must union path and sh:values results before applying a
+default to an empty set; sh:expectedPredicate needs derived-value preparation
+and cleanup across rule layers. The selected expectedPredicate example remains
+a selected, unexecuted obligation. The 569-declaration inventory is reaffirmed,
+including 14 selected inference cases and seven predeclared unsupported cases;
+the earlier description of all 14 as transport-only is withdrawn.
+
+The pinned SRL algorithm defines GD from base plus inline DATA but calls
+evalRule with G0. Preserve the accepted A+C implementation and record this
+source ambiguity as a limit on literal algorithm-equivalence claims. Do not
+silently rebaseline DATA semantics or change fixtures to resolve it.
+
+The reviewed sequence is Core values, expectedPredicate, candidate evidence
+tooling, candidate clause mappings, then ordinary suite execution. Independent
+tooling preparation may overlap semantic work; root applies and verifies one
+source-stable workflow at a time. The exact local coordination decision is
+`target/engineering-delivery/adr0046-repin-research/coordinator-e-semantic-sequence.md`,
+SHA-256 `b5968effd6c3d968514e0f77e3f1b29394692aef2af962c08b7b4f055461f59f`.
+Historical pins, profiles, expected graphs and receipt validators remain intact.
 
 ### Original investigation
 

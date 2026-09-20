@@ -2,9 +2,10 @@
 
 - Reviewed: 2026-09-11; latest source identity is recorded in the bounded
   inspection evidence below.
-- Latest completed product task: `task-1789862065008-jv0ka6` (SHACL B+D,
-  `6e933eea`, 2026-09-20). The exact harness adapter is delivered in `2b2de51b`.
-  Next: reviewed suite update through the engineering harness.
+- Latest completed product task: `task-1789873474779-kuhb0k` (SHACL lint
+  cleanup, `9f0cdfcc`, 2026-09-20), following E1 transport in `c40b57f2`.
+  The exact harness adapter is delivered in `2b2de51b`. Next: Core value-union
+  and expectedPredicate repairs, then the reviewed suite evidence transition.
 - Scope: current execution/acceptance projection, not a replacement for the two
   [parity](persistence-write-and-linked-data-parity-plan.md) and
   [evolution](linked-data-store-evolution-harness-plan.md) scope catalogues.
@@ -24,7 +25,7 @@ workflow records. Keep detailed command output in the referenced local run.
 Update this checklist and the owning ADR contract when reality changes; both
 programme plans link here instead of copying another status narrative.
 
-## SHACL realignment: A+C and B+D delivered
+## SHACL realignment: A+C, B+D and E1 delivered
 
 [ADR-0046](../adr/0046-shacl-12-editors-draft-realignment.md) records A+C
 implementation in `e9a285c8`: frozen DATA graph semantics and explicit
@@ -42,10 +43,19 @@ Sol/medium review accepted the exact candidate; MCP evidence readback completed.
 
 The exact harness adapter (`task-1789864711141-06ypsp`) completed in `2b2de51b`,
 with 75 checks on each of Node 24 and Node 20 and independent acceptance.
-Remaining: the reviewed suite update and ADR-0046's smaller language gaps. Inline DATA
+E1 transport (`task-1789868817334-piz80e`, `c40b57f2`) passed 9/12/9/12
+local runner tests and independent review. The separate cleanup in `9f0cdfcc`
+passed DATA/body checks 8/8/8/9 and both all-target Clippy configurations with
+zero warnings; independent review and exact MCP evidence readback completed.
+
+Remaining: Core value-union, expectedPredicate lifecycle, the reviewed suite
+evidence transition and ADR-0046's smaller language gaps. Inline DATA
 triple terms are unsupported even as objects, as the B+D fixture setup exposed.
 The accepted implementation candidate has 203 manifest-listed SRL cases, not the
 198 `.srl` files previously described as cases. No new pin is applied yet.
+The selected inference inventory remains 14 unexecuted obligations plus seven
+predeclared unsupported cases. Preserve A+C semantics while recording the
+pinned GD/G0 source ambiguity as a conformance-claim limitation.
 The wider G3/G4 programme remains open. These ordinary tests make no new
 semantic-qualification, promotion or publication claim.
 

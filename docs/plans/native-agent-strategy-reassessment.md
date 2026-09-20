@@ -341,6 +341,23 @@ eligibility and runner/evidence changes still require review before candidate
 execution. Existing inline DATA triple-term lowering
 also remains open; B's external-graph oracle does not claim to implement it.
 
+E1 runner transport is delivered in `c40b57f2`, with 9/12/9/12 focused tests
+and independent Sol/medium acceptance. The separate five-path lint cleanup
+is delivered in `9f0cdfcc`, with 8/8/8/9 focused tests and two warning-free
+all-target Clippy configurations. Terra/medium's parent repair proposals needed
+multiple corrections before application; these attempts do not establish a
+throughput advantage. Root checked exact serialized proposals before applying
+them, and preserved rejected attempts in the workflow evidence.
+
+Astra/xhigh's subsequent source review found Core value-union and
+expectedPredicate lifecycle gaps. Next: Core values (two paths),
+expectedPredicate (five paths), E2 evidence tooling (eight paths), E3 mappings
+(six paths), then E4 ordinary suite execution. The existing inventory/interface
+is reaffirmed; selected cases remain obligations, not promised passes. Keep
+the pinned GD/G0 algorithm conflict as an explicit claim limitation under
+accepted A+C behavior. Independent tooling and oracle preparation may overlap;
+each final proposal must bind to its workflow's current source identity.
+
 ## Comparison with the remaining programme
 
 The owner has authorized programme execution through the engineering harness.
@@ -350,7 +367,7 @@ readiness; it does not establish that the current tests pass or grant promotion.
 
 | Remaining lane | Dependency and useful parallel work | Starting model allocation |
 | --- | --- | --- |
-| SHACL reviewed repin and remaining language gaps | A+C and B+D are delivered. Admit exact tooling, review the old/new evidence packet, then update the suite. Inline DATA triple-term lowering and BNODE remain open. | Terra/medium for bounded adapter/inventory work; Sol/high for semantic implementation; fresh Sol/medium review. |
+| SHACL reviewed repin and remaining language gaps | A+C, B+D, E1 transport and lint cleanup are delivered. Core value-union and expectedPredicate repairs precede candidate execution; tooling preparation may overlap. Inline DATA triple-term lowering and BNODE remain open. | Terra/medium for bounded value extraction; Sol/medium independent oracle; Sol/high for expectedPredicate lifecycle and its independent review. |
 | G4.2 cancellation measurement | Define cancellation-signal-to-observed-stop instrumentation, then a drill that measures it. Likely seams: `cli/src/workload/metrics.rs`, `cli/src/workload/resource_metrics.rs`, `cli/src/workload.rs`; establish the exact observation seam before assigning edits. Workload/acceptance design can proceed independently; measurement execution waits for instrumentation and the build/resource lane. | Sol/high for measurement semantics; Terra/medium for settled fixtures. No model for the actual drill. |
 | G3 acceptance evidence | G3.2 differential harness; G3.4 indexed-versus-oracle evaluation across 24 relations; G3.5 controlled-loopback SERVICE fixtures. Existing test surfaces include `lib/oxigraph/tests/bounded_join_planning.rs`, `spatial_index.rs`, `spatial_service.rs`. Independent oracle/fixture design is useful alongside SHACL; actual runs remain serialized where resources compete. | Terra/medium for bounded fixtures; Sol/high for planner/differential interpretation; independent Sol/medium evidence review. |
 | G3.5 federation planner | Endpoint catalog with a real consumer, source selection, bound-join batching and telemetry. Explicit HTTP SERVICE is already the baseline. Settle the planner/consumer interface before distributing code; arbitrate overlap with G3.2 optimizer/evaluator work. | Sol/high interface/implementation; Terra/medium independent loopback fixtures. No unused catalog scaffolding. |
