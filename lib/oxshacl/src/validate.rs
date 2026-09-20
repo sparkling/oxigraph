@@ -138,6 +138,15 @@ impl<'a> Validator<'a> {
     ) -> Result<Vec<Term>, ValidationError> {
         let mut budget = Budget::new(self.options)?;
         check_data_size(data, self.options)?;
+        self.focus_nodes_with_budget(data, shape, &mut budget)
+    }
+
+    pub(crate) fn focus_nodes_with_budget(
+        &self,
+        data: &GraphSnapshot,
+        shape: &ShapeId,
+        budget: &mut Budget<'_>,
+    ) -> Result<Vec<Term>, ValidationError> {
         let mut context = ValidationContext {
             graph: data,
             shapes: self.shapes,
@@ -146,7 +155,27 @@ impl<'a> Validator<'a> {
             sub_class_of_in_shapes_graph: self.options.sub_class_of_in_shapes_graph,
         };
         let shape = context.shape(shape)?;
-        context.target_nodes(&shape, &mut budget)
+        context.target_nodes(&shape, budget)
+    }
+
+    #[cfg(feature = "sparql")]
+    pub(crate) fn value_nodes_with_budget(
+        &self,
+        data: &GraphSnapshot,
+        shape: &ShapeId,
+        focus: &Term,
+        budget: &mut Budget<'_>,
+        depth: usize,
+    ) -> Result<Vec<Term>, ValidationError> {
+        let mut context = ValidationContext {
+            graph: data,
+            shapes: self.shapes,
+            max_depth: self.options.limits.max_recursion_depth,
+            conformance_disallows: &self.options.conformance_disallows,
+            sub_class_of_in_shapes_graph: self.options.sub_class_of_in_shapes_graph,
+        };
+        let shape = context.shape(shape)?;
+        context.value_nodes(&shape, focus, budget, depth)
     }
 
     /// Tests a single focus node against a single shape without collecting a report.
@@ -158,6 +187,17 @@ impl<'a> Validator<'a> {
     ) -> Result<bool, ValidationError> {
         let mut budget = Budget::new(self.options)?;
         check_data_size(data, self.options)?;
+        budget.focus()?;
+        self.conforms_node_with_budget(data, shape, focus, &mut budget)
+    }
+
+    pub(crate) fn conforms_node_with_budget(
+        &self,
+        data: &GraphSnapshot,
+        shape: &ShapeId,
+        focus: &Term,
+        budget: &mut Budget<'_>,
+    ) -> Result<bool, ValidationError> {
         let mut context = ValidationContext {
             graph: data,
             shapes: self.shapes,
@@ -167,7 +207,7 @@ impl<'a> Validator<'a> {
         };
         let shape = context.shape(shape)?;
         Ok(context
-            .validate_shape(&shape, focus, &mut budget, 0, false)?
+            .validate_shape(&shape, focus, budget, 0, false)?
             .is_empty())
     }
 }

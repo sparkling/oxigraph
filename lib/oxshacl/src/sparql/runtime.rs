@@ -4,6 +4,7 @@ use crate::control::{Budget, LimitKind, ValidationError};
 use crate::model::GraphSnapshot;
 use oxrdf::{Term, Variable};
 use spareval::{QueryEvaluator, QueryResults};
+use spargebra::algebra::{Expression, QueryExpression};
 use spargebra::{Query, SparqlParser};
 #[cfg(not(target_family = "wasm"))]
 use std::sync::Arc;
@@ -115,14 +116,271 @@ pub(crate) fn evaluate_node_function(
             })
         })
         .collect::<Vec<_>>();
-    let output =
-        evaluate_node_expression_with_substitutions(&query, graph, None, &substitutions, budget)?;
+    let output = evaluate_scalar_expression(&query, arguments, graph, &substitutions, budget)?;
     if output.len() > 1 {
         return Err(ValidationError::IllFormed(
             "SPARQL list-parameter function produced more than one output node".to_owned(),
         ));
     }
     Ok(output)
+}
+
+fn evaluate_scalar_expression(
+    query: &str,
+    arguments: &[Option<Term>],
+    graph: &GraphSnapshot,
+    substitutions: &[(Variable, Term)],
+    budget: &mut Budget<'_>,
+) -> Result<Vec<Term>, ValidationError> {
+    if query.len() > budget.limits().max_query_bytes {
+        return Err(ValidationError::LimitExceeded {
+            kind: LimitKind::QueryBytes,
+            limit: budget.limits().max_query_bytes,
+        });
+    }
+    budget.check()?;
+    let mut parsed = SparqlParser::new()
+        .parse_query(query)
+        .map_err(|error| ValidationError::Sparql(error.to_string()))?;
+    let result_variable = Variable::new_unchecked("value");
+    let scalar_expression = scalar_projection_expression(&parsed, &result_variable)?;
+    if strict_call_has_missing_operand(scalar_expression, arguments) {
+        // The empty input still consumes the single conceptual scalar solution.
+        budget.query_solution()?;
+        budget.check()?;
+        return Ok(Vec::new());
+    }
+
+    let substitution_variables = substitutions
+        .iter()
+        .map(|(variable, _)| variable.clone())
+        .collect::<Vec<_>>();
+    super::expose_prebound_variables(&mut parsed, &substitution_variables);
+    let cancellation = spareval::CancellationToken::new();
+    let watchdog = Watchdog::start(cancellation.clone(), budget)?;
+    let evaluator = QueryEvaluator::new()
+        .without_optimizations()
+        .with_cancellation_token(cancellation);
+    let dataset = graph.isolated_default_dataset();
+    let mut prepared = evaluator.prepare(&parsed);
+    for (variable, term) in substitutions {
+        prepared = prepared.substitute_variable(variable.clone(), term.clone());
+    }
+    let QueryResults::Solutions(solutions) = prepared
+        .execute(&dataset)
+        .map_err(|error| ValidationError::Sparql(error.to_string()))?
+    else {
+        return Err(ValidationError::Sparql(
+            "SPARQL scalar expression did not return solutions".to_owned(),
+        ));
+    };
+    let mut output = None;
+    for solution in solutions {
+        budget.query_solution()?;
+        let solution = solution.map_err(|error| ValidationError::Sparql(error.to_string()))?;
+        if output.is_some() {
+            return Err(ValidationError::IllFormed(
+                "SPARQL list-parameter function produced more than one output node".to_owned(),
+            ));
+        }
+        let value = solution.get(&result_variable).ok_or_else(|| {
+            ValidationError::Sparql("SPARQL scalar expression evaluation failed".to_owned())
+        })?;
+        output = Some(value.clone());
+    }
+    watchdog.finish();
+    budget.check()?;
+    output.map_or_else(
+        || {
+            Err(ValidationError::Sparql(
+                "SPARQL scalar expression produced no solution".to_owned(),
+            ))
+        },
+        |value| Ok(vec![value]),
+    )
+}
+
+fn scalar_projection_expression<'a>(
+    query: &'a Query,
+    result_variable: &Variable,
+) -> Result<&'a Expression, ValidationError> {
+    let Query::Select(select) = query else {
+        return Err(ValidationError::Sparql(
+            "SPARQL scalar expression must be SELECT".to_owned(),
+        ));
+    };
+    let QueryExpression::Project { inner, variables } = &select.expression else {
+        return Err(ValidationError::Sparql(
+            "SPARQL scalar expression has an unexpected projection".to_owned(),
+        ));
+    };
+    if variables.len() != 1 || &variables[0] != result_variable {
+        return Err(ValidationError::Sparql(
+            "SPARQL scalar expression must project only ?value".to_owned(),
+        ));
+    }
+    let QueryExpression::Extend {
+        variable,
+        expression,
+        ..
+    } = inner.as_ref()
+    else {
+        return Err(ValidationError::Sparql(
+            "SPARQL scalar expression has no value binding".to_owned(),
+        ));
+    };
+    if variable != result_variable {
+        return Err(ValidationError::Sparql(
+            "SPARQL scalar expression binds an unexpected variable".to_owned(),
+        ));
+    }
+    Ok(expression)
+}
+
+fn strict_call_has_missing_operand(
+    expression: &Expression,
+    arguments: &[Option<Term>],
+) -> bool {
+    if !strict_invocation_is_fully_supported(expression) {
+        return false;
+    }
+    match expression {
+        Expression::FunctionCall(function, operands)
+            if known_strict_sparql_arity(function.as_str(), operands.len()) == Some(true) =>
+        {
+            operands
+                .iter()
+                .any(|operand| required_operand_is_missing(operand, arguments))
+        }
+        _ => false,
+    }
+}
+
+fn required_operand_is_missing(expression: &Expression, arguments: &[Option<Term>]) -> bool {
+    match expression {
+        Expression::Variable(variable) => variable
+            .as_str()
+            .strip_prefix("__shacl_arg_")
+            .and_then(|index| index.parse::<usize>().ok())
+            .is_some_and(|index| arguments.get(index).is_some_and(Option::is_none)),
+        Expression::FunctionCall(function, operands)
+            if known_strict_sparql_arity(function.as_str(), operands.len()) == Some(true) =>
+        {
+            operands
+                .iter()
+                .any(|operand| required_operand_is_missing(operand, arguments))
+        }
+        Expression::Bound(_)
+        | Expression::Coalesce(_)
+        | Expression::If(_, _, _)
+        | Expression::And(_, _)
+        | Expression::Or(_, _)
+        | Expression::In(_, _)
+        | Expression::Exists(_)
+        | Expression::NamedNode(_)
+        | Expression::Literal(_)
+        | Expression::FunctionCall(_, _) => false,
+    }
+}
+
+fn strict_invocation_is_fully_supported(expression: &Expression) -> bool {
+    match expression {
+        Expression::FunctionCall(function, operands) => {
+            known_strict_sparql_arity(function.as_str(), operands.len()) == Some(true)
+                && operands.iter().all(strict_invocation_is_fully_supported)
+        }
+        Expression::In(value, choices) => {
+            strict_invocation_is_fully_supported(value)
+                && choices.iter().all(strict_invocation_is_fully_supported)
+        }
+        Expression::If(condition, then_branch, else_branch) => {
+            strict_invocation_is_fully_supported(condition)
+                && strict_invocation_is_fully_supported(then_branch)
+                && strict_invocation_is_fully_supported(else_branch)
+        }
+        Expression::Coalesce(expressions) => {
+            expressions.iter().all(strict_invocation_is_fully_supported)
+        }
+        Expression::And(left, right) | Expression::Or(left, right) => {
+            strict_invocation_is_fully_supported(left)
+                && strict_invocation_is_fully_supported(right)
+        }
+        Expression::Bound(_)
+        | Expression::NamedNode(_)
+        | Expression::Literal(_)
+        | Expression::Variable(_) => true,
+        Expression::Exists(_) => false,
+    }
+}
+
+fn known_strict_sparql_arity(function: &str, arity: usize) -> Option<bool> {
+    let local = function.strip_prefix("http://www.w3.org/ns/sparql#")?;
+    Some(match local {
+        "add"
+        | "subtract"
+        | "multiply"
+        | "divide"
+        | "equals"
+        | "not-equals"
+        | "greater-than"
+        | "less-than"
+        | "greater-than-or-equal"
+        | "less-than-or-equal"
+        | "sameTerm"
+        | "langMatches"
+        | "contains"
+        | "strstarts"
+        | "strends"
+        | "strbefore"
+        | "strafter"
+        | "strlang"
+        | "strdt" => arity == 2,
+        "unary-minus"
+        | "unary-plus"
+        | "logical-not"
+        | "isIRI"
+        | "isURI"
+        | "isBlank"
+        | "isLiteral"
+        | "isNumeric"
+        | "str"
+        | "lang"
+        | "datatype"
+        | "iri"
+        | "uri"
+        | "strlen"
+        | "ucase"
+        | "lcase"
+        | "encodeForUri"
+        | "abs"
+        | "round"
+        | "ceil"
+        | "floor"
+        | "year"
+        | "month"
+        | "day"
+        | "hours"
+        | "minutes"
+        | "seconds"
+        | "timezone"
+        | "tz"
+        | "md5"
+        | "sha1"
+        | "sha256"
+        | "sha384"
+        | "sha512" => arity == 1,
+        "bnode" => arity <= 1,
+        "rand" | "now" | "uuid" | "struuid" => arity == 0,
+        "substr" | "regex" => (2..=3).contains(&arity),
+        "replace" => (3..=4).contains(&arity),
+        "concat" => true,
+        #[cfg(feature = "rdf-12")]
+        "triple" | "strlangdir" => arity == 3,
+        #[cfg(feature = "rdf-12")]
+        "langdir" | "hasLang" | "hasLangdir" | "subject" | "predicate" | "object"
+        | "isTriple" => arity == 1,
+        _ => return None,
+    })
 }
 
 pub(super) fn bind_this(query: &str, focus: &Term) -> Result<String, ValidationError> {

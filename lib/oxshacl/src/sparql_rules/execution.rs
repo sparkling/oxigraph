@@ -1,13 +1,14 @@
+use super::derived::{admit, cleanup_layer, prepare_layer};
 use super::{CompiledRule, SparqlRuleSet};
 use crate::Validator;
 use crate::control::{Budget, LimitKind, ValidationError, ValidationOptions};
 use crate::model::GraphSnapshot;
 use crate::rules::{RuleError, RuleExecution};
-use oxrdf::{Dataset, GraphName, Quad, Term, Variable};
+use oxrdf::{Dataset, GraphName, NamedNode, Quad, Term, Variable};
 use oxsdatatypes::Decimal;
 use spareval::{QueryEvaluator, QueryResults};
 use spargebra::Query;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Executes compiled SHACL-SPARQL rules one layer at a time to bounded fixpoints.
 ///
@@ -30,6 +31,7 @@ pub fn execute_sparql_rules(
     budget.charge_memory(isolated.len().saturating_mul(128))?;
     let mut entailed = isolated.clone();
     let mut inference = Dataset::new();
+    let mut admissions = 0_usize;
     let cancellation = spareval::CancellationToken::new();
     let watchdog = crate::sparql::Watchdog::start(cancellation.clone(), &budget)?;
     let layers = rules
@@ -45,6 +47,43 @@ pub fn execute_sparql_rules(
         );
     let mut iterations = 0;
     for layer_rules in layers.values() {
+        budget.check()?;
+        let mut expected_predicates = BTreeSet::<NamedNode>::new();
+        for rule in layer_rules {
+            budget.check()?;
+            for predicate in &rule.expected_predicates {
+                if !expected_predicates.contains(predicate) {
+                    budget.charge_memory(128)?;
+                    expected_predicates.insert(predicate.clone());
+                }
+            }
+        }
+        let layer_start_inference = if expected_predicates.is_empty() {
+            None
+        } else {
+            budget.charge_memory(inference.len().saturating_mul(128))?;
+            Some(inference.clone())
+        };
+        let derived = if expected_predicates.is_empty() {
+            Dataset::new()
+        } else {
+            budget.charge_memory(entailed.len().saturating_mul(128))?;
+            let layer_start = GraphSnapshot::default_graph(entailed.clone());
+            prepare_layer(
+                &rules.shapes,
+                &expected_predicates,
+                &layer_start,
+                options,
+                &mut budget,
+                &mut admissions,
+            )?
+        };
+        for quad in &derived {
+            if !entailed.contains(&quad) {
+                budget.charge_memory(128)?;
+                entailed.insert(quad);
+            }
+        }
         loop {
             if iterations >= options.limits.max_rule_iterations {
                 return Err(ValidationError::LimitExceeded {
@@ -58,18 +97,32 @@ pub fn execute_sparql_rules(
             let changed = execute_iteration(
                 layer_rules,
                 rules,
+                &isolated,
                 &mut entailed,
                 &mut inference,
                 options,
                 &cancellation,
                 &mut budget,
+                &mut admissions,
+                derived.len(),
             )?;
             if !changed {
                 break;
             }
         }
+        if let Some(layer_start_inference) = &layer_start_inference {
+            cleanup_layer(
+                &isolated,
+                &mut entailed,
+                &mut inference,
+                layer_start_inference,
+                &derived,
+                &mut budget,
+            )?;
+        }
     }
     watchdog.finish();
+    budget.check()?;
     Ok(RuleExecution::new(
         GraphSnapshot::default_graph(isolated),
         GraphSnapshot::default_graph(inference),
@@ -83,11 +136,14 @@ pub fn execute_sparql_rules(
 fn execute_iteration(
     layer_rules: &[&CompiledRule],
     rules: &SparqlRuleSet,
+    base: &Dataset,
     entailed: &mut Dataset,
     inference: &mut Dataset,
     options: &ValidationOptions,
     cancellation: &spareval::CancellationToken,
     budget: &mut Budget<'_>,
+    admissions: &mut usize,
+    overlay_len: usize,
 ) -> Result<bool, RuleError> {
     let groups = layer_rules.iter().copied().fold(
         BTreeMap::<Decimal, Vec<&CompiledRule>>::new(),
@@ -98,9 +154,19 @@ fn execute_iteration(
     );
     let mut changed = false;
     for group in groups.values() {
+        budget.check()?;
+        budget.charge_memory(overlay_len.saturating_mul(256))?;
         let visible = entailed.clone();
         let pending = infer_group(group, rules, &visible, options, cancellation, budget)?;
-        changed |= merge_inferences(entailed, inference, &pending, options, budget)?;
+        changed |= merge_inferences(
+            base,
+            entailed,
+            inference,
+            &pending,
+            options,
+            budget,
+            admissions,
+        )?;
     }
     Ok(changed)
 }
@@ -119,9 +185,9 @@ fn infer_group(
         if rule.deactivated {
             continue;
         }
-        for focus in rule_focuses(rule, rules, &snapshot, options)? {
+        for focus in rule_focuses(rule, rules, &snapshot, options, budget)? {
             budget.focus()?;
-            if !conditions_hold(rule, rules, &snapshot, focus.as_ref(), options)? {
+            if !conditions_hold(rule, rules, &snapshot, focus.as_ref(), options, budget)? {
                 continue;
             }
             for triple in execute_construct(
@@ -144,25 +210,25 @@ fn infer_group(
 }
 
 fn merge_inferences(
+    base: &Dataset,
     entailed: &mut Dataset,
     inference: &mut Dataset,
     pending: &Dataset,
     options: &ValidationOptions,
     budget: &mut Budget<'_>,
+    admissions: &mut usize,
 ) -> Result<bool, RuleError> {
     let mut changed = false;
     for quad in pending {
-        if entailed.insert(quad.clone()) {
-            inference.insert(quad);
-            changed = true;
+        if !base.contains(&quad) && !inference.contains(&quad) {
             budget.charge_memory(128)?;
-            if inference.len() > options.limits.max_derived_triples {
-                return Err(ValidationError::LimitExceeded {
-                    kind: LimitKind::DerivedTriples,
-                    limit: options.limits.max_derived_triples,
-                }
-                .into());
-            }
+            inference.insert(quad.clone());
+        }
+        if !entailed.contains(&quad) {
+            admit(admissions, options)?;
+            budget.charge_memory(128)?;
+            entailed.insert(quad);
+            changed = true;
         }
     }
     Ok(changed)
@@ -173,12 +239,13 @@ fn rule_focuses(
     rules: &SparqlRuleSet,
     data: &GraphSnapshot,
     options: &ValidationOptions,
+    budget: &mut Budget<'_>,
 ) -> Result<Vec<Option<Term>>, RuleError> {
     let Some(shape) = &rule.scope else {
         return Ok(vec![None]);
     };
     Ok(Validator::new(&rules.shapes, options)
-        .focus_nodes(data, shape)?
+        .focus_nodes_with_budget(data, shape, budget)?
         .into_iter()
         .map(Some)
         .collect())
@@ -190,13 +257,15 @@ fn conditions_hold(
     data: &GraphSnapshot,
     focus: Option<&Term>,
     options: &ValidationOptions,
+    budget: &mut Budget<'_>,
 ) -> Result<bool, RuleError> {
     let Some(focus) = focus else {
         return Ok(rule.conditions.is_empty());
     };
     let validator = Validator::new(&rules.shapes, options);
     for condition in &rule.conditions {
-        if !validator.conforms_node(data, condition, focus)? {
+        budget.focus()?;
+        if !validator.conforms_node_with_budget(data, condition, focus, budget)? {
             return Ok(false);
         }
     }

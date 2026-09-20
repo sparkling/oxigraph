@@ -5,11 +5,12 @@ use crate::control::{LimitKind, ValidationError, ValidationOptions};
 use crate::model::{GraphSnapshot, ShapeId};
 use crate::profile::{ProfileId, ProfileSet};
 use crate::rules::RuleError;
-use oxrdf::{NamedOrBlankNode, Term};
+use oxrdf::{NamedNode, NamedOrBlankNode, Term};
 use oxsdatatypes::Decimal;
 use spargebra::Query;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod derived;
 mod execution;
 pub use self::execution::execute_sparql_rules;
 #[cfg(test)]
@@ -24,6 +25,7 @@ const SH_RULE: &str = "http://www.w3.org/ns/shacl#rule";
 const SH_CONSTRUCT: &str = "http://www.w3.org/ns/shacl#construct";
 const SH_CONDITION: &str = "http://www.w3.org/ns/shacl#condition";
 const SH_DEACTIVATED: &str = "http://www.w3.org/ns/shacl#deactivated";
+const SH_EXPECTED_PREDICATE: &str = "http://www.w3.org/ns/shacl#expectedPredicate";
 const SH_RULE_PROCESSOR: &str = "http://www.w3.org/ns/shacl#ruleProcessor";
 const SH_LAYER: &str = "http://www.w3.org/ns/shacl#layer";
 const SH_ORDER: &str = "http://www.w3.org/ns/shacl#order";
@@ -46,6 +48,7 @@ struct CompiledRule {
     query: Query,
     scope: Option<ShapeId>,
     conditions: Vec<ShapeId>,
+    expected_predicates: Vec<NamedNode>,
     layer: Decimal,
     order: Decimal,
     deactivated: bool,
@@ -226,6 +229,17 @@ fn compile_rule(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let mut expected_predicates = objects(source, node, SH_EXPECTED_PREDICATE)
+        .into_iter()
+        .map(|term| match term {
+            Term::NamedNode(predicate) => Ok(predicate),
+            _ => Err(RuleError::IllFormed(
+                "sh:expectedPredicate values must be IRIs".to_owned(),
+            )),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    expected_predicates.sort();
+    expected_predicates.dedup();
     let layer = parse_layer(source, node)?;
     let order = parse_order(source, node)?;
     let deactivated = optional_one(source, node, SH_DEACTIVATED)?
@@ -246,6 +260,7 @@ fn compile_rule(
         query,
         scope: None,
         conditions,
+        expected_predicates,
         layer,
         order,
         deactivated,
@@ -290,7 +305,7 @@ fn typed_rule_nodes(source: &GraphSnapshot) -> BTreeSet<String> {
         .collect()
 }
 
-fn class_reaches(source: &GraphSnapshot, class: &oxrdf::NamedNode, target: &str) -> bool {
+fn class_reaches(source: &GraphSnapshot, class: &NamedNode, target: &str) -> bool {
     let mut active = vec![class.clone()];
     let mut seen = BTreeSet::new();
     while let Some(class) = active.pop() {
