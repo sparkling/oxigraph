@@ -3,8 +3,8 @@
 - Reviewed: 2026-09-11; latest source identity is recorded in the bounded
   inspection evidence below.
 - Latest completed product task: `task-1789862065008-jv0ka6` (SHACL B+D,
-  `6e933eea`, 2026-09-20). Next: the exact harness adapter, then reviewed suite
-  update, through the engineering harness.
+  `6e933eea`, 2026-09-20). The exact harness adapter is delivered in `2b2de51b`.
+  Next: reviewed suite update through the engineering harness.
 - Scope: current execution/acceptance projection, not a replacement for the two
   [parity](persistence-write-and-linked-data-parity-plan.md) and
   [evolution](linked-data-store-evolution-harness-plan.md) scope catalogues.
@@ -40,10 +40,11 @@ across global and shape-attached rules. Workflow
 11 layer, 205 all-features and 133 no-default-features tests. Fresh independent
 Sol/medium review accepted the exact candidate; MCP evidence readback completed.
 
-Remaining: the explicitly reviewed suite repin and its exact harness adapter
-(`task-1789864711141-06ypsp`), plus ADR-0046's smaller language gaps. Inline DATA
+The exact harness adapter (`task-1789864711141-06ypsp`) completed in `2b2de51b`,
+with 75 checks on each of Node 24 and Node 20 and independent acceptance.
+Remaining: the reviewed suite update and ADR-0046's smaller language gaps. Inline DATA
 triple terms are unsupported even as objects, as the B+D fixture setup exposed.
-The proposed upstream inventory has 203 manifest-listed SRL cases, not the
+The accepted implementation candidate has 203 manifest-listed SRL cases, not the
 198 `.srl` files previously described as cases. No new pin is applied yet.
 The wider G3/G4 programme remains open. These ordinary tests make no new
 semantic-qualification, promotion or publication claim.

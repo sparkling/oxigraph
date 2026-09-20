@@ -160,9 +160,11 @@ corresponding implementation work — see
 [ADR-0046](0046-shacl-12-editors-draft-realignment.md).
 
 The listing did not establish a manifest case count. September 20 research at
-proposed revision `0ccfab4f28324edaac59a1227f8c60ad5b7bbf89` counted **203
-manifest-listed SRL cases** against 198 `.srl` files. The exact candidate remains
-subject to the reviewed repin. Earlier counts of "290 fixtures", "19 WHERE DATA
+revision `0ccfab4f28324edaac59a1227f8c60ad5b7bbf89` counted **203
+manifest-listed SRL cases** against 198 `.srl` files. The coordinator accepted
+this exact implementation candidate; its suite execution remains pending.
+Existing dated profile identities and historical evidence retain their pin.
+Earlier counts of "290 fixtures", "19 WHERE DATA
 cases", and "198 test cases" conflated files with cases.
 
 The 32 Compact Syntax inputs are positive, unmanifested fixtures associated

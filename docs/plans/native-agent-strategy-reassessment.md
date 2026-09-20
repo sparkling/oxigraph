@@ -3,7 +3,8 @@
 Started: 2026-09-19. Updated: 2026-09-20. Initial source: `2d23f875`;
 latest product delivery: `6e933eea`, canonical `main`.
 Status: ordinary application execution authorized and active. A+C and B+D are
-delivered; the exact harness adapter and reviewed suite update are next.
+delivered; the exact harness adapter is delivered in `2b2de51b`, and the reviewed
+suite update is next.
 The owner selected Astra/xhigh programme coordination;
 task-specific worker routing defaults are unchanged.
 
@@ -331,10 +332,13 @@ throughput. Astra/xhigh reviewed semantic proposals before application. The
 workflow retained fixture setup, lifetime and diagnostic repairs. The parser
 discovery expanded the original nine-file scope explicitly before application.
 
-E adapter preparation is task `task-1789864711141-06ypsp`. Independent Terra/medium
-research found 203 manifest-listed SRL cases at the proposed new revision,
-distinct from 198 `.srl` files; exact revision/hashes and runner namespace changes
-still require review before any repin. Existing inline DATA triple-term lowering
+E adapter task `task-1789864711141-06ypsp` completed in `2b2de51b` after
+Terra/medium implementation, 75 passing checks on each of Node 24 and Node 20,
+and fresh Sol/medium acceptance. Astra/xhigh independently accepted exact
+candidate revision `0ccfab4f28324edaac59a1227f8c60ad5b7bbf89` and its hashes;
+203 manifest-listed SRL cases are distinct from 198 `.srl` files. Per-case
+eligibility and runner/evidence changes still require review before candidate
+execution. Existing inline DATA triple-term lowering
 also remains open; B's external-graph oracle does not claim to implement it.
 
 ## Comparison with the remaining programme

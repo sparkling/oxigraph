@@ -352,13 +352,20 @@ the exact old/new evidence packet.
 
 ### Next: reviewed suite update
 
-The narrow ordinary-harness admission task is `task-1789864711141-06ypsp`.
-It must admit exact source paths and commands with current-Node and Node 20
-contract checks before the suite update executes.
+The narrow ordinary-harness admission task `task-1789864711141-06ypsp`
+completed in `2b2de51b`. Workflow `4af7e5c5-1deb-4377-acc2-70678bf29044`
+admits exact source paths and commands; 75 contract checks passed on Node 24
+and, as supplemental evidence on the same candidate, Node 20. Independent
+Sol/medium review accepted it. No suite command ran in this adapter slice.
 
 Read-only research identified candidate upstream commit
 `0ccfab4f28324edaac59a1227f8c60ad5b7bbf89` (178 commits after the historical
-pin). It is not an approved or applied pin. Its SPARQL-RL manifests list
+pin). The Astra/xhigh coordinator accepted this exact implementation candidate
+after independently verifying suite hash
+`fa1ff95904600c553036123fd6eef66ad281a934830673ee7e9402b3257a3376`.
+It is not yet applied or tested. Existing dated profiles, historical receipts
+and their validators retain the old pin; candidate evidence will use separate
+revision/run paths. Its SPARQL-RL manifests list
 **203 cases**, including 35 `eval` cases, while the tree has 198 `.srl` files.
 Its inference-rules manifests list 21 cases. The runner update also needs the
 new `sparql-rl-tests#` namespace and six included manifests, not just renamed
