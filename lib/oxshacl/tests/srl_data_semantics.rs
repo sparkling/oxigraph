@@ -50,7 +50,8 @@ fn assert_inferred(execution: &SrlExecution, subject: &str, predicate: &str, obj
         execution
             .inference()
             .dataset()
-            .contains(&quad(subject, predicate, object))
+            .contains(&quad(subject, predicate, object)),
+        "expected inferred triple ({subject}, {predicate}, {object})"
     );
 }
 
@@ -59,7 +60,8 @@ fn assert_not_inferred(execution: &SrlExecution, subject: &str, predicate: &str,
         !execution
             .inference()
             .dataset()
-            .contains(&quad(subject, predicate, object))
+            .contains(&quad(subject, predicate, object)),
+        "forbidden inferred triple ({subject}, {predicate}, {object})"
     );
 }
 
@@ -198,7 +200,8 @@ fn no_data_native_rules_do_not_pay_for_a_frozen_graph_copy() {
     let mut options = ValidationOptions::default();
     options.limits.max_estimated_memory_bytes = 200;
 
-    assert!(execute_srl_rules(&rules, &base(&[("base", "p", "o")]), &options).is_ok());
+    execute_srl_rules(&rules, &base(&[("base", "p", "o")]), &options)
+        .unwrap();
 }
 
 #[test]

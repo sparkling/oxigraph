@@ -155,11 +155,13 @@ impl BodyPatternExpander<'_> {
     ) -> Result<SrlNode, SrlError> {
         match node {
             SrlNode::Variable(_)
-            | SrlNode::Constant(SrlConstant::Iri(_))
-            | SrlNode::Constant(SrlConstant::Literal { .. })
-            | SrlNode::Constant(SrlConstant::Boolean(_))
-            | SrlNode::Constant(SrlConstant::Numeric { .. })
-            | SrlNode::Constant(SrlConstant::Nil) => Ok(node.clone()),
+            | SrlNode::Constant(
+                SrlConstant::Iri(_)
+                | SrlConstant::Literal { .. }
+                | SrlConstant::Boolean(_)
+                | SrlConstant::Numeric { .. }
+                | SrlConstant::Nil,
+            ) => Ok(node.clone()),
             SrlNode::Constant(SrlConstant::BlankNode(label)) => {
                 Ok(self.private_node(&format!("label:{label}")))
             }
@@ -190,7 +192,7 @@ impl BodyPatternExpander<'_> {
                         object: cells
                             .get(index + 1)
                             .cloned()
-                            .unwrap_or_else(|| SrlNode::Constant(SrlConstant::Nil)),
+                            .unwrap_or(SrlNode::Constant(SrlConstant::Nil)),
                     });
                 }
                 cells.first().cloned().ok_or_else(|| {

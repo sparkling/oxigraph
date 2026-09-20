@@ -48,11 +48,17 @@ fn marker(subject: &str) -> Quad {
 }
 
 fn assert_marked(execution: &SrlExecution, subject: &str) {
-    assert!(execution.inference().dataset().contains(&marker(subject)));
+    assert!(
+        execution.inference().dataset().contains(&marker(subject)),
+        "expected marker for subject {subject}"
+    );
 }
 
 fn assert_not_marked(execution: &SrlExecution, subject: &str) {
-    assert!(!execution.inference().dataset().contains(&marker(subject)));
+    assert!(
+        !execution.inference().dataset().contains(&marker(subject)),
+        "forbidden marker for subject {subject}"
+    );
 }
 
 #[test]

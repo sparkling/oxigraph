@@ -2,6 +2,13 @@
 use crate::srl::{SrlBodyElement, SrlExpression, rules};
 use crate::srl::{SrlConstant, SrlError, SrlNode, SrlPredicate, SrlRuleSet};
 
+#[cfg_attr(
+    feature = "rdf-12",
+    expect(
+        clippy::unnecessary_wraps,
+        reason = "the shared preflight signature remains fallible when rdf-12 is disabled"
+    )
+)]
 pub(super) fn reject_unimplemented_constructs(rule_set: &SrlRuleSet) -> Result<(), SrlError> {
     #[cfg(not(feature = "rdf-12"))]
     if rules(rule_set).any(|rule| body_requires_rdf12(&rule.body)) {
@@ -11,7 +18,7 @@ pub(super) fn reject_unimplemented_constructs(rule_set: &SrlRuleSet) -> Result<(
         ));
     }
     #[cfg(feature = "rdf-12")]
-    let _ = rule_set;
+    let _: &SrlRuleSet = rule_set;
     Ok(())
 }
 
@@ -23,8 +30,9 @@ fn body_requires_rdf12(body: &[SrlBodyElement]) -> bool {
                 || predicate_requires_rdf12(&triple.predicate)
                 || node_requires_rdf12(&triple.object)
         }
-        SrlBodyElement::Filter(expression) => expression_requires_rdf12(expression),
-        SrlBodyElement::Assignment { expression, .. } => expression_requires_rdf12(expression),
+        SrlBodyElement::Filter(expression) | SrlBodyElement::Assignment { expression, .. } => {
+            expression_requires_rdf12(expression)
+        }
         SrlBodyElement::Negation { body, .. } => body_requires_rdf12(body),
     })
 }

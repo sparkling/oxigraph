@@ -66,9 +66,7 @@ impl Parser {
                     triple,
                     reifier,
                 } if mode == NodeMode::Pattern => Ok(vec![SrlTriple {
-                    subject: reifier
-                        .map(|reifier| *reifier)
-                        .unwrap_or(SrlNode::GeneratedBlankNode(id)),
+                    subject: reifier.map_or(SrlNode::GeneratedBlankNode(id), |reifier| *reifier),
                     predicate: SrlPredicate::Node(SrlNode::Constant(SrlConstant::Iri(
                         RDF_REIFIES.to_owned(),
                     ))),
