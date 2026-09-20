@@ -302,6 +302,47 @@ impl ValidationContext<'_> {
         Ok(deduplicate(nodes))
     }
 
+    fn value_nodes(
+        &mut self,
+        shape: &Shape,
+        focus: &Term,
+        budget: &mut Budget<'_>,
+        depth: usize,
+    ) -> Result<Vec<Term>, ValidationError> {
+        let Some(path) = &shape.path else {
+            return Ok(vec![focus.clone()]);
+        };
+        let graph = self.graph;
+        let environment = crate::ExpressionEnvironment::default();
+        let mut values = path.evaluate(graph, [focus.clone()], budget, self.max_depth)?;
+        if let Some(expression) = &shape.values {
+            values.extend(expression.evaluate(
+                graph,
+                focus,
+                &environment,
+                self,
+                budget,
+                depth.saturating_add(1),
+                self.max_depth,
+            )?);
+        }
+        let mut values = deduplicate(values);
+        if values.is_empty()
+            && let Some(expression) = &shape.default_value
+        {
+            values = deduplicate(expression.evaluate(
+                graph,
+                focus,
+                &environment,
+                self,
+                budget,
+                depth.saturating_add(1),
+                self.max_depth,
+            )?);
+        }
+        Ok(values)
+    }
+
     pub(super) fn validate_shape(
         &mut self,
         shape: &Shape,
@@ -320,36 +361,7 @@ impl ValidationContext<'_> {
         if shape.deactivated {
             return Ok(Vec::new());
         }
-        let graph = self.graph;
-        let environment = crate::ExpressionEnvironment::default();
-        let mut values = if let Some(expression) = &shape.values {
-            expression.evaluate(
-                graph,
-                focus,
-                &environment,
-                self,
-                budget,
-                depth.saturating_add(1),
-                self.max_depth,
-            )?
-        } else if let Some(path) = &shape.path {
-            path.evaluate(self.graph, [focus.clone()], budget, self.max_depth)?
-        } else {
-            vec![focus.clone()]
-        };
-        if values.is_empty()
-            && let Some(expression) = &shape.default_value
-        {
-            values = expression.evaluate(
-                graph,
-                focus,
-                &environment,
-                self,
-                budget,
-                depth.saturating_add(1),
-                self.max_depth,
-            )?;
-        }
+        let values = self.value_nodes(shape, focus, budget, depth)?;
         let mut results = Vec::new();
         for (index, constraint) in shape.constraints.clone().into_iter().enumerate() {
             if matches!(constraint, Constraint::UniqueValuesFor(_)) {
