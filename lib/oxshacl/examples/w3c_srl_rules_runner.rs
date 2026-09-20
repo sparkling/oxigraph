@@ -21,9 +21,12 @@ const MF_ENTRIES: &str = "http://www.w3.org/2001/sw/DataAccess/tests/test-manife
 const MF_NAME: &str = "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#name";
 const MF_ACTION: &str = "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#action";
 const MF_RESULT: &str = "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#result";
-const SRT: &str = "http://www.w3.org/ns/shacl-rules-test#";
-const SRT_RULESET: &str = "http://www.w3.org/ns/shacl-rules-test#ruleset";
-const SRT_DATA: &str = "http://www.w3.org/ns/shacl-rules-test#data";
+const SRT_HISTORICAL: &str = "http://www.w3.org/ns/shacl-rules-test#";
+const SRT_CURRENT: &str = "http://www.w3.org/ns/sparql-rl-tests#";
+const SRT_RULESET_HISTORICAL: &str = "http://www.w3.org/ns/shacl-rules-test#ruleset";
+const SRT_DATA_HISTORICAL: &str = "http://www.w3.org/ns/shacl-rules-test#data";
+const SRT_RULESET_CURRENT: &str = "http://www.w3.org/ns/sparql-rl-tests#ruleset";
+const SRT_DATA_CURRENT: &str = "http://www.w3.org/ns/sparql-rl-tests#data";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = PathBuf::from(
@@ -36,18 +39,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ProfileId::Core12Subset20260723,
         ProfileId::Rules12Subset20260727,
     ])?;
-    let root_manifest_path = root.join("manifest-rules.ttl");
+    let (root_manifest_path, dialect) = root_manifest_path(&root)?;
     let root_manifest = parse_turtle(&root_manifest_path)?;
-    let included = included_manifests(&root_manifest, &root_manifest_path, &root)?;
+    let included = included_manifests(&root_manifest, &root_manifest_path, &root, dialect)?;
     let mut totals = Totals::default();
     for manifest_path in included {
         let manifest = parse_turtle(&manifest_path)?;
-        let entries = manifest_entries(&manifest)?;
-        for test in entries {
+        for test in manifest_entries(&manifest)? {
             totals.discovered += 1;
             totals.eligible += 1;
             let name = case_name(&manifest, &test)?;
-            let result = run_case(&manifest_path, &manifest, &test, profiles.clone(), &root);
+            let result = run_case(
+                &manifest_path,
+                &manifest,
+                &test,
+                profiles.clone(),
+                &root,
+                dialect,
+            );
             match result {
                 CaseResult::Passed(detail) => {
                     totals.passed += 1;
@@ -80,14 +89,19 @@ fn run_case(
     test: &NamedOrBlankNode,
     profiles: ProfileSet,
     root: &Path,
+    dialect: SrlDialect,
 ) -> CaseResult {
-    let Some(kind) = case_kind(manifest, test) else {
-        return CaseResult::Unsupported("unrecognized SRL manifest test type".to_owned());
+    let Some(kind) = case_kind(manifest, test, dialect) else {
+        return CaseResult::Unsupported(
+            "test does not have exactly one recognized type in the selected SRL namespace"
+                .to_owned(),
+        );
     };
     match kind {
         CaseKind::Syntax { positive } => {
-            let Some(action) = one_object(manifest, test, MF_ACTION) else {
-                return CaseResult::Failed("syntax test has no single mf:action".to_owned());
+            let action = match one_object(manifest, test, MF_ACTION) {
+                Ok(action) => action,
+                Err(error) => return CaseResult::Failed(error),
             };
             let path = match reference_path(manifest_path, &action, root) {
                 Ok(path) => path,
@@ -96,8 +110,9 @@ fn run_case(
             expected_acceptance(parse_rules(&path, profiles).map(|_| ()), positive, "syntax")
         }
         CaseKind::WellFormed { positive } => {
-            let Some(action) = one_object(manifest, test, MF_ACTION) else {
-                return CaseResult::Failed("well-formedness test has no action".to_owned());
+            let action = match one_object(manifest, test, MF_ACTION) {
+                Ok(action) => action,
+                Err(error) => return CaseResult::Failed(error),
             };
             let path = match reference_path(manifest_path, &action, root) {
                 Ok(path) => path,
@@ -107,8 +122,9 @@ fn run_case(
             expected_acceptance(result, positive, "well-formedness")
         }
         CaseKind::Stratification { positive } => {
-            let Some(action) = one_object(manifest, test, MF_ACTION) else {
-                return CaseResult::Failed("stratification test has no action".to_owned());
+            let action = match one_object(manifest, test, MF_ACTION) {
+                Ok(action) => action,
+                Err(error) => return CaseResult::Failed(error),
             };
             let path = match reference_path(manifest_path, &action, root) {
                 Ok(path) => path,
@@ -118,7 +134,9 @@ fn run_case(
                 parse_rules(&path, profiles).and_then(|rules| rules.stratification().map(|_| ()));
             expected_acceptance(result, positive, "stratification")
         }
-        CaseKind::Evaluation => run_evaluation(manifest_path, manifest, test, profiles, root),
+        CaseKind::Evaluation => {
+            run_evaluation(manifest_path, manifest, test, profiles, root, dialect)
+        }
     }
 }
 
@@ -128,18 +146,46 @@ fn run_evaluation(
     test: &NamedOrBlankNode,
     profiles: ProfileSet,
     root: &Path,
+    dialect: SrlDialect,
 ) -> CaseResult {
-    let Some(action) = one_object(manifest, test, MF_ACTION).and_then(as_subject) else {
-        return CaseResult::Failed("evaluation action is not a single RDF node".to_owned());
+    let (ruleset_predicate, data_predicate, other_ruleset, other_data) = match dialect {
+        SrlDialect::Historical => (
+            SRT_RULESET_HISTORICAL,
+            SRT_DATA_HISTORICAL,
+            SRT_RULESET_CURRENT,
+            SRT_DATA_CURRENT,
+        ),
+        SrlDialect::Current => (
+            SRT_RULESET_CURRENT,
+            SRT_DATA_CURRENT,
+            SRT_RULESET_HISTORICAL,
+            SRT_DATA_HISTORICAL,
+        ),
     };
-    let Some(rules_reference) = one_object(manifest, &action, SRT_RULESET) else {
-        return CaseResult::Failed("evaluation action has no single srt:ruleset".to_owned());
+    let action = match one_object(manifest, test, MF_ACTION).and_then(|term| {
+        as_subject(term).ok_or("evaluation action is not an RDF node".to_owned())
+    }) {
+        Ok(action) => action,
+        Err(error) => return CaseResult::Failed(error),
     };
-    let Some(data_reference) = one_object(manifest, &action, SRT_DATA) else {
-        return CaseResult::Failed("evaluation action has no single srt:data".to_owned());
+    if !objects(manifest, &action, other_ruleset).is_empty()
+        || !objects(manifest, &action, other_data).is_empty()
+    {
+        return CaseResult::Failed(
+            "evaluation action mixes historical and current predicate namespaces".to_owned(),
+        );
+    }
+    let rules_reference = match one_object(manifest, &action, ruleset_predicate) {
+        Ok(reference) => reference,
+        Err(error) => return CaseResult::Failed(error),
     };
-    let Some(result_reference) = one_object(manifest, test, MF_RESULT) else {
-        return CaseResult::Failed("evaluation test has no single mf:result".to_owned());
+    let data_reference = match one_object(manifest, &action, data_predicate) {
+        Ok(reference) => reference,
+        Err(error) => return CaseResult::Failed(error),
+    };
+    let result_reference = match one_object(manifest, test, MF_RESULT) {
+        Ok(reference) => reference,
+        Err(error) => return CaseResult::Failed(error),
     };
     let rules_path = match reference_path(manifest_path, &rules_reference, root) {
         Ok(path) => path,
@@ -210,26 +256,79 @@ fn compare_graphs(actual: &Dataset, expected: &Dataset) -> Result<(), SrlError> 
     }
 }
 
+fn root_manifest_path(root: &Path) -> Result<(PathBuf, SrlDialect), Box<dyn std::error::Error>> {
+    let canonical_root = root.canonicalize()?;
+    if canonical_root != root || !canonical_root.is_dir() {
+        return Err("rules root is not a canonical directory".into());
+    }
+    let historical = checked_manifest(&root.join("manifest-rules.ttl"), root)?;
+    let current = checked_manifest(&root.join("manifest-sparql-rl.ttl"), root)?;
+    match (historical, current) {
+        (Some(path), None) => Ok((path, SrlDialect::Historical)),
+        (None, Some(path)) => Ok((path, SrlDialect::Current)),
+        (Some(_), Some(_)) => {
+            Err("rules root contains both historical and current manifests".into())
+        }
+        (None, None) => Err("rules root contains neither supported manifest".into()),
+    }
+}
+
+fn checked_manifest(
+    path: &Path,
+    root: &Path,
+) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => {
+            let canonical = path.canonicalize()?;
+            if !canonical.starts_with(root) {
+                return Err("rules manifest escapes the canonical rules root".into());
+            }
+            if !canonical.is_file() {
+                return Err("rules manifest is not a regular file".into());
+            }
+            Ok(Some(canonical))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
 fn included_manifests(
     graph: &Dataset,
     manifest_path: &Path,
     root: &Path,
+    dialect: SrlDialect,
 ) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
-    let roots = graph
+    let includes = graph
         .iter()
         .filter(|quad| quad.predicate.as_str() == MF_INCLUDE)
         .collect::<Vec<_>>();
-    if roots.len() != 1 {
-        return Err(format!("root manifest has {} mf:include values", roots.len()).into());
+    if includes.len() != 1 {
+        return Err(format!(
+            "root manifest has {} mf:include values instead of one RDF list",
+            includes.len()
+        )
+        .into());
     }
-    let mut output = rdf_list(graph, &roots[0].object)?
+    let mut output = rdf_list(graph, &includes[0].object)?
         .iter()
         .map(|term| reference_path(manifest_path, term, root))
         .collect::<Result<Vec<_>, _>>()?;
     output.sort();
-    if output.len() != 5 {
+    if output
+        .windows(2)
+        .any(|pair| matches!(pair, [left, right] if left == right))
+    {
+        return Err("root manifest includes a duplicate canonical manifest target".into());
+    }
+    let expected = match dialect {
+        SrlDialect::Historical => 5,
+        SrlDialect::Current => 6,
+    };
+    if output.len() != expected {
         return Err(format!(
-            "root manifest includes {} manifests instead of 5",
+            "{} root manifest includes {} manifests instead of {expected}",
+            dialect.label(),
             output.len()
         )
         .into());
@@ -271,39 +370,38 @@ fn rdf_list(graph: &Dataset, head: &Term) -> Result<Vec<Term>, String> {
         if !seen.insert(node.to_string()) {
             return Err("cyclic RDF list".to_owned());
         }
-        output.push(one_object(graph, &node, RDF_FIRST).ok_or("RDF list has no rdf:first")?);
-        current = one_object(graph, &node, RDF_REST).ok_or("RDF list has no rdf:rest")?;
+        output.push(one_object(graph, &node, RDF_FIRST)?);
+        current = one_object(graph, &node, RDF_REST)?;
     }
     Err("RDF list exceeds 100000 cells".to_owned())
 }
 
-fn case_kind(graph: &Dataset, test: &NamedOrBlankNode) -> Option<CaseKind> {
+fn case_kind(
+    graph: &Dataset,
+    test: &NamedOrBlankNode,
+    dialect: SrlDialect,
+) -> Option<CaseKind> {
     let types = objects(graph, test, RDF_TYPE);
-    for kind in types {
-        let Term::NamedNode(kind) = kind else {
-            continue;
-        };
-        let Some(kind) = kind.as_str().strip_prefix(SRT) else {
-            continue;
-        };
-        return Some(match kind {
-            "RulesPositiveSyntaxTest" => CaseKind::Syntax { positive: true },
-            "RulesNegativeSyntaxTest" => CaseKind::Syntax { positive: false },
-            "RulesPositiveWellFormednessTest" => CaseKind::WellFormed { positive: true },
-            "RulesNegativeWellFormednessTest" => CaseKind::WellFormed { positive: false },
-            "RulesPositiveStratificationTest" => CaseKind::Stratification { positive: true },
-            "RulesNegativeStratificationTest" => CaseKind::Stratification { positive: false },
-            "RulesEvalTest" => CaseKind::Evaluation,
-            _ => continue,
-        });
-    }
-    None
+    let [Term::NamedNode(kind)] = types.as_slice() else {
+        return None;
+    };
+    let local_name = kind.as_str().strip_prefix(dialect.namespace())?;
+    Some(match local_name {
+        "RulesPositiveSyntaxTest" => CaseKind::Syntax { positive: true },
+        "RulesNegativeSyntaxTest" => CaseKind::Syntax { positive: false },
+        "RulesPositiveWellFormednessTest" => CaseKind::WellFormed { positive: true },
+        "RulesNegativeWellFormednessTest" => CaseKind::WellFormed { positive: false },
+        "RulesPositiveStratificationTest" => CaseKind::Stratification { positive: true },
+        "RulesNegativeStratificationTest" => CaseKind::Stratification { positive: false },
+        "RulesEvalTest" => CaseKind::Evaluation,
+        _ => return None,
+    })
 }
 
 fn case_name(graph: &Dataset, test: &NamedOrBlankNode) -> Result<String, String> {
-    match one_object(graph, test, MF_NAME) {
-        Some(Term::Literal(name)) => Ok(name.value().to_owned()),
-        _ => Err("test has no single literal mf:name".to_owned()),
+    match one_object(graph, test, MF_NAME)? {
+        Term::Literal(name) => Ok(name.value().to_owned()),
+        _ => Err("test mf:name is not a literal".to_owned()),
     }
 }
 
@@ -325,7 +423,7 @@ fn parse_turtle(path: &Path) -> Result<Dataset, Box<dyn std::error::Error>> {
     Ok(graph)
 }
 
-fn reference_path(manifest: &Path, reference: &Term, root: &Path) -> Result<PathBuf, String> {
+fn reference_path(source: &Path, reference: &Term, root: &Path) -> Result<PathBuf, String> {
     let Term::NamedNode(reference) = reference else {
         return Err("file reference is not an IRI".to_owned());
     };
@@ -333,11 +431,24 @@ fn reference_path(manifest: &Path, reference: &Term, root: &Path) -> Result<Path
         .as_str()
         .strip_prefix("file://")
         .ok_or("file reference does not use file://")?;
+    if !raw.starts_with('/') || raw.contains('#') || raw.contains('?') {
+        return Err("file reference has a remote authority, fragment, query, or ambiguous form"
+            .to_owned());
+    }
     let candidate = PathBuf::from(raw)
         .canonicalize()
-        .map_err(|error| format!("failed to canonicalize reference: {error}"))?;
-    if !candidate.starts_with(root) || candidate == manifest {
-        return Err("file reference escapes pinned rules root or is recursive".to_owned());
+        .map_err(|error| format!("failed to canonicalize file reference: {error}"))?;
+    let canonical_source = source
+        .canonicalize()
+        .map_err(|error| format!("failed to canonicalize reference source: {error}"))?;
+    if !canonical_source.starts_with(root) {
+        return Err("reference source escapes the canonical rules root".to_owned());
+    }
+    if !candidate.starts_with(root) {
+        return Err("file reference escapes the canonical rules root".to_owned());
+    }
+    if candidate == canonical_source {
+        return Err("file reference is recursive".to_owned());
     }
     if !candidate.is_file() {
         return Err("file reference is not a regular file".to_owned());
@@ -353,9 +464,20 @@ fn objects(graph: &Dataset, subject: &NamedOrBlankNode, predicate: &str) -> Vec<
         .collect()
 }
 
-fn one_object(graph: &Dataset, subject: &NamedOrBlankNode, predicate: &str) -> Option<Term> {
+fn one_object(
+    graph: &Dataset,
+    subject: &NamedOrBlankNode,
+    predicate: &str,
+) -> Result<Term, String> {
     let values = objects(graph, subject, predicate);
-    (values.len() == 1).then(|| values[0].clone())
+    match values.as_slice() {
+        [value] => Ok(value.clone()),
+        [] => Err(format!("{subject} has no {predicate} value")),
+        _ => Err(format!(
+            "{subject} has {} {predicate} values",
+            values.len()
+        )),
+    }
 }
 
 fn as_subject(term: Term) -> Option<NamedOrBlankNode> {
@@ -385,6 +507,32 @@ fn graph_lines(dataset: &Dataset) -> String {
     lines.sort();
     lines.into_iter().take(24).collect::<Vec<_>>().join(" ")
 }
+
+#[derive(Clone, Copy)]
+enum SrlDialect {
+    Historical,
+    Current,
+}
+
+impl SrlDialect {
+    fn namespace(self) -> &'static str {
+        match self {
+            Self::Historical => SRT_HISTORICAL,
+            Self::Current => SRT_CURRENT,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Historical => "historical",
+            Self::Current => "current",
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "w3c_srl_rules_runner/tests.rs"]
+mod tests;
 
 enum CaseKind {
     Syntax { positive: bool },
