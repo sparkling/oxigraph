@@ -13,8 +13,20 @@ const equal = (a, b) => digest(a) === digest(b);
 const text = (value) => typeof value === "string" && value.trim().length > 0;
 const ordinaryHarnessPath = (path) => /^(?:tools\/engineering-harness\/(?:src\/(?:delivery|workflow|workflow-host)\.mjs|bin\/oxigraph-delivery\.mjs|test\/(?:delivery|workflow)\.test\.mjs))$/.test(path);
 const manifestPath = (path) => /^(?:Cargo\.(?:toml|lock)|(?:cli|testsuite|oxrocksdb-sys)\/Cargo\.(?:toml|lock)|(?:lib|cli|testsuite)\/[a-zA-Z0-9_./-]+\/Cargo\.(?:toml|lock))$/.test(path);
+const shaclEvidencePath = new Set([
+  "tools/shacl-tests/inventory.mjs",
+  "tools/shacl-tests/clause-audit.mjs",
+  "tools/shacl-tests/run.mjs",
+  "tools/shacl-tests/jena-compact.mjs",
+  "tools/shacl-tests/shacl-requirements.mjs",
+  "tools/shacl-tests/clause-reviews.mjs",
+  "tools/shacl-tests/README.md",
+  "tools/evidence/policy.mjs",
+  "tools/evidence/verify-programme.mjs",
+  "tools/evidence/verify-programme.test.mjs",
+]);
 const productPath = (path) => path === "oxrocksdb-sys/api/c.cc" || manifestPath(path) ||
-  /^(?:lib|cli|testsuite)\/[a-zA-Z0-9_./-]+\.(?:rs|rq|ru|ttl|trig|nt|nq|json)$/.test(path);
+  shaclEvidencePath.has(path) || /^(?:lib|cli|testsuite)\/[a-zA-Z0-9_./-]+\.(?:rs|rq|ru|ttl|trig|nt|nq|json)$/.test(path);
 function ownKeys(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
       Object.keys(value).some((key) => !keys.includes(key))) throw new Error(`Invalid ${label}`);

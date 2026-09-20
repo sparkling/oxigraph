@@ -389,6 +389,32 @@ test("product workflow admits only the reviewed native lock adapter", () => {
   ]) assert.throws(() => validateWorkflow({ ...spec, scope: "product", paths: [path], checks: [check] }));
 });
 
+test("product workflow admits exact SHACL suite-update paths only", () => {
+  const check = { completionCheck: "SHACL evidence command passes", argv: ["node", "tools/shacl-tests/run.mjs"] };
+  for (const path of [
+    "tools/shacl-tests/inventory.mjs",
+    "tools/shacl-tests/clause-audit.mjs",
+    "tools/shacl-tests/run.mjs",
+    "tools/shacl-tests/jena-compact.mjs",
+    "tools/shacl-tests/shacl-requirements.mjs",
+    "tools/shacl-tests/clause-reviews.mjs",
+    "tools/shacl-tests/README.md",
+    "tools/evidence/policy.mjs",
+    "tools/evidence/verify-programme.mjs",
+    "tools/evidence/verify-programme.test.mjs",
+  ]) {
+    assert.doesNotThrow(() => validateWorkflow({ ...spec, scope: "product", paths: [path], checks: [check] }));
+  }
+  for (const path of [
+    "tools/shacl-tests/adjacent.mjs",
+    "tools/shacl-tests/../shacl-tests/run.mjs",
+    "tools/docs/guide.md",
+    "docs/adr/0046-shacl-12-editors-draft-realignment.md",
+    "lib/oxshacl/tests/fixtures/srl_clause_productions.tsv",
+    "lib/oxshacl/tests/fixtures/other.tsv",
+  ]) assert.throws(() => validateWorkflow({ ...spec, scope: "product", paths: [path], checks: [check] }));
+});
+
 test("mechanical relay refreshes MCP reads, preserves observations, and leaves native actions pending", async () => {
   const mcp = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
   const observations = [];

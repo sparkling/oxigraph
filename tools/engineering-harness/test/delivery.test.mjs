@@ -81,6 +81,7 @@ test("literal native commands are admitted; broad or protected entry points are 
   ]).kind, "cargo-test");
   assert.equal(admitCommand(["cargo", "build", "--locked", "--release", "-p", "oxigraph-cli"]).kind, "build");
   assert.equal(admitCommand(["node", "--test", "--test-reporter=tap", "tools/engineering-harness/test/delivery.test.mjs"]).kind, "node-test");
+  assert.equal(admitCommand(["node", "--test", "--test-reporter=tap", "tools/evidence/verify-programme.test.mjs"]).kind, "node-test");
   for (const argv of [
     ["cargo", "test"], ["cargo", "publish", "--locked"], ["cargo", "test", "--locked", "--config", "x=y"],
     ["cargo", "test", "--locked", "--", "--list"], ["cargo", "test", "--locked", "--", "--unknown"],
@@ -89,6 +90,41 @@ test("literal native commands are admitted; broad or protected entry points are 
     ["node", "--eval", "process.exit(0)"], ["npm", "test"], ["sh", "-c", "true"], ["ruflo", "status"],
     ["cargo", "test", "--locked\n"],
   ]) assert.throws(() => admitCommand(argv), JSON.stringify(argv));
+});
+test("SHACL evidence checks admit only exact literal Node entry points", () => {
+  for (const path of [
+    "tools/shacl-tests/run.mjs",
+    "tools/shacl-tests/clause-audit.mjs",
+    "tools/shacl-tests/jena-compact.mjs",
+  ]) {
+    const command = admitCommand(["node", path]);
+    assert.deepEqual(command, { program: process.execPath, args: [path], kind: "evidence-check" });
+  }
+  assert.deepEqual(
+    admitCommand(["node", "tools/evidence/verify-programme.mjs", "--source-only"]),
+    { program: process.execPath, args: ["tools/evidence/verify-programme.mjs", "--source-only"], kind: "evidence-check" },
+  );
+  for (const argv of [
+    ["node", "tools/shacl-tests/run.mjs", "--extra"],
+    ["node", "/tmp/run.mjs"],
+    ["node", "tools/shacl-tests/arbitrary.mjs"],
+    ["node", "tools/shacl-tests/run-copy.mjs"],
+    ["node", "tools/shacl-tests/../shacl-tests/run.mjs"],
+    ["node", "tools/shacl-tests/inventory.mjs"],
+    ["node", "tools/evidence/verify-programme.mjs"],
+    ["node", "tools/evidence/verify-programme.mjs", "--full"],
+    ["node", "tools/evidence/verify-programme.mjs", "--root"],
+    ["node", "tools/evidence/verify-programme.mjs", "--source-only", "--extra"],
+  ]) assert.throws(() => admitCommand(argv), JSON.stringify(argv));
+});
+test("evidence checks retain generic process-success evaluation", () => {
+  const result = evaluateResult({ kind: "evidence-check" }, {
+    code: 0, signal: null, spawnError: null, timedOut: false,
+    cleanupUnconfirmed: false, outputLimitExceeded: false, scanLimitExceeded: false,
+  });
+  assert.equal(result.passed, true);
+  assert.equal(Object.hasOwn(result, "testSafeguard"), false);
+  assert.equal(Object.hasOwn(result, "observedPassedTests"), false);
 });
 test("source observations require main and bind untracked source as well as HEAD", () => {
   const source = sourceObservation();

@@ -80,7 +80,14 @@ const nodeTests = new Set([
   "tools/engineering-harness/test/cli.test.mjs",
   "tools/engineering-harness/test/task-profile.test.mjs",
   "tools/agentic-qe/process-runner.test.mjs",
+  "tools/evidence/verify-programme.test.mjs",
 ]);
+const evidenceChecks = new Set([
+  "tools/shacl-tests/run.mjs",
+  "tools/shacl-tests/clause-audit.mjs",
+  "tools/shacl-tests/jena-compact.mjs",
+]);
+const sourceOnlyEvidenceCheck = "tools/evidence/verify-programme.mjs";
 const fuzzTargets = new Set([
   "nquads", "trig", "n3", "rdf_xml", "jsonld", "sparql_query",
   "sparql_update", "sparql_query_eval", "sparql_update_eval",
@@ -142,6 +149,13 @@ export function admitCommand(argv) {
       args.length > 1 && args.slice(1).every((path) => nodeTests.has(path)) &&
       new Set(args.slice(1)).size === args.length - 1) {
     return { program: process.execPath, args: [command, ...args], kind: "node-test" };
+  }
+  if (program === "node" && args.length === 0 && evidenceChecks.has(command)) {
+    return { program: process.execPath, args: [command], kind: "evidence-check" };
+  }
+  if (program === "node" && command === sourceOnlyEvidenceCheck &&
+      args.length === 1 && args[0] === "--source-only") {
+    return { program: process.execPath, args: [command, ...args], kind: "evidence-check" };
   }
   throw new Error("Command not registered for ordinary delivery; add a reviewed adapter, do not bypass the harness");
 }
