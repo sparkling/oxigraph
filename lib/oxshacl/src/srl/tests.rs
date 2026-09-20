@@ -149,7 +149,7 @@ fn inline_data_rejects_reserved_typed_literals_without_language_components() {
 #[test]
 fn inline_blank_nodes_cannot_alias_external_blank_nodes() {
     let rules = parse("PREFIX : <http://example/> DATA { _:source :p :o }");
-    let external_blank = BlankNode::new_unchecked("oxshacl-srl-inline-0");
+    let external_blank = BlankNode::new_unchecked("oxshacl-srl-node-0");
     let data = Dataset::from_iter([Quad::new(
         external_blank.clone(),
         NamedNode::new_unchecked("http://example/external"),
@@ -268,15 +268,39 @@ fn consecutive_triple_blocks_require_a_dot() {
 }
 
 #[test]
-fn standalone_reification_never_disappears_during_execution() {
+#[cfg(feature = "rdf-12")]
+fn standalone_reification_materializes_without_asserting_the_reified_triple() {
     let rules = parse("PREFIX : <http://example/> DATA { << :s :p :o >> }");
-    let error = execute_srl_rules(
+    let execution = execute_srl_rules(
         &rules,
         &GraphSnapshot::default_graph(Dataset::new()),
         &ValidationOptions::default(),
     )
-    .unwrap_err();
-    assert!(matches!(error, SrlError::Unsupported(_)));
+    .unwrap();
+    assert_eq!(execution.inference().triple_count(), 1);
+    assert!(execution.inference().dataset().iter().any(|quad| {
+        quad.predicate.as_str() == "http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"
+    }));
+    assert!(!execution.inference().dataset().contains(&Quad::new(
+        NamedNode::new_unchecked("http://example/s"),
+        NamedNode::new_unchecked("http://example/p"),
+        NamedNode::new_unchecked("http://example/o"),
+        GraphName::DefaultGraph,
+    )));
+}
+
+#[test]
+#[cfg(not(feature = "rdf-12"))]
+fn standalone_reification_fails_explicitly_without_rdf12() {
+    let rules = parse("PREFIX : <http://example/> DATA { << :s :p :o >> }");
+    assert!(matches!(
+        execute_srl_rules(
+            &rules,
+            &GraphSnapshot::default_graph(Dataset::new()),
+            &ValidationOptions::default(),
+        ),
+        Err(SrlError::Unsupported(reason)) if reason.contains("`rdf-12` crate feature")
+    ));
 }
 
 #[test]

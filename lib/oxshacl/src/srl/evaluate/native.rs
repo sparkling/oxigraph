@@ -13,7 +13,7 @@ use std::time::Instant;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use web_time::Instant;
 
-const ESTIMATED_QUAD_BYTES: usize = 160;
+pub(super) const ESTIMATED_QUAD_BYTES: usize = 160;
 
 pub(super) type Solution = BTreeMap<String, Term>;
 
@@ -42,7 +42,8 @@ pub(super) fn evaluate(
     base: &Dataset,
     inline: &Dataset,
     stratification: &SrlStratification,
-    options: &ValidationOptions,
+    mut heads: HeadBuilder,
+    mut guard: ExecutionGuard<'_>,
 ) -> Result<NativeResult, SrlError> {
     let mut working = base.clone();
     working.extend(inline.iter());
@@ -50,7 +51,6 @@ pub(super) fn evaluate(
         .iter()
         .filter(|quad| !base.contains(quad))
         .collect::<Dataset>();
-    let mut guard = ExecutionGuard::new(options, &working)?;
     let data = if rules(rule_set).any(rule_uses_data_graph) {
         // Enforce the memory limit before allocating the frozen GD copy.
         guard.memory(working.len().saturating_mul(ESTIMATED_QUAD_BYTES))?;
@@ -66,7 +66,6 @@ pub(super) fn evaluate(
         .enumerate()
         .map(|(index, rule)| expand_body_patterns(&rule.body, &format!("r{index}")))
         .collect::<Result<Vec<_>, _>>()?;
-    let mut heads = HeadBuilder::new(&working);
     let mut iterations = 0;
     for stratum in &stratification.strata {
         if !stratum.once.is_empty() {
@@ -152,14 +151,25 @@ fn apply_rule(
     )?;
     let mut changed = false;
     for (solution_index, solution) in solutions.iter().enumerate() {
-        for quad in heads.instantiate(rule_index, solution_index, &rule.head, solution)? {
-            guard.check()?;
-            if working.insert(quad.clone()) {
-                inference.insert(quad);
-                guard.derived(inference.len())?;
-                changed = true;
-            }
-        }
+        heads.instantiate(
+            rule_index,
+            solution_index,
+            &rule.head,
+            solution,
+            guard,
+            &mut |quad, guard| {
+                guard.check()?;
+                if !working.contains(&quad) {
+                    let next = inference.len().saturating_add(1);
+                    guard.derived(next)?;
+                    guard.memory(ESTIMATED_QUAD_BYTES)?;
+                    working.insert(quad.clone());
+                    inference.insert(quad);
+                    changed = true;
+                }
+                Ok(())
+            },
+        )?;
     }
     Ok(changed)
 }
@@ -307,7 +317,7 @@ pub(super) struct ExecutionGuard<'a> {
 }
 
 impl<'a> ExecutionGuard<'a> {
-    fn new(options: &'a ValidationOptions, graph: &Dataset) -> Result<Self, SrlError> {
+    pub(super) fn new(options: &'a ValidationOptions, graph: &Dataset) -> Result<Self, SrlError> {
         let mut output = Self {
             options,
             started: Instant::now(),
@@ -355,7 +365,7 @@ impl<'a> ExecutionGuard<'a> {
         self.memory(source.len())
     }
 
-    fn memory(&mut self, bytes: usize) -> Result<(), SrlError> {
+    pub(super) fn memory(&mut self, bytes: usize) -> Result<(), SrlError> {
         self.estimated_memory = self.estimated_memory.saturating_add(bytes);
         if self.estimated_memory > self.options.limits.max_estimated_memory_bytes {
             return Err(ValidationError::LimitExceeded {
@@ -365,6 +375,52 @@ impl<'a> ExecutionGuard<'a> {
             .into());
         }
         Ok(())
+    }
+
+    pub(super) fn depth(&self, depth: usize) -> Result<(), SrlError> {
+        if depth > self.options.limits.max_recursion_depth {
+            return Err(ValidationError::LimitExceeded {
+                kind: LimitKind::RecursionDepth,
+                limit: self.options.limits.max_recursion_depth,
+            }
+            .into());
+        }
+        self.check()
+    }
+
+    pub(super) fn data_quads(&self, count: usize) -> Result<(), SrlError> {
+        if count > self.options.limits.max_data_quads {
+            return Err(ValidationError::LimitExceeded {
+                kind: LimitKind::DataQuads,
+                limit: self.options.limits.max_data_quads,
+            }
+            .into());
+        }
+        self.check()
+    }
+
+    pub(super) fn remaining_memory(&self, graph_quads: usize) -> usize {
+        self.options
+            .limits
+            .max_estimated_memory_bytes
+            .saturating_sub(self.lowering_overhead(graph_quads))
+    }
+
+    pub(super) fn combined_memory(&self, graph_quads: usize, evaluator_memory: usize) -> usize {
+        self.lowering_overhead(graph_quads)
+            .saturating_add(evaluator_memory)
+    }
+
+    fn lowering_overhead(&self, graph_quads: usize) -> usize {
+        self.estimated_memory
+            .saturating_sub(graph_quads.saturating_mul(ESTIMATED_QUAD_BYTES))
+    }
+
+    pub(super) fn remaining_timeout(&self) -> Option<std::time::Duration> {
+        self.options
+            .limits
+            .timeout
+            .map(|timeout| timeout.saturating_sub(self.started.elapsed()))
     }
 
     fn iteration(&self, iterations: &mut usize) -> Result<(), SrlError> {
@@ -379,7 +435,7 @@ impl<'a> ExecutionGuard<'a> {
         self.check()
     }
 
-    fn derived(&self, count: usize) -> Result<(), SrlError> {
+    pub(super) fn derived(&self, count: usize) -> Result<(), SrlError> {
         if count > self.options.limits.max_derived_triples {
             return Err(ValidationError::LimitExceeded {
                 kind: LimitKind::DerivedTriples,

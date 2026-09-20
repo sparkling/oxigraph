@@ -65,7 +65,7 @@ impl Parser {
                     id,
                     triple,
                     reifier,
-                } if mode == NodeMode::Pattern => Ok(vec![SrlTriple {
+                } if matches!(mode, NodeMode::Pattern | NodeMode::Data) => Ok(vec![SrlTriple {
                     subject: reifier.map_or(SrlNode::GeneratedBlankNode(id), |reifier| *reifier),
                     predicate: SrlPredicate::Node(SrlNode::Constant(SrlConstant::Iri(
                         RDF_REIFIES.to_owned(),
@@ -77,7 +77,9 @@ impl Parser {
                         .insert("standalone reified-triple assertion".to_owned());
                     Ok(Vec::new())
                 }
-                SrlNode::Collection { id, values } if mode == NodeMode::Pattern => {
+                SrlNode::Collection { id, values }
+                    if matches!(mode, NodeMode::Pattern | NodeMode::Data) =>
+                {
                     Ok(self.standalone_collection_pattern(id, values))
                 }
                 SrlNode::Collection { .. } => {

@@ -139,9 +139,15 @@ fn execute_resolved(
     }
     reject_unimplemented_constructs(rule_set)?;
     let isolated_base = base.isolated_default_dataset();
-    let inline = inline_data(rule_set, &isolated_base)?;
+    let mut guard = native::ExecutionGuard::new(options, &isolated_base)?;
+    let inline = inline_data(rule_set, &isolated_base, &mut guard)?;
+    let (inline_graph, inline_heads, inline_inference_count) = inline.into_parts();
+    let remaining_derived = options
+        .limits
+        .max_derived_triples
+        .saturating_sub(inline_inference_count);
     let mut working = isolated_base.clone();
-    working.extend(inline.iter());
+    working.extend(inline_graph.iter());
     if working.len() > options.limits.max_data_quads {
         return Err(ValidationError::LimitExceeded {
             kind: LimitKind::DataQuads,
@@ -153,7 +159,14 @@ fn execute_resolved(
         return Err(ValidationError::Cancelled.into());
     }
     if native::required(rule_set) {
-        let result = native::evaluate(rule_set, &isolated_base, &inline, &stratification, options)?;
+        let result = native::evaluate(
+            rule_set,
+            &isolated_base,
+            &inline_graph,
+            &stratification,
+            inline_heads,
+            guard,
+        )?;
         let (inference, iterations, estimated_memory_bytes) = result.into_parts();
         let mut entailed = isolated_base.clone();
         entailed.extend(inference.iter());
@@ -166,26 +179,29 @@ fn execute_resolved(
         });
     }
     let program = compile_program(rule_set)?;
+    guard.check()?;
     let closure = oxdatalog::rdf::evaluate(
         &program,
         &working,
         &EvaluationOptions {
             limits: EvaluationLimits {
-                max_facts: working
-                    .len()
-                    .saturating_add(options.limits.max_derived_triples),
+                max_facts: working.len().saturating_add(remaining_derived),
                 max_intermediate_rows: options.limits.max_derived_triples.saturating_mul(8),
                 max_iterations: options.limits.max_rule_iterations,
-                max_memory_bytes: options.limits.max_estimated_memory_bytes,
+                max_memory_bytes: guard.remaining_memory(working.len()),
                 max_term_bytes: 1024 * 1024,
-                timeout: options.limits.timeout,
+                timeout: guard.remaining_timeout(),
             },
             track_provenance: true,
             cancellation_token: options.cancellation_token.clone(),
         },
     )?;
     let mut inference = closure.inference().clone();
-    inference.extend(inline.iter().filter(|quad| !isolated_base.contains(quad)));
+    inference.extend(
+        inline_graph
+            .iter()
+            .filter(|quad| !isolated_base.contains(quad)),
+    );
     if inference.len() > options.limits.max_derived_triples {
         return Err(ValidationError::LimitExceeded {
             kind: LimitKind::DerivedTriples,
@@ -200,7 +216,8 @@ fn execute_resolved(
         inference: GraphSnapshot::default_graph(inference),
         entailed: GraphSnapshot::default_graph(entailed),
         iterations: closure.evaluation().iterations(),
-        estimated_memory_bytes: closure.evaluation().estimated_memory_bytes(),
+        estimated_memory_bytes: guard
+            .combined_memory(working.len(), closure.evaluation().estimated_memory_bytes()),
     })
 }
 
