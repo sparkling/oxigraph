@@ -1,6 +1,13 @@
 use super::native::{ExecutionGuard, Solution};
-use crate::srl::{SrlConstant, SrlError, SrlNode, SrlPredicate, SrlTriple};
+use crate::srl::{SrlBodyElement, SrlError, SrlNode, SrlPredicate, SrlTriple};
 use oxrdf::{Dataset, GraphName, NamedNode, Term};
+
+pub(super) fn expand_body_patterns(
+    body: &[SrlBodyElement],
+    rule_scope: &str,
+) -> Result<Vec<SrlBodyElement>, SrlError> {
+    crate::srl::check::expand_body_patterns(body, rule_scope)
+}
 
 pub(super) fn match_pattern(
     pattern: &SrlTriple,
@@ -9,73 +16,38 @@ pub(super) fn match_pattern(
     scope: &str,
     guard: &mut ExecutionGuard<'_>,
 ) -> Result<Vec<Solution>, SrlError> {
-    let patterns = expand_path(pattern, scope);
     let mut solutions = input.to_vec();
-    for (index, pattern) in patterns.iter().enumerate() {
-        let mut next = Vec::new();
-        for solution in &solutions {
-            for quad in graph {
-                guard.check()?;
-                if quad.graph_name != GraphName::DefaultGraph {
-                    continue;
-                }
-                let mut candidate = solution.clone();
-                if match_node(
-                    &pattern.subject,
-                    Term::from(quad.subject),
-                    &format!("{scope}:{index}:s"),
-                    &mut candidate,
-                )? && match_predicate(
-                    &pattern.predicate,
-                    quad.predicate,
-                    &format!("{scope}:{index}:p"),
-                    &mut candidate,
-                )? && match_node(
-                    &pattern.object,
-                    quad.object,
-                    &format!("{scope}:{index}:o"),
-                    &mut candidate,
-                )? {
-                    guard.row(&candidate)?;
-                    next.push(candidate);
-                }
+    let mut next = Vec::new();
+    for solution in &solutions {
+        for quad in graph {
+            guard.check()?;
+            if quad.graph_name != GraphName::DefaultGraph {
+                continue;
+            }
+            let mut candidate = solution.clone();
+            if match_node(
+                &pattern.subject,
+                Term::from(quad.subject),
+                &format!("{scope}:s"),
+                &mut candidate,
+            )? && match_predicate(
+                &pattern.predicate,
+                quad.predicate,
+                &format!("{scope}:p"),
+                &mut candidate,
+            )? && match_node(
+                &pattern.object,
+                quad.object,
+                &format!("{scope}:o"),
+                &mut candidate,
+            )? {
+                guard.row(&candidate)?;
+                next.push(candidate);
             }
         }
-        solutions = next;
-        if solutions.is_empty() {
-            break;
-        }
     }
+    solutions = next;
     Ok(solutions)
-}
-
-fn expand_path(pattern: &SrlTriple, scope: &str) -> Vec<SrlTriple> {
-    let SrlPredicate::Path(path) = &pattern.predicate else {
-        return vec![pattern.clone()];
-    };
-    let mut output = Vec::with_capacity(path.len());
-    let mut current = pattern.subject.clone();
-    for (index, element) in path.iter().enumerate() {
-        let next = if index + 1 == path.len() {
-            pattern.object.clone()
-        } else {
-            SrlNode::Variable(format!("\0path:{scope}:{index}"))
-        };
-        let predicate =
-            SrlPredicate::Node(SrlNode::Constant(SrlConstant::Iri(element.iri.clone())));
-        let (subject, object) = if element.inverse {
-            (next.clone(), current.clone())
-        } else {
-            (current.clone(), next.clone())
-        };
-        output.push(SrlTriple {
-            subject,
-            predicate,
-            object,
-        });
-        current = next;
-    }
-    output
 }
 
 fn match_predicate(
@@ -111,8 +83,7 @@ fn match_node(
         | SrlNode::PropertyList { .. }
         | SrlNode::Reified { .. }
         | SrlNode::Annotated { .. } => Err(SrlError::Unsupported(
-            "collection, property-list, annotation, or reification in an SRL body pattern"
-                .to_owned(),
+            "an unexpanded abbreviation in an SRL body pattern".to_owned(),
         )),
     }
 }

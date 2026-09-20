@@ -1,10 +1,68 @@
-use crate::srl::{SrlBodyElement, SrlConstant, SrlError, SrlNode, SrlPredicate, SrlRuleSet, rules};
+#[cfg(not(feature = "rdf-12"))]
+use crate::srl::{SrlBodyElement, SrlExpression, rules};
+use crate::srl::{SrlConstant, SrlError, SrlNode, SrlPredicate, SrlRuleSet};
 
 pub(super) fn reject_unimplemented_constructs(rule_set: &SrlRuleSet) -> Result<(), SrlError> {
-    for source in rules(rule_set) {
-        reject_body_abbreviations(&source.body)?;
+    #[cfg(not(feature = "rdf-12"))]
+    if rules(rule_set).any(|rule| body_requires_rdf12(&rule.body)) {
+        return Err(SrlError::Unsupported(
+            "SRL triple terms, reification, and annotations require the `rdf-12` crate feature"
+                .to_owned(),
+        ));
     }
+    #[cfg(feature = "rdf-12")]
+    let _ = rule_set;
     Ok(())
+}
+
+#[cfg(not(feature = "rdf-12"))]
+fn body_requires_rdf12(body: &[SrlBodyElement]) -> bool {
+    body.iter().any(|element| match element {
+        SrlBodyElement::Triple(triple) => {
+            node_requires_rdf12(&triple.subject)
+                || predicate_requires_rdf12(&triple.predicate)
+                || node_requires_rdf12(&triple.object)
+        }
+        SrlBodyElement::Filter(expression) => expression_requires_rdf12(expression),
+        SrlBodyElement::Assignment { expression, .. } => expression_requires_rdf12(expression),
+        SrlBodyElement::Negation { body, .. } => body_requires_rdf12(body),
+    })
+}
+
+#[cfg(not(feature = "rdf-12"))]
+fn expression_requires_rdf12(expression: &SrlExpression) -> bool {
+    match expression {
+        SrlExpression::Node(node) => node_requires_rdf12(node),
+        SrlExpression::Unary { operand, .. } => expression_requires_rdf12(operand),
+        SrlExpression::Binary { left, right, .. } => {
+            expression_requires_rdf12(left) || expression_requires_rdf12(right)
+        }
+        SrlExpression::In { value, values, .. } => {
+            expression_requires_rdf12(value) || values.iter().any(expression_requires_rdf12)
+        }
+        SrlExpression::Call { arguments, .. } => arguments.iter().any(expression_requires_rdf12),
+    }
+}
+
+#[cfg(not(feature = "rdf-12"))]
+fn predicate_requires_rdf12(predicate: &SrlPredicate) -> bool {
+    match predicate {
+        SrlPredicate::Node(node) => node_requires_rdf12(node),
+        SrlPredicate::Path(_) => false,
+    }
+}
+
+#[cfg(not(feature = "rdf-12"))]
+fn node_requires_rdf12(node: &SrlNode) -> bool {
+    match node {
+        SrlNode::Collection { values, .. } => values.iter().any(node_requires_rdf12),
+        SrlNode::PropertyList { properties, .. } => properties.iter().any(|property| {
+            predicate_requires_rdf12(&property.predicate)
+                || property.objects.iter().any(node_requires_rdf12)
+        }),
+        SrlNode::Reified { .. } | SrlNode::TripleTerm(_) | SrlNode::Annotated { .. } => true,
+        SrlNode::Variable(_) | SrlNode::Constant(_) | SrlNode::GeneratedBlankNode(_) => false,
+    }
 }
 
 pub(super) fn reject_query_goal(goal: &crate::srl::SrlTriple) -> Result<(), SrlError> {
@@ -53,49 +111,4 @@ fn query_goal_error(detail: &str) -> SrlError {
     SrlError::Unsupported(format!(
         "Rules QUERY goal must be one abstract triple pattern without {detail}"
     ))
-}
-
-fn reject_body_abbreviations(body: &[SrlBodyElement]) -> Result<(), SrlError> {
-    for element in body {
-        match element {
-            SrlBodyElement::Triple(triple) => {
-                reject_pattern_node(&triple.subject)?;
-                if let SrlPredicate::Node(predicate) = &triple.predicate {
-                    reject_pattern_node(predicate)?;
-                }
-                reject_pattern_node(&triple.object)?;
-            }
-            SrlBodyElement::Negation { body, .. } => reject_body_abbreviations(body)?,
-            SrlBodyElement::Filter(_) | SrlBodyElement::Assignment { .. } => {}
-        }
-    }
-    Ok(())
-}
-
-fn reject_pattern_node(node: &SrlNode) -> Result<(), SrlError> {
-    match node {
-        SrlNode::Variable(_)
-        | SrlNode::Constant(
-            SrlConstant::Iri(_)
-            | SrlConstant::Literal { .. }
-            | SrlConstant::Boolean(_)
-            | SrlConstant::Numeric { .. }
-            | SrlConstant::Nil,
-        ) => Ok(()),
-        SrlNode::TripleTerm(triple) => {
-            reject_pattern_node(&triple.subject)?;
-            if let SrlPredicate::Node(predicate) = &triple.predicate {
-                reject_pattern_node(predicate)?;
-            }
-            reject_pattern_node(&triple.object)
-        }
-        SrlNode::Constant(SrlConstant::BlankNode(_))
-        | SrlNode::GeneratedBlankNode(_)
-        | SrlNode::Collection { .. }
-        | SrlNode::PropertyList { .. }
-        | SrlNode::Reified { .. }
-        | SrlNode::Annotated { .. } => Err(SrlError::Unsupported(
-            "blank nodes and abbreviation nodes in SRL body patterns".to_owned(),
-        )),
-    }
 }

@@ -451,7 +451,7 @@ fn signed_dependency_and_strata_are_locked() {
 }
 
 #[test]
-fn blank_template_identity_and_body_policy_are_locked() {
+fn blank_template_identity_and_body_abbreviation_policy_are_locked() {
     let rules = parse(
         "PREFIX : <http://example/> \
          RULE { _:shared :p ?o . _:shared :q ?o } WHERE { :s :value ?o }",
@@ -484,14 +484,42 @@ fn blank_template_identity_and_body_policy_are_locked() {
     assert_eq!(subjects.len(), 2);
     assert_eq!(subjects[0], subjects[1]);
 
-    let unsupported =
-        parse("PREFIX : <http://example/> RULE {} WHERE { ?s :p _:b FILTER(true) }").unwrap();
+    let body_rules = parse(
+        "PREFIX : <http://example/> \
+         RULE { :probe :matched ?s } WHERE { ?s :p _:bodyBlank FILTER(true) }",
+    )
+    .unwrap();
+    let body_data = Dataset::from_iter([Quad::new(
+        NamedNode::new_unchecked("http://example/s"),
+        NamedNode::new_unchecked("http://example/p"),
+        NamedNode::new_unchecked("http://example/o"),
+        GraphName::DefaultGraph,
+    )]);
+
+    #[cfg(feature = "sparql")]
+    {
+        let execution = execute_srl_rules(
+            &body_rules,
+            &GraphSnapshot::default_graph(body_data),
+            &ValidationOptions::default(),
+        )
+        .unwrap();
+        assert!(execution.inference().dataset().contains(&Quad::new(
+            NamedNode::new_unchecked("http://example/probe"),
+            NamedNode::new_unchecked("http://example/matched"),
+            NamedNode::new_unchecked("http://example/s"),
+            GraphName::DefaultGraph,
+        )));
+    }
+
+    #[cfg(not(feature = "sparql"))]
     assert!(matches!(
         execute_srl_rules(
-            &unsupported,
-            &GraphSnapshot::default_graph(Dataset::new()),
+            &body_rules,
+            &GraphSnapshot::default_graph(body_data),
             &ValidationOptions::default(),
         ),
-        Err(SrlError::Unsupported(_))
+        Err(SrlError::Unsupported(reason))
+            if reason.contains("FILTER and SET execution requires the `sparql` crate feature")
     ));
 }

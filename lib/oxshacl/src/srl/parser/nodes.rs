@@ -5,6 +5,9 @@ use crate::srl::{
     SrlTriple,
 };
 
+const RDF_FIRST: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#first";
+const RDF_REST: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest";
+const RDF_REIFIES: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies";
 const RDF_TYPE: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 const XSD_INTEGER: &str = "http://www.w3.org/2001/XMLSchema#integer";
 const XSD_DECIMAL: &str = "http://www.w3.org/2001/XMLSchema#decimal";
@@ -58,10 +61,26 @@ impl Parser {
                         })
                     })
                     .collect()),
+                SrlNode::Reified {
+                    id,
+                    triple,
+                    reifier,
+                } if mode == NodeMode::Pattern => Ok(vec![SrlTriple {
+                    subject: reifier
+                        .map(|reifier| *reifier)
+                        .unwrap_or(SrlNode::GeneratedBlankNode(id)),
+                    predicate: SrlPredicate::Node(SrlNode::Constant(SrlConstant::Iri(
+                        RDF_REIFIES.to_owned(),
+                    ))),
+                    object: SrlNode::TripleTerm(triple),
+                }]),
                 SrlNode::Reified { .. } => {
                     self.semantic_extensions
                         .insert("standalone reified-triple assertion".to_owned());
                     Ok(Vec::new())
+                }
+                SrlNode::Collection { id, values } if mode == NodeMode::Pattern => {
+                    Ok(self.standalone_collection_pattern(id, values))
                 }
                 SrlNode::Collection { .. } => {
                     self.semantic_extensions
@@ -86,6 +105,35 @@ impl Parser {
                 })
             })
             .collect())
+    }
+
+    fn standalone_collection_pattern(&mut self, id: u64, values: Vec<SrlNode>) -> Vec<SrlTriple> {
+        let mut cells = Vec::with_capacity(values.len());
+        cells.push(SrlNode::GeneratedBlankNode(id));
+        for _ in 1..values.len() {
+            cells.push(SrlNode::GeneratedBlankNode(self.next_generated_id()));
+        }
+        let mut output = Vec::with_capacity(values.len().saturating_mul(2));
+        for (index, value) in values.into_iter().enumerate() {
+            output.push(SrlTriple {
+                subject: cells[index].clone(),
+                predicate: SrlPredicate::Node(SrlNode::Constant(SrlConstant::Iri(
+                    RDF_FIRST.to_owned(),
+                ))),
+                object: value,
+            });
+            output.push(SrlTriple {
+                subject: cells[index].clone(),
+                predicate: SrlPredicate::Node(SrlNode::Constant(SrlConstant::Iri(
+                    RDF_REST.to_owned(),
+                ))),
+                object: cells
+                    .get(index + 1)
+                    .cloned()
+                    .unwrap_or(SrlNode::Constant(SrlConstant::Nil)),
+            });
+        }
+        output
     }
 
     fn property_list(&mut self, mode: NodeMode) -> Result<Vec<SrlProperty>, SrlError> {

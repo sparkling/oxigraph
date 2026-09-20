@@ -1,6 +1,6 @@
 use super::expression::ExpressionRuntime;
 use super::head::HeadBuilder;
-use super::matching::match_pattern;
+use super::matching::{expand_body_patterns, match_pattern};
 use crate::control::{LimitKind, ValidationError, ValidationOptions};
 use crate::srl::{
     SrlBodyElement, SrlError, SrlNode, SrlPredicate, SrlRule, SrlRuleSet, SrlStratification,
@@ -61,6 +61,11 @@ pub(super) fn evaluate(
     guard.derived(inference.len())?;
     let expressions = ExpressionRuntime::new();
     let source_rules = rules(rule_set).collect::<Vec<_>>();
+    let expanded_bodies = source_rules
+        .iter()
+        .enumerate()
+        .map(|(index, rule)| expand_body_patterns(&rule.body, &format!("r{index}")))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut heads = HeadBuilder::new(&working);
     let mut iterations = 0;
     for stratum in &stratification.strata {
@@ -71,6 +76,7 @@ pub(super) fn evaluate(
             apply_rule(
                 *index,
                 source_rules[*index],
+                &expanded_bodies[*index],
                 data.as_ref(),
                 &mut working,
                 &mut inference,
@@ -89,6 +95,7 @@ pub(super) fn evaluate(
                 changed |= apply_rule(
                     *index,
                     source_rules[*index],
+                    &expanded_bodies[*index],
                     data.as_ref(),
                     &mut working,
                     &mut inference,
@@ -121,6 +128,7 @@ pub(super) fn query(
 fn apply_rule(
     rule_index: usize,
     rule: &SrlRule,
+    body: &[SrlBodyElement],
     data: Option<&Dataset>,
     working: &mut Dataset,
     inference: &mut Dataset,
@@ -134,7 +142,7 @@ fn apply_rule(
         &*working
     };
     let solutions = evaluate_elements(
-        &rule.body,
+        body,
         vec![Solution::new()],
         graph,
         data,

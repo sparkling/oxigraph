@@ -9,7 +9,7 @@ use spareval::{QueryEvaluator, QueryResults};
 use spargebra::Query;
 use std::collections::BTreeMap;
 
-/// Executes compiled SHACL-SPARQL rules to a bounded fixpoint.
+/// Executes compiled SHACL-SPARQL rules one layer at a time to bounded fixpoints.
 ///
 /// On synchronous WebAssembly this operation fails closed because cooperative
 /// SPARQL timeout and cancellation cannot be guaranteed.
@@ -32,36 +32,56 @@ pub fn execute_sparql_rules(
     let mut inference = Dataset::new();
     let cancellation = spareval::CancellationToken::new();
     let watchdog = crate::sparql::Watchdog::start(cancellation.clone(), &budget)?;
-    for iteration in 1..=options.limits.max_rule_iterations {
-        budget.check()?;
-        let changed = execute_iteration(
-            rules,
-            &mut entailed,
-            &mut inference,
-            options,
-            &cancellation,
-            &mut budget,
-        )?;
-        if !changed {
-            watchdog.finish();
-            return Ok(RuleExecution::new(
-                GraphSnapshot::default_graph(isolated),
-                GraphSnapshot::default_graph(inference),
-                GraphSnapshot::default_graph(entailed),
-                rules.profiles.clone(),
-                iteration,
-                budget.estimated_memory(),
-            ));
+    let layers = rules
+        .rules
+        .iter()
+        .filter(|rule| !rule.deactivated)
+        .fold(
+            BTreeMap::<Decimal, Vec<&CompiledRule>>::new(),
+            |mut layers, rule| {
+                layers.entry(rule.layer).or_default().push(rule);
+                layers
+            },
+        );
+    let mut iterations = 0;
+    for layer_rules in layers.values() {
+        loop {
+            if iterations >= options.limits.max_rule_iterations {
+                return Err(ValidationError::LimitExceeded {
+                    kind: LimitKind::RuleIterations,
+                    limit: options.limits.max_rule_iterations,
+                }
+                .into());
+            }
+            iterations += 1;
+            budget.check()?;
+            let changed = execute_iteration(
+                layer_rules,
+                rules,
+                &mut entailed,
+                &mut inference,
+                options,
+                &cancellation,
+                &mut budget,
+            )?;
+            if !changed {
+                break;
+            }
         }
     }
-    Err(ValidationError::LimitExceeded {
-        kind: LimitKind::RuleIterations,
-        limit: options.limits.max_rule_iterations,
-    }
-    .into())
+    watchdog.finish();
+    Ok(RuleExecution::new(
+        GraphSnapshot::default_graph(isolated),
+        GraphSnapshot::default_graph(inference),
+        GraphSnapshot::default_graph(entailed),
+        rules.profiles.clone(),
+        iterations,
+        budget.estimated_memory(),
+    ))
 }
 
 fn execute_iteration(
+    layer_rules: &[&CompiledRule],
     rules: &SparqlRuleSet,
     entailed: &mut Dataset,
     inference: &mut Dataset,
@@ -69,80 +89,20 @@ fn execute_iteration(
     cancellation: &spareval::CancellationToken,
     budget: &mut Budget<'_>,
 ) -> Result<bool, RuleError> {
-    let mut changed = false;
-    let globals = rules.rules.iter().filter(|rule| rule.scope.is_none()).fold(
+    let groups = layer_rules.iter().copied().fold(
         BTreeMap::<Decimal, Vec<&CompiledRule>>::new(),
         |mut groups, rule| {
             groups.entry(rule.order).or_default().push(rule);
             groups
         },
     );
-    for group in globals.values() {
+    let mut changed = false;
+    for group in groups.values() {
         let visible = entailed.clone();
         let pending = infer_group(group, rules, &visible, options, cancellation, budget)?;
-        changed |= merge_global(entailed, inference, &pending, options, budget)?;
-    }
-
-    let shape_groups = rules
-        .rules
-        .iter()
-        .filter_map(|rule| {
-            rule.scope
-                .as_ref()
-                .map(|scope| (rule.scope_order, scope.to_string(), rule))
-        })
-        .fold(
-            BTreeMap::<Decimal, BTreeMap<String, Vec<&CompiledRule>>>::new(),
-            |mut groups, (shape_order, shape, rule)| {
-                groups
-                    .entry(shape_order)
-                    .or_default()
-                    .entry(shape)
-                    .or_default()
-                    .push(rule);
-                groups
-            },
-        );
-    for shapes in shape_groups.values() {
-        let visible = entailed.clone();
-        let mut pending = Dataset::new();
-        for shape_rules in shapes.values() {
-            let inferred =
-                infer_shape(shape_rules, rules, &visible, options, cancellation, budget)?;
-            for quad in &inferred {
-                pending.insert(quad);
-            }
-        }
-        changed |= merge_global(entailed, inference, &pending, options, budget)?;
+        changed |= merge_inferences(entailed, inference, &pending, options, budget)?;
     }
     Ok(changed)
-}
-
-fn infer_shape(
-    shape_rules: &[&CompiledRule],
-    rules: &SparqlRuleSet,
-    visible: &Dataset,
-    options: &ValidationOptions,
-    cancellation: &spareval::CancellationToken,
-    budget: &mut Budget<'_>,
-) -> Result<Dataset, RuleError> {
-    let groups = shape_rules.iter().copied().fold(
-        BTreeMap::<Decimal, Vec<&CompiledRule>>::new(),
-        |mut groups, rule| {
-            groups.entry(rule.order).or_default().push(rule);
-            groups
-        },
-    );
-    let mut local = visible.clone();
-    let mut output = Dataset::new();
-    for group in groups.values() {
-        let pending = infer_group(group, rules, &local, options, cancellation, budget)?;
-        for quad in &pending {
-            local.insert(quad.clone());
-            output.insert(quad);
-        }
-    }
-    Ok(output)
 }
 
 fn infer_group(
@@ -183,7 +143,7 @@ fn infer_group(
     Ok(pending)
 }
 
-fn merge_global(
+fn merge_inferences(
     entailed: &mut Dataset,
     inference: &mut Dataset,
     pending: &Dataset,

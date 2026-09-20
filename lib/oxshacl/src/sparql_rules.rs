@@ -25,6 +25,7 @@ const SH_CONSTRUCT: &str = "http://www.w3.org/ns/shacl#construct";
 const SH_CONDITION: &str = "http://www.w3.org/ns/shacl#condition";
 const SH_DEACTIVATED: &str = "http://www.w3.org/ns/shacl#deactivated";
 const SH_RULE_PROCESSOR: &str = "http://www.w3.org/ns/shacl#ruleProcessor";
+const SH_LAYER: &str = "http://www.w3.org/ns/shacl#layer";
 const SH_ORDER: &str = "http://www.w3.org/ns/shacl#order";
 const XSD_BOOLEAN: &str = "http://www.w3.org/2001/XMLSchema#boolean";
 const XSD_DECIMAL: &str = "http://www.w3.org/2001/XMLSchema#decimal";
@@ -44,8 +45,8 @@ struct CompiledRule {
     id: String,
     query: Query,
     scope: Option<ShapeId>,
-    scope_order: Decimal,
     conditions: Vec<ShapeId>,
+    layer: Decimal,
     order: Decimal,
     deactivated: bool,
 }
@@ -98,7 +99,6 @@ impl SparqlRuleSet {
                 for scope in scopes {
                     let mut attached = template.clone();
                     attached.id = format!("{}@{scope}", attached.id);
-                    attached.scope_order = parse_order(source, &scope)?;
                     attached.scope = Some(scope);
                     rules.push(attached);
                 }
@@ -114,16 +114,8 @@ impl SparqlRuleSet {
             }
         }
         rules.sort_by(|left, right| {
-            left.scope
-                .is_some()
-                .cmp(&right.scope.is_some())
-                .then_with(|| left.scope_order.cmp(&right.scope_order))
-                .then_with(|| {
-                    left.scope
-                        .as_ref()
-                        .map(ToString::to_string)
-                        .cmp(&right.scope.as_ref().map(ToString::to_string))
-                })
+            left.layer
+                .cmp(&right.layer)
                 .then_with(|| left.order.cmp(&right.order))
                 .then_with(|| left.id.cmp(&right.id))
         });
@@ -234,6 +226,7 @@ fn compile_rule(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let layer = parse_layer(source, node)?;
     let order = parse_order(source, node)?;
     let deactivated = optional_one(source, node, SH_DEACTIVATED)?
         .map(|term| match term {
@@ -252,8 +245,8 @@ fn compile_rule(
         id: node.to_string(),
         query,
         scope: None,
-        scope_order: Decimal::default(),
         conditions,
+        layer,
         order,
         deactivated,
     })
@@ -363,6 +356,38 @@ fn optional_one(
             "`{subject}` must have at most one <{predicate}> value"
         ))),
     }
+}
+
+fn parse_layer(source: &GraphSnapshot, subject: &ShapeId) -> Result<Decimal, RuleError> {
+    optional_one(source, subject, SH_LAYER)?
+        .map(|term| match term {
+            Term::Literal(literal) if literal.datatype().as_str() == XSD_DECIMAL => literal
+                .value()
+                .parse::<Decimal>()
+                .map_err(|_| {
+                    RuleError::IllFormed(
+                        "sh:layer must be a valid xsd:decimal or xsd:integer".to_owned(),
+                    )
+                }),
+            Term::Literal(literal) if literal.datatype().as_str() == XSD_INTEGER => {
+                if crate::datatype::valid_lexical_form(&literal) {
+                    literal.value().parse::<Decimal>().map_err(|_| {
+                        RuleError::IllFormed(
+                            "sh:layer must be a valid xsd:decimal or xsd:integer".to_owned(),
+                        )
+                    })
+                } else {
+                    Err(RuleError::IllFormed(
+                        "sh:layer must be a valid xsd:decimal or xsd:integer".to_owned(),
+                    ))
+                }
+            }
+            _ => Err(RuleError::IllFormed(
+                "sh:layer must be an xsd:decimal or xsd:integer literal".to_owned(),
+            )),
+        })
+        .transpose()
+        .map(Option::unwrap_or_default)
 }
 
 fn parse_order(source: &GraphSnapshot, subject: &ShapeId) -> Result<Decimal, RuleError> {
