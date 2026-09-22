@@ -1192,24 +1192,44 @@ cancellation clones. Requests cancelled before admission record no sample, by
 design. The label vocabulary stays fixed, so no class, principal or policy
 identity is exported.
 
-One behaviour this slice does **not** deliver, recorded so the plan does not
-overstate it: a transport reset arriving mid-response is still not converted
-into a query cancellation. `AdmissionAbort` is the only transport-failure probe
-and every observation of it is on the admission path; oxhttp documents that its
-clones become inert once the admission hook returns and "cannot monitor active
-work". The test for that behaviour is committed with its assertion intact and
-`#[ignore]`d with that reason. Closing it needs a response-lifetime abort signal
-and a cancellation checkpoint in the response writer.
+One behaviour this slice does **not** make deterministic, recorded so the plan
+does not overstate it. An earlier version of this section said a mid-response
+transport reset has no observer after admission. That was wrong, and this
+document's own 2026-09-10 section above already contradicted it: the
+`RequestTransportCancellation` monitor is installed for every admitted request
+and does turn a reset into a lease cancellation, as the non-ignored
+`workload_active_reset_cancels_update_before_commit_and_survives_restart` test
+proves. The real limitation is narrower. That monitor is best-effort because
+`SO_ERROR` is consuming, and on a streaming read the response writer usually
+consumes the error first. The lease is then released without a cancellation
+signal and no `data`/`cancelled` latency sample is recorded. Observed on
+2026-09-23: one pass in six runs of the streaming-reset test. That test is
+committed `#[ignore]`d with this reason and with its expected Store outcome
+corrected to `abandoned`, which is what the evaluation-metrics contract
+specifies for an early-dropped iterator. Making it deterministic needs the
+response writer to route a write-side transport failure into the lease's
+cancellation token.
 
 Verified on clean committed source at `6c1463ee`: CLI suite 456 passed / 0
 failed / 2 ignored (`run-JTIX2d`); Clippy compared against both recorded
 baselines, whose stderr hashes match the ones on record, at `run-GX9e5d`
 (default) and `run-tDOnTy` (no-default-features); the two applicable spareval
-fuzz targets clean at `run-tSYzGW` (14200 runs) and `run-rktpZc` (11382 runs).
+fuzz targets without a crash: `run-rktpZc` (`sparql_update_eval`, 11382 runs, about 4100
+mutations beyond its seed corpus) is a genuine one-minute run, but `run-tSYzGW`
+(`sparql_query_eval`) spent its budget replaying a 14199-file seed corpus, with a
+234 s slow unit and RSS growing to about 1.2 GB, so it is corpus-replay evidence,
+not a meaningful mutation run. A rerun on clean committed source at `ca183bf1`
+(`run-UiSpQb`) behaved the same: `INITED` at run 14200, a 332 s slow unit, and
+no mutation before the time limit. With this corpus, the AGENTS.md one-minute
+command cannot produce mutation evidence for `sparql_query_eval`; it only proves
+the corpus replays without a crash. The corpus is left untouched, and pre-existing
+2026-09-08/09 crash and OOM artifacts in its artifact directory predate this
+slice and are not re-triaged here.
 
 Clippy result stated precisely, because an earlier wording of it was wrong:
-this slice adds **three** diagnostics in each feature configuration (223 -> 226
-default, 183 -> 186 no-default), not zero. It adds no new lint class. All three
+this slice adds **three** diagnostics in each feature configuration (224 -> 227
+default, 183 -> 186 no-default, both counted as `for further information visit` lines;
+an earlier 223 -> 226 default figure came from a different count method), not zero. It adds no new lint class. All three
 are in `cli/src/workload/tests.rs` and come from two deliberately added
 `panic!` calls -- a bounded monotonic-clock guard, and the intentional mutex
 poison that the new metrics-poisoning test requires -- one of which trips both

@@ -5527,27 +5527,32 @@ fn workload_active_reset_cancels_update_before_commit_and_survives_restart() -> 
     write_rollback_and_restart(running)
 }
 
-/// The streaming read path. This asserts that abandoning an actively streaming
-/// response records a data cancellation and frees the slot.
+/// The streaming read path. A transport reset while a SELECT response is
+/// actively streaming should free the data slot and record one admission
+/// `data`/`cancelled` cancellation-latency sample. The Store-level query outcome
+/// is `abandoned`, not `cancelled`: the result iterator is dropped before EOF,
+/// and the documented evaluation-metrics contract classifies an early drop as
+/// abandoned.
 ///
-/// Ignored because the mechanism it needs does not exist yet, not because the
-/// assertion is wrong. `AdmissionAbort` is the only transport-failure probe,
-/// and every observation of it in `workload.rs` is on the admission/queueing
-/// path. Its own documentation is explicit that after the admission hook
-/// returns "all clones become inert ... they cannot monitor active work". So a
-/// reset arriving mid-stream is never converted into a
-/// `QueryEvaluationError::Cancelled`, and the `cancelled` outcome this test
-/// waits for is never recorded; it times out after ten seconds.
+/// Ignored because that outcome is not deterministic, not because a mechanism
+/// is missing. OxHTTP's `RequestTransportCancellation` monitor is installed for
+/// every admitted request (`workload.rs`) and does convert a reset into a lease
+/// cancellation; the non-ignored update test proves it. But the monitor is
+/// documented as best-effort: `SO_ERROR` is consuming, and "socket I/O may
+/// consume an error before this best-effort observer sees it". On a streaming
+/// read the response writer usually hits the reset first, so the lease is
+/// released without a cancellation signal and no latency sample is recorded.
+/// Observed on 2026-09-23 at `ca183bf1`: one pass in six runs; four runs with no
+/// `data`/`cancelled` sample, and one where the query observation did not end
+/// within ten seconds. That last case is unexplained and is recorded as open.
 ///
-/// Closing this needs a transport-abort signal that stays live for the life of
-/// a response and a cancellation checkpoint in the response writer. That is an
-/// oxhttp interface change plus a CLI change, and it is its own slice. Do not
-/// satisfy this test by weakening it or by cancelling on a deadline instead:
-/// the test deliberately configures no request deadline so that a `timed_out`
-/// sample here would itself be a failure.
+/// Making this deterministic needs the response writer to route a write-side
+/// transport failure into the lease's cancellation token. Do not satisfy the
+/// test by weakening it or by cancelling on a deadline instead: it configures
+/// no request deadline so that a `timed_out` sample would itself be a failure.
 #[cfg(target_os = "linux")]
 #[test]
-#[ignore = "needs a response-writer cancellation checkpoint; AdmissionAbort goes inert after admission"]
+#[ignore = "best-effort transport observer races the response writer for SO_ERROR; nondeterministic (1/6 passes)"]
 fn workload_streaming_query_reset_records_a_data_cancellation_and_frees_the_slot() -> Result<()> {
     let running = start_with_workload_entailment_and_store_setup(
         &config(),
@@ -5559,6 +5564,8 @@ fn workload_streaming_query_reset_records_a_data_cancellation_and_frees_the_slot
         Some(g42_prepare_cancellation_store),
     )?;
     let cancellation_before = cancellation_histograms(&scrape(&running, "GET")?.body)?;
+    let abandoned_before =
+        metric_counter(&running, "oxigraph_queries_total{outcome=\"abandoned\"}")?;
     let cancelled_before =
         metric_counter(&running, "oxigraph_queries_total{outcome=\"cancelled\"}")?;
     let succeeded_before =
@@ -5577,14 +5584,14 @@ fn workload_streaming_query_reset_records_a_data_cancellation_and_frees_the_slot
 
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        if metric_counter(&running, "oxigraph_queries_total{outcome=\"cancelled\"}")?
-            == cancelled_before + 1
+        if metric_counter(&running, "oxigraph_queries_total{outcome=\"abandoned\"}")?
+            == abandoned_before + 1
         {
             break;
         }
         ensure!(
             Instant::now() < deadline,
-            "streaming reset did not reach a query cancellation checkpoint"
+            "streaming reset did not end the query observation"
         );
         thread::yield_now();
     }
@@ -5592,6 +5599,11 @@ fn workload_streaming_query_reset_records_a_data_cancellation_and_frees_the_slot
         metric_counter(&running, "oxigraph_queries_total{outcome=\"succeeded\"}")?
             == succeeded_before,
         "abandoned streaming query reported success"
+    );
+    ensure!(
+        metric_counter(&running, "oxigraph_queries_total{outcome=\"cancelled\"}")?
+            == cancelled_before,
+        "an early-dropped stream must not be reported as an evaluator cancellation"
     );
     wait_data_occupancy(&running, 0, 0)?;
     let cancellation_after = cancellation_histograms(&scrape(&running, "GET")?.body)?;
