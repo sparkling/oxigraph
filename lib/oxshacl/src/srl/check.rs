@@ -448,8 +448,22 @@ fn collect_body_patterns(
     for element in body {
         match element {
             SrlBodyElement::Triple(triple) => output.push((triple.clone(), negative)),
-            SrlBodyElement::Negation { body, .. } => collect_body_patterns(body, true, output),
-            SrlBodyElement::Filter(_) | SrlBodyElement::Assignment { .. } => {}
+            // A `NOT DATA` group is evaluated against the frozen data graph,
+            // which no rule head can write. It therefore cannot depend on any
+            // rule's output and must contribute no dependency edge at all.
+            // Treating its patterns as ordinary negative dependencies made a
+            // rule whose head shares the negated pattern's predicate look
+            // self-recursive through a closed edge, which stratification then
+            // rejected.
+            SrlBodyElement::Negation {
+                data_only: false,
+                body,
+            } => collect_body_patterns(body, true, output),
+            SrlBodyElement::Negation {
+                data_only: true, ..
+            }
+            | SrlBodyElement::Filter(_)
+            | SrlBodyElement::Assignment { .. } => {}
         }
     }
 }

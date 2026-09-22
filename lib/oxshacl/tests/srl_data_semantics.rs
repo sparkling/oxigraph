@@ -226,3 +226,38 @@ fn frozen_data_graph_copy_respects_the_memory_limit() {
         }))
     ));
 }
+
+#[test]
+fn not_data_over_a_rule_head_predicate_is_not_a_recursive_dependency() {
+    // A `NOT DATA` group reads the frozen data graph, which no rule head can
+    // write. Treating its patterns as ordinary negative dependencies made this
+    // rule appear to depend negatively on its own head, and stratification
+    // rejected the rule set outright with "closed dependency N -> N
+    // participates in a recursive dependency".
+    //
+    // This is the shape of upstream `eval-dft-value-neg-01.srl`, reduced to the
+    // dependency structure: a seeding rule, then a rule whose head predicate
+    // also appears inside its own `NOT DATA`.
+    let rules = SrlRuleSet::parse(
+        concat!(
+            "PREFIX : <http://example/> ",
+            "RULE { :x3 :distanceMiles :twenty } WHERE {} ",
+            "RULE { ?x :distanceKm :derived } WHERE { ",
+            "  ?x :distanceMiles ?miles . ",
+            "  NOT DATA { ?x :distanceKm ?km } ",
+            "}",
+        ),
+        None,
+        profiles(),
+    )
+    .unwrap();
+
+    assert!(
+        rules.stratification().is_ok(),
+        "NOT DATA must not create a closed self-dependency",
+    );
+
+    let execution = execute_srl_rules(&rules, &base(&[]), &ValidationOptions::default()).unwrap();
+    assert_inferred(&execution, "x3", "distanceMiles", "twenty");
+    assert_inferred(&execution, "x3", "distanceKm", "derived");
+}
