@@ -2,7 +2,8 @@
 
 - **Status**: Implemented
 - **Date**: 2026-09-07
-- Updated: 2026-09-17
+- Updated: 2026-09-22
+- Latest amendment: restore Claude-only ordinary delivery via 9router; preserve historical execution identities.
 - Deciders: Oxigraph parity programme
 - Implementation status: R1 source handoff `aa7128bb` is delivered. Ordinary
   product work follows the implemented native-host workflow below; the wider
@@ -249,25 +250,47 @@ precedence; do not require failure at lower efforts before honoring an explicit
 selection. Do not route or pause on subscription usage budgets, and never
 silently change models when a native subscription is unavailable.
 
-The owner explicitly authorizes native `claude -p --model fable` as the fallback
-for permitted repository work affected by a Codex content-display or routing
-block. Keep the original task, its constraints and the observed error; this is
-not authority to evade a genuine safety refusal or relax safeguards. Use only
-native subscription authentication and retain one Git writer. If Claude or Fable
-is unavailable, report its exact client/model/error instead of substituting again.
-Await native validation jobs before the print-mode client exits: background
-jobs terminated at handoff are not passing tests.
+Current policy (owner, 2026-09-22): all programme coordination, implementation,
+analysis, documentation, review and delegated contributions use native Claude
+Code through the configured 9router Claude subscription connection. This
+supersedes earlier Codex selections and mixed-provider recommendations for new
+work. Application work remains paused until explicitly resumed; this amendment
+changes orchestration setup only.
 
-| Work | Default recommendation |
-| --- | --- |
-| Builds, test execution, formatting, exact comparisons and status collection | Deterministic tools; no extra model invocation |
-| Routine bounded implementation and focused test authoring | Terra Medium; Sonnet on an authorized native Claude route |
-| Narrow extraction, documentation edits and repetitive language work | Luna Low or Haiku |
-| Routine recovery coordination and focused review | Sol Low/Medium or Terra Medium |
-| Difficult Rust, transaction, or SPARQL implementation | Astra Low (owner replacement for Sol High); Opus only on an explicitly selected native Claude route |
-| Consequential architectural judgment or an unresolved correctness review | Astra High; Xhigh only for a demonstrated need; Fable for a targeted authorized review |
-| A particularly hard unresolved problem, or an explicit owner selection | Astra Max/Ultra for that bounded problem, with its reason and completion check recorded |
-| Useful independent subtasks | Mixed faster workers chosen by subtask, not automatic Ultra; one Git writer |
+| Work | Exact 9router model | Effort |
+| --- | --- | --- |
+| Builds, tests, format checks and exact comparisons | Deterministic tools through the harness | No model |
+| Bounded implementation and focused test authoring | `cc/claude-opus-5` | `xhigh` |
+| Documentation and narrow extraction | `cc/claude-opus-5` | `low` |
+| Independent review | `cc/claude-fable-5-1` | `high` |
+| Difficult implementation | `cc/claude-fable-5-1` | `xhigh` |
+| Consequential decisions and programme coordination | `cc/claude-fable-5-1` | `max` |
+
+These are the original role/model/effort choices in `65cb324a` (2026-09-15),
+which `7a460f6f` replaced with mixed routing on 2026-09-19. The `cc/` prefix
+selects the owner-authorized 9router subscription provider, whose catalogue
+exposes these exact IDs. Unlike the original temporary configuration, ordinary
+routes now reject explicit Codex overrides and Codex contributors. Exact
+`cc/claude-sonnet-5`, Opus and Fable overrides remain admissible with a reason,
+effort and observable completion check. Default decision/Max is allowed;
+explicit Max overrides require owner or unresolved selection. Ultra and
+unqualified model IDs are not admitted. No provider API key, automatic model
+fallback, quota gate or new scheduler is introduced.
+
+Claude's `--safe-mode` skips settings-file loading. A print-mode host must
+explicitly forward the allowlisted gateway configuration before calling the
+existing `nativeChildEnvironment("claude")` helper; inheriting an unset shell
+environment loses the settings-file connection. The current
+[launch instructions](../plans/native-agent-strategy-reassessment.md#configured-9router-launch)
+show that exact operation without logging credentials or modifying user settings.
+If the native client or requested model is unavailable, stop and report its
+exact identity and error. Await native validation jobs before client exit.
+
+### Historical model selections
+
+The following records remain evidence of past execution, not current dispatch
+instructions. Frozen qualification contracts and receipts keep their original
+model identities; this amendment does not activate or rewrite them.
 
 The owner's September 12 selection replaces Sol High with Astra Low for this
 programme's implementation work. The schema-envelope workflow records this as
@@ -289,11 +312,11 @@ relabelled.
 
 On 2026-09-19 the owner reported that the ChatGPT/Codex subscription was
 available again and directed restoration of the preceding mixed native-provider
-policy. `tools/engineering-harness/src/delivery.mjs` therefore restores the
+policy. `tools/engineering-harness/src/delivery.mjs` then restored the
 exact earlier defaults: Terra Medium for bounded implementation, Luna Low for
 documentation, Sol Medium for routine review, Sol High for difficult
 implementation, and Astra High for consequential decisions. Exact native Claude
-models remain admissible as explicit overrides, and the route retains the
+models remained admissible as explicit overrides, and the route retained the
 provider field introduced during the temporary interval so the host can dispatch
 either native subscription client without substitution. Max/Ultra again require
 an explicit owner or unresolved selection. Historical Claude and Codex runs,
@@ -302,8 +325,9 @@ including the September 12 Astra/Low selection, retain their original identities
 On 2026-09-20 the owner selected `gpt-6-astra` / `xhigh` for programme
 coordination. The native coordinator owns sequencing, model allocation and
 acceptance decisions; root retains source application and the workflow bridge.
-This selection is recorded in the live programme control and repository
-instructions. It leaves the restored task-specific worker defaults intact.
+That selection was recorded in programme control and repository instructions.
+It is superseded for new work by the 2026-09-22 Claude-only amendment; historical
+agent IDs and receipts must not be relabelled.
 
 Do not inherit a coordinator's settings into routine workers. Select
 their model/effort explicitly and pass only the relevant contract, files and

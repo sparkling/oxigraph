@@ -14,27 +14,22 @@ import { scrubbedChildEnvironment } from "../../child-environment.mjs";
 
 export const repository = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../.."));
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
-// Restored native Codex defaults (owner, 2026-09-19), with exact native Claude
-// models retained as explicit overrides. Native providers never substitute for one another.
+// Restore 65cb324a's Claude roles through the configured 9router subscription
+// (owner, 2026-09-22). Only exact cc/ model IDs are admitted for new delivery.
 const roles = Object.freeze({
   build: [null, null],
   test: [null, null],
-  implement: ["gpt-5.6-terra", "medium"],
-  documentation: ["gpt-5.6-luna", "low"],
-  review: ["gpt-5.6-sol", "medium"],
-  difficult: ["gpt-5.6-sol", "high"],
-  decision: ["gpt-6-astra", "high"],
+  implement: ["cc/claude-opus-5", "xhigh"],
+  documentation: ["cc/claude-opus-5", "low"],
+  review: ["cc/claude-fable-5-1", "high"],
+  difficult: ["cc/claude-fable-5-1", "xhigh"],
+  decision: ["cc/claude-fable-5-1", "max"],
 });
 const efforts = {
-  "claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
-  "claude-opus-5": ["low", "medium", "high", "xhigh", "max"],
-  "claude-fable-5-1": ["low", "medium", "high", "xhigh", "max"],
-  "gpt-5.6-luna": ["low", "medium", "high", "xhigh", "max"],
-  "gpt-5.6-terra": ["low", "medium", "high", "xhigh", "max", "ultra"],
-  "gpt-5.6-sol": ["low", "medium", "high", "xhigh", "max", "ultra"],
-  "gpt-6-astra": ["low", "medium", "high", "xhigh", "max", "ultra"],
+  "cc/claude-opus-5": ["low", "medium", "high", "xhigh", "max"],
+  "cc/claude-fable-5-1": ["low", "medium", "high", "xhigh", "max"],
+  "cc/claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
 };
-const provider = (model) => (model.startsWith("gpt-") ? "codex" : "claude");
 
 export function routeDelivery({ role, taskId, completionCheck, model, effort, reason, selection }) {
   if (!Object.hasOwn(roles, role)) throw new Error("Unknown delivery role");
@@ -49,17 +44,17 @@ export function routeDelivery({ role, taskId, completionCheck, model, effort, re
   }
   const selectedModel = model ?? defaultModel;
   const selectedEffort = effort ?? defaultEffort;
-  if (["max", "ultra"].includes(selectedEffort) && !["owner", "unresolved"].includes(selection)) {
-    throw new Error("Max/Ultra need selection=owner or selection=unresolved, plus reason and completion check");
+  // Role-default Max is allowed; explicit Max requires a recorded selection.
+  if (effort !== undefined && selectedEffort === "max" && !["owner", "unresolved"].includes(selection)) {
+    throw new Error("An explicit Max effort needs selection=owner or selection=unresolved, plus reason and completion check");
   }
   return {
     policy: "adr-0043-ordinary-delivery-v1", role, taskId, completionCheck,
     model: selectedModel, effort: selectedEffort, reason: reason ?? "role default",
     selection: selection ?? "role-policy",
     status: "planned-not-dispatched", ownerConversationChanged: false,
-    nativeDispatch: selectedModel === null ? null : provider(selectedModel) === "claude"
-      ? { provider: "claude", model: selectedModel, effort: selectedEffort }
-      : { provider: "codex", model: selectedModel, reasoning_effort: selectedEffort, fork_turns: "none" },
+    nativeDispatch: selectedModel === null ? null
+      : { provider: "claude", model: selectedModel, effort: selectedEffort },
     instructions: "One writer on canonical main. Use the delivery entry point for every build/test. Native subscription only; no model fallback. A safety refusal or unavailable model is returned as status unavailable with the exact client, model and error. Return exact findings and commands; a tracked agent is not proof of execution.",
   };
 }

@@ -77,7 +77,7 @@ function fixture(options = {}) {
       if (!review && options.badPath) result.changes[0].path = options.badPath;
       if (review && reviews <= (options.rejectReviews ?? 0)) { result.verdict = "REJECT"; result.findings = ["Fix the exact review finding"]; }
       if (review && options.reviewWrites) content += "unexpected review edit";
-      if (options.unavailable) result = { client: "Codex native collaboration", model: route.model, effort: route.effort, status: "unavailable", error: "fixture: requested model unavailable" };
+      if (options.unavailable) result = { client: "Claude native collaboration", model: route.model, effort: route.effort, status: "unavailable", error: "fixture: requested model unavailable" };
       if (options.proposalDrift) content += "concurrent edit";
     } else if (request.action === "root-apply") {
       content = request.payload.changes[0].content;
@@ -179,7 +179,7 @@ test("reviewer must be distinct, MCP readback must match, and no-op cannot compl
 });
 
 const contributor = (workerId, paths = [path], extra = {}) => ({
-  client: "native-test-double", workerId, model: "gpt-5.6-terra", effort: "medium", paths,
+  client: "native-test-double", workerId, model: "cc/claude-opus-5", effort: "medium", paths,
   reason: "Bounded work against an independently specified contract", ...extra,
 });
 const attributedHost = (f, update) => async (request) => {
@@ -196,7 +196,7 @@ const attributedHost = (f, update) => async (request) => {
 test("flat native contributors retain exact attribution without a provider-wide worker cap", async () => {
   const f = setup();
   const implementers = [contributor("file-owner"), ...Array.from({ length: 4 }, (_, i) =>
-    contributor(`analyst-${i}`, [], { model: "claude-sonnet-5", effort: "high" }))];
+    contributor(`analyst-${i}`, [], { model: "cc/claude-sonnet-5", effort: "high" }))];
   const reviewers = [contributor("review-child-1"), contributor("review-child-2")];
   const host = attributedHost(f, (result, request) => {
     const review = request.payload.route.role === "review";
@@ -250,7 +250,12 @@ test("invalid contributor identities, routes and ownership fail before applicati
     [contributor("duplicate-path", [path, path])],
     [contributor("missing-client", [], { client: "" })],
     [contributor("unsupported-model", [], { model: "unrequested-model" })],
+    [contributor("codex-route", [], { model: "gpt-5.6-terra" })],
+    [contributor("codex-decision-route", [], { model: "gpt-6-astra", effort: "high" })],
+    [contributor("unqualified-alias", [], { model: "claude-opus-5" })],
+    [contributor("off-gateway-model", [], { model: "cc/claude-haiku-4-5" })],
     [contributor("unsupported-effort", [], { effort: "infinite" })],
+    [contributor("ultra-effort", [], { effort: "ultra" })],
     [contributor("missing-source", [], { sourceSha256: undefined })],
     [contributor("stale-source", [], { sourceSha256: "f".repeat(64) })],
     [contributor("missing-reason", [], { reason: "" })],
@@ -265,16 +270,49 @@ test("invalid contributor identities, routes and ownership fail before applicati
   }
 });
 
+test("spec role overrides reject Codex and unqualified models before any host request", async () => {
+  for (const implement of [
+    { model: "gpt-5.6-terra", effort: "medium", reason: "codex override" },
+    { model: "gpt-6-astra", effort: "high", reason: "codex decision override" },
+    { model: "claude-opus-5", effort: "xhigh", reason: "unqualified alias" },
+    { model: "cc/claude-opus-5", effort: "ultra", reason: "owner", selection: "owner" },
+    { model: "cc/claude-opus-5", effort: "max", reason: "unselected max" },
+  ]) {
+    assert.throws(() => validateWorkflow({ ...spec, implement }));
+    const f = setup();
+    await assert.rejects(runWorkflow({ ...spec, implement }, f.host, f.io));
+    assert.deepEqual(f.actions, []);
+    assert.deepEqual(f.counters(), { checks: 0, implementations: 0, reviews: 0 });
+  }
+  assert.doesNotThrow(() => validateWorkflow({ ...spec,
+    implement: { model: "cc/claude-sonnet-5", effort: "high", reason: "bounded harness edit" },
+    review: { model: "cc/claude-fable-5-1", effort: "max", reason: "owner-selected review", selection: "owner" } }));
+});
+
+test("native worker stages carry the gateway-qualified role defaults", async () => {
+  const f = setup();
+  const routes = [];
+  const host = attributedHost(f, (result, request) => { routes.push(request.payload.route); });
+  const result = await runWorkflow(spec, host, f.io);
+  assert.equal(result.status, "ready-for-owner-review");
+  assert.deepEqual(routes.map(({ role, model, effort }) => [role, model, effort]), [
+    ["implement", "cc/claude-opus-5", "xhigh"],
+    ["review", "cc/claude-fable-5-1", "high"],
+  ]);
+  assert.deepEqual(routes[0].nativeDispatch, { provider: "claude", model: "cc/claude-opus-5", effort: "xhigh" });
+  assert.deepEqual(routes[1].nativeDispatch, { provider: "claude", model: "cc/claude-fable-5-1", effort: "high" });
+});
+
 test("explicit contributor effort selection remains available without changing aggregate route", async () => {
   const f = setup();
   const host = attributedHost(f, (result, request) => {
     if (request.payload.route.role === "implement") result.contributors = [contributor("selected", [], {
-      model: "gpt-6-astra", effort: "ultra", selection: "owner", reason: "Owner-selected invariant analysis",
+      model: "cc/claude-fable-5-1", effort: "max", selection: "owner", reason: "Owner-selected invariant analysis",
     })];
   });
   const result = await runWorkflow(spec, host, f.io);
   assert.ok(result.implementationWorkerIds.includes("selected"));
-  assert.equal(result.review.model, "gpt-5.6-sol");
+  assert.equal(result.review.model, "cc/claude-fable-5-1");
 });
 
 test("delegated proposals do not relax global source stability", async () => {
@@ -312,7 +350,7 @@ test("review rejection does not release earlier contributors for later candidate
 
 test("native unavailability reports exact client/model/error without substitution or repair", async () => {
   const f = setup({ unavailable: true });
-  await assert.rejects(runWorkflow(spec, f.host, f.io), /Codex native collaboration; model=gpt-5.6-terra; fixture: requested model unavailable/);
+  await assert.rejects(runWorkflow(spec, f.host, f.io), /Claude native collaboration; model=cc\/claude-opus-5; fixture: requested model unavailable/);
   assert.equal(f.counters().implementations, 1);
   assert.equal(f.counters().checks, 0);
 });

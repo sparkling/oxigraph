@@ -10,8 +10,9 @@ lifecycle scripts. Runtime publication and OpenRouter transport are forbidden.
 
 ## Configured subscription transport
 
-Codex and Claude use their normal user configuration, including the user's
-subscription through 9router. Claude children preserve `CLAUDE_CONFIG_DIR`,
+Ordinary programme delivery uses native Claude Code through the user's
+Claude subscription in 9router (owner, 2026-09-22). Exact model IDs carry the
+`cc/` prefix; Codex is not an ordinary delivery route. Claude children preserve `CLAUDE_CONFIG_DIR`,
 `ANTHROPIC_BASE_URL` and the gateway credential in `ANTHROPIC_AUTH_TOKEN`.
 Model and tool restrictions still come from the harness. Provider API keys
 and OpenRouter remain prohibited; the generic tool environment stays scrubbed.
@@ -21,7 +22,7 @@ and OpenRouter remain prohibited; the generic tool environment stays scrubbed.
 The mandatory everyday entry point is
 `node tools/engineering-harness/bin/oxigraph-delivery.mjs`, run from canonical
 `main`. Use `workflow --spec FILE.json` for a bounded implementation/repair
-task. Its controller connects the steps below; the active native Codex host
+task. Its controller connects the steps below; the active native Claude host
 executes its tool requests. This is not a replacement coding agent platform.
 
 MetaHarness kernel stages invoke native implementation and review workers.
@@ -103,18 +104,16 @@ model/effort and `error`; the controller stops without substituting a model.
 
 ### Native parallel contributors
 
-The programme coordinator uses native Codex `gpt-6-astra` / `xhigh`, selected
-by the owner on 2026-09-20. The native host dispatches this coordination agent
-with explicit model and reasoning effort; the delivery controller does not
-switch the active conversation's model. The live `programmeCoordinator` field
-under `programme-controls/oxigraph-six-hour-delivery-course-correction-v1`
-records the actual agent ID and selection. Root services the workflow bridge
-and applies reviewed proposals; existing worker and reviewer defaults remain
-task-specific. No additional scheduler or delivery role is needed.
+The programme coordinator uses native Claude Code `cc/claude-fable-5-1` / `max`,
+following the owner's 2026-09-22 Claude-only restoration. Root services the
+workflow bridge and applies reviewed proposals. At the next authorized programme
+start, record the actual Claude session ID in the live `programmeCoordinator`
+field; never relabel a historical Codex session. Worker and reviewer defaults
+remain task-specific. No additional scheduler or delivery role is needed.
 
 Choose parallel work from ready dependencies and exclusive proposal ownership,
 not a repository-wide provider/session cap. Native child slots and independent
-`codex exec`/Claude sessions are distinct execution paths. The active host
+Claude sessions are distinct execution paths. The active Claude host
 dispatches workers, handles completions and returns one aggregate result through
 the existing bridge; no additional scheduler or concurrent writer is introduced.
 See the [strategy and remaining-work comparison](../../docs/plans/native-agent-strategy-reassessment.md).
@@ -127,8 +126,8 @@ result's optional `contributors` array, excluding the aggregate worker itself:
   "contributors": [{
     "client": "actual native client",
     "workerId": "actual-native-session-id",
-    "model": "gpt-5.6-terra",
-    "effort": "medium",
+    "model": "cc/claude-opus-5",
+    "effort": "xhigh",
     "paths": ["tools/engineering-harness/src/workflow-host.mjs"],
     "sourceSha256": "COPY-THE-CURRENT-REQUEST-SOURCE-DIGEST-AFTER-VERIFICATION",
     "reason": "Bounded adapter change with a settled interface and focused acceptance checks"
@@ -273,22 +272,22 @@ intercepted: this is the required programme execution path, not an OS-wide ban.
 Legacy build instructions remain recipes to pass through this entry point.
 
 Model roles are executable policy in `src/delivery.mjs`: no model for build/test;
-Terra/Medium for bounded implementation, Luna/Low for documentation, Sol/Medium
-for routine review, Sol/High for difficult implementation, and Astra/High for
-consequential decisions. These are the exact native Codex defaults that preceded
-the temporary 2026-09-15 Claude-only interval and were restored when the owner's
-ChatGPT/Codex subscription became available again on 2026-09-19. Exact native
-Claude models remain supported as explicit overrides: `claude-sonnet-5`,
-`claude-opus-5`, and `claude-fable-5-1`, with efforts from `low` through `max`.
-Aliases and effort-less Haiku are not admitted. An explicit supported
-model/effort override needs its reason and completion check; Max/Ultra also
-require `--selection owner` or `--selection unresolved` for that bounded
-exception. The route's `nativeDispatch.provider` tells the host which native
-subscription client to use; neither provider is a fallback for the other, and
-unavailability is returned with the exact client, model, and error. This does
-not switch the owner's active conversation model. The September 12 Astra/Low
-specification and all previously completed Claude or Codex runs retain their
-original identities.
+`cc/claude-opus-5` / `xhigh` for implementation, Opus / `low` for documentation,
+`cc/claude-fable-5-1` / `high` for review, Fable / `xhigh` for difficult work,
+and Fable / `max` for decisions and programme coordination. These restore the
+role/model/effort choices from `65cb324a`, superseding mixed routing introduced
+by `7a460f6f`. The `cc/` prefix selects the owner's 9router Claude subscription.
+Exact `cc/claude-sonnet-5`, `cc/claude-opus-5`, and `cc/claude-fable-5-1`
+overrides support `low` through `max`; explicit overrides need a reason and
+completion check. Explicit Max overrides also require `--selection owner` or
+`--selection unresolved`; the default decision/Max route needs no override.
+Codex, unqualified model IDs, aliases, effort-less Haiku and Ultra are rejected,
+including in contributor records. Every model route emits
+`nativeDispatch.provider: "claude"`. Unavailability stops with exact client,
+model and error, without substitution. Historical records retain their original
+identities; frozen qualification adapters are not activated by this policy.
+See the [current launch instructions](../../docs/plans/native-agent-strategy-reassessment.md#configured-9router-launch)
+for forwarding gateway settings when using Claude's `--safe-mode`.
 These are starting policies, not proven speed or token winners. Bounded task
 packets state why a stronger route is needed. Efficiency evidence from ordinary
 work includes necessary context, review, failed attempts and repair; missing
@@ -303,7 +302,10 @@ Focused self-checks (use the supported Node executable, then Node 20):
 node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task <live-ruflo-task-id> --check "Delivery workflow, routing and process contracts pass" -- node --test --test-reporter=tap tools/engineering-harness/test/workflow.test.mjs tools/engineering-harness/test/delivery.test.mjs tools/engineering-harness/test/astra-routing.test.mjs tools/agentic-qe/process-runner.test.mjs
 ```
 
-## GPT-6 Astra routing
+## Historical and frozen GPT-6 Astra routing
+
+The following describes retained frozen-contract capability, not current
+ordinary delivery policy or permission to dispatch Codex for this programme.
 
 Schema-v2 contracts may select native Codex model `gpt-6-astra` with exactly
 one explicit effort: `low`, `medium`, `high`, `xhigh`, `max`, or `ultra`. A pure policy
@@ -316,13 +318,9 @@ not authenticate that evidence or activate a registered task. Astra prompts
 explicitly require follow-through, concise structured output, routine
 assumptions, genuine stopping conditions, and proportional validation.
 
-Capability support does not make Astra, Max or Ultra the default for ordinary
-delivery. [ADR-0043](../../docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md#9-match-model-use-to-the-work)
-selects Terra/Medium for bounded implementation, Luna/Low for narrow language
-work, and stronger models only for a named difficult part. Parallel work uses
-explicit, compact, per-subtask selections rather than inheriting the lead's
-highest effort. This ordinary-delivery policy does not rewrite frozen harness
-contracts, native argument identities, qualification evidence or router history.
+Retained capability does not authorize Astra or other Codex execution for this
+programme. The current ordinary-delivery policy above permits Claude only;
+frozen-contract support and historical receipts remain unchanged.
 
 The effort is bound as the one admitted Codex `--config` value and into the
 schema-v2 request identity. Non-Astra contracts admit no effort field and keep

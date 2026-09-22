@@ -1,12 +1,13 @@
 # Native-agent strategy: speed, token efficiency and accuracy
 
-Started: 2026-09-19. Updated: 2026-09-20. Initial source: `2d23f875`;
-latest product delivery: `6e933eea`, canonical `main`.
-Status: ordinary application execution authorized and active. A+C and B+D are
-delivered; the exact harness adapter is delivered in `2b2de51b`, and the reviewed
-suite update is next.
-The owner selected Astra/xhigh programme coordination;
-task-specific worker routing defaults are unchanged.
+Started: 2026-09-19. Updated: 2026-09-22.
+Status: Claude-only orchestration setup authorized; application execution paused.
+Current role choices restore `65cb324a`, superseding mixed routing in `7a460f6f`
+and the 2026-09-20 Astra/xhigh coordinator selection. Use native Claude Code
+through the configured 9router Claude subscription for every new programme
+model task. Historical discussion and delivery identities below remain evidence,
+not instructions to dispatch Codex. Source and live task checks still determine
+which unfinished application work can resume after authorization.
 
 This incorporates both owner amendments: independent Codex sessions (`c63b1fef`)
 and independent Claude sessions (`2d23f875`). It supersedes the recommendations in
@@ -17,19 +18,18 @@ work dependencies and acceptance, without assuming Codex sessions are scarce.
 ## Conclusion
 
 Use a flat group of native workers selected for bounded tasks, one accountable
-proposal synthesizer, and the existing engineering workflow. Choose a provider
-for the task and its observed performance, not its advertised agent count.
+proposal synthesizer, and the existing engineering workflow. Use Claude-only
+routes selected by task role; useful work and ownership determine parallelism.
 Add a dedicated delegation lead only when coordination actually benefits from it.
 
 Require the same correctness checks for every route. Then improve elapsed time
 to accepted work and total attributable token use, including coordination,
 repairs and review. There is no measured universally optimal model mix here.
 
-The first useful allocation is A semantics/policy, independent A oracle/fixtures,
-and C processor handling/tests. The oracle worker derives its cases from clauses
-before seeing implementation rationale; a duplicate clause-analysis worker is
-unnecessary. Future ready work can use further
-independent native sessions without imposing a repository-wide session cap.
+The A+C and B+D allocations below record delivered work. For remaining work,
+derive independent acceptance cases from clauses before reading implementation
+rationale. Future ready work can use independent Claude sessions without a
+repository-wide session cap; completed lanes are not redispatched.
 
 ## What changed, and what did not
 
@@ -45,7 +45,7 @@ two independently measured provider pools.
 
 | Constraint | Effect on this design |
 | --- | --- |
-| This conversation allows four active native agents including root | A local tool constraint; additional independent native sessions are a separate supported execution path. Do not change or misrepresent the tool's limit. |
+| Historical Codex conversation allowed four active agents including root | Historical observation only; Codex is excluded from current programme execution. |
 | Claude 2.1.274 defaults to 20 additional children per root | A per-session capability, not a repository-wide limit or reason to mandate a Claude lead. Independent Claude sessions are also available; their concurrent capacity has not been benchmarked. |
 | One writer on canonical `main`; no feature branches/worktrees | Every worker returns read-only proposals; root applies. More model sessions do not create more writer authority. |
 | Whole-checkout source identity; one outstanding host request | One workflow in flight, stable source during proposal/check/review stages, one aggregate result. |
@@ -57,7 +57,7 @@ two independently measured provider pools.
 Every future application implementation, repair, review, build and test still
 goes through `tools/engineering-harness/bin/oxigraph-delivery.mjs`.
 
-## The swarm discussion
+## Historical swarm discussion (2026-09-19)
 
 Ruflo swarm: `swarm-1789853781037-187f5y`.
 Research task: `task-1789853879500-6mdds1`.
@@ -137,8 +137,8 @@ needed for this scope.
 3. Dispatch ready work promptly. Prefer the task delaying the next verified
    commit; do not optimize agent occupancy.
 4. Use native children when the available slots and messaging suit the task.
-   Use independent native `codex exec` or Claude sessions for further useful
-   breadth and explicit model selection. These sessions still obey root's
+   Use independent native Claude sessions for further useful breadth and
+   explicit model selection. These sessions still obey root's
    read-only ownership and source contract.
 5. On completion, inspect the result, release ownership and dispatch newly
    ready work. Reuse context when it is relevant; start a fresh session when
@@ -173,53 +173,97 @@ coupled subsystem may benefit from one strong worker. A larger graph with
 repeated local coordination may justify a native lead and children. Neither
 choice changes the single-writer or build/resource rules.
 
-## Model policy: starting hypotheses
+## Current Claude-only model policy
 
-The exact pairs below are admitted by
+The original Claude role choices were recovered from `65cb324a` and its reversal
+in `7a460f6f`, rather than inferred from current aliases. The owner now requires
+9router access to Claude subscriptions. Its local `/v1/models` catalogue exposes
+these exact `cc/` IDs. The role policy is executable in
 [delivery.mjs](../../tools/engineering-harness/src/delivery.mjs).
-They are task-fit priors, not measured rankings or claims of equal capability.
-An explicit Claude route is an intentional choice, not an automatic fallback.
-More specific owner model selections take precedence.
 
-| Work | Codex starting route | Explicit Claude candidate |
+| Work | Exact model | Effort |
 | --- | --- | --- |
-| Programme coordination (owner selection, 2026-09-20) | `gpt-6-astra` / `xhigh` | Owner selected Codex for this role |
-| Build, test, format check, exact comparison | Deterministic tools through harness; no model | Same |
-| Narrow extraction or sourced documentation | `gpt-5.6-luna` / `low` | `claude-sonnet-5` / `low` |
-| Bounded implementation or test authoring with settled interfaces | `gpt-5.6-terra` / `medium` | `claude-sonnet-5` / `medium` |
-| Routine independent review | `gpt-5.6-sol` / `medium` | `claude-sonnet-5` / `high` |
-| Difficult Rust or semantic implementation | `gpt-5.6-sol` / `high` | `claude-opus-5` / `high` |
-| Consequential judgment or unresolved correctness | `gpt-6-astra` / `high` | `claude-fable-5-1` / `high` for targeted review; Opus/high for implementation |
+| Programme coordination and consequential decisions | `cc/claude-fable-5-1` | `max` |
+| Deterministic build/test/format/compare | No model; existing harness | None |
+| Documentation and narrow extraction | `cc/claude-opus-5` | `low` |
+| Bounded implementation and test authoring | `cc/claude-opus-5` | `xhigh` |
+| Independent review | `cc/claude-fable-5-1` | `high` |
+| Difficult implementation | `cc/claude-fable-5-1` | `xhigh` |
 
-Dispatch the selected coordinator through the native host with explicit
-`model: "gpt-6-astra"`, `reasoning_effort: "xhigh"`, and a bounded context
-(`fork_turns: "none"` on `collaboration.spawn_agent`). Record its actual ID in
-the live programme control's `programmeCoordinator` field. Root remains the
-source writer and workflow host. This delegated selection does not switch the
-parent conversation's model. Do not automatically pass the coordinator's
-model, effort or full history to every worker. Give each worker the relevant
-contract, source references, exact source identity and acceptance checks.
-Avoid repeated full-repository scans and full-conversation forks for small jobs.
-Use deterministic tools directly for mechanical lookups when delegation itself
-would add unnecessary overhead; do not create a model call to run every grep.
+Exact `cc/claude-sonnet-5`, Opus and Fable overrides need a reason, effort and
+completion check. Default decision/Max is permitted by role policy; explicit
+Max overrides need owner or unresolved selection. No Ultra, unqualified model
+ID, Codex override or Codex contributor is admitted. The `cc/` namespace selects
+Claude subscription transport, not an OpenRouter route. No usage budgets or
+API-key transport apply.
 
-Escalate for a concrete unresolved invariant, contradictory specification,
-semantic repair that ordinary reasoning has not resolved, or a substantive
-review disagreement. Supply the failing example and disputed clause. Do not
-require failure on a weaker model before assigning obviously difficult work
-to a stronger one. Return subsequent routine work to its normal route when the
-hard question closes. Max/Ultra retain the existing explicit-selection rules.
+The Claude root coordinates dependencies, owns source application and hosts the
+existing workflow bridge. Record its actual session ID when application work is
+explicitly resumed. Historical Codex IDs, interrupted workflows and proposals
+stay intact; new Claude results bind to their actual new request and source.
+Select implementation and review routes independently and preserve reviewer
+independence from all implementation contributors. Do not inherit coordinator
+Max into routine workers or launch workers merely to fill slots.
 
-An additional expensive reviewer needs a named question that current checks
-and review have not resolved. Different provider identity alone is not a reason
-for routine duplicate implementation or a permanent panel of reviewers.
+### Configured 9router launch
 
-Claude's inspected `Agent` input accepts model aliases and has no effort field;
-forks inherit the parent model, with effort inheritance still needing runtime
-confirmation. Prefer an independent native session when an exact heterogeneous
-model/effort pair cannot be expressed by the available child tool. Preserve
-`nativeChildEnvironment("claude")` for its configured subscription gateway and
-`nativeChildEnvironment("codex")` for Codex; do not read or print credentials.
+For the coordinating interactive session, from canonical `main`:
+
+```sh
+claude --model cc/claude-fable-5-1 --effort max
+```
+
+This uses normal Claude settings, including the existing 9router subscription
+connection. Starting a session is not permission to resume application work.
+
+For an authorized bounded read-only proposal, use the existing native print-mode
+pattern below. Put its exact contract, source identity and owned paths in
+`target/engineering-delivery/lead-prompt.txt`. `--safe-mode` skips settings-file
+loading, so copy only the gateway allowlist into the process environment before
+using the existing helper. Never print credentials or copy provider API keys.
+Environment values take precedence over settings-file values.
+
+```sh
+node --input-type=module - <<'JS'
+import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { CLAUDE_CONFIGURATION_ENV, nativeChildEnvironment }
+  from './tools/engineering-harness/src/native/environment.mjs';
+const configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
+const settings = JSON.parse(readFileSync(join(configDir, 'settings.json'), 'utf8'));
+for (const name of CLAUDE_CONFIGURATION_ENV) {
+  if (process.env[name] === undefined && typeof settings.env?.[name] === 'string') {
+    process.env[name] = settings.env[name];
+  }
+}
+const child = spawn('/home/claude/.local/bin/claude', [
+  '--safe-mode', '--print', '--no-session-persistence',
+  '--model', 'cc/claude-opus-5', '--effort', 'xhigh',
+  '--permission-mode', 'dontAsk', '--tools', 'Read,Grep,Glob',
+  '--allowedTools', 'Read,Grep,Glob', '--output-format', 'json'
+], { cwd: process.cwd(), env: nativeChildEnvironment('claude'),
+     stdio: ['pipe', 'inherit', 'inherit'] });
+child.on('error', error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
+child.stdin.on('error', error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
+child.on('exit', code => { process.exitCode = code ?? 1; });
+child.stdin.end(readFileSync('target/engineering-delivery/lead-prompt.txt'));
+JS
+```
+
+Use the exact route emitted by `oxigraph-delivery.mjs route` for other roles.
+Inspect the native JSON envelope for errors and actual session identity before
+constructing a workflow response. Exit zero alone is insufficient. Report
+client/model/error on failure; never substitute another provider or model.
+Native child delegation remains available from a normal Claude coordinating
+session. Use independent sessions when the child tool cannot express the exact
+model/effort pair. Root still applies proposals and serializes competing builds.
+
+## Historical allocation and delivery evidence
+
+The A+C and B+D sections retain their original model identities and planning
+narrative to explain recorded results. They are not the current dispatch policy.
 
 ## First allocation: A+C (delivered)
 
@@ -360,19 +404,21 @@ each final proposal must bind to its workflow's current source identity.
 
 ## Comparison with the remaining programme
 
-The owner has authorized programme execution through the engineering harness.
-The priority below is the remaining dispatch order after A+C.
+Application execution remains paused. On explicit resume, use the engineering
+harness and revalidate the captured backlog below against committed source.
+This table preserves dependency structure, not a claim that its older status
+notes describe current completion. Completed DATA/BNODE work must not be redone.
 Source checks override stale backlog wording. "Buildable" describes development
 readiness; it does not establish that the current tests pass or grant promotion.
 
 | Remaining lane | Dependency and useful parallel work | Starting model allocation |
 | --- | --- | --- |
-| SHACL reviewed repin and remaining language gaps | A+C, B+D, E1 transport and lint cleanup are delivered. Core value-union and expectedPredicate repairs precede candidate execution; tooling preparation may overlap. Inline DATA triple-term lowering and BNODE remain open. | Terra/medium for bounded value extraction; Sol/medium independent oracle; Sol/high for expectedPredicate lifecycle and its independent review. |
-| G4.2 cancellation measurement | Define cancellation-signal-to-observed-stop instrumentation, then a drill that measures it. Likely seams: `cli/src/workload/metrics.rs`, `cli/src/workload/resource_metrics.rs`, `cli/src/workload.rs`; establish the exact observation seam before assigning edits. Workload/acceptance design can proceed independently; measurement execution waits for instrumentation and the build/resource lane. | Sol/high for measurement semantics; Terra/medium for settled fixtures. No model for the actual drill. |
-| G3 acceptance evidence | G3.2 differential harness; G3.4 indexed-versus-oracle evaluation across 24 relations; G3.5 controlled-loopback SERVICE fixtures. Existing test surfaces include `lib/oxigraph/tests/bounded_join_planning.rs`, `spatial_index.rs`, `spatial_service.rs`. Independent oracle/fixture design is useful alongside SHACL; actual runs remain serialized where resources compete. | Terra/medium for bounded fixtures; Sol/high for planner/differential interpretation; independent Sol/medium evidence review. |
-| G3.5 federation planner | Endpoint catalog with a real consumer, source selection, bound-join batching and telemetry. Explicit HTTP SERVICE is already the baseline. Settle the planner/consumer interface before distributing code; arbitrate overlap with G3.2 optimizer/evaluator work. | Sol/high interface/implementation; Terra/medium independent loopback fixtures. No unused catalog scaffolding. |
-| G4.3 storage evidence | Exact remaining history/derived-state reconciliation and cross-profile acceptance, beyond extensive implemented upgrade/crash families. First identify the missing case against current source. Shared storage/database fixtures need exclusive resources. Missing system RocksDB affects its exact lane, not every task. | Sol/high for exact-gap and evaluator design; Terra/medium for specified fixtures. |
-| G4.5 remote transactions, then RDF4J leased transactions | Owned transaction handle, lease state model and protocol precede failure/recovery and admission checks. Stabilize these interfaces before broad implementation. Independent state-model and wire-case design can overlap; shared CLI/store transaction files need explicit ownership. | Sol/high state-machine/interface work; Terra/medium bounded wire fixtures; independent consequential review when an invariant remains unresolved. |
+| SHACL reviewed repin and evidence | A+C, B+D, E1, Core value-union (`6c317a9a`), expectedPredicate (`85580fc9`), ground DATA (`2e63c692`) and BNODE (`f706742b`) are delivered. Complete clause/evidence mappings and independent evidence review before the candidate suite run; revalidate preserved proposals on resume. | Opus/xhigh for bounded evidence tooling; Fable/xhigh for difficult mapping semantics; fresh Fable/high independent review. |
+| G4.2 cancellation measurement | Define cancellation-signal-to-observed-stop instrumentation, then a drill that measures it. Likely seams: `cli/src/workload/metrics.rs`, `cli/src/workload/resource_metrics.rs`, `cli/src/workload.rs`; establish the exact observation seam before assigning edits. Workload/acceptance design can proceed independently; measurement execution waits for instrumentation and the build/resource lane. | Fable/xhigh for measurement semantics; Opus/xhigh for settled fixtures. No model for the actual drill. |
+| G3 acceptance evidence | G3.2 differential harness; G3.4 indexed-versus-oracle evaluation across 24 relations; G3.5 controlled-loopback SERVICE fixtures. Existing test surfaces include `lib/oxigraph/tests/bounded_join_planning.rs`, `spatial_index.rs`, `spatial_service.rs`. Independent oracle/fixture design is useful alongside SHACL; actual runs remain serialized where resources compete. | Opus/xhigh for bounded fixtures; Fable/xhigh for planner/differential interpretation; independent Fable/high evidence review. |
+| G3.5 federation planner | Endpoint catalog with a real consumer, source selection, bound-join batching and telemetry. Explicit HTTP SERVICE is already the baseline. Settle the planner/consumer interface before distributing code; arbitrate overlap with G3.2 optimizer/evaluator work. | Fable/xhigh interface/implementation; Opus/xhigh independent loopback fixtures. No unused catalog scaffolding. |
+| G4.3 storage evidence | Exact remaining history/derived-state reconciliation and cross-profile acceptance, beyond extensive implemented upgrade/crash families. First identify the missing case against current source. Shared storage/database fixtures need exclusive resources. Missing system RocksDB affects its exact lane, not every task. | Fable/xhigh for exact-gap and evaluator design; Opus/xhigh for specified fixtures. |
+| G4.5 remote transactions, then RDF4J leased transactions | Owned transaction handle, lease state model and protocol precede failure/recovery and admission checks. Stabilize these interfaces before broad implementation. Independent state-model and wire-case design can overlap; shared CLI/store transaction files need explicit ownership. | Fable/xhigh state-machine/interface work; Opus/xhigh bounded wire fixtures; independent consequential review when an invariant remains unresolved. |
 | Later G4.6-G4.8 lanes | Repository lifecycle depends on G2.7/G4.1-G4.3; incremental entailment on G2.3c/G2.7; analytical research on G3.2, with additional G4.2 conditions for server/default promotion. Select exact contracts/files before dispatch. | Strong interface reasoning plus bounded independent model/oracle work, not an unbounded implementation swarm. |
 
 Contracts: [delivery gates](oxigraph-delivery-gates.md),

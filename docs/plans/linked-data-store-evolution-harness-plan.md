@@ -35,7 +35,7 @@
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
-- Updated: 2026-09-11
+- Updated: 2026-09-22 (Claude-only execution policy)
 - Repository: `oxigraph/oxigraph` clone maintained by this fork
 - Previous programme baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
@@ -172,18 +172,19 @@ Pre-existing adapter-conformance task `task-1788042251643-t1d67p` is cancelled
 because no replacement is selected; this decision releases no implementation
 task, and any future candidate requires a new explicitly scoped task.
 
-Native Codex Astra support includes all six efforts, including `max` and
-`ultra`. Commit `7d89e7bc` corrects the adapter's stale capability list and
-enables native parallel delegation for Ultra. ADR-0043 supplies the current
-role policy: Sol Low/Medium for routine coordination; Terra Medium/Sonnet for
-routine slices; Luna Low/Haiku for narrow language work; Sol High/Opus for a
-difficult implementation; Astra High for consequential judgment. Higher efforts,
-including Max/Ultra, require a bounded demonstrated need or owner selection;
-parallel subtasks use mixed faster workers by default. User-selected efforts override older planning-helper
-recommendations. Keep one Git writer, native subscription transport, and
-unchanged historical Sol contracts. Do not require router training, model
-benchmarks, new receipt formats, or old qualification-task readiness before
-native product implementation.
+ADR-0043 supplies the current Claude-only programme policy (owner, 2026-09-22),
+restored from `65cb324a` after mixed routing in `7a460f6f`. Use native Claude Code
+through the configured 9router Claude subscription: `cc/claude-opus-5` / `xhigh`
+for implementation, Opus / `low` for documentation, `cc/claude-fable-5-1` / `high`
+for review, Fable / `xhigh` for difficult work, and Fable / `max` for coordination
+and decisions. Exact Claude overrides require a reason and completion check;
+explicit Max overrides also require owner or unresolved selection. Codex workers
+and contributors are not admitted for new ordinary delivery. Historical Codex
+capability and evidence remain unchanged. Keep one Git writer and the existing
+harness for all application work; this setup update does not resume that work.
+See the [current strategy and launch instructions](native-agent-strategy-reassessment.md).
+Do not require router training, benchmarks, new receipt formats or old
+qualification-task readiness before ordinary development.
 
 Use a thin Ruflo control plane to execute the existing product plan. Reuse the
 native product tests as the authority for the behavior they actually exercise.
