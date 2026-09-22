@@ -1,10 +1,30 @@
 use super::*;
 use anyhow::{Result, ensure};
+use oxigraph::sparql::CancellationReason;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
-use std::sync::Barrier;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Barrier};
 use std::thread;
+
+fn wait_until_strictly_after(marker: Instant) -> Instant {
+    for _ in 0..1_000_000 {
+        let now = Instant::now();
+        if now > marker {
+            return now;
+        }
+        thread::yield_now();
+    }
+    panic!("monotonic clock did not advance within the bounded test guard");
+}
+
+fn cancellation_count(
+    metrics: &AdmissionMetrics,
+    pool: AdmissionPool,
+    reason: CancellationReason,
+) -> u64 {
+    metrics.cancellation_latency(pool, reason).count()
+}
 
 fn controller(
     active: usize,
@@ -2468,6 +2488,23 @@ fn queued_request_deadline_is_a_distinct_queued_disposition() -> Result<()> {
     policy.request_timeout_ms = Some(40);
     let controller = AdmissionController::new(policy)?;
     let held = acquire(&controller, "default")?;
+    let cancellation_before = {
+        let metrics = controller.metrics()?;
+        [
+            cancellation_count(&metrics, AdmissionPool::Data, CancellationReason::Cancelled),
+            cancellation_count(&metrics, AdmissionPool::Data, CancellationReason::TimedOut),
+            cancellation_count(
+                &metrics,
+                AdmissionPool::Operator,
+                CancellationReason::Cancelled,
+            ),
+            cancellation_count(
+                &metrics,
+                AdmissionPool::Operator,
+                CancellationReason::TimedOut,
+            ),
+        ]
+    };
     ensure!(matches!(
         raw(&controller, "default"),
         Err(WorkloadError::RequestTimedOut)
@@ -2483,12 +2520,30 @@ fn queued_request_deadline_is_a_distinct_queued_disposition() -> Result<()> {
     );
     ensure!(queue_totals(&metrics, AdmissionPool::Data) == (1, 1));
     ensure!(metrics.queue_wait(AdmissionPool::Data).sum() >= Duration::from_millis(30));
+    let cancellation_after = [
+        cancellation_count(&metrics, AdmissionPool::Data, CancellationReason::Cancelled),
+        cancellation_count(&metrics, AdmissionPool::Data, CancellationReason::TimedOut),
+        cancellation_count(
+            &metrics,
+            AdmissionPool::Operator,
+            CancellationReason::Cancelled,
+        ),
+        cancellation_count(
+            &metrics,
+            AdmissionPool::Operator,
+            CancellationReason::TimedOut,
+        ),
+    ];
+    ensure!(
+        cancellation_before == [0; 4] && cancellation_after == cancellation_before,
+        "queued request expiry produced a final-lease cancellation sample: {cancellation_after:?}"
+    );
     drop(held);
     Ok(())
 }
 
 #[test]
-fn lease_clone_drop_cancel_and_unwind_release_without_observations() -> Result<()> {
+fn lease_clone_drop_cancel_and_unwind_do_not_duplicate_admission_dispositions() -> Result<()> {
     let controller = controller(1, 0, 1, 0)?;
     let lease = acquire(&controller, "default")?;
     let clone = lease.clone();
@@ -2504,9 +2559,243 @@ fn lease_clone_drop_cancel_and_unwind_release_without_observations() -> Result<(
     let metrics = controller.metrics()?;
     ensure!(
         dispositions(&metrics, AdmissionPool::Data) == [(AdmissionDisposition::Admitted, 2, 0)],
-        "release or unwind produced observations: {metrics:?}"
+        "release or unwind duplicated admission dispositions: {metrics:?}"
     );
     ensure!(metrics.active(AdmissionPool::Data) == 0);
+    Ok(())
+}
+
+#[test]
+fn cancellation_latency_records_only_the_final_admitted_owner() -> Result<()> {
+    let controller = controller(2, 0, 2, 0)?;
+    let lease = acquire(&controller, "default")?;
+    let retained = lease.clone();
+    lease.cancellation_token().cancel();
+    drop(lease);
+    let metrics = controller.metrics()?;
+    ensure!(metrics.active(AdmissionPool::Data) == 1);
+    ensure!(cancellation_count(&metrics, AdmissionPool::Data, CancellationReason::Cancelled) == 0);
+
+    drop(retained);
+    let metrics = controller.metrics()?;
+    ensure!(metrics.active(AdmissionPool::Data) == 0);
+    ensure!(cancellation_count(&metrics, AdmissionPool::Data, CancellationReason::Cancelled) == 1);
+    ensure!(cancellation_count(&metrics, AdmissionPool::Data, CancellationReason::TimedOut) == 0);
+
+    drop(acquire(&controller, "default")?);
+    ensure!(
+        cancellation_count(
+            &controller.metrics()?,
+            AdmissionPool::Data,
+            CancellationReason::Cancelled,
+        ) == 1,
+        "normal release produced a cancellation observation"
+    );
+    Ok(())
+}
+
+#[test]
+fn cancellation_latency_separates_deadline_pool_and_pre_admission_paths() -> Result<()> {
+    let mut policy = controller(1, 1, 1, 1)?.0.policy.clone();
+    // A one-millisecond deadline can elapse inside `acquire` itself on a loaded
+    // host, refusing the admission this case needs. Keep the same interval as
+    // the queued-deadline case, wait out the absolute deadline, then retain the
+    // strictly-after guarantee for the sub-millisecond residue.
+    policy.request_timeout_ms = Some(40);
+    let deadline_controller = AdmissionController::new(policy)?;
+    let deadline_lease = acquire(&deadline_controller, "default")?;
+    let Some(deadline) = deadline_lease.deadline() else {
+        anyhow::bail!("configured deadline");
+    };
+    thread::sleep(deadline.saturating_duration_since(Instant::now()));
+    let _strictly_after_deadline = wait_until_strictly_after(deadline);
+    drop(deadline_lease);
+    let deadline_metrics = deadline_controller.metrics()?;
+    ensure!(
+        cancellation_count(
+            &deadline_metrics,
+            AdmissionPool::Data,
+            CancellationReason::TimedOut,
+        ) == 1
+    );
+    ensure!(
+        cancellation_count(
+            &deadline_metrics,
+            AdmissionPool::Data,
+            CancellationReason::Cancelled,
+        ) == 0
+    );
+
+    let operator_controller = controller(1, 0, 1, 0)?;
+    let operator =
+        operator_controller.acquire("default", ListenerKind::Operator, CancellationToken::new())?;
+    operator.cancellation_token().cancel();
+    drop(operator);
+    let operator_metrics = operator_controller.metrics()?;
+    ensure!(
+        cancellation_count(
+            &operator_metrics,
+            AdmissionPool::Operator,
+            CancellationReason::Cancelled,
+        ) == 1
+    );
+    ensure!(
+        cancellation_count(
+            &operator_metrics,
+            AdmissionPool::Data,
+            CancellationReason::Cancelled,
+        ) == 0
+    );
+
+    let rejected_controller = controller(1, 1, 1, 1)?;
+    let token = CancellationToken::new();
+    token.cancel();
+    ensure!(matches!(
+        rejected_controller.acquire("default", ListenerKind::Data, token),
+        Err(WorkloadError::Cancelled)
+    ));
+    let held = acquire(&rejected_controller, "default")?;
+    let queued_token = CancellationToken::new();
+    let queued_token_for_thread = queued_token.clone();
+    let child = rejected_controller.clone();
+    let queued = thread::spawn(move || {
+        child.acquire("default", ListenerKind::Data, queued_token_for_thread)
+    });
+    wait_queued(&rejected_controller, 1)?;
+    queued_token.cancel();
+    ensure!(matches!(
+        queued.join().map_err(|_| anyhow::anyhow!("queued worker panicked"))?,
+        Err(WorkloadError::Cancelled)
+    ));
+    drop(held);
+    let rejected_metrics = rejected_controller.metrics()?;
+    for reason in [CancellationReason::Cancelled, CancellationReason::TimedOut] {
+        ensure!(
+            cancellation_count(&rejected_metrics, AdmissionPool::Data, reason) == 0,
+            "pre-admission path produced a final-lease sample"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn operator_deadline_expiry_records_an_operator_pool_timed_out_latency() -> Result<()> {
+    // The reserved operator pool carries its own deadline series. Every other
+    // deadline case admits on the data pool, so this is the only proof that an
+    // operator lease attributes its `timed_out` latency to `operator`.
+    let mut policy = controller(1, 0, 1, 0)?.0.policy.clone();
+    policy.request_timeout_ms = Some(40);
+    let controller = AdmissionController::new(policy)?;
+    let lease = controller.acquire("default", ListenerKind::Operator, CancellationToken::new())?;
+    let Some(deadline) = lease.deadline() else {
+        anyhow::bail!("configured operator deadline");
+    };
+    thread::sleep(deadline.saturating_duration_since(Instant::now()));
+    let observed_after = wait_until_strictly_after(deadline);
+    drop(lease);
+
+    let metrics = controller.metrics()?;
+    let histogram =
+        metrics.cancellation_latency(AdmissionPool::Operator, CancellationReason::TimedOut);
+    ensure!(
+        histogram.count() == 1,
+        "operator deadline release recorded no latency sample: {metrics:?}"
+    );
+    // The signal is the absolute deadline, not the release instant, so the
+    // observation cannot be shorter than the interval already waited out.
+    ensure!(
+        histogram.sum() >= observed_after.saturating_duration_since(deadline)
+            && histogram.sum() <= Duration::from_secs(60),
+        "operator deadline latency is not bounded by its own signal: {histogram:?}"
+    );
+    ensure!(
+        cancellation_count(
+            &metrics,
+            AdmissionPool::Operator,
+            CancellationReason::Cancelled,
+        ) == 0
+    );
+    for reason in [CancellationReason::Cancelled, CancellationReason::TimedOut] {
+        ensure!(
+            cancellation_count(&metrics, AdmissionPool::Data, reason) == 0,
+            "operator deadline leaked into the data pool"
+        );
+    }
+    ensure!(metrics.active(AdmissionPool::Operator) == 0);
+    Ok(())
+}
+
+#[test]
+fn final_release_timestamp_follows_admission_metrics_contention() -> Result<()> {
+    let controller = controller(1, 0, 1, 0)?;
+    let lease = acquire(&controller, "default")?;
+    let cancellation = lease.cancellation_token().clone();
+    let metrics_guard = controller
+        .0
+        .metrics
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (reached_sender, reached_receiver) = std::sync::mpsc::sync_channel(1);
+    controller.set_before_admission_metrics_lock_hook_for_test(Some(Arc::new(move || {
+        // The receiver is owned by this test and outlives the hook; a send
+        // failure means the test itself is already unwinding.
+        // The receiver is owned by this test and outlives the hook; a send
+        // failure means the test itself is already unwinding.
+        if reached_sender.send(()).is_err() {}
+    })));
+
+    let drop_thread = thread::spawn(move || drop(lease));
+    reached_receiver
+        .recv_timeout(Duration::from_secs(3))
+        .map_err(|_| anyhow::anyhow!("final drop did not reach the admission metrics boundary"))?;
+    let advance_from = Instant::now();
+    let _strictly_after_advance = wait_until_strictly_after(advance_from);
+    cancellation.cancel();
+    drop(metrics_guard);
+    drop_thread
+        .join()
+        .map_err(|_| anyhow::anyhow!("final drop thread panicked"))?;
+    controller.set_before_admission_metrics_lock_hook_for_test(None);
+
+    let metrics = controller.metrics()?;
+    ensure!(metrics.active(AdmissionPool::Data) == 0);
+    ensure!(
+        cancellation_count(&metrics, AdmissionPool::Data, CancellationReason::Cancelled) == 1,
+        "release timestamp was captured before the admission metrics wait"
+    );
+    Ok(())
+}
+
+#[test]
+fn poisoned_admission_metrics_still_release_and_record_once() -> Result<()> {
+    let controller = controller(1, 0, 1, 0)?;
+    let lease = acquire(&controller, "default")?;
+    lease.cancellation_token().cancel();
+    let poison = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = controller
+            .0
+            .metrics
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        panic!("isolated admission metrics poison");
+    }));
+    ensure!(poison.is_err());
+    drop(lease);
+    ensure!(controller.snapshot()? == AdmissionSnapshot::default());
+    ensure!(controller.metrics() == Err(WorkloadError::Unavailable));
+    let recorded = controller
+        .0
+        .metrics
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    ensure!(
+        cancellation_count(
+            &recorded,
+            AdmissionPool::Data,
+            CancellationReason::Cancelled,
+        ) == 1
+    );
     Ok(())
 }
 

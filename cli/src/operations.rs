@@ -505,6 +505,28 @@ mod tests {
             admission == AdmissionMetrics::SAMPLES,
             "admission sample count differs: {admission}"
         );
+        let admission_types = body
+            .lines()
+            .filter(|line| line.starts_with("# TYPE oxigraph_admission"))
+            .count();
+        ensure!(
+            admission_types == 6,
+            "admission family count differs: {admission_types}"
+        );
+        ensure!(
+            body.contains(
+                "# TYPE oxigraph_admission_cancellation_latency_seconds histogram\n"
+            ) && body.contains(
+                "oxigraph_admission_cancellation_latency_seconds_count{pool=\"data\",reason=\"cancelled\"} 0\n"
+            ) && body.contains(
+                "oxigraph_admission_cancellation_latency_seconds_count{pool=\"data\",reason=\"timed_out\"} 0\n"
+            ) && body.contains(
+                "oxigraph_admission_cancellation_latency_seconds_count{pool=\"operator\",reason=\"cancelled\"} 0\n"
+            ) && body.contains(
+                "oxigraph_admission_cancellation_latency_seconds_count{pool=\"operator\",reason=\"timed_out\"} 0\n"
+            ),
+            "cancellation family or fixed vocabulary differs"
+        );
         let resources = body
             .lines()
             .filter(|line| !line.starts_with('#') && line.contains("workload_resource"))

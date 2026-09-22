@@ -31,7 +31,10 @@ use std::time::{Duration, Instant};
 
 mod metrics;
 mod resource_metrics;
-pub use metrics::{AdmissionDisposition, AdmissionMetrics, AdmissionPool, QueueWaitHistogram};
+pub use metrics::{
+    AdmissionDisposition, AdmissionMetrics, AdmissionPool, CancellationLatencyHistogram,
+    QueueWaitHistogram,
+};
 pub use resource_metrics::{ResourceOperator, ResourceUsageMetrics};
 
 const MAX_PROFILE_BYTES: u64 = 64 * 1024;
@@ -347,6 +350,8 @@ struct Inner {
     // never held across scheduling, storage or transport work.
     metrics: Mutex<AdmissionMetrics>,
     resource_metrics: Mutex<ResourceUsageMetrics>,
+    #[cfg(test)]
+    before_admission_metrics_lock_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 /// One controller must be shared by both data and operator listeners.
@@ -402,6 +407,8 @@ impl AdmissionController {
             changed: Condvar::new(),
             metrics: Mutex::new(AdmissionMetrics::default()),
             resource_metrics: Mutex::new(ResourceUsageMetrics::default()),
+            #[cfg(test)]
+            before_admission_metrics_lock_hook: Mutex::new(None),
         })))
     }
 
@@ -515,6 +522,18 @@ impl AdmissionController {
             operator_active: state.operator_active,
             operator_queued: state.queue.iter().filter(|entry| entry.operator).count(),
         })
+    }
+
+    #[cfg(test)]
+    fn set_before_admission_metrics_lock_hook_for_test(
+        &self,
+        hook: Option<Arc<dyn Fn() + Send + Sync>>,
+    ) {
+        *self
+            .0
+            .before_admission_metrics_lock_hook
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = hook;
     }
 
     /// One consistent telemetry view: counters and the instantaneous gauges are
@@ -1312,6 +1331,26 @@ impl Drop for LeaseInner {
                 );
             }
         }
+        #[cfg(test)]
+        let before_admission_metrics_lock_hook = self
+            .controller
+            .0
+            .before_admission_metrics_lock_hook
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        #[cfg(test)]
+        if let Some(hook) = before_admission_metrics_lock_hook {
+            hook();
+        }
+        let mut metrics = self
+            .controller
+            .0
+            .metrics
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let observed_at = Instant::now();
+        let active_signal = self.cancellation.active_signal_at(observed_at);
         if self.operator {
             state.operator_active -= 1;
         } else {
@@ -1329,6 +1368,14 @@ impl Drop for LeaseInner {
                 self.principal.expect("data lease has principal"),
             );
         }
+        if let Some((reason, signal_at)) = active_signal {
+            metrics.record_cancellation(
+                pool,
+                reason,
+                observed_at.saturating_duration_since(signal_at),
+            );
+        }
+        drop(metrics);
         self.controller.0.changed.notify_all();
     }
 }

@@ -4,13 +4,13 @@
 )]
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Barrier, Mutex};
+use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -147,8 +147,17 @@ fn start_with_workload_entailment(
     workload: Option<&Value>,
     entailment: Option<&str>,
 ) -> Result<Running> {
+    start_with_workload_entailment_and_store_setup(policy, read_only, workload, entailment, None)
+}
+fn start_with_workload_entailment_and_store_setup(
+    policy: &Value,
+    read_only: bool,
+    workload: Option<&Value>,
+    entailment: Option<&str>,
+    store_setup: Option<fn(&oxigraph::store::Store) -> Result<()>>,
+) -> Result<Running> {
     retry_initial_bind(|| {
-        try_start_with_workload_entailment(policy, read_only, workload, entailment)
+        try_start_with_workload_entailment(policy, read_only, workload, entailment, store_setup)
     })
 }
 
@@ -207,11 +216,15 @@ fn try_start_with_workload_entailment(
     read_only: bool,
     workload: Option<&Value>,
     entailment: Option<&str>,
+    store_setup: Option<fn(&oxigraph::store::Store) -> Result<()>>,
 ) -> Result<Running> {
     let directory = assert_fs::TempDir::new()?;
     let location = directory.path().join("store");
-    if read_only {
-        drop(oxigraph::store::Store::open(&location)?);
+    if read_only || store_setup.is_some() {
+        let store = oxigraph::store::Store::open(&location)?;
+        if let Some(store_setup) = store_setup {
+            store_setup(&store)?;
+        }
     }
     let policy_path = directory.path().join("access.json");
     write_policy(&policy_path, policy)?;
@@ -3585,6 +3598,7 @@ fn workload_deadline_closes_stalled_body_then_allows_write_rollback_restart() ->
     profile["request_timeout_ms"] = json!(1000);
     let running = start_with_workload(&config(), false, Some(&profile))?;
     let before = work_counters(&running)?;
+    let cancellation_before = cancellation_histograms(&scrape(&running, "GET")?.body)?;
     let mut occupied = occupy_admission(&running)?;
     let mut response = Vec::new();
     match occupied.read_to_end(&mut response) {
@@ -3597,6 +3611,15 @@ fn workload_deadline_closes_stalled_body_then_allows_write_rollback_restart() ->
         work_counters(&running)? == before,
         "incomplete body entered RDF work"
     );
+    wait_data_occupancy(&running, 0, 0)?;
+    let cancellation_after = cancellation_histograms(&scrape(&running, "GET")?.body)?;
+    assert_cancellation_delta(
+        &cancellation_before,
+        &cancellation_after,
+        "data",
+        "timed_out",
+        1,
+    )?;
     write_rollback_and_restart(running)
 }
 
@@ -3928,6 +3951,670 @@ fn workload_overload_precedes_expect_body_and_work_but_not_auth() -> Result<()> 
     Ok(())
 }
 
+#[derive(Clone, Debug)]
+struct DemoCompletion {
+    rank: usize,
+    alias: &'static str,
+    class: &'static str,
+    operation: &'static str,
+    elapsed_seconds: f64,
+}
+
+struct DemoPending {
+    stream: TcpStream,
+    alias: &'static str,
+    class: &'static str,
+    operation: &'static str,
+    body: String,
+}
+
+fn g42_access_config() -> Result<Value> {
+    let mut access = workload_reload_config();
+    access["workload_classes"] = json!(["default", "interactive"]);
+    for rule in access["rules"].as_array_mut().context("rules missing")? {
+        if rule["subject"] == WRITER {
+            rule["workload_class"] = json!("interactive");
+        }
+    }
+    Ok(access)
+}
+
+fn g42_workload(capacity: usize, version: u64, request_timeout_ms: u64) -> Value {
+    json!({
+        "format":"oxigraph-admission-v1",
+        "policy_id":"g42-demo-local",
+        "version":version,
+        "max_active":capacity,
+        "max_queued":64,
+        "operator_max_active":1,
+        "operator_max_queued":0,
+        "queue_timeout_ms":240_000,
+        "request_timeout_ms":request_timeout_ms,
+        "retry_after_seconds":2,
+        "classes":{
+            "default":{"max_active":capacity,"max_queued":32},
+            "interactive":{"max_active":capacity,"max_queued":32}
+        }
+    })
+}
+
+fn open_demo_pending(
+    running: &Running,
+    alias: &'static str,
+    class: &'static str,
+    operation: &'static str,
+    subject: &str,
+    body: String,
+) -> Result<DemoPending> {
+    let route = if operation == "update" {
+        "/update"
+    } else {
+        "/query"
+    };
+    let content_type = if operation == "update" {
+        "application/sparql-update"
+    } else {
+        "application/sparql-query"
+    };
+    let mut stream = TcpStream::connect(running.public)?;
+    stream.set_read_timeout(Some(Duration::from_secs(120)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(120)))?;
+    write!(
+        stream,
+        "POST {route} HTTP/1.1\r\nHost: localhost\r\n{}Content-Type: {content_type}\r\nAccept: application/sparql-results+json\r\nExpect: 100-continue\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        identity(subject, 1)?,
+        body.len(),
+    )?;
+    Ok(DemoPending {
+        stream,
+        alias,
+        class,
+        operation,
+        body,
+    })
+}
+
+fn queue_histograms(body: &str) -> Result<BTreeMap<&'static str, HistogramSnapshot>> {
+    let mut result = BTreeMap::new();
+    for pool in ["data", "operator"] {
+        result.insert(
+            pool,
+            histogram_snapshot(
+                body,
+                "oxigraph_admission_queue_wait_seconds",
+                &format!("pool=\"{pool}\""),
+            )?,
+        );
+    }
+    Ok(result)
+}
+
+fn histogram_json(histogram: &HistogramSnapshot) -> Value {
+    let cumulative_buckets = ADMISSION_HISTOGRAM_LABELS
+        .into_iter()
+        .zip(histogram.cumulative_buckets)
+        .collect::<BTreeMap<_, _>>();
+    json!({
+        "count":histogram.count,
+        "sum_seconds":histogram.sum_seconds,
+        "cumulative_buckets":cumulative_buckets
+    })
+}
+
+fn p95_json(histogram: &HistogramSnapshot) -> Result<Value> {
+    ensure!(histogram.count > 0, "p95 requires a nonempty population");
+    let rank = histogram.count.saturating_mul(95).saturating_add(99) / 100;
+    let index = histogram
+        .cumulative_buckets
+        .iter()
+        .position(|&count| count >= rank)
+        .context("p95 rank absent from cumulative histogram")?;
+    let finite = [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 60.0];
+    let (lower_seconds, lower_inclusive) = if index == 0 {
+        (0.0, true)
+    } else {
+        (finite[index - 1], false)
+    };
+    let upper_seconds = finite.get(index).copied();
+    Ok(json!({
+        "lower_seconds":lower_seconds,
+        "lower_inclusive":lower_inclusive,
+        "upper_seconds":upper_seconds,
+        "upper_inclusive":upper_seconds.is_some(),
+        "upper_unbounded":upper_seconds.is_none()
+    }))
+}
+
+fn add_histograms(left: &HistogramSnapshot, right: &HistogramSnapshot) -> HistogramSnapshot {
+    let mut cumulative_buckets = [0; 8];
+    for (index, count) in cumulative_buckets.iter_mut().enumerate() {
+        *count = left.cumulative_buckets[index].saturating_add(right.cumulative_buckets[index]);
+    }
+    HistogramSnapshot {
+        cumulative_buckets,
+        count: left.count.saturating_add(right.count),
+        sum_seconds: left.sum_seconds + right.sum_seconds,
+    }
+}
+
+fn source_commit() -> Result<String> {
+    ensure!(
+        std::env::var_os("OXIGRAPH_ACCESS_TEST_BINARY").is_none(),
+        "demo drill requires the Cargo-built CLI from the identified source"
+    );
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .context("CLI manifest has no repository parent")?;
+    let status = Command::new("git")
+        .args(["status", "--porcelain", "--untracked-files=no"])
+        .current_dir(root)
+        .output()?;
+    ensure!(
+        status.status.success() && status.stdout.is_empty(),
+        "drill source is dirty"
+    );
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(root)
+        .output()?;
+    ensure!(output.status.success(), "unable to identify drill source");
+    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+}
+
+fn child_vmhwm(child: &Child) -> Value {
+    let pid = child.id();
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status"));
+    let kib = status.ok().and_then(|status| {
+        status.lines().find_map(|line| {
+            let rest = line.strip_prefix("VmHWM:")?;
+            rest.split_whitespace().next()?.parse::<u64>().ok()
+        })
+    });
+    json!({
+        "pid":pid,
+        "kib":kib,
+        "available":kib.is_some(),
+        "scope":"whole-child-since-start",
+        "captured_before_restart":true
+    })
+}
+
+fn g42_prepare_cancellation_store(store: &oxigraph::store::Store) -> Result<()> {
+    let left = oxigraph::model::NamedNode::new("urn:g42:left")?;
+    let right = oxigraph::model::NamedNode::new("urn:g42:right")?;
+    let value = oxigraph::model::NamedNode::new("urn:g42:value")?;
+    let mut quads = Vec::with_capacity(3_000);
+    for index in 0..1_500 {
+        quads.push(oxigraph::model::Quad::new(
+            oxigraph::model::NamedNode::new(format!("urn:g42:left:{index}"))?,
+            left.clone(),
+            value.clone(),
+            oxigraph::model::GraphName::DefaultGraph,
+        ));
+        quads.push(oxigraph::model::Quad::new(
+            oxigraph::model::NamedNode::new(format!("urn:g42:right:{index}"))?,
+            right.clone(),
+            value.clone(),
+            oxigraph::model::GraphName::DefaultGraph,
+        ));
+    }
+    store.extend(quads)?;
+    Ok(())
+}
+
+fn g42_active_reset(running: &Running) -> Result<TcpStream> {
+    let query = "SELECT ?left ?right WHERE { \
+        ?left <urn:g42:left> <urn:g42:value> . \
+        ?right <urn:g42:right> <urn:g42:value> \
+    }";
+    let mut stream = TcpStream::connect(running.public)?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(3)))?;
+    write!(
+        stream,
+        "POST /query HTTP/1.1\r\nHost: localhost\r\n{}Content-Type: application/sparql-query\r\nAccept: application/sparql-results+json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{query}",
+        identity(READER, 1)?,
+        query.len(),
+    )?;
+    ensure!(read_status_head(&mut stream)? == 200);
+    let mut evaluator_output = Vec::new();
+    while !evaluator_output
+        .windows(b"urn:g42:left:".len())
+        .any(|window| window == b"urn:g42:left:")
+    {
+        ensure!(
+            evaluator_output.len() < 64 * 1024,
+            "streaming response did not expose an evaluated binding"
+        );
+        let mut chunk = [0; 4096];
+        let read = stream.read(&mut chunk)?;
+        ensure!(
+            read > 0,
+            "streaming query ended before an evaluated binding"
+        );
+        evaluator_output.extend_from_slice(&chunk[..read]);
+    }
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut observations = 0;
+    while observations < 4 {
+        let active = metric_counter(running, "oxigraph_admission_active{pool=\"data\"}")?;
+        let queued = metric_counter(running, "oxigraph_admission_queued{pool=\"data\"}")?;
+        if (active, queued) == (1, 0) {
+            observations += 1;
+        } else {
+            observations = 0;
+        }
+        ensure!(
+            Instant::now() < deadline,
+            "streaming query did not retain capacity after evaluator output"
+        );
+    }
+    Ok(stream)
+}
+
+fn fairness_json(trace: &[DemoCompletion], alias: &str) -> Result<Value> {
+    let selected = trace
+        .iter()
+        .filter(|entry| entry.alias == alias)
+        .collect::<Vec<_>>();
+    ensure!(!selected.is_empty());
+    let mut longest = 0;
+    let mut current = 0;
+    for entry in trace {
+        if entry.alias == alias {
+            current += 1;
+            longest = longest.max(current);
+        } else {
+            current = 0;
+        }
+    }
+    Ok(json!({
+        "first_terminal_rank":selected.first().unwrap().rank,
+        "terminals_in_first_half":selected.iter().filter(|entry| entry.rank <= 32).count(),
+        "last_terminal_rank":selected.last().unwrap().rank,
+        "seconds_to_last_terminal":selected.last().unwrap().elapsed_seconds,
+        "longest_consecutive_terminal_run":longest
+    }))
+}
+
+/// The one-line JSON record on stdout is this drill's only output, collected by
+/// the documented `--nocapture` run; nothing else in the crate prints.
+#[expect(
+    clippy::print_stdout,
+    reason = "machine-readable demo drill record is this case's output"
+)]
+fn run_g42_demo_case(read_only: bool, capacity: usize, source_commit: &str) -> Result<Value> {
+    let access = g42_access_config()?;
+    let phase_ab_policy = g42_workload(capacity, 1, 240_000);
+    let running = start_with_workload_entailment_and_store_setup(
+        &access,
+        read_only,
+        Some(&phase_ab_policy),
+        None,
+        Some(g42_prepare_cancellation_store),
+    )?;
+    let queue_before = queue_histograms(&scrape(&running, "GET")?.body)?;
+
+    let mut held = Vec::with_capacity(capacity);
+    for _ in 0..capacity {
+        held.push(occupy_query_admission(&running)?);
+    }
+    wait_data_occupancy(&running, capacity as u64, 0)?;
+
+    let pre_release_guard = Instant::now();
+    let mut first_enqueue = None;
+    let mut pending = Vec::with_capacity(64);
+    for index in 0_u64..64 {
+        let reader = index % 2 == 0;
+        let (alias, class, subject, operation, body) = if reader {
+            (
+                "reader/default",
+                "default",
+                READER,
+                "query",
+                "ASK {}".to_owned(),
+            )
+        } else if !read_only && index < 32 {
+            (
+                "writer/interactive",
+                "interactive",
+                WRITER,
+                "update",
+                format!("INSERT DATA {{ <urn:g42:{capacity}:{index}> <urn:p> <urn:o> }}"),
+            )
+        } else {
+            (
+                "writer/interactive",
+                "interactive",
+                WRITER,
+                "query",
+                "ASK {}".to_owned(),
+            )
+        };
+        pending.push(open_demo_pending(
+            &running, alias, class, operation, subject, body,
+        )?);
+        wait_data_queue(&running, index + 1)?;
+        if first_enqueue.is_none() {
+            first_enqueue = Some(Instant::now());
+        }
+    }
+    ensure!(
+        pre_release_guard.elapsed() < Duration::from_secs(30),
+        "pre-release guard expired"
+    );
+    let saturated = scrape(&running, "GET")?;
+    let maximum_data_active = admission_sample(
+        &saturated.body,
+        "oxigraph_admission_active",
+        "pool=\"data\"",
+    )?;
+    let maximum_data_queued = admission_sample(
+        &saturated.body,
+        "oxigraph_admission_queued",
+        "pool=\"data\"",
+    )?;
+    ensure!(maximum_data_active == capacity as u64 && maximum_data_queued == 64);
+    let health_ok = request(running.admin, "GET", "/health", "", "")?.status == 200;
+    let readiness_ok =
+        request(running.admin, "GET", "/ready", &identity(OPERATOR, 1)?, "")?.status == 200;
+    let metrics_ok = scrape(&running, "GET")?.status == 200;
+    ensure!(health_ok && readiness_ok && metrics_ok);
+    ensure!(pre_release_guard.elapsed() < Duration::from_secs(30));
+    let first_enqueue = first_enqueue.context("first ordinary request was not enqueued")?;
+
+    let holder_release = Instant::now();
+    drop(held);
+    let trace = Arc::new(Mutex::new(Vec::<DemoCompletion>::with_capacity(64)));
+    let (admission_sender, admission_receiver) = std::sync::mpsc::channel();
+    let workers = pending
+        .into_iter()
+        .map(|mut request| {
+            let trace = Arc::clone(&trace);
+            let admission_sender = admission_sender.clone();
+            thread::spawn(move || -> Result<()> {
+                ensure!(read_status_head(&mut request.stream)? == 100);
+                admission_sender.send(first_enqueue.elapsed())?;
+                request.stream.write_all(request.body.as_bytes())?;
+                let mut response = String::new();
+                request.stream.read_to_string(&mut response)?;
+                let response = decode_wire(&response)?;
+                ensure!(
+                    response.status
+                        == if request.operation == "update" {
+                            204
+                        } else {
+                            200
+                        },
+                    "ordinary {} failed with {}",
+                    request.operation,
+                    response.status
+                );
+                let mut trace = trace
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let elapsed_seconds = holder_release.elapsed().as_secs_f64();
+                let rank = trace.len() + 1;
+                trace.push(DemoCompletion {
+                    rank,
+                    alias: request.alias,
+                    class: request.class,
+                    operation: request.operation,
+                    elapsed_seconds,
+                });
+                Ok(())
+            })
+        })
+        .collect::<Vec<_>>();
+    drop(admission_sender);
+    for worker in workers {
+        worker
+            .join()
+            .map_err(|_| anyhow::anyhow!("ordinary worker panicked"))??;
+    }
+    ensure!(holder_release.elapsed() < Duration::from_secs(120));
+    let admissions = admission_receiver.into_iter().collect::<Vec<_>>();
+    ensure!(admissions.len() == 64);
+    let first_enqueue_to_last_admission = admissions
+        .into_iter()
+        .max()
+        .context("ordinary admission timestamps missing")?;
+    ensure!(first_enqueue_to_last_admission < Duration::from_secs(240));
+    wait_data_occupancy(&running, 0, 0)?;
+    let queue_after = queue_histograms(&scrape(&running, "GET")?.body)?;
+    let queue_data_delta = histogram_delta(&queue_before["data"], &queue_after["data"])?;
+    let queue_operator_delta =
+        histogram_delta(&queue_before["operator"], &queue_after["operator"])?;
+    ensure!(queue_data_delta.count == 64 && queue_operator_delta.count == 0);
+
+    let cancellation_before = cancellation_histograms(&scrape(&running, "GET")?.body)?;
+    let query_cancelled_before =
+        metric_counter(&running, "oxigraph_queries_total{outcome=\"cancelled\"}")?;
+    for index in 0..8 {
+        let abandoned = g42_active_reset(&running)?;
+        drop(abandoned);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let cancelled =
+                metric_counter(&running, "oxigraph_queries_total{outcome=\"cancelled\"}")?;
+            if cancelled == query_cancelled_before + index + 1 {
+                break;
+            }
+            ensure!(
+                Instant::now() < deadline,
+                "streaming reset did not reach a query cancellation checkpoint"
+            );
+            thread::yield_now();
+        }
+        wait_data_occupancy(&running, 0, 0)?;
+    }
+    let cancellation_after = cancellation_histograms(&scrape(&running, "GET")?.body)?;
+    let query_cancelled_delta =
+        metric_counter(&running, "oxigraph_queries_total{outcome=\"cancelled\"}")?
+            .saturating_sub(query_cancelled_before);
+    ensure!(query_cancelled_delta == 8);
+    assert_cancellation_delta(
+        &cancellation_before,
+        &cancellation_after,
+        "data",
+        "cancelled",
+        8,
+    )?;
+    let cancelled_delta = histogram_delta(
+        &cancellation_before[&("data", "cancelled")],
+        &cancellation_after[&("data", "cancelled")],
+    )?;
+
+    let phase_c_policy = g42_workload(capacity, 2, 250);
+    write_policy(
+        running
+            .workload_policy
+            .as_ref()
+            .context("drill workload path missing")?,
+        &phase_c_policy,
+    )?;
+    ensure!(
+        request(
+            running.admin,
+            "POST",
+            "/workload/policy/reload",
+            &identity(OPERATOR, 1)?,
+            "",
+        )?
+        .status
+            == 204
+    );
+    let timeout_before = cancellation_histograms(&scrape(&running, "GET")?.body)?;
+    for _ in 0..8 {
+        let mut timed_out = occupy_query_admission(&running)?;
+        let mut response = Vec::new();
+        match timed_out.read_to_end(&mut response) {
+            Ok(_) => (),
+            Err(error) if error.kind() == ErrorKind::ConnectionReset => (),
+            Err(error) => return Err(error.into()),
+        }
+        ensure!(
+            response.is_empty(),
+            "deadline request returned a final response"
+        );
+        wait_data_occupancy(&running, 0, 0)?;
+    }
+    let timeout_after = cancellation_histograms(&scrape(&running, "GET")?.body)?;
+    assert_cancellation_delta(&timeout_before, &timeout_after, "data", "timed_out", 8)?;
+    let timed_out_delta = histogram_delta(
+        &timeout_before[&("data", "timed_out")],
+        &timeout_after[&("data", "timed_out")],
+    )?;
+    let combined_delta = add_histograms(&cancelled_delta, &timed_out_delta);
+    ensure!(combined_delta.count == 16);
+
+    let vmhwm = child_vmhwm(&running.child.0);
+    let trace = Arc::try_unwrap(trace)
+        .map_err(|_| anyhow::anyhow!("ordinary trace still shared"))?
+        .into_inner()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    ensure!(trace.len() == 64);
+    for (index, entry) in trace.iter().enumerate() {
+        ensure!(entry.rank == index + 1);
+        ensure!(entry.elapsed_seconds.is_finite() && entry.elapsed_seconds >= 0.0);
+        if index > 0 {
+            ensure!(trace[index - 1].elapsed_seconds <= entry.elapsed_seconds);
+        }
+    }
+    let ordinary_elapsed_seconds = trace.last().unwrap().elapsed_seconds;
+    ensure!(ordinary_elapsed_seconds > 0.0 && ordinary_elapsed_seconds.is_finite());
+    let throughput = 64.0 / ordinary_elapsed_seconds;
+    ensure!(throughput.is_finite());
+    let completion_trace = trace
+        .iter()
+        .map(|entry| {
+            json!({
+                "rank":entry.rank,
+                "alias":entry.alias,
+                "class":entry.class,
+                "operation":entry.operation,
+                "elapsed_seconds":entry.elapsed_seconds
+            })
+        })
+        .collect::<Vec<_>>();
+    let reader = trace
+        .iter()
+        .filter(|entry| entry.alias == "reader/default")
+        .collect::<Vec<_>>();
+    let writer = trace
+        .iter()
+        .filter(|entry| entry.alias == "writer/interactive")
+        .collect::<Vec<_>>();
+    ensure!(reader.len() == 32 && writer.len() == 32);
+    let writer_updates = writer
+        .iter()
+        .filter(|entry| entry.operation == "update")
+        .count();
+    let writer_queries = writer.len() - writer_updates;
+    ensure!(writer_updates == if read_only { 0 } else { 16 });
+
+    if !read_only {
+        for index in (1..32).step_by(2) {
+            let marker = format!("urn:g42:{capacity}:{index}");
+            let response = sparql(
+                &running,
+                READER,
+                "/query",
+                &format!("ASK {{ <{marker}> <urn:p> <urn:o> }}"),
+            )?;
+            ensure!(
+                response.status == 200
+                    && serde_json::from_str::<Value>(&response.body)?["boolean"] == true
+            );
+        }
+    }
+
+    // Claim no journey outcome the case has not observed: the write, rollback
+    // and restart assertions run before the record is built, a failure still
+    // fails the case, and the reported flags are derived from that completed
+    // observation instead of being written as literals. Read-only never runs it.
+    let writer_journey_observed = if read_only {
+        false
+    } else {
+        write_rollback_and_restart(running)?;
+        true
+    };
+
+    let record = json!({
+        "schema":"oxigraph.g42-admission-demo/v1",
+        "grade":"demo",
+        "source_commit":source_commit,
+        "feature_lane":if cfg!(feature = "native-tls") { "default" } else { "no-default" },
+        "mode":if read_only { "serve-read-only" } else { "serve" },
+        "capacity":capacity,
+        "declared_requests":{"ordinary":64,"cancelled":8,"timed_out":8,"measured_total":80},
+        "drill_policy":{
+            "phase_ab":{"policy_version":1,"pre_release_guard_ms":30_000,"ordinary_drain_guard_ms":120_000,"timeout_safety_margin_ms":30_000,"queue_timeout_ms":240_000,"request_timeout_ms":240_000},
+            "phase_c":{"policy_version":2,"queue_timeout_ms":240_000,"request_timeout_ms":250}
+        },
+        "ordinary":{
+            "submitted":64,"admitted":64,"terminal_success":64,"queue_timeouts":0,"request_timeouts":0,
+            "first_enqueue_to_last_admission_seconds":first_enqueue_to_last_admission.as_secs_f64(),
+            "elapsed_seconds":ordinary_elapsed_seconds,
+            "throughput_ops_per_second":throughput,
+            "queue_histogram_delta":histogram_json(&queue_data_delta),
+            "queue_series_delta_counts":{"data":queue_data_delta.count,"operator":queue_operator_delta.count},
+            "queue_wait_p95":p95_json(&queue_data_delta)?,
+            "completion_trace":completion_trace
+        },
+        "cancellation":{
+            "cancelled":{
+                "submitted":8,"terminal":8,"histogram_delta":histogram_json(&cancelled_delta),
+                "series_delta_counts":{"data_cancelled":8,"data_timed_out":0,"operator_cancelled":0,"operator_timed_out":0},
+                "evaluator_query_cancelled_delta":query_cancelled_delta,
+                "p95":p95_json(&cancelled_delta)?
+            },
+            "timed_out":{
+                "submitted":8,"terminal":8,"histogram_delta":histogram_json(&timed_out_delta),
+                "series_delta_counts":{"data_cancelled":0,"data_timed_out":8,"operator_cancelled":0,"operator_timed_out":0},
+                "p95":p95_json(&timed_out_delta)?
+            },
+            "combined":{"histogram_delta":histogram_json(&combined_delta),"p95":p95_json(&combined_delta)?}
+        },
+        "ordinary_by_alias":{
+            "reader/default":{"class":"default","submitted":32,"terminal_success":reader.len(),"queries":reader.len(),"committed_updates":0},
+            "writer/interactive":{"class":"interactive","submitted":32,"terminal_success":writer.len(),"queries":writer_queries,"committed_updates":writer_updates}
+        },
+        "fairness_by_alias":{
+            "reader/default":fairness_json(&trace, "reader/default")?,
+            "writer/interactive":fairness_json(&trace, "writer/interactive")?
+        },
+        "occupancy":{"maximum_data_active":maximum_data_active,"maximum_data_queued":maximum_data_queued,"final_data_active":0,"final_data_queued":0},
+        "operator_under_saturation":{"health_ok":health_ok,"readiness_ok":readiness_ok,"metrics_ok":metrics_ok},
+        "writer_journey":if writer_journey_observed {
+            json!({"applicable":true,"declared_commits":16,"observed_commits":writer_updates,"rollback_ok":true,"restart_ok":true})
+        } else {
+            json!({"applicable":false,"declared_commits":Value::Null,"observed_commits":Value::Null,"rollback_ok":Value::Null,"restart_ok":Value::Null})
+        },
+        "vmhwm":vmhwm
+    });
+    ensure!(serde_json::to_string(&record)?.lines().count() == 1);
+    println!("{}", serde_json::to_string(&record)?);
+    Ok(record)
+}
+
+/// Demo-grade local measurements only. Run explicitly with
+/// `--exact --ignored --nocapture` after the instrumentation commit is accepted.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "G4.2 six-case demo drill; no production thresholds or qualification claims"]
+fn workload_g42_demo_grade_admission_drill() -> Result<()> {
+    let commit = source_commit()?;
+    let mut records = Vec::new();
+    for read_only in [false, true] {
+        for capacity in [1_usize, 4, 16] {
+            records.push(run_g42_demo_case(read_only, capacity, &commit)?);
+        }
+    }
+    ensure!(records.len() == 6);
+    Ok(())
+}
+
 /// A bounded native acceptance check, not an operational-performance
 /// qualification: it exercises real CLI admission at three small capacities
 /// and proves that the operator reserve remains separate from saturated data.
@@ -4185,6 +4872,106 @@ fn admission_sample(body: &str, family: &str, labels: &str) -> Result<u64> {
     Ok(line[prefix.len()..].parse()?)
 }
 
+const ADMISSION_HISTOGRAM_LABELS: [&str; 8] =
+    ["0.0001", "0.001", "0.01", "0.1", "1", "10", "60", "+Inf"];
+
+#[derive(Clone, Debug)]
+struct HistogramSnapshot {
+    cumulative_buckets: [u64; 8],
+    count: u64,
+    sum_seconds: f64,
+}
+
+fn histogram_snapshot(body: &str, family: &str, labels: &str) -> Result<HistogramSnapshot> {
+    let mut cumulative_buckets = [0; 8];
+    for (value, bound) in cumulative_buckets
+        .iter_mut()
+        .zip(ADMISSION_HISTOGRAM_LABELS)
+    {
+        *value = admission_sample(
+            body,
+            &format!("{family}_bucket"),
+            &format!("{labels},le=\"{bound}\""),
+        )?;
+    }
+    let count = admission_sample(body, &format!("{family}_count"), labels)?;
+    let prefix = format!("{family}_sum{{{labels}}} ");
+    let sum_seconds = body
+        .lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .with_context(|| format!("missing histogram sum {prefix}"))?
+        .parse()?;
+    ensure!(cumulative_buckets[7] == count, "+Inf/count mismatch");
+    Ok(HistogramSnapshot {
+        cumulative_buckets,
+        count,
+        sum_seconds,
+    })
+}
+
+fn cancellation_histograms(
+    body: &str,
+) -> Result<BTreeMap<(&'static str, &'static str), HistogramSnapshot>> {
+    let mut result = BTreeMap::new();
+    for pool in ["data", "operator"] {
+        for reason in ["cancelled", "timed_out"] {
+            result.insert(
+                (pool, reason),
+                histogram_snapshot(
+                    body,
+                    "oxigraph_admission_cancellation_latency_seconds",
+                    &format!("pool=\"{pool}\",reason=\"{reason}\""),
+                )?,
+            );
+        }
+    }
+    Ok(result)
+}
+
+fn histogram_delta(
+    before: &HistogramSnapshot,
+    after: &HistogramSnapshot,
+) -> Result<HistogramSnapshot> {
+    ensure!(after.count >= before.count && after.sum_seconds >= before.sum_seconds);
+    let mut cumulative_buckets = [0; 8];
+    for index in 0..cumulative_buckets.len() {
+        ensure!(after.cumulative_buckets[index] >= before.cumulative_buckets[index]);
+        let value = after.cumulative_buckets[index] - before.cumulative_buckets[index];
+        if index > 0 {
+            ensure!(cumulative_buckets[index - 1] <= value);
+        }
+        cumulative_buckets[index] = value;
+    }
+    let result = HistogramSnapshot {
+        cumulative_buckets,
+        count: after.count - before.count,
+        sum_seconds: after.sum_seconds - before.sum_seconds,
+    };
+    ensure!(result.cumulative_buckets[7] == result.count);
+    Ok(result)
+}
+
+fn assert_cancellation_delta(
+    before: &BTreeMap<(&str, &str), HistogramSnapshot>,
+    after: &BTreeMap<(&str, &str), HistogramSnapshot>,
+    expected_pool: &str,
+    expected_reason: &str,
+    expected_count: u64,
+) -> Result<()> {
+    for pool in ["data", "operator"] {
+        for reason in ["cancelled", "timed_out"] {
+            let delta = histogram_delta(&before[&(pool, reason)], &after[&(pool, reason)])?;
+            let expected =
+                u64::from(pool == expected_pool && reason == expected_reason) * expected_count;
+            ensure!(
+                delta.count == expected,
+                "unexpected cancellation delta {pool}/{reason}: {delta:?}"
+            );
+        }
+    }
+    Ok(())
+}
+
 fn assert_path_resource_observations(running: &Running, expected: [u64; 4]) -> Result<()> {
     assert_resource_observations(running, "path_buffer_rows", "path_buffer", expected)
 }
@@ -4285,12 +5072,12 @@ fn workload_admission_metrics_export_bounded_pool_dispositions() -> Result<()> {
             .filter(|line| line.contains("admission"))
             .collect();
         ensure!(
-            lines.iter().filter(|line| !line.starts_with('#')).count() == 60
+            lines.iter().filter(|line| !line.starts_with('#')).count() == 100
                 && lines
                     .iter()
                     .filter(|line| line.starts_with("# TYPE "))
                     .count()
-                    == 5,
+                    == 6,
             "admission sample cardinality drifted: {}",
             lines.len()
         );
@@ -4645,6 +5432,7 @@ fn workload_active_reset_cancels_update_before_commit_and_survives_restart() -> 
         metric_counter(&running, "oxigraph_updates_total{outcome=\"cancelled\"}")?;
     let succeeded_before =
         metric_counter(&running, "oxigraph_updates_total{outcome=\"succeeded\"}")?;
+    let cancellation_before = cancellation_histograms(&scrape(&running, "GET")?.body)?;
     let update = "INSERT DATA { <urn:disconnect-marker> <urn:p> <urn:o> };\n\
         INSERT { <urn:join-result> <urn:p> ?left } WHERE {\n\
           ?left <urn:left> <urn:value> . ?right <urn:right> <urn:value>\n\
@@ -4709,6 +5497,15 @@ fn workload_active_reset_cancels_update_before_commit_and_survives_restart() -> 
             == succeeded_before,
         "abandoned update reported success"
     );
+    wait_data_occupancy(&running, 0, 0)?;
+    let cancellation_after = cancellation_histograms(&scrape(&running, "GET")?.body)?;
+    assert_cancellation_delta(
+        &cancellation_before,
+        &cancellation_after,
+        "data",
+        "cancelled",
+        1,
+    )?;
 
     running.child.0.kill()?;
     running.child.0.wait()?;
@@ -4727,6 +5524,91 @@ fn workload_active_reset_cancels_update_before_commit_and_survives_restart() -> 
             "cancelled update left data after restart: {subject}"
         );
     }
+    write_rollback_and_restart(running)
+}
+
+/// The streaming read path. This asserts that abandoning an actively streaming
+/// response records a data cancellation and frees the slot.
+///
+/// Ignored because the mechanism it needs does not exist yet, not because the
+/// assertion is wrong. `AdmissionAbort` is the only transport-failure probe,
+/// and every observation of it in `workload.rs` is on the admission/queueing
+/// path. Its own documentation is explicit that after the admission hook
+/// returns "all clones become inert ... they cannot monitor active work". So a
+/// reset arriving mid-stream is never converted into a
+/// `QueryEvaluationError::Cancelled`, and the `cancelled` outcome this test
+/// waits for is never recorded; it times out after ten seconds.
+///
+/// Closing this needs a transport-abort signal that stays live for the life of
+/// a response and a cancellation checkpoint in the response writer. That is an
+/// oxhttp interface change plus a CLI change, and it is its own slice. Do not
+/// satisfy this test by weakening it or by cancelling on a deadline instead:
+/// the test deliberately configures no request deadline so that a `timed_out`
+/// sample here would itself be a failure.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "needs a response-writer cancellation checkpoint; AdmissionAbort goes inert after admission"]
+fn workload_streaming_query_reset_records_a_data_cancellation_and_frees_the_slot() -> Result<()> {
+    let running = start_with_workload_entailment_and_store_setup(
+        &config(),
+        false,
+        // No request deadline: the only cancellation source is the transport
+        // reset, so a `timed_out` sample here would be a real failure.
+        Some(&workload(0, 0, 30_000)),
+        None,
+        Some(g42_prepare_cancellation_store),
+    )?;
+    let cancellation_before = cancellation_histograms(&scrape(&running, "GET")?.body)?;
+    let cancelled_before =
+        metric_counter(&running, "oxigraph_queries_total{outcome=\"cancelled\"}")?;
+    let succeeded_before =
+        metric_counter(&running, "oxigraph_queries_total{outcome=\"succeeded\"}")?;
+
+    // Returns only after the response has streamed an evaluated binding and the
+    // query still owns its slot across repeated scrapes, so the reset lands on
+    // an actively serializing read rather than on admission or on parsing.
+    let abandoned = g42_active_reset(&running)?;
+    ensure!(
+        request(running.public, "GET", "/query", &identity(READER, 1)?, "")?.status == 503,
+        "streaming query did not occupy the only data slot"
+    );
+    // The unread streamed body makes this an active Linux reset, not a FIN.
+    drop(abandoned);
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if metric_counter(&running, "oxigraph_queries_total{outcome=\"cancelled\"}")?
+            == cancelled_before + 1
+        {
+            break;
+        }
+        ensure!(
+            Instant::now() < deadline,
+            "streaming reset did not reach a query cancellation checkpoint"
+        );
+        thread::yield_now();
+    }
+    ensure!(
+        metric_counter(&running, "oxigraph_queries_total{outcome=\"succeeded\"}")?
+            == succeeded_before,
+        "abandoned streaming query reported success"
+    );
+    wait_data_occupancy(&running, 0, 0)?;
+    let cancellation_after = cancellation_histograms(&scrape(&running, "GET")?.body)?;
+    assert_cancellation_delta(
+        &cancellation_before,
+        &cancellation_after,
+        "data",
+        "cancelled",
+        1,
+    )?;
+
+    // The released slot admits ordinary work again, and the journey still holds.
+    let recovered = sparql(&running, READER, "/query", "ASK { <urn:g42:left:0> ?p ?o }")?;
+    ensure!(
+        recovered.status == 200
+            && serde_json::from_str::<Value>(&recovered.body)?["boolean"] == true
+    );
     write_rollback_and_restart(running)
 }
 

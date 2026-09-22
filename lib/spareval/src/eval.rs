@@ -45,7 +45,7 @@ use std::marker::PhantomData;
 use std::mem::take;
 use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, atomic};
+use std::sync::{Arc, OnceLock, atomic};
 use std::{fmt, io};
 // TODO: make expression raise error when relevant (storage I/O)
 
@@ -5173,12 +5173,20 @@ impl Timer {
     }
 }
 
+/// Shared explicit-cancellation state. The signal instant is initialized before
+/// the flag is published, so an acquiring observer always sees both together.
+#[derive(Default)]
+struct ExplicitCancellation {
+    cancelled: AtomicBool,
+    first_signal: OnceLock<std::time::Instant>,
+}
+
 /// A token that can be used to mark something as canceled.
 ///
 /// To cancel run [`CancellationToken::cancel`] and to check if the token is canceled run [`CancellationToken::is_cancelled`].
 #[derive(Clone, Default)]
 pub struct CancellationToken {
-    value: Arc<AtomicBool>,
+    explicit: Arc<ExplicitCancellation>,
     deadline: Option<std::time::Instant>,
 }
 
@@ -5193,7 +5201,7 @@ impl CancellationToken {
     #[inline]
     pub fn new() -> Self {
         Self {
-            value: Arc::new(AtomicBool::new(false)),
+            explicit: Arc::new(ExplicitCancellation::default()),
             deadline: None,
         }
     }
@@ -5219,7 +5227,11 @@ impl CancellationToken {
 
     #[inline]
     pub fn cancel(&self) {
-        self.value.store(true, atomic::Ordering::Relaxed);
+        let signal_at = std::time::Instant::now();
+        self.explicit.first_signal.get_or_init(|| signal_at);
+        self.explicit
+            .cancelled
+            .store(true, atomic::Ordering::Release);
     }
 
     #[inline]
@@ -5230,7 +5242,7 @@ impl CancellationToken {
     /// Explicit cancellation takes precedence when both conditions are present.
     /// Deadline-free tokens do not read the clock at checkpoints.
     pub fn cancellation_reason(&self) -> Option<CancellationReason> {
-        if self.value.load(atomic::Ordering::Relaxed) {
+        if self.explicit.cancelled.load(atomic::Ordering::Acquire) {
             Some(CancellationReason::Cancelled)
         } else if self
             .deadline
@@ -5242,10 +5254,29 @@ impl CancellationToken {
         }
     }
 
+    /// Returns the cancellation reason active at `observed_at` and the instant
+    /// at which that reason became active. No clock read is performed here.
+    pub fn active_signal_at(
+        &self,
+        observed_at: std::time::Instant,
+    ) -> Option<(CancellationReason, std::time::Instant)> {
+        if self.explicit.cancelled.load(atomic::Ordering::Acquire) {
+            // `cancel` initializes the signal before publishing `cancelled` with
+            // `Release`, so this `Acquire` load also observes the instant.
+            if let Some(&signal_at) = self.explicit.first_signal.get() {
+                if signal_at <= observed_at {
+                    return Some((CancellationReason::Cancelled, signal_at));
+                }
+            }
+        }
+        self.deadline
+            .filter(|&deadline| deadline <= observed_at)
+            .map(|deadline| (CancellationReason::TimedOut, deadline))
+    }
+
     #[cfg(test)]
     fn is_cancelled_at(&self, now: std::time::Instant) -> bool {
-        self.value.load(atomic::Ordering::Relaxed)
-            || self.deadline.is_some_and(|deadline| now >= deadline)
+        self.active_signal_at(now).is_some()
     }
 
     fn ensure_alive(&self) -> Result<(), QueryEvaluationError> {
@@ -5259,8 +5290,21 @@ impl CancellationToken {
 
 #[cfg(test)]
 mod cancellation_deadline_tests {
-    use super::CancellationToken;
+    use super::{CancellationReason, CancellationToken};
+    use std::sync::{Arc, Barrier};
+    use std::thread;
     use std::time::{Duration, Instant};
+
+    fn wait_until_strictly_after(marker: Instant) -> Instant {
+        for _ in 0..1_000_000 {
+            let now = Instant::now();
+            if now > marker {
+                return now;
+            }
+            thread::yield_now();
+        }
+        panic!("monotonic clock did not advance within the bounded test guard");
+    }
 
     #[test]
     fn absolute_deadline_boundary_and_clone_cancellation() {
@@ -5285,13 +5329,98 @@ mod cancellation_deadline_tests {
             Some(before)
         );
         original.cancel();
-        assert!(bounded.is_cancelled_at(before) && clone.is_cancelled_at(before));
+        let observed_at = Instant::now();
+        assert!(bounded.is_cancelled_at(observed_at) && clone.is_cancelled_at(observed_at));
+    }
+
+    #[test]
+    fn explicit_signal_is_shared_first_writer_and_precedes_deadline() {
+        let token = CancellationToken::new();
+        let clone = token.clone();
+        token.cancel();
+        let first = *token.explicit.first_signal.get().expect("signal instant");
+        clone.cancel();
+        assert_eq!(clone.explicit.first_signal.get(), Some(&first));
+        assert_eq!(
+            token.active_signal_at(first),
+            Some((CancellationReason::Cancelled, first))
+        );
+
+        let with_elapsed_deadline = clone.with_deadline(first);
+        assert_eq!(
+            with_elapsed_deadline.active_signal_at(first),
+            Some((CancellationReason::Cancelled, first)),
+            "explicit cancellation keeps precedence at the same boundary"
+        );
+    }
+
+    #[test]
+    fn concurrent_cancel_initializes_one_shared_signal() {
+        let token = CancellationToken::new();
+        let barrier = Arc::new(Barrier::new(3));
+        let workers: Vec<_> = (0..2)
+            .map(|_| {
+                let token = token.clone();
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    token.cancel();
+                    *token.explicit.first_signal.get().expect("signal instant")
+                })
+            })
+            .collect();
+        barrier.wait();
+        let observed = workers
+            .into_iter()
+            .map(|worker| worker.join().expect("cancel worker panicked"))
+            .collect::<Vec<_>>();
+        assert_eq!(observed[0], observed[1]);
+        assert_eq!(token.explicit.first_signal.get(), Some(&observed[0]));
+        assert_eq!(
+            token.cancellation_reason(),
+            Some(CancellationReason::Cancelled)
+        );
+    }
+
+    #[test]
+    fn active_signal_respects_the_supplied_observation_boundary() {
+        let observed_at = Instant::now();
+        let deadline = observed_at - Duration::from_nanos(1);
+        let token = CancellationToken::new().with_deadline(deadline);
+        let _strictly_after = wait_until_strictly_after(observed_at);
+        token.cancel();
+        assert_eq!(
+            token.active_signal_at(observed_at),
+            Some((CancellationReason::TimedOut, deadline)),
+            "a later explicit signal must not replace an elapsed deadline"
+        );
+        assert_eq!(
+            token
+                .active_signal_at(Instant::now())
+                .map(|(reason, _)| reason),
+            Some(CancellationReason::Cancelled)
+        );
+
+        let inactive_boundary = Instant::now();
+        let future = CancellationToken::new();
+        let _strictly_after = wait_until_strictly_after(inactive_boundary);
+        future.cancel();
+        assert_eq!(future.active_signal_at(inactive_boundary), None);
+        assert_eq!(
+            CancellationToken::new().active_signal_at(Instant::now()),
+            None
+        );
     }
 
     #[test]
     fn expired_token_is_observed_without_a_timer_thread() {
-        let token = CancellationToken::new().with_deadline(Instant::now());
+        let deadline = Instant::now();
+        let token = CancellationToken::new().with_deadline(deadline);
         assert!(token.is_cancelled());
+        assert_eq!(
+            token.active_signal_at(deadline),
+            Some((CancellationReason::TimedOut, deadline))
+        );
         assert!(matches!(
             token.ensure_alive(),
             Err(super::QueryEvaluationError::TimedOut)

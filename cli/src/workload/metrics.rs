@@ -1,12 +1,14 @@
 //! ADR-0027 admission telemetry: a fixed pool/disposition vocabulary, saturating
 //! process-local counters and actual queue-wait observations. Nothing here is a
 //! request-success, rollback or resource oracle: `Admitted` means a lease was
-//! returned, and dropping that lease is only a capacity release.
+//! returned. Final lease release is the capacity boundary and, when cancellation
+//! is active there, the conservative cancellation-latency observation boundary.
 //!
 //! No class name, policy identity, principal, endpoint, query, RDF term or error
 //! text is retained or exported.
 use super::{AdmissionScope, AdmissionSnapshot, WorkloadError, WorkloadLease};
 use crate::access::ListenerKind;
+use oxigraph::sparql::CancellationReason;
 use std::fmt::{self, Write};
 use std::time::Duration;
 
@@ -180,6 +182,94 @@ impl QueueWaitHistogram {
     }
 }
 
+/// Cumulative, microsecond-resolution monotonic durations from the active
+/// cancellation signal to the final admitted [`WorkloadLease`] release
+/// observation, for one fixed pool and reason.
+///
+/// This conservative request-lifetime boundary does not claim exact evaluator
+/// stop, thread preemption, rollback completion, socket close, or the lifetime
+/// of independently retained library cancellation clones.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CancellationLatencyHistogram {
+    buckets: [u64; 8],
+    sum_micros: u64,
+}
+
+impl CancellationLatencyHistogram {
+    /// Ordered inclusive upper bounds and cumulative counts; `None` is positive infinity.
+    pub fn buckets(&self) -> impl Iterator<Item = (Option<Duration>, u64)> + '_ {
+        self.buckets.iter().enumerate().map(|(index, &count)| {
+            (
+                BOUNDS_MICROS.get(index).copied().map(Duration::from_micros),
+                count,
+            )
+        })
+    }
+
+    pub const fn count(&self) -> u64 {
+        self.buckets[7]
+    }
+
+    pub const fn sum(&self) -> Duration {
+        Duration::from_micros(self.sum_micros)
+    }
+
+    fn observe(&mut self, latency: Duration) {
+        let micros = u64::try_from(latency.as_micros()).unwrap_or(u64::MAX);
+        for (index, count) in self.buckets.iter_mut().enumerate() {
+            if BOUNDS_MICROS
+                .get(index)
+                .is_none_or(|&bound| micros <= bound)
+            {
+                *count = count.saturating_add(1);
+            }
+        }
+        self.sum_micros = self.sum_micros.saturating_add(micros);
+    }
+
+    fn write_series(
+        &self,
+        output: &mut impl Write,
+        pool: &'static str,
+        reason: &'static str,
+    ) -> fmt::Result {
+        for (bound, count) in BOUND_LABELS.iter().zip(self.buckets) {
+            writeln!(
+                output,
+                "oxigraph_admission_cancellation_latency_seconds_bucket{{pool=\"{pool}\",reason=\"{reason}\",le=\"{bound}\"}} {count}"
+            )?;
+        }
+        writeln!(
+            output,
+            "oxigraph_admission_cancellation_latency_seconds_count{{pool=\"{pool}\",reason=\"{reason}\"}} {}",
+            self.count()
+        )?;
+        writeln!(
+            output,
+            "oxigraph_admission_cancellation_latency_seconds_sum{{pool=\"{pool}\",reason=\"{reason}\"}} {}.{:06}",
+            self.sum_micros / 1_000_000,
+            self.sum_micros % 1_000_000
+        )
+    }
+}
+
+const CANCELLATION_REASONS: [CancellationReason; 2] =
+    [CancellationReason::Cancelled, CancellationReason::TimedOut];
+
+const fn cancellation_reason_index(reason: CancellationReason) -> usize {
+    match reason {
+        CancellationReason::Cancelled => 0,
+        CancellationReason::TimedOut => 1,
+    }
+}
+
+const fn cancellation_reason_name(reason: CancellationReason) -> &'static str {
+    match reason {
+        CancellationReason::Cancelled => "cancelled",
+        CancellationReason::TimedOut => "timed_out",
+    }
+}
+
 /// Additive telemetry view of one controller, separate from [`AdmissionSnapshot`].
 ///
 /// Counters are shared by every clone of one controller and start at zero for a
@@ -198,11 +288,12 @@ pub struct AdmissionMetrics {
     admissions: [[u64; 9]; 2],
     queued_admissions: [[u64; 9]; 2],
     queue_wait: [QueueWaitHistogram; 2],
+    cancellation_latency: [[CancellationLatencyHistogram; 2]; 2],
 }
 
 impl AdmissionMetrics {
     /// Exact number of Prometheus samples written by [`Self::write_prometheus`].
-    pub const SAMPLES: usize = 2 + 2 + 18 + 18 + 20;
+    pub const SAMPLES: usize = 2 + 2 + 18 + 18 + 20 + 40;
 
     pub const fn active(&self, pool: AdmissionPool) -> usize {
         self.active[pool as usize]
@@ -230,6 +321,24 @@ impl AdmissionMetrics {
         &self.queue_wait[pool as usize]
     }
 
+    pub const fn cancellation_latency(
+        &self,
+        pool: AdmissionPool,
+        reason: CancellationReason,
+    ) -> &CancellationLatencyHistogram {
+        &self.cancellation_latency[pool as usize][cancellation_reason_index(reason)]
+    }
+
+    pub(super) fn record_cancellation(
+        &mut self,
+        pool: AdmissionPool,
+        reason: CancellationReason,
+        latency: Duration,
+    ) {
+        self.cancellation_latency[pool as usize][cancellation_reason_index(reason)]
+            .observe(latency);
+    }
+
     pub(super) fn record(
         &mut self,
         pool: AdmissionPool,
@@ -251,7 +360,7 @@ impl AdmissionMetrics {
         self
     }
 
-    /// Writes five fixed-label families with exactly [`Self::SAMPLES`] samples.
+    /// Writes six fixed-label families with exactly [`Self::SAMPLES`] samples.
     /// A scrape served through an admitted operator lease observes itself.
     pub fn write_prometheus(&self, output: &mut impl Write) -> fmt::Result {
         writeln!(output, "# TYPE oxigraph_admission_active gauge")?;
@@ -302,6 +411,19 @@ impl AdmissionMetrics {
         )?;
         for pool in AdmissionPool::ALL {
             self.queue_wait(pool).write_series(output, pool.as_str())?;
+        }
+        writeln!(
+            output,
+            "# TYPE oxigraph_admission_cancellation_latency_seconds histogram"
+        )?;
+        for pool in AdmissionPool::ALL {
+            for reason in CANCELLATION_REASONS {
+                self.cancellation_latency(pool, reason).write_series(
+                    output,
+                    pool.as_str(),
+                    cancellation_reason_name(reason),
+                )?;
+            }
         }
         Ok(())
     }
@@ -365,6 +487,43 @@ mod tests {
     }
 
     #[test]
+    fn cancellation_histogram_boundaries_reasons_and_saturation_are_fixed() {
+        let mut metrics = AdmissionMetrics::default();
+        for micros in [0, 100, 101, 1_000, 60_000_001] {
+            metrics.record_cancellation(
+                AdmissionPool::Data,
+                CancellationReason::Cancelled,
+                Duration::from_micros(micros),
+            );
+        }
+        let histogram =
+            metrics.cancellation_latency(AdmissionPool::Data, CancellationReason::Cancelled);
+        assert_eq!(histogram.buckets, [2, 4, 4, 4, 4, 4, 4, 5]);
+        assert_eq!(histogram.count(), 5);
+        assert_eq!(histogram.sum(), Duration::from_micros(60_001_202));
+        assert_eq!(
+            metrics
+                .cancellation_latency(AdmissionPool::Data, CancellationReason::TimedOut)
+                .count(),
+            0,
+            "reasons are independent"
+        );
+        assert_eq!(
+            metrics
+                .cancellation_latency(AdmissionPool::Operator, CancellationReason::Cancelled)
+                .count(),
+            0,
+            "pools are independent"
+        );
+        let histogram = &mut metrics.cancellation_latency[0][0];
+        histogram.buckets = [u64::MAX; 8];
+        histogram.sum_micros = u64::MAX;
+        histogram.observe(Duration::MAX);
+        assert_eq!(histogram.buckets, [u64::MAX; 8]);
+        assert_eq!(histogram.sum_micros, u64::MAX);
+    }
+
+    #[test]
     fn counters_saturate_and_queue_observations_stay_consistent() {
         let mut metrics = AdmissionMetrics::default();
         metrics.admissions[0][0] = u64::MAX;
@@ -415,6 +574,11 @@ mod tests {
             AdmissionDisposition::RefusedClass,
             None,
         );
+        metrics.record_cancellation(
+            AdmissionPool::Data,
+            CancellationReason::Cancelled,
+            Duration::from_millis(15),
+        );
         let metrics = metrics.with_gauges(AdmissionSnapshot {
             active: 3,
             queued: 2,
@@ -433,7 +597,7 @@ mod tests {
             text.lines()
                 .filter(|line| line.starts_with("# TYPE "))
                 .count()
-                == 5
+                == 6
         );
         for expected in [
             "oxigraph_admission_active{pool=\"data\"} 3\n",
@@ -450,6 +614,11 @@ mod tests {
             "oxigraph_admission_queue_wait_seconds_count{pool=\"operator\"} 1\n",
             "oxigraph_admission_queue_wait_seconds_sum{pool=\"operator\"} 0.015000\n",
             "oxigraph_admission_queue_wait_seconds_count{pool=\"data\"} 0\n",
+            "oxigraph_admission_cancellation_latency_seconds_bucket{pool=\"data\",reason=\"cancelled\",le=\"0.01\"} 0\n",
+            "oxigraph_admission_cancellation_latency_seconds_bucket{pool=\"data\",reason=\"cancelled\",le=\"0.1\"} 1\n",
+            "oxigraph_admission_cancellation_latency_seconds_count{pool=\"data\",reason=\"cancelled\"} 1\n",
+            "oxigraph_admission_cancellation_latency_seconds_sum{pool=\"data\",reason=\"cancelled\"} 0.015000\n",
+            "oxigraph_admission_cancellation_latency_seconds_count{pool=\"operator\",reason=\"timed_out\"} 0\n",
         ] {
             ensure!(text.contains(expected), "missing {expected}");
         }
@@ -468,6 +637,7 @@ mod tests {
                     "disposition" => AdmissionDisposition::ALL
                         .iter()
                         .any(|disposition| disposition.as_str() == value),
+                    "reason" => ["cancelled", "timed_out"].contains(&value),
                     "le" => BOUND_LABELS.contains(&value),
                     _ => false,
                 };
