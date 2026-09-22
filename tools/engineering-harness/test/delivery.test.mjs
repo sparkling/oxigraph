@@ -15,11 +15,11 @@ test("source drift or missing process observation prevents command success", () 
   assert.equal(deliveryStatus(before, before, null, null).status, "failed");
   assert.equal(deliveryStatus(before, before, { passed: true }, "cannot read artifact").status, "failed");
 });
-test("routine role models restore the commit 65cb324a defaults on gateway-qualified native Claude", () => {
+test("routine role models use Opus on gateway-qualified native Claude", () => {
   for (const [role, model, effort] of [
     ["implement", "cc/claude-opus-5", "xhigh"], ["documentation", "cc/claude-opus-5", "low"],
-    ["review", "cc/claude-fable-5-1", "high"], ["difficult", "cc/claude-fable-5-1", "xhigh"],
-    ["decision", "cc/claude-fable-5-1", "max"],
+    ["review", "cc/claude-opus-5", "high"], ["difficult", "cc/claude-opus-5", "xhigh"],
+    ["decision", "cc/claude-opus-5", "max"],
   ]) {
     const route = routeDelivery({ role, taskId, completionCheck });
     assert.equal(route.model, model);
@@ -35,7 +35,7 @@ test("no gpt/Codex model and no unqualified alias can route on any model-bearing
     for (const model of [
       "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-6-astra", "cc/gpt-6-astra",
       "claude-opus-5", "claude-fable-5-1", "claude-sonnet-5", "claude-haiku-4-5",
-      "cc/claude-haiku-4-5", "opus", "fable", "sonnet", "cc/",
+      "cc/claude-haiku-4-5", "cc/claude-fable-5-1", "opus", "fable", "sonnet", "cc/",
     ]) {
       assert.throws(() => routeDelivery({ role, taskId, completionCheck, model, effort: "high",
         reason: "routes must stay on the verified 9router Claude IDs" }), `${role}/${model}`);
@@ -45,7 +45,7 @@ test("no gpt/Codex model and no unqualified alias can route on any model-bearing
   }
 });
 test("supported gateway efforts are low..max, Ultra is rejected, explicit Max needs owner selection", () => {
-  for (const model of ["cc/claude-opus-5", "cc/claude-fable-5-1", "cc/claude-sonnet-5"]) {
+  for (const model of ["cc/claude-opus-5", "cc/claude-sonnet-5"]) {
     for (const effort of ["low", "medium", "high", "xhigh"]) {
       const route = routeDelivery({ role: "implement", taskId, completionCheck, model, effort,
         reason: "bounded native Claude implementation" });
@@ -63,9 +63,9 @@ test("builds and tests do not invoke a model; overrides require exact selection 
     assert.throws(() => routeDelivery({ role, taskId, completionCheck, model: "cc/claude-opus-5", effort: "max", reason: "owner", selection: "owner" }));
   }
   assert.equal(routeDelivery({ role: "decision", taskId, completionCheck }).selection, "role-policy");
-  assert.throws(() => routeDelivery({ role: "review", taskId, completionCheck, model: "cc/claude-fable-5-1", effort: "max" }));
-  assert.throws(() => routeDelivery({ role: "review", taskId, completionCheck, model: "cc/claude-fable-5-1", effort: "max", reason: "just because" }));
-  assert.throws(() => routeDelivery({ role: "decision", taskId, completionCheck, model: "cc/claude-fable-5-1", effort: "max", reason: "decision escalation" }));
+  assert.throws(() => routeDelivery({ role: "review", taskId, completionCheck, model: "cc/claude-opus-5", effort: "max" }));
+  assert.throws(() => routeDelivery({ role: "review", taskId, completionCheck, model: "cc/claude-opus-5", effort: "max", reason: "just because" }));
+  assert.throws(() => routeDelivery({ role: "decision", taskId, completionCheck, model: "cc/claude-opus-5", effort: "max", reason: "decision escalation" }));
   assert.throws(() => routeDelivery({ role: "review", taskId, completionCheck, model: "not-a-model", effort: "high", reason: "test" }));
   assert.throws(() => routeDelivery({ role: "unknown", taskId, completionCheck }));
   assert.throws(() => routeDelivery({ role: "review", taskId }));

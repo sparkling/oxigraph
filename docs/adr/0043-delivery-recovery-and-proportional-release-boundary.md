@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **Date**: 2026-09-07
 - Updated: 2026-09-22
-- Latest amendment: restore Claude-only ordinary delivery via 9router; preserve historical execution identities.
+- Latest amendment: Opus replaces Fable for review, difficult work and decisions (owner, 2026-09-23); preserve historical execution identities.
 - Correction (2026-09-22): the amendment's "application work remains paused" sentence described its own setup moment; the owner has since explicitly resumed application work, and it is not a standing stop order.
 - Deciders: Oxigraph parity programme
 - Implementation status: R1 source handoff `aa7128bb` is delivered. Ordinary
@@ -272,16 +272,21 @@ this correction and continue to apply.
 | Builds, tests, format checks and exact comparisons | Deterministic tools through the harness | No model |
 | Bounded implementation and focused test authoring | `cc/claude-opus-5` | `xhigh` |
 | Documentation and narrow extraction | `cc/claude-opus-5` | `low` |
-| Independent review | `cc/claude-fable-5-1` | `high` |
-| Difficult implementation | `cc/claude-fable-5-1` | `xhigh` |
-| Consequential decisions and programme coordination | `cc/claude-fable-5-1` | `max` |
+| Independent review | `cc/claude-opus-5` | `high` |
+| Difficult implementation | `cc/claude-opus-5` | `xhigh` |
+| Consequential decisions and programme coordination | `cc/claude-opus-5` | `max` |
+
+Owner, 2026-09-23: Opus replaces Fable for review, difficult implementation and
+decisions. `cc/claude-fable-5-1` is removed from the admitted route set in
+`src/delivery.mjs`, so it can no longer be selected as a default or override.
+Historical Fable executions keep their recorded identities.
 
 These are the original role/model/effort choices in `65cb324a` (2026-09-15),
 which `7a460f6f` replaced with mixed routing on 2026-09-19. The `cc/` prefix
 selects the owner-authorized 9router subscription provider, whose catalogue
 exposes these exact IDs. Unlike the original temporary configuration, ordinary
 routes now reject explicit Codex overrides and Codex contributors. Exact
-`cc/claude-sonnet-5`, Opus and Fable overrides remain admissible with a reason,
+`cc/claude-sonnet-5` and Opus overrides remain admissible with a reason,
 effort and observable completion check. Default decision/Max is allowed;
 explicit Max overrides require owner or unresolved selection. Ultra and
 unqualified model IDs are not admitted. No provider API key, automatic model

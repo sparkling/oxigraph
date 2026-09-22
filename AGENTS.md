@@ -22,12 +22,12 @@ for their full lifetime; the current delivery wrapper does not enforce that lock
 Use configured task-specific model defaults, escalating concrete hard decisions.
 On 2026-09-22 the owner restored Claude-only programme execution through the
 configured 9router Claude subscription connection, superseding the 2026-09-20
-Codex coordinator selection. Use native Claude Code with exact `cc/` model IDs:
-`cc/claude-fable-5-1` / `max` for coordination and decisions,
-`cc/claude-opus-5` / `xhigh` for implementation, Opus / `low` for documentation,
-Fable / `high` for review and Fable / `xhigh` for difficult work. These restore
-the role choices in `65cb324a`; the prefix selects the configured subscription
-route. Do not dispatch Codex workers or contributors for this programme.
+Codex coordinator selection. Use native Claude Code with exact `cc/` model IDs.
+On 2026-09-23 the owner replaced Fable with Opus in the harness, so every
+model-bearing role now uses `cc/claude-opus-5`: `max` for coordination and
+decisions, `xhigh` for implementation and difficult work, `low` for
+documentation and `high` for review. Fable is no longer an admitted route. The
+prefix selects the configured subscription route. Do not dispatch Codex workers or contributors for this programme.
 The Claude coordinator owns sequencing, allocation and acceptance; root remains
 the sole source writer and engineering-workflow host. Select worker and reviewer
 routes independently. This setup change does not resume paused application work.

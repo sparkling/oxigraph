@@ -14,20 +14,20 @@ import { scrubbedChildEnvironment } from "../../child-environment.mjs";
 
 export const repository = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../.."));
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
-// Restore 65cb324a's Claude roles through the configured 9router subscription
-// (owner, 2026-09-22). Only exact cc/ model IDs are admitted for new delivery.
+// Claude roles through the configured 9router subscription. Owner, 2026-09-23:
+// Opus replaces Fable for review, difficult work and decisions. Only exact cc/
+// model IDs are admitted for new delivery; Fable is no longer an admitted route.
 const roles = Object.freeze({
   build: [null, null],
   test: [null, null],
   implement: ["cc/claude-opus-5", "xhigh"],
   documentation: ["cc/claude-opus-5", "low"],
-  review: ["cc/claude-fable-5-1", "high"],
-  difficult: ["cc/claude-fable-5-1", "xhigh"],
-  decision: ["cc/claude-fable-5-1", "max"],
+  review: ["cc/claude-opus-5", "high"],
+  difficult: ["cc/claude-opus-5", "xhigh"],
+  decision: ["cc/claude-opus-5", "max"],
 });
 const efforts = {
   "cc/claude-opus-5": ["low", "medium", "high", "xhigh", "max"],
-  "cc/claude-fable-5-1": ["low", "medium", "high", "xhigh", "max"],
   "cc/claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
 };
 

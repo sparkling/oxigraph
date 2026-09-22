@@ -104,8 +104,9 @@ model/effort and `error`; the controller stops without substituting a model.
 
 ### Native parallel contributors
 
-The programme coordinator uses native Claude Code `cc/claude-fable-5-1` / `max`,
-following the owner's 2026-09-22 Claude-only restoration. Root services the
+The programme coordinator uses native Claude Code `cc/claude-opus-5` / `max`,
+following the owner's 2026-09-22 Claude-only restoration and 2026-09-23 Opus
+selection. Root services the
 workflow bridge and applies reviewed proposals. At the next authorized programme
 start, record the actual Claude session ID in the live `programmeCoordinator`
 field; never relabel a historical Codex session. Worker and reviewer defaults
@@ -273,11 +274,10 @@ Legacy build instructions remain recipes to pass through this entry point.
 
 Model roles are executable policy in `src/delivery.mjs`: no model for build/test;
 `cc/claude-opus-5` / `xhigh` for implementation, Opus / `low` for documentation,
-`cc/claude-fable-5-1` / `high` for review, Fable / `xhigh` for difficult work,
-and Fable / `max` for decisions and programme coordination. These restore the
-role/model/effort choices from `65cb324a`, superseding mixed routing introduced
-by `7a460f6f`. The `cc/` prefix selects the owner's 9router Claude subscription.
-Exact `cc/claude-sonnet-5`, `cc/claude-opus-5`, and `cc/claude-fable-5-1`
+Opus / `high` for review, Opus / `xhigh` for difficult work, and Opus / `max`
+for decisions and programme coordination. The owner replaced Fable with Opus on
+2026-09-23; `cc/claude-fable-5-1` is no longer admitted. The `cc/` prefix selects the owner's 9router Claude subscription.
+Exact `cc/claude-sonnet-5` and `cc/claude-opus-5`
 overrides support `low` through `max`; explicit overrides need a reason and
 completion check. Explicit Max overrides also require `--selection owner` or
 `--selection unresolved`; the default decision/Max route needs no override.

@@ -286,7 +286,7 @@ test("spec role overrides reject Codex and unqualified models before any host re
   }
   assert.doesNotThrow(() => validateWorkflow({ ...spec,
     implement: { model: "cc/claude-sonnet-5", effort: "high", reason: "bounded harness edit" },
-    review: { model: "cc/claude-fable-5-1", effort: "max", reason: "owner-selected review", selection: "owner" } }));
+    review: { model: "cc/claude-opus-5", effort: "max", reason: "owner-selected review", selection: "owner" } }));
 });
 
 test("native worker stages carry the gateway-qualified role defaults", async () => {
@@ -297,22 +297,22 @@ test("native worker stages carry the gateway-qualified role defaults", async () 
   assert.equal(result.status, "ready-for-owner-review");
   assert.deepEqual(routes.map(({ role, model, effort }) => [role, model, effort]), [
     ["implement", "cc/claude-opus-5", "xhigh"],
-    ["review", "cc/claude-fable-5-1", "high"],
+    ["review", "cc/claude-opus-5", "high"],
   ]);
   assert.deepEqual(routes[0].nativeDispatch, { provider: "claude", model: "cc/claude-opus-5", effort: "xhigh" });
-  assert.deepEqual(routes[1].nativeDispatch, { provider: "claude", model: "cc/claude-fable-5-1", effort: "high" });
+  assert.deepEqual(routes[1].nativeDispatch, { provider: "claude", model: "cc/claude-opus-5", effort: "high" });
 });
 
 test("explicit contributor effort selection remains available without changing aggregate route", async () => {
   const f = setup();
   const host = attributedHost(f, (result, request) => {
     if (request.payload.route.role === "implement") result.contributors = [contributor("selected", [], {
-      model: "cc/claude-fable-5-1", effort: "max", selection: "owner", reason: "Owner-selected invariant analysis",
+      model: "cc/claude-opus-5", effort: "max", selection: "owner", reason: "Owner-selected invariant analysis",
     })];
   });
   const result = await runWorkflow(spec, host, f.io);
   assert.ok(result.implementationWorkerIds.includes("selected"));
-  assert.equal(result.review.model, "cc/claude-fable-5-1");
+  assert.equal(result.review.model, "cc/claude-opus-5");
 });
 
 test("delegated proposals do not relax global source stability", async () => {
