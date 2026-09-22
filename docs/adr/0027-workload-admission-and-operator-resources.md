@@ -1210,10 +1210,12 @@ specifies for an early-dropped iterator. Making it deterministic needs the
 response writer to route a write-side transport failure into the lease's
 cancellation token.
 
-Verified on clean committed source at `6c1463ee`: CLI suite 456 passed / 0
-failed / 2 ignored (`run-JTIX2d`); Clippy compared against both recorded
-baselines, whose stderr hashes match the ones on record, at `run-GX9e5d`
-(default) and `run-tDOnTy` (no-default-features); the two applicable spareval
+Verified on clean committed source at `96d1370f`: CLI suite 456 passed / 0
+failed / 2 ignored (`run-s4AL08`); Clippy compared against both recorded
+baselines, whose stderr hashes match the ones on record, at `run-QG2srf`
+(default) and `run-50ZlZ3` (no-default-features). Earlier receipts at
+`6c1463ee` (`run-JTIX2d`, `run-GX9e5d`, `run-tDOnTy`) gave the same results and
+are kept as history; the two applicable spareval
 fuzz targets without a crash: `run-rktpZc` (`sparql_update_eval`, 11382 runs, about 4100
 mutations beyond its seed corpus) is a genuine one-minute run, but `run-tSYzGW`
 (`sparql_query_eval`) spent its budget replaying a 14199-file seed corpus, with a
