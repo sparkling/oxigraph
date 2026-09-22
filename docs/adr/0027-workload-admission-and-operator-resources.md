@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-10
+- Updated: 2026-09-22 — cancellation-latency histogram delivered in `4617d33e`; still Proposed, G4.2 still open
 - Deciders: Oxigraph parity programme
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
@@ -1173,3 +1173,43 @@ promotion consumer, not a G4.2 implementation prerequisite: G4.2 consumes its
 bounded observations and must close before a readiness profile advertises
 these workload guarantees. This ADR remains Proposed until G4.2's staged
 evaluators and numeric baseline exist.
+
+## Cancellation-latency instrumentation delivered (2026-09-22)
+
+Commit `4617d33e` applies the G4.2 instrumentation slice. It closes the
+"cancellation latency is not instrumented at all" clause of item 4 by adding a
+sixth admission family, `oxigraph_admission_cancellation_latency_seconds`: a
+cumulative histogram over the same eight decade buckets as queue wait, labelled
+by the two fixed pools and the two fixed reasons `cancelled` and `timed_out`.
+The exported admission exposition is therefore six families and exactly 100
+samples, which the suite asserts directly rather than by description.
+
+Measurement boundary, stated conservatively: latency runs from the first
+cancellation signal to the final admitted lease release observation. It bounds
+request lifetime and does not claim exact evaluator stop, thread preemption,
+rollback completion, socket close, or the lifetime of independently retained
+cancellation clones. Requests cancelled before admission record no sample, by
+design. The label vocabulary stays fixed, so no class, principal or policy
+identity is exported.
+
+One behaviour this slice does **not** deliver, recorded so the plan does not
+overstate it: a transport reset arriving mid-response is still not converted
+into a query cancellation. `AdmissionAbort` is the only transport-failure probe
+and every observation of it is on the admission path; oxhttp documents that its
+clones become inert once the admission hook returns and "cannot monitor active
+work". The test for that behaviour is committed with its assertion intact and
+`#[ignore]`d with that reason. Closing it needs a response-lifetime abort signal
+and a cancellation checkpoint in the response writer.
+
+Verified on clean committed source: CLI suite 456 passed / 0 failed / 2 ignored
+(`run-a9Fxne`); Clippy compared against both recorded baselines, normalized by
+(file, lint) rather than raw counts, with zero new diagnostics in default
+(`run-gGyUZH`) and no-default-features (`run-nEGXmR`) configurations; the two
+applicable spareval fuzz targets clean at `run-tSYzGW` (14200 runs) and
+`run-rktpZc` (11382 runs).
+
+This ADR stays **Proposed**. Numeric defaults, regression ceilings, the
+feature matrix, independent review of this application, the ignored 1/4/16 demo
+drill and any calibration against real production load remain outstanding, and
+G4.2 remains open until those are done and accepted.
+
