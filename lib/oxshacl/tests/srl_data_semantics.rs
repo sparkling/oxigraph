@@ -261,3 +261,37 @@ fn not_data_over_a_rule_head_predicate_is_not_a_recursive_dependency() {
     assert_inferred(&execution, "x3", "distanceMiles", "twenty");
     assert_inferred(&execution, "x3", "distanceKm", "derived");
 }
+
+#[test]
+fn where_data_rules_contribute_no_dependency_edges() {
+    // `WHERE DATA` pins the whole body to the frozen data graph, including a
+    // plain nested `NOT`. Such a rule therefore cannot depend on any rule's
+    // output, and stratification must not treat its nested negation as a
+    // dependency on the head it happens to share a predicate with.
+    //
+    // This is the dependency shape of upstream `eval-dft-value-where-01.srl`.
+    let rules = SrlRuleSet::parse(
+        concat!(
+            "PREFIX : <http://example/> ",
+            "RULE { :x3 :distanceMiles :twenty } WHERE {} ",
+            "RULE { ?x :distanceKm :derived } WHERE DATA { ",
+            "  ?x :distanceMiles ?miles . ",
+            "  NOT { ?x :distanceKm ?km } ",
+            "}",
+        ),
+        None,
+        profiles(),
+    )
+    .unwrap();
+
+    assert!(
+        rules.stratification().is_ok(),
+        "a WHERE DATA rule must not create a closed self-dependency",
+    );
+
+    // The rule reads GD only. With an empty base its body matches nothing, so
+    // it derives nothing, while the ordinary seeding rule still fires.
+    let execution = execute_srl_rules(&rules, &base(&[]), &ValidationOptions::default()).unwrap();
+    assert_inferred(&execution, "x3", "distanceMiles", "twenty");
+    assert_not_inferred(&execution, "x3", "distanceKm", "derived");
+}

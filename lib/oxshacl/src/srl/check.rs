@@ -392,6 +392,13 @@ pub(super) fn stratify(rule_set: &SrlRuleSet) -> Result<SrlStratification, SrlEr
         .collect::<Vec<_>>();
     let mut edges = Vec::new();
     for (consumer_index, consumer) in rules.iter().enumerate() {
+        // `WHERE DATA` pins every element of the body to the frozen data graph
+        // GD, including any plain nested `NOT`. No rule head can write GD, so
+        // such a rule depends on no other rule's output and contributes no
+        // dependency edges at all.
+        if consumer.data_only {
+            continue;
+        }
         let run_once = is_run_once(consumer);
         let body = expand_body_patterns(&consumer.body, &format!("r{consumer_index}"))?;
         for (pattern, negative) in body_patterns(&body) {
