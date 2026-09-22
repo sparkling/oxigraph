@@ -1202,8 +1202,14 @@ and does turn a reset into a lease cancellation, as the non-ignored
 proves. The real limitation is narrower. That monitor is best-effort because
 `SO_ERROR` is consuming, and on a streaming read the response writer usually
 consumes the error first. The lease is then released without a cancellation
-signal and no `data`/`cancelled` latency sample is recorded. Observed on
-2026-09-23: one pass in six runs of the streaming-reset test. That test is
+signal and no `data`/`cancelled` latency sample is recorded. A receipted series
+of ten clean-tree harness runs of the streaming-reset test at `7593639c` gave 4
+passes (`run-mqKKBb`, `run-3Vh7ea`, `run-gO2ZHi`, `run-QvkQhP`), 5 runs with no
+`data`/`cancelled` sample (`run-FLkwzT`, `run-QHntt8`, `run-NybPQW`,
+`run-URYNkH`, `run-UNloET`), and 1 run where the query observation did not end
+within ten seconds (`run-t8vJ2x`). The stall is not explained by the SO_ERROR
+race, which loses the sample rather than stalling, and is an open defect. An
+earlier "one in six" figure came from unreceipted runs and is withdrawn. That test is
 committed `#[ignore]`d with this reason and with its expected Store outcome
 corrected to `abandoned`, which is what the evaluation-metrics contract
 specifies for an early-dropped iterator. Making it deterministic needs the
@@ -1215,8 +1221,8 @@ failed / 2 ignored (`run-s4AL08`); Clippy compared against both recorded
 baselines, whose stderr hashes match the ones on record, at `run-QG2srf`
 (default) and `run-50ZlZ3` (no-default-features). Earlier receipts at
 `6c1463ee` (`run-JTIX2d`, `run-GX9e5d`, `run-tDOnTy`) gave the same results and
-are kept as history; the two applicable spareval
-fuzz targets without a crash: `run-rktpZc` (`sparql_update_eval`, 11382 runs, about 4100
+are kept as history. Both applicable spareval fuzz targets ran without a crash,
+but only one is mutation evidence: `run-rktpZc` (`sparql_update_eval`, 11382 runs, about 4100
 mutations beyond its seed corpus) is a genuine one-minute run, but `run-tSYzGW`
 (`sparql_query_eval`) spent its budget replaying a 14199-file seed corpus, with a
 234 s slow unit and RSS growing to about 1.2 GB, so it is corpus-replay evidence,

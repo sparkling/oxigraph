@@ -5542,9 +5542,12 @@ fn workload_active_reset_cancels_update_before_commit_and_survives_restart() -> 
 /// consume an error before this best-effort observer sees it". On a streaming
 /// read the response writer usually hits the reset first, so the lease is
 /// released without a cancellation signal and no latency sample is recorded.
-/// Observed on 2026-09-23 at `ca183bf1`: one pass in six runs; four runs with no
-/// `data`/`cancelled` sample, and one where the query observation did not end
-/// within ten seconds. That last case is unexplained and is recorded as open.
+/// A receipted series of ten clean-tree harness runs at `7593639c`
+/// (`run-FLkwzT` .. `run-UNloET`, listed in ADR-0027) gave 4 passes, 5 runs
+/// with no `data`/`cancelled` sample, and 1 run (`run-t8vJ2x`) where the query
+/// observation did not end within ten seconds. That stall is not explained by
+/// the SO_ERROR race, which would lose the sample rather than stall, and is
+/// recorded as an open defect.
 ///
 /// Making this deterministic needs the response writer to route a write-side
 /// transport failure into the lease's cancellation token. Do not satisfy the
@@ -5552,7 +5555,7 @@ fn workload_active_reset_cancels_update_before_commit_and_survives_restart() -> 
 /// no request deadline so that a `timed_out` sample would itself be a failure.
 #[cfg(target_os = "linux")]
 #[test]
-#[ignore = "best-effort transport observer races the response writer for SO_ERROR; nondeterministic (1/6 passes)"]
+#[ignore = "nondeterministic: best-effort transport observer races the response writer for SO_ERROR; see ADR-0027"]
 fn workload_streaming_query_reset_records_a_data_cancellation_and_frees_the_slot() -> Result<()> {
     let running = start_with_workload_entailment_and_store_setup(
         &config(),
