@@ -2947,6 +2947,55 @@ test("E3 rejects missing, truncated, and swapped D N evidence", async () => {
   }
 });
 
+test("E3 rejects a dirty or wrong-revision candidate checkout", async () => {
+  const dirty = await oracleClauseAuditFixture();
+  const wrongRevision = await oracleClauseAuditFixture();
+  try {
+    const dirtyCheckout = resolve(
+      dirty.root,
+      `target/w3c/shacl-1.2/data-shapes-${candidateShaclRevision.suiteCommit.slice(0, 12)}`,
+    );
+    writeFileSync(resolve(dirtyCheckout, "intruder.txt"), "tampered\n");
+    const dirtyResult = verifyShaclCandidateArtifacts(dirty.root, {
+      receiptRef: dirty.receiptRef,
+      expectedImplementationCommit: oracleImplementation,
+    });
+    assert.equal(dirtyResult.ok, false);
+    assert(
+      dirtyResult.errors.includes(
+        "candidate clause-audit checkout is not clean",
+      ),
+    );
+
+    const wrongCheckout = resolve(
+      wrongRevision.root,
+      `target/w3c/shacl-1.2/data-shapes-${candidateShaclRevision.suiteCommit.slice(0, 12)}`,
+    );
+    oracleGit(wrongCheckout, ["config", "user.name", "Oxigraph Oracle"]);
+    oracleGit(wrongCheckout, ["config", "user.email", "oracle@example.invalid"]);
+    const strayTree = oracleGit(wrongCheckout, ["hash-object", "-w", "-t", "tree", "--stdin"], "");
+    const strayCommit = oracleGit(wrongCheckout, [
+      "-c",
+      "commit.gpgsign=false",
+      "commit-tree",
+      strayTree.trim(),
+      "-m",
+      "test: wrong candidate revision",
+    ]).trim();
+    assert.notEqual(strayCommit, candidateShaclRevision.suiteCommit);
+    oracleGit(wrongCheckout, ["update-ref", "HEAD", strayCommit]);
+    const wrongResult = verifyShaclCandidateArtifacts(wrongRevision.root, {
+      receiptRef: wrongRevision.receiptRef,
+      expectedImplementationCommit: oracleImplementation,
+    });
+    assert.equal(wrongResult.ok, false);
+  } finally {
+    for (const fixture of [dirty, wrongRevision]) {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  }
+});
+
 test("E3 rejects ref, path, byte, and source drift", async () => {
   const ref = await oracleClauseAuditFixture({
     mutateReceipt: (receipt) => {
