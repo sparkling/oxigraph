@@ -1201,12 +1201,32 @@ work". The test for that behaviour is committed with its assertion intact and
 `#[ignore]`d with that reason. Closing it needs a response-lifetime abort signal
 and a cancellation checkpoint in the response writer.
 
-Verified on clean committed source: CLI suite 456 passed / 0 failed / 2 ignored
-(`run-a9Fxne`); Clippy compared against both recorded baselines, normalized by
-(file, lint) rather than raw counts, with zero new diagnostics in default
-(`run-gGyUZH`) and no-default-features (`run-nEGXmR`) configurations; the two
-applicable spareval fuzz targets clean at `run-tSYzGW` (14200 runs) and
-`run-rktpZc` (11382 runs).
+Verified on clean committed source at `6c1463ee`: CLI suite 456 passed / 0
+failed / 2 ignored (`run-JTIX2d`); Clippy compared against both recorded
+baselines, whose stderr hashes match the ones on record, at `run-GX9e5d`
+(default) and `run-tDOnTy` (no-default-features); the two applicable spareval
+fuzz targets clean at `run-tSYzGW` (14200 runs) and `run-rktpZc` (11382 runs).
+
+Clippy result stated precisely, because an earlier wording of it was wrong:
+this slice adds **three** diagnostics in each feature configuration (223 -> 226
+default, 183 -> 186 no-default), not zero. It adds no new lint class. All three
+are in `cli/src/workload/tests.rs` and come from two deliberately added
+`panic!` calls -- a bounded monotonic-clock guard, and the intentional mutex
+poison that the new metrics-poisoning test requires -- one of which trips both
+the `panic` and the `panic!()-in-a-Result-function` lints. The panic-lint sites
+in that file go from 14 to 17, which is how the attribution was checked. An
+earlier (file, lint) normalization reported only two increases and hid the
+third, because two lints fire on one added line; per-target counts are the
+honest check.
+
+Independent Fable/high review of the application (session
+`5a1d019d-4285-4288-8fc2-e839a96fc4db`) returned **REJECT**, on evidence rather
+than on code. It verified the code itself -- `histogram_delta` semantics
+preserved, the spareval cancellation signal sound, the `#[ignore]` a documented
+deferral rather than a weakened assertion -- and rejected two evidence defects:
+the first receipts were produced on a dirty tree at the parent commit, and the
+"no new Clippy diagnostics" claim was false. Both were confirmed and are
+corrected above. The change has not been re-reviewed since.
 
 This ADR stays **Proposed**. Numeric defaults, regression ceilings, the
 feature matrix, independent review of this application, the ignored 1/4/16 demo
