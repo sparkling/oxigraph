@@ -249,6 +249,26 @@ test("Cargo safeguard rejects duplicate and nonterminal summaries", () => {
   }
 });
 
+test("Cargo safeguard treats only the exact merged-doctest trailer as non-terminal output", () => {
+  const summary =
+    "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s";
+  const policy = { minimumPassedTests: 2, expectedPassedTests: 2, expectedCargoSummaryCount: 1 };
+  const accepted = applyCommandSafeguards({
+    stdoutTail: `${summary}\n\nall doctests ran in 3.03s; merged doctests compilation took 2.91s\n`,
+    stderrTail: "",
+  }, policy);
+  assert.equal(accepted.testSafeguard.observed.terminal, true);
+  assert.equal(accepted.testSafeguard.passed, true);
+  for (const trailer of [
+    "all doctests ran in 3.03s",
+    "all doctests ran in 3.03s; merged doctests compilation took 2.91s; extra",
+    "note: all doctests ran in 3.03s; merged doctests compilation took 2.91s",
+  ]) {
+    const rejected = applyCommandSafeguards({ stdoutTail: `${summary}\n${trailer}`, stderrTail: "" }, policy);
+    assert.equal(rejected.testSafeguard.passed, false, trailer);
+  }
+});
+
 test("Cargo safeguard accepts a reviewed terminal multi-summary shape", () => {
   const result = applyCommandSafeguards(
     {

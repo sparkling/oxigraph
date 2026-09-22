@@ -160,7 +160,7 @@ export async function execute(program, args, options = {}) {
       stream,
       text,
       (line) => {
-        if (line.length > 0) {
+        if (line.length > 0 && !isMergedDoctestTrailer(line)) {
           cargoTestScan.sequence[stream] += 1;
           cargoTestScan.lastNonemptySequence[stream] =
             cargoTestScan.sequence[stream];
@@ -503,7 +503,7 @@ function cargoObservationFromTails(result) {
   ];
   const nonemptyStdout = stdout
     .split(/\r?\n/u)
-    .filter((line) => line.length > 0);
+    .filter((line) => line.length > 0 && !isMergedDoctestTrailer(line));
   const terminalLine = nonemptyStdout.at(-1) ?? "";
   return normalizeCargoTestObservation(
     summaries,
@@ -513,6 +513,17 @@ function cargoObservationFromTails(result) {
 }
 
 export { parseNodeTestSummary };
+
+// rustdoc's merged doctests (edition 2024) print one timing trailer after the
+// final `test result:` line, e.g. "all doctests ran in 3.03s; merged doctests
+// compilation took 2.91s". It carries no outcome, so it must not make an
+// otherwise terminal summary look non-terminal. Only this exact shape is
+// ignored; any other trailing output still fails terminality.
+const mergedDoctestTrailer =
+  /^all doctests ran in [0-9]+(?:\.[0-9]+)?s; merged doctests compilation took [0-9]+(?:\.[0-9]+)?s$/u;
+function isMergedDoctestTrailer(line) {
+  return mergedDoctestTrailer.test(line);
+}
 
 export function applyCommandSafeguards(result, policy) {
   if (policy.expectedNodeTests !== undefined) {
