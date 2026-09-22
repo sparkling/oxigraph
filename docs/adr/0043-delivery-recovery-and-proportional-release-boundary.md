@@ -4,6 +4,7 @@
 - **Date**: 2026-09-07
 - Updated: 2026-09-22
 - Latest amendment: restore Claude-only ordinary delivery via 9router; preserve historical execution identities.
+- Correction (2026-09-22): the amendment's "application work remains paused" sentence described its own setup moment; the owner has since explicitly resumed application work, and it is not a standing stop order.
 - Deciders: Oxigraph parity programme
 - Implementation status: R1 source handoff `aa7128bb` is delivered. Ordinary
   product work follows the implemented native-host workflow below; the wider
@@ -254,8 +255,17 @@ Current policy (owner, 2026-09-22): all programme coordination, implementation,
 analysis, documentation, review and delegated contributions use native Claude
 Code through the configured 9router Claude subscription connection. This
 supersedes earlier Codex selections and mixed-provider recommendations for new
-work. Application work remains paused until explicitly resumed; this amendment
-changes orchestration setup only.
+work. That amendment changed orchestration setup only.
+
+Its original sentence, "application work remains paused until explicitly
+resumed", described the setup moment at which it was written and is no longer
+current: the owner explicitly resumed application work in the same session, and
+the resumption is recorded in
+`docs/handover/2026-09-22-codex-to-claude-programme-handover.md`. Ordinary
+delivery has since continued under this ADR's own workflow. Do not read that
+sentence as a standing stop order. The separate G1.7, protected-qualification,
+promotion, publication, deployment and remote-push boundaries are unaffected by
+this correction and continue to apply.
 
 | Work | Exact 9router model | Effort |
 | --- | --- | --- |
