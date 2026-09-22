@@ -5,8 +5,13 @@
 - Latest completed product task: `task-1789897660043-nyiwp5` (SHACL
   expected-predicate lifecycle, `85580fc9`, 2026-09-20), following Core value
   union/default semantics in `6c317a9a`. The exact harness adapter is delivered
-  in `2b2de51b`. Next: candidate evidence tooling, ground DATA and BNODE
-  semantics, clause mappings, then the reviewed ordinary suite execution.
+  in `2b2de51b`. Corrected 2026-09-22: the work this line previously listed as
+  "Next" has since been delivered -- complete ground SRL DATA materialization in
+  `2e63c692`, SRL BNODE identity and RDF term transport in `f706742b`, candidate
+  suite evidence contracts in `049e81c9`, and candidate clause evidence
+  contracts in `899a2d0c` with their verifier-side checkout test in `8d71c036`.
+  Do not reimplement it. Next: the nine unimplemented engine features that the
+  first candidate suite execution surfaced, recorded below.
 - Scope: current execution/acceptance projection, not a replacement for the two
   [parity](persistence-write-and-linked-data-parity-plan.md) and
   [evolution](linked-data-store-evolution-harness-plan.md) scope catalogues.
@@ -60,8 +65,16 @@ review accepted the full change; exact MCP evidence readback preceded commit.
 The one-pass layer-start derivation and conservative shared-reifier refusal
 remain explicit limits, not complete inference-language conformance.
 
-Remaining: the reviewed suite evidence transition and complete ground DATA
-materialization and BNODE evaluation under ADR-0046. Inline DATA
+Corrected 2026-09-22: ground DATA materialization (`2e63c692`) and BNODE
+evaluation (`f706742b`) are delivered, as are the clause evidence contracts
+(`899a2d0c`, `8d71c036`). Remaining under ADR-0046 is the reviewed suite
+evidence transition, now blocked on nine selected-case failures from the first
+candidate suite execution (`run-VYL2oi`, 551 of 560 expected): three `validate`
+cases need a SHACL-declared function to be callable from inside `sh:select`
+text, and six `srlRules` cases need `NOT DATA`, `WHERE DATA` and `SET` in the
+SRL native lowering, which `srl/evaluate.rs` currently refuses as
+unimplemented. Diagnosis with source citations:
+`target/engineering-delivery/adr0046-e4/failure-diagnosis.json`. Inline DATA
 triple terms are unsupported even as objects, as the B+D fixture setup exposed.
 The accepted implementation candidate has 203 manifest-listed SRL cases, not the
 198 `.srl` files previously described as cases. No new pin is applied yet.

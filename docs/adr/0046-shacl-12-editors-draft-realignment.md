@@ -2,13 +2,22 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-19
+- **Updated**: 2026-09-22 — candidate clause evidence contracts delivered
+  (`899a2d0c`, `8d71c036`); first candidate suite execution recorded, nine
+  selected cases fail on unimplemented engine features.
 - Deciders: Oxigraph parity programme
 - Implementation status: DATA execution and fail-closed `sh:ruleProcessor`
   handling (A+C) delivered in `e9a285c8` on 2026-09-20. Body abbreviations and
   inference-rule layers/ordering (B+D) delivered in `6e933eea` the same day.
   Core value union/default semantics delivered in `6c317a9a`; expected-predicate
   layer lifecycle and scalar-expression absence handling delivered in `85580fc9`.
-  The reviewed suite evidence transition and smaller language gaps remain open. The
+  Candidate clause evidence contracts delivered in `899a2d0c` with their
+  verifier-side checkout test in `8d71c036`; their independent review returned
+  INCONCLUSIVE with one blocker still open, recorded below. The candidate suite
+  has now run for the first time: clause audit and Jena compact pass, the suite
+  command fails at 551 of 560 expected passes on nine unimplemented engine
+  features. The reviewed suite evidence transition and smaller language gaps
+  therefore remain open. The
   plan below is ordinary buildable work under
   [ADR-0044](0044-post-deployment-production-tuning.md), not a gated backlog.
 - **Related**:
@@ -455,6 +464,65 @@ source-stable workflow at a time. The exact local coordination decision is
 `target/engineering-delivery/adr0046-repin-research/coordinator-e-semantic-sequence.md`,
 SHA-256 `b5968effd6c3d968514e0f77e3f1b29394692aef2af962c08b7b4f055461f59f`.
 Historical pins, profiles, expected graphs and receipt validators remain intact.
+
+### Candidate clause mappings delivered; first candidate suite execution
+
+Candidate clause evidence contracts (E3) were delivered in `899a2d0c`, with the
+verifier-side checkout test that its oracle depends on added in `8d71c036`.
+Five defects found by the first actual validation of the applied candidate were
+repaired in candidate logic and its emulation: a grammar extractor that threw on
+the W3C EBNF `@terminals` section directive, an independent second copy of that
+extractor in the verifier, an oracle fixture that reused a deliberately-dirty
+checkout helper while expecting a clean one, a verifier that read
+`sourceStatus` from facets when that field belongs to the mapping, and a
+byte-drift test that did not restore artifact mtime before verifying. No
+fixture, exclusion, pin, digest or expected result was adjusted to turn a
+failure green. Verified at clean committed HEAD on Node 24.14.1 and Node 20.20.2,
+39/39, receipts `run-PH6dxc` and `run-Z1l0Pb`.
+
+Independent Fable/high review returned **INCONCLUSIVE**, not acceptance. It
+confirmed no pin was weakened, that the verifier still recomputes independently,
+and that drift detection is intact. One blocker it raised is closed: receipts are
+now bound to a clean committed HEAD. One remains open and is recorded here
+rather than resolved by weakening anything: the verifier's `git status` check
+cannot see `skip-worktree` index entries, and the E3 oracle relies on exactly
+that. Hardening the verifier to reject hidden entries was implemented and
+reverted, because the embedded corpus carries 704 of the pinned tree's 1127
+entries and supplies no blob for the other 423, so the fixture cannot present a
+complete clean checkout. Closing it needs either the full tree embedded or an
+explicit reviewed notion of a partial corpus.
+
+The candidate suite then ran for the first time, against committed source
+`899a2d0c`. Two of three commands pass: the clause audit (`run-AdTbwc`) reports
+9 documents, 233 clause candidates, 219 syntax rules, 153 grammar productions and
+38 obligation joins; the independent Jena compact comparison (`run-VSBRJs`)
+matches all 32 selected fixtures. The suite command itself fails (`run-VYL2oi`,
+exit 1) with **551 passed against 560 expected**. Inventory conservation holds
+exactly — 569 declared, 567 eligible, seven predeclared unsupported, two excluded
+— so the shortfall is in observed passes, not bookkeeping.
+
+The nine failures are unimplemented engine features, diagnosed against source in
+`target/engineering-delivery/adr0046-e4/failure-diagnosis.json`:
+
+- Three `validate` cases invoke a `sh:ListParameterExpressionFunction` from
+  inside user `sh:select` text. oxshacl evaluates such functions only via
+  `evaluate_node_function`, by textual substitution on the node-expression path;
+  no `QueryEvaluator` it builds registers a custom function, so the call cannot
+  resolve. `spareval` already offers `with_custom_function`, but its
+  `Fn(&[Term]) -> Option<Term>` signature has no dataset access, while these
+  function bodies must read the data graph.
+- Six `srlRules` cases use `NOT DATA`, `WHERE DATA` and `SET`. The SRL native
+  Datalog lowering in `srl/evaluate.rs` explicitly refuses these, returning
+  `SrlError::Unsupported` with the message "specified upstream (issue #960
+  resolved) but not yet implemented here".
+
+These are pre-existing gaps in the Rust engine, unrelated to the evidence
+tooling above. They are ordinary buildable work under ADR-0044, each its own
+slice. They have **not** been moved into the predeclared-unsupported or excluded
+sets: those are fixed by the readiness file, and a selected failure is a failure.
+Ordinary suite execution remains incomplete until they are implemented, and no
+qualification, promotion, conformance or publication claim follows from the two
+passing commands.
 
 ### Original investigation
 

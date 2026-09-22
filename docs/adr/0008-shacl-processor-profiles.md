@@ -2,6 +2,8 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-26
+- **Updated**: 2026-09-22 — scoped the recorded counts to the historical pin and
+  pointed at the in-progress candidate-pin evidence under ADR-0046.
 - Deciders: Oxigraph parity programme
 - Implementation status: dated feature-set processor implemented; complete
   SHACL 1.2 conformance requests fail closed
@@ -115,6 +117,13 @@ Apache Jena 6.1.0 independently passes the same 32 SHACL-C positive pairs.
 Exact counts and artifacts are recorded in the
 [conformance ledger](../research/conformance-ledger.json). Exclusions and
 unsupported cases never count as passes.
+
+These figures describe the **historical** pin `eedda09f` and are unchanged. A
+separate candidate pin `0ccfab4f` is being evaluated under
+[ADR-0046](0046-shacl-12-editors-draft-realignment.md) on its own revision and
+run paths. Its first suite execution on 2026-09-22 passed 551 of 560 expected
+selected cases, failing nine on unimplemented engine features, so it supports no
+conformance claim and does not amend anything below.
 
 The count is deliberately decomposed:
 
