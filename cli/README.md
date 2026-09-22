@@ -706,8 +706,8 @@ succeed. Startup failure exits the process and releases both listeners.
 - `GET`/`HEAD /metrics`: the same native observation as at most 21 fixed,
   label-free Prometheus text-format gauges, plus 89 bounded transaction samples
   and 154 bounded query/update samples plus 143 policy samples (at most 407 total).
-  A workload policy adds 60 admission and 56 operator-budget samples (at most
-  523 total), described below.
+  A workload policy adds 100 admission and 56 operator-budget samples (at most
+  563 total), described below.
   A storage-not-ready result remains
   HTTP 200 with `oxigraph_ready 0`; a clock-conversion failure is 503.
 
@@ -773,7 +773,7 @@ pre-commit Drop, unwinding, and standalone validation are excluded. The current
 CLI does not configure a SHACL policy, so those counters remain zero; zero is
 not a claim that validation or remote egress is enabled.
 
-With `--workload-policy`, five additional families observe admission:
+With `--workload-policy`, six additional families observe admission:
 
 - `oxigraph_admission_active` and `oxigraph_admission_queued`: current requests
   in the fixed `data` and `operator` pools.
@@ -782,12 +782,19 @@ With `--workload-policy`, five additional families observe admission:
   admission, global/class/operator refusal, unknown class, cancellation,
   request timeout, queue timeout and unavailability.
   Principal-cap refusals aggregate under existing `refused_class`; no principal
-  labels or additional series are exported (still 60 admission samples).
+  labels or additional series are exported (still 100 admission samples).
 - `oxigraph_admission_queue_wait_seconds`: cumulative wait histograms for each
   pool, with the same microsecond resolution and fixed buckets as transaction
   telemetry. Only attempts that entered the queue contribute, from enqueue to
   their terminal scheduling observation (or observation of unavailability).
   This can include time after another thread has purged the entry.
+- `oxigraph_admission_cancellation_latency_seconds`: cumulative histograms for
+  each pool and the two fixed reasons `cancelled` and `timed_out`, reusing the
+  same buckets. Latency runs from the first cancellation signal to the final
+  admitted lease release observation, so it is a request-lifetime bound, not a
+  claim of exact evaluator stop, thread preemption, rollback completion, socket
+  close, or the lifetime of independently retained cancellation clones. Requests
+  cancelled before admission record no sample.
 
 Counters are shared by controller clones and reset on restart/new controller;
 counts and sums saturate. These observations neither drive readiness nor claim
