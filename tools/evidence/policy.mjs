@@ -423,6 +423,1387 @@ export const expectedCandidateShacl = freezeCandidateContract({
   },
 });
 
+export const expectedCandidateClauseAudit = freezeCandidateContract({
+  "schema": "oxigraph.shacl-candidate-clause-audit/v1",
+  "hashes": {
+    "mappingRevision": "a83a2b9e511ea7c63934acb1e30d55f4967d50cf0b921c88b2317c391348639d",
+    "groupedRequirements": "c440145383354ad5b3b6a1655ae1fe423ac755b3f3d6fd79c43415eca62c8829",
+    "reviewedObligations": "20b00a0d637257d16a13e0cb480ed79b86933fb3f30e2caa32f074abef8ca521",
+    "residualClaims": "46f21e8957852eb7ba03e9611a28477d6f6933bc3d6fe5f31dc4f4828cfe7b92"
+  },
+  "counts": {
+    "mappings": 25,
+    "sourceFacets": 42,
+    "obligations": 38,
+    "residualClaims": 14,
+    "syntaxRules": {
+      "core": 113,
+      "nodeExpressions": 35,
+      "sparql": 46,
+      "inferenceRules": 25
+    },
+    "sparqlRlGrammarProductions": 153
+  },
+  "mappingRevision": {
+    "schema": "oxigraph.shacl-candidate-clause-mapping/v1",
+    "repository": "https://github.com/w3c/data-shapes.git",
+    "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+    "suiteContentSha256": "fa1ff95904600c553036123fd6eef66ad281a934830673ee7e9402b3257a3376",
+    "inventoryBinding": {
+      "schema": "oxigraph.shacl-candidate-inventory/v1",
+      "declarationProjection": {
+        "rows": 569,
+        "bytes": 235376,
+        "sha256": "25730098efb04ac9be0f853439843b7874784428ae712a73cc0d05bdcbc1909a"
+      }
+    },
+    "receiptBinding": {
+      "schema": "oxigraph.shacl-candidate-run/v1",
+      "kind": "clause-audit",
+      "auditArtifactSchema": "oxigraph.shacl-candidate-clause-audit/v1",
+      "completeConformance": false,
+      "qualified": false,
+      "promoted": false
+    },
+    "documents": {
+      "overview": {
+        "path": "shacl12-overview/index.html",
+        "sha256": "b6030ce909fa3364e9afb21a6c68fee9c5256a28b9bb8d0962023f7b5b5c67c8"
+      },
+      "core": {
+        "path": "shacl12-core/index.html",
+        "sha256": "295a3ef4a18471369e7605eb08558bfac0986919aa0e857339733604356506b9"
+      },
+      "nodeExpressions": {
+        "path": "shacl12-node-expr/index.html",
+        "sha256": "24be3d6a35983bb795f282da462b52583e6330e5452996187ded39e0080802ea"
+      },
+      "sparql": {
+        "path": "shacl12-sparql/index.html",
+        "sha256": "cae9dbeab7a626c131f4d99e6ad09b7a2cc46e1d8d7c4bfbbe4da1d529f878d8"
+      },
+      "sparqlRl": {
+        "path": "sparql12-rl/index.html",
+        "sha256": "524c7d69e61f926e5bf5e82b0019c088dfb6da950517eea9bb1673f47facbc74"
+      },
+      "inferenceRules": {
+        "path": "shacl12-inference-rules/index.html",
+        "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499"
+      },
+      "compact": {
+        "path": "shacl12-cs/index.html",
+        "sha256": "f6db1b05cd0201e7afb16dcc5b02c9306c7568cfbdf487b81c19ee14e34151cd"
+      },
+      "ui": {
+        "path": "shacl12-ui/index.html",
+        "sha256": "aeacbe7e229b41f0c533d2943ca5f73de0341c40dfa86f0caf4abf35d5ddaeea"
+      },
+      "profiling": {
+        "path": "shacl12-profiling/index.html",
+        "sha256": "0c74dd12c4d19be4601b91c3204a78353f1e6fc7204cc8adc02e1a3e8961b0cf"
+      }
+    },
+    "grammars": {
+      "sparqlRl": {
+        "path": "sparql12-rl/sparql-rl-grammar.bnf",
+        "sha256": "511e88cfa9e33f7d38ee9379bf77c0db56bacfbd5858b7b55b4ca7a39f237a9e"
+      },
+      "compact": {
+        "path": "shacl12-cs/SHACLC.g4",
+        "sha256": "d0ccc4594b88a19c021ae4a50719b35ff6f2eebc774f0187a4f8e02ecfbced04"
+      }
+    },
+    "retiredHistoricalRules": {
+      "path": "shacl12-rules/index.html",
+      "sha256": "45ef06db0d7df325171e877032774f989f96a22f96d2cc373755eda1dd514ad4",
+      "state": "deleted-at-candidate"
+    },
+    "candidateInventories": {
+      "coreSyntaxRules": 113,
+      "nodeExpressionSyntaxRules": 35,
+      "sparqlExtensionSyntaxRules": 46,
+      "inferenceRuleSyntaxRules": 25,
+      "sparqlRlGrammarProductions": 153
+    },
+    "movedSyntaxRuleIds": [
+      "RulesGraph",
+      "condition-node",
+      "construct-count",
+      "construct-datatype",
+      "deactivated-in",
+      "deactivated-maxCount",
+      "rule",
+      "rule-order-datatype",
+      "rule-order-maxCount",
+      "rule-type"
+    ],
+    "preservedDatedProfiles": [
+      "shacl-1.2-core-2026-07-23-subset-v1",
+      "shacl-1.2-node-expressions-2026-01-08-subset-v1",
+      "shacl-1.2-sparql-extensions-2026-01-30-subset-v1",
+      "shacl-1.2-rules-2026-07-27-subset-v1",
+      "shacl-1.2-compact-syntax-2025-10-30-subset-v1"
+    ],
+    "historicalExports": {
+      "requirementMappings": {
+        "export": "shaclRequirementMappings",
+        "sourcePath": "tools/shacl-tests/shacl-requirements.mjs",
+        "baselineSourceSha256": "f8fc2457ca04949047f704fe6bbac8cca9599ae47c4766945692a1eaa24e2b37"
+      },
+      "reviewedObligations": {
+        "export": "reviewedObligations",
+        "residualExport": "residualClaims",
+        "sourcePath": "tools/shacl-tests/clause-reviews.mjs",
+        "baselineSourceSha256": "70b8738d88d389320fbcea6e1c8d86f1853844eb30d7151384acf04e4f0a131a"
+      }
+    },
+    "ordinaryEvidenceCommits": {
+      "dataExecutionAndRuleProcessor": "e9a285c8217087a255072271f1bb444e70d43d32",
+      "bodyAbbreviationsAndRuleOrdering": "6e933eea37bd0f27660ee4a3471cdf11b910c949",
+      "coreValueUnion": "6c317a9a0448c9c92e6e47cf90e4434751b24a15",
+      "expectedPredicateLifecycle": "85580fc93f122565bdc0de48aef42a334174bb9e",
+      "candidateEvidenceContracts": "049e81c9fafa7aaf984808d48231e98ef56e6f46",
+      "completeGroundData": "2e63c6920a9c51e7b078d9a87c3070f6a8fb3978",
+      "srlBnode": "f706742b17e6674360c34cf6bdfc3b1b59ab59f3"
+    },
+    "acceptedSliceEvidence": {
+      "completeGroundData": {
+        "taskId": "task-1789908162318-haeyko",
+        "commit": "2e63c6920a9c51e7b078d9a87c3070f6a8fb3978",
+        "acceptanceArtifact": "target/engineering-delivery/adr0046-srl-data/accepted-EGzKud.json",
+        "acceptanceSha256": "39955651bc5bf1ecf071fff9c3fbf1df1dced2432861b3c3102ddbdbb989807f",
+        "workflowRunId": "e12bca4c-4d2c-48b3-8f13-d9fcfcf5c4c7",
+        "evidenceKey": "programme-task-evidence/workflow-e12bca4c-4d2c-48b3-8f13-d9fcfcf5c4c7",
+        "reviewArtifact": "target/engineering-delivery/adr0046-srl-data/accepted-EGzKud.json#reviewResponse",
+        "reviewSha256": "15e46e33100c48c15687d722a6b2fc73988fa5910da4d1bac79b88ae7c65079b"
+      },
+      "srlBnode": {
+        "taskId": "task-1789919062167-d1g7i1",
+        "commit": "f706742b17e6674360c34cf6bdfc3b1b59ab59f3",
+        "acceptanceArtifact": "target/engineering-delivery/adr0046-srl-bnode/accepted-8tVvxP.json",
+        "acceptanceSha256": "962baef59d23bc12cfa28421a437daa4d7ffa6fd1077cee5b08b72064b06ae9c",
+        "workflowRunId": "384d7494-7e95-49a0-8f71-442839b63a2c",
+        "evidenceKey": "programme-task-evidence/workflow-384d7494-7e95-49a0-8f71-442839b63a2c",
+        "reviewArtifact": "target/engineering-delivery/adr0046-srl-bnode/accepted-8tVvxP.json#artifactReferences[1]",
+        "reviewSha256": "0f5020e450a2a325700d226d946d90e656cd783441c5c1229d6bbb6da322fd4b"
+      }
+    },
+    "requiredBeforeAdoption": []
+  },
+  "mappings": [
+    {
+      "id": "SHACL12-OVERVIEW-INFORMATIVE",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "not-applicable-informative",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "not-applicable",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "overview-navigation",
+          "document": "overview",
+          "path": "shacl12-overview/index.html",
+          "sha256": "b6030ce909fa3364e9afb21a6c68fee9c5256a28b9bb8d0962023f7b5b5c67c8",
+          "anchors": [
+            "shacl-1.2",
+            "introduction"
+          ],
+          "interpretation": "Informative navigation only."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-CORE-SHAPES-GRAPH",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-subset",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "core-shapes-graph",
+          "document": "core",
+          "path": "shacl12-core/index.html",
+          "sha256": "295a3ef4a18471369e7605eb08558bfac0986919aa0e857339733604356506b9",
+          "anchors": [
+            "shapes",
+            "shapes-graph",
+            "ill-formed-shape-graphs",
+            "shapes-recursion"
+          ],
+          "interpretation": "Core shapes-graph and well-formedness source."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-CORE-TARGETS-PATHS",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-subset",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "core-targets-and-value-nodes",
+          "document": "core",
+          "path": "shacl12-core/index.html",
+          "sha256": "295a3ef4a18471369e7605eb08558bfac0986919aa0e857339733604356506b9",
+          "anchors": [
+            "targets",
+            "property-paths",
+            "focusNodes",
+            "value-nodes",
+            "value-nodes-property-shapes",
+            "subClassOfInShapesGraph"
+          ],
+          "interpretation": "Target, path, focus, value-node union/default, and optional shapes-graph subclass semantics."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-CORE-CONSTRAINTS",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-subset",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "core-constraints",
+          "document": "core",
+          "path": "shacl12-core/index.html",
+          "sha256": "295a3ef4a18471369e7605eb08558bfac0986919aa0e857339733604356506b9",
+          "anchors": [
+            "core-components",
+            "constraints",
+            "value-nodes",
+            "value-nodes-property-shapes"
+          ],
+          "interpretation": "Core constraint evaluation including the candidate value-node algorithm."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-CORE-REPORTS",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-subset",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "core-reports",
+          "document": "core",
+          "path": "shacl12-core/index.html",
+          "sha256": "295a3ef4a18471369e7605eb08558bfac0986919aa0e857339733604356506b9",
+          "anchors": [
+            "validation-report",
+            "results-validation-result",
+            "conformanceDisallows",
+            "shapesGraphWellFormed"
+          ],
+          "interpretation": "Validation report construction and optional well-formedness declaration."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-CORE-FAILURES",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-subset",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "core-failures",
+          "document": "core",
+          "path": "shacl12-core/index.html",
+          "sha256": "295a3ef4a18471369e7605eb08558bfac0986919aa0e857339733604356506b9",
+          "anchors": [
+            "failures",
+            "ill-formed-shape-graphs",
+            "validation-definition"
+          ],
+          "interpretation": "Core failure and validation boundaries."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-CORE-UPSTREAM-FIXTURES",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable-with-frozen-exclusions",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "blocked-upstream",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "core-candidate-fixtures",
+          "document": "core",
+          "path": "shacl12-core/index.html",
+          "sha256": "295a3ef4a18471369e7605eb08558bfac0986919aa0e857339733604356506b9",
+          "anchors": [
+            "conformance"
+          ],
+          "interpretation": "Candidate Core conformance source associated with the independently frozen inventory."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-SPARQL-CONSTRAINTS",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-subset",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "sparql-constraints",
+          "document": "sparql",
+          "path": "shacl12-sparql/index.html",
+          "sha256": "cae9dbeab7a626c131f4d99e6ad09b7a2cc46e1d8d7c4bfbbe4da1d529f878d8",
+          "anchors": [
+            "sparql-constraints",
+            "constraint-components-validators",
+            "pre-binding",
+            "sparql-constraints-annotations"
+          ],
+          "interpretation": "SPARQL constraint, validator, prebinding, and annotation clauses."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-SPARQL-NODE-EXPRESSIONS",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-subset",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "sparql-node-expressions",
+          "document": "sparql",
+          "path": "shacl12-sparql/index.html",
+          "sha256": "cae9dbeab7a626c131f4d99e6ad09b7a2cc46e1d8d7c4bfbbe4da1d529f878d8",
+          "anchors": [
+            "sparql-node-expressions",
+            "SelectExpression",
+            "SPARQLExprExpression"
+          ],
+          "interpretation": "SPARQL-backed node-expression syntax and execution."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-SPARQL-RULES",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable-with-unsupported-facets",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-subset-and-explicit-unsupported",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "inference-rule-syntax",
+          "document": "inferenceRules",
+          "path": "shacl12-inference-rules/index.html",
+          "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+          "anchors": [
+            "syntax",
+            "SPARQLRule"
+          ],
+          "interpretation": "RDF SHACL rule types and SPARQL rule execution."
+        },
+        {
+          "id": "inference-rules-graph",
+          "document": "inferenceRules",
+          "path": "shacl12-inference-rules/index.html",
+          "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+          "anchors": [
+            "rules-graph"
+          ],
+          "interpretation": "Rules-graph role and IRI identity."
+        },
+        {
+          "id": "inference-global-rules",
+          "document": "inferenceRules",
+          "path": "shacl12-inference-rules/index.html",
+          "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+          "anchors": [
+            "global-rules",
+            "rules-execution"
+          ],
+          "interpretation": "Global rules execute with an empty focus set."
+        },
+        {
+          "id": "inference-rule-conditions",
+          "document": "inferenceRules",
+          "path": "shacl12-inference-rules/index.html",
+          "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+          "anchors": [
+            "condition",
+            "rules-execution"
+          ],
+          "interpretation": "Conditions constrain shape-rule focus nodes; they are not a global-rule rejection rule."
+        },
+        {
+          "id": "inference-deactivated-rules",
+          "document": "inferenceRules",
+          "path": "shacl12-inference-rules/index.html",
+          "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+          "anchors": [
+            "deactivated-rules"
+          ],
+          "interpretation": "Deactivated rules are ignored."
+        },
+        {
+          "id": "inference-rule-layers",
+          "document": "inferenceRules",
+          "path": "shacl12-inference-rules/index.html",
+          "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+          "anchors": [
+            "rule-layers",
+            "rules-execution"
+          ],
+          "interpretation": "Numeric SHACL rule layers."
+        },
+        {
+          "id": "inference-rule-order",
+          "document": "inferenceRules",
+          "path": "shacl12-inference-rules/index.html",
+          "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+          "anchors": [
+            "rule-order",
+            "rules-execution"
+          ],
+          "interpretation": "Same-order concurrency and ordered visibility."
+        },
+        {
+          "id": "inference-run-once",
+          "document": "inferenceRules",
+          "path": "shacl12-inference-rules/index.html",
+          "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+          "anchors": [
+            "run-once",
+            "rules-execution"
+          ],
+          "interpretation": "RDF sh:runOnce semantics, distinct from SPARQL-RL run-once strata."
+        },
+        {
+          "id": "inference-expected-predicate",
+          "document": "inferenceRules",
+          "path": "shacl12-inference-rules/index.html",
+          "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+          "anchors": [
+            "expectedPredicate",
+            "rules-execution"
+          ],
+          "interpretation": "Expected derived triples, per-layer preparation, and cleanup."
+        },
+        {
+          "id": "inference-temporary-triples",
+          "document": "inferenceRules",
+          "path": "shacl12-inference-rules/index.html",
+          "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+          "anchors": [
+            "tempTriple",
+            "rules-execution"
+          ],
+          "interpretation": "Temporary triples and reifier cleanup."
+        },
+        {
+          "id": "inference-custom-processors",
+          "document": "inferenceRules",
+          "path": "shacl12-inference-rules/index.html",
+          "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+          "anchors": [
+            "ruleProcessor"
+          ],
+          "interpretation": "Unsupported custom processors must fail."
+        },
+        {
+          "id": "inference-rule-sets",
+          "document": "inferenceRules",
+          "path": "shacl12-inference-rules/index.html",
+          "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+          "anchors": [
+            "ruleSet"
+          ],
+          "interpretation": "Named and included rule sets."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-SPARQL-CONFORMANCE",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "residual-family-claim-withheld",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "sparql-conformance",
+          "document": "sparql",
+          "path": "shacl12-sparql/index.html",
+          "sha256": "cae9dbeab7a626c131f4d99e6ad09b7a2cc46e1d8d7c4bfbbe4da1d529f878d8",
+          "anchors": [
+            "conformance",
+            "syntax-rules"
+          ],
+          "interpretation": "SPARQL Extensions conformance without moved rule syntax."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-NODEEXPR-OPERATORS",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-subset",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "node-expression-operators",
+          "document": "nodeExpressions",
+          "path": "shacl12-node-expr/index.html",
+          "sha256": "24be3d6a35983bb795f282da462b52583e6330e5452996187ded39e0080802ea",
+          "anchors": [
+            "library",
+            "library-list-operators",
+            "library-advanced-sequence",
+            "library-aggregation",
+            "InstancesOfExpression",
+            "NodesMatchingExpression"
+          ],
+          "interpretation": "Node-expression library plus changed InstancesOf and NodesMatching syntax."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-NODEEXPR-FUNCTIONS",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-subset",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "node-expression-functions",
+          "document": "nodeExpressions",
+          "path": "shacl12-node-expr/index.html",
+          "sha256": "24be3d6a35983bb795f282da462b52583e6330e5452996187ded39e0080802ea",
+          "anchors": [
+            "blank-node-functions",
+            "NamedParameterFunctions",
+            "ListParameterFunction",
+            "sparql-functions"
+          ],
+          "interpretation": "Built-in and custom functions, including the changed CustomListParameterFunction syntax."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-NODEEXPR-WELLFORMED",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-subset-fail-closed",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "node-expression-wellformed",
+          "document": "nodeExpressions",
+          "path": "shacl12-node-expr/index.html",
+          "sha256": "24be3d6a35983bb795f282da462b52583e6330e5452996187ded39e0080802ea",
+          "anchors": [
+            "syntax",
+            "failure-handling",
+            "custom-node-expressions"
+          ],
+          "interpretation": "Node-expression syntax and failure behavior."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-NODEEXPR-CONFORMANCE",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "residual-family-claim-withheld",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "node-expression-conformance",
+          "document": "nodeExpressions",
+          "path": "shacl12-node-expr/index.html",
+          "sha256": "24be3d6a35983bb795f282da462b52583e6330e5452996187ded39e0080802ea",
+          "anchors": [
+            "conformance",
+            "index"
+          ],
+          "interpretation": "Node-expression processor conformance."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-RULES-CONCRETE-SYNTAX",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable-with-distinct-rdf-facet",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-text-syntax-subset-and-rdf-unsupported",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "sparql-rl-text-syntax",
+          "document": "sparqlRl",
+          "path": "sparql12-rl/index.html",
+          "sha256": "524c7d69e61f926e5bf5e82b0019c088dfb6da950517eea9bb1673f47facbc74",
+          "anchors": [
+            "sparql-rl-grammar",
+            "grammar",
+            "version-announcement"
+          ],
+          "interpretation": "SPARQL-RL textual syntax and version announcement."
+        },
+        {
+          "id": "rdf-shacl-rule-syntax",
+          "document": "inferenceRules",
+          "path": "shacl12-inference-rules/index.html",
+          "sha256": "4d0a82bcd515a15ced94eda13edde1d846442589855287e0812ec2211e022499",
+          "anchors": [
+            "syntax",
+            "SPARQLRule",
+            "TripleRule",
+            "SPARQLRuleTemplate"
+          ],
+          "interpretation": "Distinct RDF SHACL rule forms; no RDF-to-SPARQL-RL mapping is implied."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-RULES-WELLFORMED-STRATIFICATION",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-subset",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "sparql-rl-wellformed-stratification",
+          "document": "sparqlRl",
+          "path": "sparql12-rl/index.html",
+          "sha256": "524c7d69e61f926e5bf5e82b0019c088dfb6da950517eea9bb1673f47facbc74",
+          "anchors": [
+            "wellformed",
+            "rule-dependency",
+            "dependency-graph-construction-algorithm",
+            "stratification"
+          ],
+          "interpretation": "SPARQL-RL well-formedness, dependencies, and outcome-compatible stratification."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-RULES-EVALUATION",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable-with-ambiguous-source",
+      "sourceStatus": "source-reviewed-with-explicit-ambiguity",
+      "implementationStatus": "ordinary-tested-subset-complete-ground-data-and-srl-bnode-evidence-bound",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "sparql-rl-evaluation",
+          "document": "sparqlRl",
+          "path": "sparql12-rl/index.html",
+          "sha256": "524c7d69e61f926e5bf5e82b0019c088dfb6da950517eea9bb1673f47facbc74",
+          "anchors": [
+            "rule-set-evaluation",
+            "evaluation-preparation",
+            "eval-rule",
+            "eval-rule-set"
+          ],
+          "interpretation": "Rule-set preparation and evaluation algorithm."
+        },
+        {
+          "id": "sparql-rl-expression-evaluation",
+          "document": "sparqlRl",
+          "path": "sparql12-rl/index.html",
+          "sha256": "524c7d69e61f926e5bf5e82b0019c088dfb6da950517eea9bb1673f47facbc74",
+          "anchors": [
+            "eval-expression"
+          ],
+          "interpretation": "Expression and functional-form evaluation."
+        },
+        {
+          "id": "sparql-rl-ground-data",
+          "document": "sparqlRl",
+          "path": "sparql12-rl/index.html",
+          "sha256": "524c7d69e61f926e5bf5e82b0019c088dfb6da950517eea9bb1673f47facbc74",
+          "anchors": [
+            "ground-data",
+            "eval-rule",
+            "eval-rule-set"
+          ],
+          "interpretation": "Ground DATA and DATA-sensitive matching."
+        },
+        {
+          "id": "sparql-rl-imports",
+          "document": "sparqlRl",
+          "path": "sparql12-rl/index.html",
+          "sha256": "524c7d69e61f926e5bf5e82b0019c088dfb6da950517eea9bb1673f47facbc74",
+          "anchors": [
+            "process-imports"
+          ],
+          "interpretation": "Optional bounded import processing and fail-closed errors."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-RULES-CONFORMANCE",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "residual-family-claim-withheld",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "sparql-rl-conformance",
+          "document": "sparqlRl",
+          "path": "sparql12-rl/index.html",
+          "sha256": "524c7d69e61f926e5bf5e82b0019c088dfb6da950517eea9bb1673f47facbc74",
+          "anchors": [
+            "conformance",
+            "rules-abstract-syntax",
+            "rule-set-evaluation",
+            "rules-defns"
+          ],
+          "interpretation": "SPARQL-RL syntax and rule-set evaluation conformance surfaces."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-UI-METADATA",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "not-applicable-renderer-surface",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "not-applicable",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "ui-metadata",
+          "document": "ui",
+          "path": "shacl12-ui/index.html",
+          "sha256": "aeacbe7e229b41f0c533d2943ca5f73de0341c40dfa86f0caf4abf35d5ddaeea",
+          "anchors": [
+            "rendering-concepts",
+            "widgets",
+            "editors",
+            "viewers",
+            "property-roles"
+          ],
+          "interpretation": "UI rendering metadata."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-UI-ROLE",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "not-applicable-role-separated",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "not-applicable",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "ui-role",
+          "document": "ui",
+          "path": "shacl12-ui/index.html",
+          "sha256": "aeacbe7e229b41f0c533d2943ca5f73de0341c40dfa86f0caf4abf35d5ddaeea",
+          "anchors": [
+            "scope",
+            "conformance",
+            "renderer"
+          ],
+          "interpretation": "Separate UI implementation role."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-CS-PARSER",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable-informative-suite",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-informative-subset",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "compact-parser",
+          "document": "compact",
+          "path": "shacl12-cs/index.html",
+          "sha256": "f6db1b05cd0201e7afb16dcc5b02c9306c7568cfbdf487b81c19ee14e34151cd",
+          "anchors": [
+            "grammar-section"
+          ],
+          "interpretation": "SHACL-C grammar and mapping source."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-CS-DRAFT",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "applicable-informative-suite",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "draft-bound-no-normative-oracle",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "compact-draft",
+          "document": "compact",
+          "path": "shacl12-cs/index.html",
+          "sha256": "f6db1b05cd0201e7afb16dcc5b02c9306c7568cfbdf487b81c19ee14e34151cd",
+          "anchors": [
+            "conventions",
+            "grammar-section"
+          ],
+          "interpretation": "Editor-draft conventions and grammar."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-PROFILING-DESCRIPTION",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "not-applicable-publisher-role",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "internal-catalog-only-w3c-claim-withheld",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "profiling-description",
+          "document": "profiling",
+          "path": "shacl12-profiling/index.html",
+          "sha256": "0c74dd12c4d19be4601b91c3204a78353f1e6fc7204cc8adc02e1a3e8961b0cf",
+          "anchors": [
+            "defining-profiles",
+            "creating-profiles",
+            "profiling-specifications",
+            "profiling-data"
+          ],
+          "interpretation": "W3C profile description and publication roles."
+        }
+      ]
+    },
+    {
+      "id": "SHACL12-PROFILING-NEGOTIATION",
+      "mappingSchema": "oxigraph.shacl-candidate-clause-mapping/v1",
+      "suiteCommit": "0ccfab4f28324edaac59a1227f8c60ad5b7bbf89",
+      "applicability": "not-applicable-publisher-and-data-author-role",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "internal-library-negotiation-only",
+      "candidateExecutionStatus": "unexecuted",
+      "sourceFacets": [
+        {
+          "id": "profiling-negotiation",
+          "document": "profiling",
+          "path": "shacl12-profiling/index.html",
+          "sha256": "0c74dd12c4d19be4601b91c3204a78353f1e6fc7204cc8adc02e1a3e8961b0cf",
+          "anchors": [
+            "conformance",
+            "dependencies",
+            "profiling-of-shacl"
+          ],
+          "interpretation": "Profiling conformance, dependency, and SHACL profile description."
+        },
+        {
+          "id": "profiling-conforms-to-shapes-graph",
+          "document": "profiling",
+          "path": "shacl12-profiling/index.html",
+          "sha256": "0c74dd12c4d19be4601b91c3204a78353f1e6fc7204cc8adc02e1a3e8961b0cf",
+          "anchors": [
+            "rule-conformstoshapesgraph"
+          ],
+          "interpretation": "Derives sh:conformsToShapesGraph from a validation activity, its used graphs, generated report, and sh:conforms true."
+        },
+        {
+          "id": "profiling-conforms-to-specification",
+          "document": "profiling",
+          "path": "shacl12-profiling/index.html",
+          "sha256": "0c74dd12c4d19be4601b91c3204a78353f1e6fc7204cc8adc02e1a3e8961b0cf",
+          "anchors": [
+            "rule-conformstospecification"
+          ],
+          "interpretation": "Propagates graph conformance through prof:isProfileOf to dcterms:conformsTo."
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "id": "core-entailment-unsupported-failure",
+      "mappingId": "SHACL12-CORE-FAILURES",
+      "sourceFacetIds": [
+        "core-failures"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "core-validation-input-immutability",
+      "mappingId": "SHACL12-CORE-FAILURES",
+      "sourceFacetIds": [
+        "core-failures"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-by-api",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "core-property-value-union-default",
+      "mappingId": "SHACL12-CORE-TARGETS-PATHS",
+      "sourceFacetIds": [
+        "core-targets-and-value-nodes"
+      ],
+      "level": "ALGORITHM",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "core-well-formed-shapes-graph",
+      "mappingId": "SHACL12-CORE-SHAPES-GRAPH",
+      "sourceFacetIds": [
+        "core-shapes-graph"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "residual-not-claimed",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "core-report-graph",
+      "mappingId": "SHACL12-CORE-REPORTS",
+      "sourceFacetIds": [
+        "core-reports"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "core-subclass-hierarchy-source",
+      "mappingId": "SHACL12-CORE-TARGETS-PATHS",
+      "sourceFacetIds": [
+        "core-targets-and-value-nodes"
+      ],
+      "level": "SHOULD",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "core-shapes-graph-well-formed-flag",
+      "mappingId": "SHACL12-CORE-REPORTS",
+      "sourceFacetIds": [
+        "core-reports"
+      ],
+      "level": "SHOULD",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested-opt-in",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "sparql-prefix-collection",
+      "mappingId": "SHACL12-SPARQL-CONSTRAINTS",
+      "sourceFacetIds": [
+        "sparql-constraints"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "sparql-resulting-query-parse",
+      "mappingId": "SHACL12-SPARQL-CONSTRAINTS",
+      "sourceFacetIds": [
+        "sparql-constraints"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "sparql-prebinding-restrictions",
+      "mappingId": "SHACL12-SPARQL-CONSTRAINTS",
+      "sourceFacetIds": [
+        "sparql-constraints"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "sparql-path-substitution",
+      "mappingId": "SHACL12-SPARQL-CONSTRAINTS",
+      "sourceFacetIds": [
+        "sparql-constraints"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "sparql-solution-failure",
+      "mappingId": "SHACL12-SPARQL-CONSTRAINTS",
+      "sourceFacetIds": [
+        "sparql-constraints"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "sparql-result-mapping",
+      "mappingId": "SHACL12-SPARQL-CONSTRAINTS",
+      "sourceFacetIds": [
+        "sparql-constraints"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "sparql-message-interpolation",
+      "mappingId": "SHACL12-SPARQL-CONSTRAINTS",
+      "sourceFacetIds": [
+        "sparql-constraints"
+      ],
+      "level": "SHOULD",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "sparql-result-annotations",
+      "mappingId": "SHACL12-SPARQL-CONSTRAINTS",
+      "sourceFacetIds": [
+        "sparql-constraints"
+      ],
+      "level": "MAY",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "sparql-custom-parameter-syntax",
+      "mappingId": "SHACL12-SPARQL-CONSTRAINTS",
+      "sourceFacetIds": [
+        "sparql-constraints"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "sparql-parameter-shape-conformance",
+      "mappingId": "SHACL12-SPARQL-CONSTRAINTS",
+      "sourceFacetIds": [
+        "sparql-constraints"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "sparql-validator-query-roles",
+      "mappingId": "SHACL12-SPARQL-CONSTRAINTS",
+      "sourceFacetIds": [
+        "sparql-constraints"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "sparql-select-expression-syntax",
+      "mappingId": "SHACL12-SPARQL-NODE-EXPRESSIONS",
+      "sourceFacetIds": [
+        "sparql-node-expressions"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "node-expression-processor",
+      "mappingId": "SHACL12-NODEEXPR-CONFORMANCE",
+      "sourceFacetIds": [
+        "node-expression-conformance"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "candidate-unexecuted",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "node-by-expression-source-copy",
+      "mappingId": "SHACL12-NODEEXPR-OPERATORS",
+      "sourceFacetIds": [
+        "node-expression-operators"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "rules-srl-syntax-recognition",
+      "mappingId": "SHACL12-RULES-CONCRETE-SYNTAX",
+      "sourceFacetIds": [
+        "sparql-rl-text-syntax"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested-subset",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "rules-srl-wellformed-stratification",
+      "mappingId": "SHACL12-RULES-WELLFORMED-STRATIFICATION",
+      "sourceFacetIds": [
+        "sparql-rl-wellformed-stratification"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested-subset",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "rules-srl-evaluation",
+      "mappingId": "SHACL12-RULES-EVALUATION",
+      "sourceFacetIds": [
+        "sparql-rl-evaluation",
+        "sparql-rl-expression-evaluation",
+        "sparql-rl-ground-data",
+        "sparql-rl-imports"
+      ],
+      "level": "ALGORITHM",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-tested-subset-complete-ground-data-and-srl-bnode-evidence-bound",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "rules-srl-data-source-interpretation",
+      "mappingId": "SHACL12-RULES-EVALUATION",
+      "sourceFacetIds": [
+        "sparql-rl-evaluation",
+        "sparql-rl-ground-data"
+      ],
+      "level": "AMBIGUOUS-SOURCE",
+      "sourceStatus": "source-reviewed-with-explicit-ambiguity",
+      "implementationStatus": "ordinary-local-contract-tested-source-ambiguous",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "rules-deleted-for-clause-rejection",
+      "mappingId": "SHACL12-RULES-CONCRETE-SYNTAX",
+      "sourceFacetIds": [
+        "sparql-rl-text-syntax"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-parser-fail-closed",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "rules-body-abbreviations",
+      "mappingId": "SHACL12-RULES-EVALUATION",
+      "sourceFacetIds": [
+        "sparql-rl-evaluation"
+      ],
+      "level": "ALGORITHM",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested-subset",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "rules-rdf-syntax-boundaries",
+      "mappingId": "SHACL12-RULES-CONCRETE-SYNTAX",
+      "sourceFacetIds": [
+        "rdf-shacl-rule-syntax"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "explicit-unsupported-subset",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "rules-graph-identifier-syntax",
+      "mappingId": "SHACL12-SPARQL-RULES",
+      "sourceFacetIds": [
+        "inference-rules-graph"
+      ],
+      "level": "MAY-AND-SYNTAX",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested-subset",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "rules-global-condition-policy",
+      "mappingId": "SHACL12-SPARQL-RULES",
+      "sourceFacetIds": [
+        "inference-global-rules",
+        "inference-rule-conditions"
+      ],
+      "level": "LOCAL-POLICY",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-local-policy-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "rules-expected-predicate-lifecycle",
+      "mappingId": "SHACL12-SPARQL-RULES",
+      "sourceFacetIds": [
+        "inference-expected-predicate",
+        "inference-rule-layers",
+        "inference-rules-graph"
+      ],
+      "level": "ALGORITHM",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "rules-run-once-and-temporary-triples",
+      "mappingId": "SHACL12-SPARQL-RULES",
+      "sourceFacetIds": [
+        "inference-run-once",
+        "inference-temporary-triples"
+      ],
+      "level": "ALGORITHM",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "unsupported",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "rules-rule-processor-failure",
+      "mappingId": "SHACL12-SPARQL-RULES",
+      "sourceFacetIds": [
+        "inference-custom-processors"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-tested",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "rules-abstract-query-surface",
+      "mappingId": "SHACL12-RULES-CONFORMANCE",
+      "sourceFacetIds": [
+        "sparql-rl-conformance"
+      ],
+      "level": "ABSTRACT-OPERATION",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "ordinary-implemented-subset",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "compact-grammar-mapping",
+      "mappingId": "SHACL12-CS-PARSER",
+      "sourceFacetIds": [
+        "compact-parser"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "candidate-unexecuted-ordinary-local-oracles-exist",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "ui-renderer-conformance",
+      "mappingId": "SHACL12-UI-ROLE",
+      "sourceFacetIds": [
+        "ui-role"
+      ],
+      "level": "MUST",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "not-applicable-to-store-neutral-validator",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "profiling-author-conventions",
+      "mappingId": "SHACL12-PROFILING-DESCRIPTION",
+      "sourceFacetIds": [
+        "profiling-description"
+      ],
+      "level": "SHOULD",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "not-applicable-no-w3c-profiling-claim",
+      "candidateExecutionStatus": "unexecuted"
+    },
+    {
+      "id": "profiling-conformance-provenance-rules",
+      "mappingId": "SHACL12-PROFILING-NEGOTIATION",
+      "sourceFacetIds": [
+        "profiling-conforms-to-shapes-graph",
+        "profiling-conforms-to-specification"
+      ],
+      "level": "RULE",
+      "sourceStatus": "source-reviewed",
+      "implementationStatus": "not-applicable-no-w3c-profiling-claim",
+      "candidateExecutionStatus": "unexecuted"
+    }
+  ],
+  "residualClaims": [
+    "All candidate collections are bound to data-shapes commit 0ccfab4f28324edaac59a1227f8c60ad5b7bbf89 and remain candidate-unexecuted until E4 ordinary execution.",
+    "Historical mappings, dated profiles, source IRIs, the 156-production SRL TSV, fixed-path artifacts, receipts, and archive validators retain their historical commit and hashes.",
+    "Complete SHACL 1.2 Core well-formedness, import compatibility, SPARQL Extensions, Node Expressions, Inference Rules, SPARQL-RL, Compact Syntax, UI, and Profiling conformance are not claimed.",
+    "The candidate SPARQL Extensions inventory has 46 syntax-rule IDs; ten rule IDs moved to the distinct 25-ID Inference Rules source. Historical 56-ID evidence remains historical.",
+    "The candidate SPARQL-RL grammar has 153 productions and is a distinct identity from the historical 156-production inventory and receipts.",
+    "RDF sh:runOnce, sh:tempTriple, sh:TripleRule, and sh:SPARQLRuleTemplate execution remain exact predeclared unsupported surfaces; the programmatic Datalog API is not an RDF compiler.",
+    "sh:expectedPredicate has bounded ordinary implementation evidence for layer-start derivation and cleanup, but supporting it does not close the inference-rules family or optional sh:sourceRule provenance.",
+    "Accepted local base-plus-inline DATA interpretation; differs from literal G0 call sites; upstream intent unresolved. This prevents an unqualified literal candidate-algorithm equivalence claim and does not authorize changing accepted DATA semantics.",
+    "Complete-ground-DATA slice D and SRL BNODE slice N are bound to exact accepted commits, acceptance artifacts, review hashes, workflow runs, and programme evidence keys before E3 adoption.",
+    "The candidate public abstract Query operation exists, but no concrete Query grammar is supplied and the local single-triple goal restriction is not a specification MUST.",
+    "Candidate Node Expressions retain 35 syntax-rule IDs but include reviewed semantic text changes for InstancesOfExpression, NodesMatchingExpression, and CustomListParameterFunction.",
+    "The profiling rule-conformsto anchor is deleted and replaced by semantically distinct conforms-to-shapes-graph and conforms-to-specification rules; neither transfers historical evidence or creates a W3C profiling role for Oxigraph.",
+    "SHACL UI and W3C Profiling roles remain outside the store-neutral validator, and SHACL-C upstream pairs remain informative.",
+    "A candidate suite pass records only exact observed cases and cannot resolve source ambiguity, close untested prose, change preexecution declarations, qualify, promote, or replace historical evidence."
+  ]
+});
+
 const CANDIDATE_COUNT_FIELDS = Object.freeze([
   "discovered",
   "eligible",
@@ -433,6 +1814,8 @@ const CANDIDATE_COUNT_FIELDS = Object.freeze([
 ]);
 const CANDIDATE_SHA256 = /^[0-9a-f]{64}$/u;
 const CANDIDATE_COMMIT = /^[0-9a-f]{40}$/u;
+const CANDIDATE_UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const CANDIDATE_OUTCOME = Object.freeze({
   selected: "PASS",
   unsupported: "UNSUPPORTED",
@@ -471,6 +1854,28 @@ function candidateEqualValue(errors, label, actual, expected) {
   if (!candidateDeepEqual(actual, expected)) {
     errors.push(`${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   }
+}
+
+function candidateJsonSha256(value) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function candidateStringArray(errors, label, value, { nonempty = false } = {}) {
+  if (!Array.isArray(value)) {
+    errors.push(`${label} is not an array`);
+    return [];
+  }
+  if (nonempty && value.length === 0) errors.push(`${label} is empty`);
+  const seen = new Set();
+  for (const entry of value) {
+    if (typeof entry !== "string" || !entry) {
+      errors.push(`${label} contains an invalid string`);
+    } else if (seen.has(entry)) {
+      errors.push(`${label} duplicates ${entry}`);
+    }
+    seen.add(entry);
+  }
+  return value;
 }
 
 function candidateRelativePath(value) {
@@ -794,14 +2199,491 @@ function validateCandidateLaneReceipt(name, value, expected, raw, checkoutPath, 
   return rawEvidence.cases;
 }
 
+function candidateClauseMappingProjection(value) {
+  return {
+    id: value?.id,
+    mappingSchema: value?.mappingSchema,
+    suiteCommit: value?.suiteCommit,
+    applicability: value?.applicability,
+    sourceStatus: value?.sourceStatus,
+    implementationStatus: value?.implementationStatus,
+    candidateExecutionStatus: value?.candidateExecutionStatus,
+    sourceFacets: value?.sourceFacets,
+  };
+}
+
+function candidateClauseObligationProjection(value) {
+  return {
+    id: value?.id,
+    mappingId: value?.mappingId,
+    sourceFacetIds: value?.sourceFacetIds,
+    level: value?.level,
+    sourceStatus: value?.sourceStatus,
+    implementationStatus: value?.implementationStatus,
+    candidateExecutionStatus: value?.candidateExecutionStatus,
+  };
+}
+
+function expectedCandidateSourceFacets() {
+  return expectedCandidateClauseAudit.mappings.flatMap((mapping) =>
+    mapping.sourceFacets.map((facet) => ({
+      ...facet,
+      mappingId: mapping.id,
+      sourceStatus: mapping.sourceStatus,
+    })),
+  );
+}
+
+function validateCandidateClauseSourceRecord(label, value, expectedSources, errors) {
+  if (!CANDIDATE_SHA256.test(value?.sha256 ?? "")) {
+    errors.push(`${label} source SHA-256 is invalid`);
+  }
+  const expected = expectedSources.get(value?.document);
+  if (!expected) {
+    errors.push(`${label} names unknown document ${JSON.stringify(value?.document)}`);
+    return;
+  }
+  equal(errors, `${label} source path`, value?.path, expected.path);
+  equal(errors, `${label} source SHA-256`, value?.sha256, expected.sha256);
+}
+
+function validateCandidateAcceptedSliceEvidence(revision, mappings, obligations, errors) {
+  const evidence = revision?.acceptedSliceEvidence;
+  candidateExactKeys(errors, "candidate accepted slice evidence", evidence, [
+    "completeGroundData",
+    "srlBnode",
+  ]);
+  const fields = [
+    "taskId",
+    "commit",
+    "acceptanceArtifact",
+    "acceptanceSha256",
+    "workflowRunId",
+    "evidenceKey",
+    "reviewArtifact",
+    "reviewSha256",
+  ];
+  for (const [name, value] of Object.entries(evidence ?? {})) {
+    if (value === null) continue;
+    const label = `candidate accepted slice ${name}`;
+    candidateExactKeys(errors, label, value, fields);
+    if (!/^task-[a-z0-9-]+$/u.test(value?.taskId ?? "")) {
+      errors.push(`${label} task ID is invalid`);
+    }
+    if (!CANDIDATE_COMMIT.test(value?.commit ?? "")) {
+      errors.push(`${label} commit is not a full lowercase Git commit`);
+    }
+    if (!CANDIDATE_SHA256.test(value?.acceptanceSha256 ?? "")) {
+      errors.push(`${label} acceptance SHA-256 is invalid`);
+    }
+    if (!CANDIDATE_UUID_V4.test(value?.workflowRunId ?? "")) {
+      errors.push(`${label} workflow run ID is not a lowercase UUID v4`);
+    }
+    if (
+      typeof value?.evidenceKey !== "string" ||
+      !value.evidenceKey.startsWith("programme-task-evidence/workflow-")
+    ) {
+      errors.push(`${label} evidence key is invalid`);
+    }
+    if (typeof value?.acceptanceArtifact !== "string" || !value.acceptanceArtifact) {
+      errors.push(`${label} acceptance artifact is invalid`);
+    }
+    if (typeof value?.reviewArtifact !== "string" || !value.reviewArtifact) {
+      errors.push(`${label} review artifact is invalid`);
+    }
+    if (!CANDIDATE_SHA256.test(value?.reviewSha256 ?? "")) {
+      errors.push(`${label} review SHA-256 is invalid`);
+    }
+  }
+  for (const [name, commit] of Object.entries(revision?.ordinaryEvidenceCommits ?? {})) {
+    if (!CANDIDATE_COMMIT.test(commit ?? "")) {
+      errors.push(`candidate ordinary evidence commit ${name} is not full lowercase Git`);
+    }
+  }
+  const pendingN = evidence?.srlBnode === null;
+  const statuses = [...mappings, ...obligations].map(({ implementationStatus }) =>
+    String(implementationStatus),
+  );
+  if (pendingN && !statuses.some((status) => status.includes("pending-n"))) {
+    errors.push("candidate mapping cleared pending N status without accepted SRL BNODE evidence");
+  }
+  if (!pendingN && statuses.some((status) => status.includes("pending-n"))) {
+    errors.push("candidate mapping retains pending N status after accepted SRL BNODE evidence");
+  }
+  if (
+    !pendingN &&
+    !statuses.some((status) =>
+      status.includes("complete-ground-data-and-srl-bnode-evidence-bound"),
+    )
+  ) {
+    errors.push("candidate mapping does not name the accepted DATA and BNODE slice evidence");
+  }
+}
+
+function validateCandidateClauseAuditEvidence(bundle, errors) {
+  const receipt = bundle?.receipt;
+  const inventory = bundle?.inventory;
+  const audit = bundle?.audit;
+  const runDirectory = bundle?.runDirectory;
+  validateCandidateShaclInventory(inventory, errors);
+
+  candidateExactKeys(errors, "candidate clause-audit receipt", receipt, [
+    "schema", "kind", "suiteCommit", "implementationCommit", "runId",
+    "inventoryArtifact", "auditArtifact", "sourceBefore", "sourceAfter",
+    "complete", "errors", "completeConformance", "qualified", "promoted",
+  ]);
+  equal(errors, "candidate clause-audit receipt schema", receipt?.schema, "oxigraph.shacl-candidate-run/v1");
+  equal(errors, "candidate clause-audit receipt kind", receipt?.kind, "clause-audit");
+  if (!CANDIDATE_COMMIT.test(receipt?.implementationCommit ?? "")) {
+    errors.push("candidate clause-audit implementation commit is not a full lowercase Git commit");
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(receipt?.runId ?? "")) {
+    errors.push("candidate clause-audit run ID is not a lowercase UUID v4");
+  }
+  for (const [label, actual, expected] of [
+    ["inventory suite", inventory?.source?.suiteCommit, receipt?.suiteCommit],
+    ["audit suite", audit?.suiteCommit, receipt?.suiteCommit],
+    ["receipt suite", receipt?.suiteCommit, expectedCandidateShacl.revision.suiteCommit],
+    ["inventory implementation", inventory?.source?.implementationCommit, receipt?.implementationCommit],
+    ["audit implementation", audit?.implementationCommit, receipt?.implementationCommit],
+    ["audit run", audit?.runId, receipt?.runId],
+  ]) equal(errors, `candidate clause-audit ${label}`, actual, expected);
+  equal(errors, "candidate clause-audit inventory path", receipt?.inventoryArtifact?.path, `${runDirectory}/inventory.json`);
+  equal(errors, "candidate clause-audit artifact path", receipt?.auditArtifact?.path, `${runDirectory}/clause-obligations.json`);
+  equal(errors, "candidate clause-audit complete", receipt?.complete, true);
+  candidateEqualValue(errors, "candidate clause-audit receipt errors", receipt?.errors, []);
+  equal(errors, "candidate clause-audit complete-conformance claim", receipt?.completeConformance, false);
+  equal(errors, "candidate clause-audit qualified claim", receipt?.qualified, false);
+  equal(errors, "candidate clause-audit promoted claim", receipt?.promoted, false);
+  for (const [label, source] of [["before", receipt?.sourceBefore], ["after", receipt?.sourceAfter]]) {
+    candidateExactKeys(errors, `candidate clause-audit source ${label}`, source, ["commit", "branch", "status"]);
+    equal(errors, `candidate clause-audit source ${label} commit`, source?.commit, receipt?.implementationCommit);
+    equal(errors, `candidate clause-audit source ${label} branch`, source?.branch, "main");
+    equal(errors, `candidate clause-audit source ${label} status`, source?.status, "");
+  }
+  candidateEqualValue(errors, "candidate clause-audit source identity stability", receipt?.sourceAfter, receipt?.sourceBefore);
+
+  candidateExactKeys(errors, "candidate clause-audit artifact", audit, [
+    "schema", "suiteCommit", "implementationCommit", "runId", "source",
+    "inventoryArtifact", "mappingRevision", "documents", "grammars",
+    "groupedRequirements", "reviewedObligations", "sourceFacets",
+    "rawObligationJoins", "clauseCandidates", "syntaxRules",
+    "grammarProductions", "residualClaims", "completeConformance",
+    "qualified", "promoted",
+  ]);
+  equal(errors, "candidate clause-audit schema", audit?.schema, expectedCandidateClauseAudit.schema);
+  candidateExactKeys(errors, "candidate clause-audit source", audit?.source, [
+    "repository", "suiteCommit", "implementationCommit", "immutable",
+  ]);
+  equal(errors, "candidate clause-audit repository", audit?.source?.repository, expectedCandidateClauseAudit.mappingRevision.repository);
+  equal(errors, "candidate clause-audit source suite", audit?.source?.suiteCommit, receipt?.suiteCommit);
+  equal(errors, "candidate clause-audit source implementation", audit?.source?.implementationCommit, receipt?.implementationCommit);
+  equal(errors, "candidate clause-audit immutable source", audit?.source?.immutable, true);
+  candidateEqualValue(errors, "candidate clause-audit inventory binding", audit?.inventoryArtifact, receipt?.inventoryArtifact);
+  equal(errors, "candidate clause-audit complete-conformance", audit?.completeConformance, false);
+  equal(errors, "candidate clause-audit qualified", audit?.qualified, false);
+  equal(errors, "candidate clause-audit promoted", audit?.promoted, false);
+
+  candidateEqualValue(errors, "candidate clause-audit mapping revision", audit?.mappingRevision, expectedCandidateClauseAudit.mappingRevision);
+  equal(errors, "candidate clause-audit mapping revision hash", candidateJsonSha256(audit?.mappingRevision), expectedCandidateClauseAudit.hashes.mappingRevision);
+  const documentApplicability = {
+    overview: "informative-navigation",
+    core: "validation-processor",
+    nodeExpressions: "node-expression-processor",
+    sparql: "sparql-validation-processor",
+    sparqlRl: "sparql-rl-processor",
+    inferenceRules: "inference-rules-processor",
+    compact: "compact-syntax-parser",
+    ui: "renderer-or-ui",
+    profiling: "profile-author-or-data-author",
+  };
+  candidateExactKeys(errors, "candidate clause-audit documents", audit?.documents, Object.keys(expectedCandidateClauseAudit.mappingRevision.documents));
+  for (const [name, descriptor] of Object.entries(expectedCandidateClauseAudit.mappingRevision.documents)) {
+    const value = audit?.documents?.[name];
+    candidateExactKeys(errors, `candidate clause-audit document ${name}`, value, [
+      "path", "sha256", "applicability", "syntaxRules",
+      "bcp14ClauseCandidates", "sourceFacetAnchors",
+    ]);
+    equal(errors, `candidate clause-audit document ${name} path`, value?.path, descriptor.path);
+    equal(errors, `candidate clause-audit document ${name} SHA-256`, value?.sha256, descriptor.sha256);
+    equal(errors, `candidate clause-audit document ${name} applicability`, value?.applicability, documentApplicability[name]);
+    for (const field of ["syntaxRules", "bcp14ClauseCandidates", "sourceFacetAnchors"]) {
+      if (!Number.isSafeInteger(value?.[field]) || value[field] < 0) {
+        errors.push(`candidate clause-audit document ${name} ${field} is invalid`);
+      }
+    }
+  }
+  candidateExactKeys(errors, "candidate clause-audit grammars", audit?.grammars, Object.keys(expectedCandidateClauseAudit.mappingRevision.grammars));
+  for (const [name, descriptor] of Object.entries(expectedCandidateClauseAudit.mappingRevision.grammars)) {
+    const value = audit?.grammars?.[name];
+    candidateExactKeys(errors, `candidate clause-audit grammar ${name}`, value, ["path", "sha256", "productions"]);
+    equal(errors, `candidate clause-audit grammar ${name} path`, value?.path, descriptor.path);
+    equal(errors, `candidate clause-audit grammar ${name} SHA-256`, value?.sha256, descriptor.sha256);
+    const expectedProductions = name === "sparqlRl" ? expectedCandidateClauseAudit.counts.sparqlRlGrammarProductions : null;
+    equal(errors, `candidate clause-audit grammar ${name} production count`, value?.productions, expectedProductions);
+  }
+  equal(errors, "candidate clause-audit grouped requirements hash", candidateJsonSha256(audit?.groupedRequirements), expectedCandidateClauseAudit.hashes.groupedRequirements);
+  equal(errors, "candidate clause-audit reviewed obligations hash", candidateJsonSha256(audit?.reviewedObligations), expectedCandidateClauseAudit.hashes.reviewedObligations);
+  equal(errors, "candidate clause-audit residual claims hash", candidateJsonSha256(audit?.residualClaims), expectedCandidateClauseAudit.hashes.residualClaims);
+  candidateEqualValue(
+    errors,
+    "candidate clause-audit mapping projections",
+    Array.isArray(audit?.groupedRequirements) ? audit.groupedRequirements.map(candidateClauseMappingProjection) : audit?.groupedRequirements,
+    expectedCandidateClauseAudit.mappings,
+  );
+  candidateEqualValue(
+    errors,
+    "candidate clause-audit obligation projections",
+    Array.isArray(audit?.reviewedObligations) ? audit.reviewedObligations.map(candidateClauseObligationProjection) : audit?.reviewedObligations,
+    expectedCandidateClauseAudit.obligations,
+  );
+  candidateEqualValue(errors, "candidate clause-audit residual claims", audit?.residualClaims, expectedCandidateClauseAudit.residualClaims);
+
+  const mappings = Array.isArray(audit?.groupedRequirements) ? audit.groupedRequirements : [];
+  const mappingIds = new Set();
+  const facetIds = new Set();
+  for (const [index, mapping] of mappings.entries()) {
+    const label = `candidate clause-audit mapping[${index}]`;
+    if (typeof mapping?.id !== "string" || !mapping.id) errors.push(`${label} has no ID`);
+    else if (mappingIds.has(mapping.id)) errors.push(`${label} duplicates ${mapping.id}`);
+    else mappingIds.add(mapping.id);
+    equal(errors, `${label} mapping schema`, mapping?.mappingSchema, expectedCandidateClauseAudit.mappingRevision.schema);
+    equal(errors, `${label} suite commit`, mapping?.suiteCommit, receipt?.suiteCommit);
+    equal(errors, `${label} execution status`, mapping?.candidateExecutionStatus, "unexecuted");
+    for (const facet of Array.isArray(mapping?.sourceFacets) ? mapping.sourceFacets : []) {
+      if (typeof facet?.id !== "string" || !facet.id) errors.push(`${label} contains a facet without an ID`);
+      else if (facetIds.has(facet.id)) errors.push(`${label} duplicates facet ${facet.id}`);
+      else facetIds.add(facet.id);
+    }
+  }
+  equal(errors, "candidate clause-audit mapping count", mappings.length, expectedCandidateClauseAudit.counts.mappings);
+  equal(errors, "candidate clause-audit source-facet count", facetIds.size, expectedCandidateClauseAudit.counts.sourceFacets);
+
+  const obligations = Array.isArray(audit?.reviewedObligations) ? audit.reviewedObligations : [];
+  const obligationIds = new Set();
+  for (const [index, obligation] of obligations.entries()) {
+    const label = `candidate clause-audit obligation[${index}]`;
+    if (typeof obligation?.id !== "string" || !obligation.id) errors.push(`${label} has no ID`);
+    else if (obligationIds.has(obligation.id)) errors.push(`${label} duplicates ${obligation.id}`);
+    else obligationIds.add(obligation.id);
+    if (!mappingIds.has(obligation?.mappingId)) errors.push(`${label} names unknown mapping ${JSON.stringify(obligation?.mappingId)}`);
+    for (const facetId of candidateStringArray(errors, `${label} source facet IDs`, obligation?.sourceFacetIds, { nonempty: true })) {
+      if (!facetIds.has(facetId)) errors.push(`${label} names unknown source facet ${facetId}`);
+    }
+    equal(errors, `${label} execution status`, obligation?.candidateExecutionStatus, "unexecuted");
+  }
+  equal(errors, "candidate clause-audit obligation count", obligations.length, expectedCandidateClauseAudit.counts.obligations);
+  validateCandidateAcceptedSliceEvidence(audit?.mappingRevision, mappings, obligations, errors);
+
+  const expectedFacets = expectedCandidateSourceFacets();
+  candidateEqualValue(errors, "candidate clause-audit flattened source facets", audit?.sourceFacets, expectedFacets);
+  const expectedDocuments = new Map(Object.entries(expectedCandidateClauseAudit.mappingRevision.documents));
+  const expectedGrammars = new Map(Object.entries(expectedCandidateClauseAudit.mappingRevision.grammars));
+  const expectedFacetById = new Map(expectedFacets.map((facet) => [facet.id, facet]));
+
+  const clauseCandidates = Array.isArray(audit?.clauseCandidates) ? audit.clauseCandidates : [];
+  const clauseCandidateIds = new Set();
+  const clauseCandidateById = new Map();
+  const sourceAnchorKeys = new Set();
+  for (const [index, value] of clauseCandidates.entries()) {
+    const label = `candidate clause-audit clause candidate[${index}]`;
+    candidateExactKeys(errors, label, value, [
+      "id", "kind", "document", "path", "sha256", "section", "anchor",
+      "facetId", "keywords", "textSha256", "applicability", "status",
+    ]);
+    if (typeof value?.id !== "string" || !value.id) errors.push(`${label} has no ID`);
+    else if (clauseCandidateIds.has(value.id)) errors.push(`${label} duplicates ${value.id}`);
+    else {
+      clauseCandidateIds.add(value.id);
+      clauseCandidateById.set(value.id, value);
+    }
+    if (!CANDIDATE_SHA256.test(value?.textSha256 ?? "")) errors.push(`${label} text SHA-256 is invalid`);
+    validateCandidateClauseSourceRecord(label, value, expectedDocuments, errors);
+    if (value?.kind === "bcp14") {
+      if (!/^bcp14:[^:]+:[^:]+:[0-9a-f]{12}$/u.test(value?.id ?? "")) errors.push(`${label} BCP14 ID is invalid`);
+      candidateStringArray(errors, `${label} keywords`, value?.keywords, { nonempty: true });
+      equal(errors, `${label} anchor`, value?.anchor, null);
+      equal(errors, `${label} facet ID`, value?.facetId, null);
+      if (value?.section !== null && (typeof value?.section !== "string" || !value.section)) {
+        errors.push(`${label} section is invalid`);
+      }
+    } else if (value?.kind === "source-facet") {
+      if (typeof value?.anchor !== "string" || !value.anchor) errors.push(`${label} anchor is invalid`);
+      if (typeof value?.facetId !== "string" || !value.facetId) errors.push(`${label} facet ID is invalid`);
+      equal(errors, `${label} section`, value?.section, value?.anchor);
+      candidateEqualValue(errors, `${label} keywords`, value?.keywords, []);
+      const expectedFacet = expectedFacetById.get(value?.facetId);
+      if (!expectedFacet) errors.push(`${label} names unknown source facet ${JSON.stringify(value?.facetId)}`);
+      else {
+        equal(errors, `${label} ID`, value?.id, `facet:${value.facetId}:${value.anchor}`);
+        equal(errors, `${label} facet document`, value?.document, expectedFacet.document);
+        if (!expectedFacet.anchors.includes(value?.anchor)) errors.push(`${label} anchor is outside source facet ${value.facetId}`);
+        equal(errors, `${label} status`, value?.status, expectedFacet.sourceStatus);
+      }
+      const key = `${value?.facetId}\0${value?.document}\0${value?.path}\0${value?.sha256}\0${value?.anchor}`;
+      if (sourceAnchorKeys.has(key)) errors.push(`${label} duplicates source anchor ${value?.facetId}#${value?.anchor}`);
+      sourceAnchorKeys.add(key);
+    } else {
+      errors.push(`${label} has invalid kind ${JSON.stringify(value?.kind)}`);
+    }
+    equal(errors, `${label} applicability`, value?.applicability, documentApplicability[value?.document]);
+    if (value?.kind === "bcp14") equal(errors, `${label} status`, value?.status, "raw-candidate-unreviewed");
+    if (typeof value?.status !== "string" || !value.status) errors.push(`${label} status is invalid`);
+  }
+  for (const [name, value] of Object.entries(audit?.documents ?? {})) {
+    const clauses = (audit?.clauseCandidates ?? []).filter((entry) => entry?.kind === "bcp14" && entry?.document === name).length;
+    const anchors = (audit?.clauseCandidates ?? []).filter((entry) => entry?.kind === "source-facet" && entry?.document === name).length;
+    const rules = (audit?.syntaxRules ?? []).filter((entry) => entry?.document === name).length;
+    equal(errors, `candidate clause-audit document ${name} recorded BCP14 count`, value?.bcp14ClauseCandidates, clauses);
+    equal(errors, `candidate clause-audit document ${name} recorded source-facet count`, value?.sourceFacetAnchors, anchors);
+    equal(errors, `candidate clause-audit document ${name} recorded syntax-rule count`, value?.syntaxRules, rules);
+  }
+  for (const facet of expectedFacets) {
+    for (const anchor of facet.anchors) {
+      const key = `${facet.id}\0${facet.document}\0${facet.path}\0${facet.sha256}\0${anchor}`;
+      if (!sourceAnchorKeys.has(key)) errors.push(`candidate clause-audit source-facet record is missing ${facet.id}#${anchor}`);
+    }
+  }
+
+  const syntaxRules = Array.isArray(audit?.syntaxRules) ? audit.syntaxRules : [];
+  const syntaxRuleIds = new Set();
+  const syntaxCounts = { core: 0, nodeExpressions: 0, sparql: 0, inferenceRules: 0 };
+  for (const [index, value] of syntaxRules.entries()) {
+    const label = `candidate clause-audit syntax rule[${index}]`;
+    candidateExactKeys(errors, label, value, ["id", "document", "path", "sha256", "rule", "textSha256", "applicability", "status"]);
+    if (typeof value?.id !== "string" || !value.id) errors.push(`${label} has no ID`);
+    else if (syntaxRuleIds.has(value.id)) errors.push(`${label} duplicates ${value.id}`);
+    else syntaxRuleIds.add(value.id);
+    validateCandidateClauseSourceRecord(label, value, expectedDocuments, errors);
+    equal(errors, `${label} ID`, value?.id, `${value?.document}:${value?.rule}`);
+    equal(errors, `${label} applicability`, value?.applicability, documentApplicability[value?.document]);
+    equal(errors, `${label} status`, value?.status, "candidate-unexecuted");
+    if (!CANDIDATE_SHA256.test(value?.textSha256 ?? "")) errors.push(`${label} text SHA-256 is invalid`);
+    if (!Object.hasOwn(syntaxCounts, value?.document)) errors.push(`${label} belongs to an unexpected document`);
+    else syntaxCounts[value.document] += 1;
+  }
+  candidateEqualValue(errors, "candidate clause-audit syntax-rule counts", syntaxCounts, expectedCandidateClauseAudit.counts.syntaxRules);
+
+  const grammarProductions = Array.isArray(audit?.grammarProductions) ? audit.grammarProductions : [];
+  const grammarProductionIds = new Set();
+  const productionNumbers = new Set();
+  for (const [index, value] of grammarProductions.entries()) {
+    const label = `candidate clause-audit grammar production[${index}]`;
+    candidateExactKeys(errors, label, value, ["id", "grammar", "path", "sha256", "number", "name", "textSha256", "status"]);
+    if (typeof value?.id !== "string" || !value.id) errors.push(`${label} has no ID`);
+    else if (grammarProductionIds.has(value.id)) errors.push(`${label} duplicates ${value.id}`);
+    else grammarProductionIds.add(value.id);
+    const expected = expectedGrammars.get(value?.grammar);
+    if (!expected) errors.push(`${label} names unknown grammar ${JSON.stringify(value?.grammar)}`);
+    else {
+      equal(errors, `${label} path`, value?.path, expected.path);
+      equal(errors, `${label} SHA-256`, value?.sha256, expected.sha256);
+    }
+    if (!Number.isSafeInteger(value?.number) || value.number < 1) errors.push(`${label} number is invalid`);
+    else if (productionNumbers.has(value.number)) errors.push(`${label} duplicates production number ${value.number}`);
+    else productionNumbers.add(value.number);
+    if (!CANDIDATE_SHA256.test(value?.textSha256 ?? "")) errors.push(`${label} text SHA-256 is invalid`);
+    equal(errors, `${label} ID`, value?.id, `${value?.grammar}:${value?.number}`);
+    equal(errors, `${label} status`, value?.status, "candidate-unexecuted");
+    if (typeof value?.name !== "string" || !value.name) errors.push(`${label} name is invalid`);
+  }
+  equal(errors, "candidate clause-audit grammar-production count", grammarProductionIds.size, expectedCandidateClauseAudit.counts.sparqlRlGrammarProductions);
+
+  const joins = Array.isArray(audit?.rawObligationJoins) ? audit.rawObligationJoins : [];
+  const joinIds = new Set();
+  const expectedObligationById = new Map(expectedCandidateClauseAudit.obligations.map((value) => [value.id, value]));
+  for (const [index, join] of joins.entries()) {
+    const label = `candidate clause-audit raw obligation join[${index}]`;
+    candidateExactKeys(errors, label, join, [
+      "obligationId", "mappingId", "sourceFacetIds", "sourceFacets",
+      "sourceStatus", "implementationStatus", "candidateExecutionStatus",
+      "clauseCandidateIds", "syntaxRuleIds", "grammarProductionIds",
+    ]);
+    const expected = expectedObligationById.get(join?.obligationId);
+    if (!expected) errors.push(`${label} names unknown obligation ${JSON.stringify(join?.obligationId)}`);
+    else {
+      candidateEqualValue(errors, `${label} mapping`, join?.mappingId, expected.mappingId);
+      candidateEqualValue(errors, `${label} source facet IDs`, join?.sourceFacetIds, expected.sourceFacetIds);
+      candidateEqualValue(errors, `${label} source status`, join?.sourceStatus, expected.sourceStatus);
+      candidateEqualValue(errors, `${label} implementation status`, join?.implementationStatus, expected.implementationStatus);
+      candidateEqualValue(errors, `${label} execution status`, join?.candidateExecutionStatus, expected.candidateExecutionStatus);
+      candidateEqualValue(
+        errors,
+        `${label} source facets`,
+        join?.sourceFacets,
+        expected.sourceFacetIds.map((id) => {
+          const facet = expectedFacetById.get(id);
+          return facet && { id: facet.id, document: facet.document, path: facet.path, sha256: facet.sha256, anchors: facet.anchors };
+        }),
+      );
+      const joinedFacets = expected.sourceFacetIds.map((id) => expectedFacetById.get(id));
+      const expectedFacetClauseIds = joinedFacets.flatMap((facet) =>
+        facet.anchors.map((anchor) => `facet:${facet.id}:${anchor}`),
+      );
+      const expectedSyntaxIds = syntaxRules
+        .filter((rule) => joinedFacets.some((facet) =>
+          facet.document === rule.document && facet.anchors.includes(rule.rule),
+        ))
+        .map(({ id }) => id);
+      const expectedGrammarIds = join?.obligationId === "rules-srl-syntax-recognition"
+        ? grammarProductions.map(({ id }) => id)
+        : join?.obligationId === "rules-deleted-for-clause-rejection"
+          ? ["sparqlRl:11", "sparqlRl:107"]
+          : [];
+      candidateEqualValue(
+        errors,
+        `${label} exact source-facet clause candidate IDs`,
+        (join?.clauseCandidateIds ?? []).filter((id) => id.startsWith("facet:")),
+        expectedFacetClauseIds,
+      );
+      candidateEqualValue(errors, `${label} exact syntax rule IDs`, join?.syntaxRuleIds, expectedSyntaxIds);
+      candidateEqualValue(errors, `${label} exact grammar production IDs`, join?.grammarProductionIds, expectedGrammarIds);
+    }
+    if (joinIds.has(join?.obligationId)) errors.push(`${label} duplicates ${join?.obligationId}`);
+    else joinIds.add(join?.obligationId);
+    const clauseIds = candidateStringArray(errors, `${label} clause candidate IDs`, join?.clauseCandidateIds);
+    const syntaxIds = candidateStringArray(errors, `${label} syntax rule IDs`, join?.syntaxRuleIds);
+    const grammarIds = candidateStringArray(errors, `${label} grammar production IDs`, join?.grammarProductionIds);
+    if (clauseIds.length + syntaxIds.length + grammarIds.length === 0) errors.push(`${label} has no raw source record identity`);
+    for (const id of clauseIds) {
+      if (!clauseCandidateIds.has(id)) {
+        errors.push(`${label} names unknown clause candidate ${id}`);
+      } else if (!id.startsWith("facet:") && clauseCandidateById.get(id)?.kind !== "bcp14") {
+        errors.push(`${label} joins non-BCP14 raw clause candidate ${id}`);
+      }
+    }
+    for (const id of syntaxIds) if (!syntaxRuleIds.has(id)) errors.push(`${label} names unknown syntax rule ${id}`);
+    for (const id of grammarIds) if (!grammarProductionIds.has(id)) errors.push(`${label} names unknown grammar production ${id}`);
+  }
+  equal(errors, "candidate clause-audit raw obligation join count", joins.length, expectedCandidateClauseAudit.counts.obligations);
+  candidateEqualValue(errors, "candidate clause-audit raw obligation join IDs", [...joinIds], expectedCandidateClauseAudit.obligations.map(({ id }) => id));
+
+  if ((audit?.mappingRevision?.requiredBeforeAdoption ?? []).length !== 0) {
+    errors.push("candidate clause-audit mapping still requires exact accepted slice evidence rebinding");
+  }
+  if ([...mappings, ...obligations].some((value) => String(value?.implementationStatus).includes("pending-n"))) {
+    errors.push("candidate clause-audit contains a pending N implementation status");
+  }
+}
+
 export function validateCandidateShaclEvidence(bundle, errors) {
   const receipt = bundle?.receipt;
   const inventory = bundle?.inventory;
   const casesArtifact = bundle?.cases;
+  const auditArtifact = bundle?.audit;
   const raw = bundle?.raw;
   const checkoutPath = bundle?.checkoutPath;
   const repositoryRoot = bundle?.repositoryRoot;
   const runDirectory = bundle?.runDirectory;
+  if (receipt?.kind === "clause-audit") {
+    validateCandidateClauseAuditEvidence({
+      receipt,
+      inventory,
+      audit: auditArtifact,
+      runDirectory,
+    }, errors);
+    return;
+  }
   validateCandidateShaclInventory(inventory, errors);
   candidateExactKeys(errors, "candidate receipt", receipt, [
     "schema", "kind", "suiteCommit", "implementationCommit", "runId",
@@ -935,8 +2817,6 @@ export function validateCandidateShaclEvidence(bundle, errors) {
       .filter(([lane]) => expectedInventoryLanes.has(lane))
       .reduce((sum, [, cases]) => sum + (Array.isArray(cases) ? cases.length : 0), 0);
     equal(errors, "candidate observed case total", observedCases.length, expectedCaseCount);
-  } else if (receipt?.kind === "clause-audit") {
-    errors.push("candidate clause-audit evidence is unsupported until its E3 contract is independently frozen");
   }
 }
 

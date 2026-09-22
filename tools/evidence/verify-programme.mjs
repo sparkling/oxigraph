@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import {
   agenticGeneratedWithinQualificationWindow,
   documentClaims,
+  expectedCandidateClauseAudit,
   expectedCandidateShacl,
   expectedN3MaintenanceReceipt,
   expectedPins,
@@ -224,6 +225,360 @@ function verifyCandidateDescriptor(errors) {
   }
 }
 
+function candidateClauseNormalize(value) {
+  return value
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/&nbsp;/giu, " ")
+    .replace(/&lt;/giu, "<")
+    .replace(/&gt;/giu, ">")
+    .replace(/&amp;/giu, "&")
+    .replace(/&quot;/giu, '"')
+    .replace(/&#39;/giu, "'")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function candidateClauseAnchoredText(html, anchor, documentIndex = candidateClauseHtmlIndex(html)) {
+  const element = candidateClauseAnchoredElement(documentIndex, anchor);
+  if (element.closeStart === null) throw new Error(`unclosed candidate source anchor ${anchor}`);
+  return candidateClauseNormalize(
+    documentIndex.masked.slice(element.openEnd, element.closeStart),
+  );
+}
+
+function candidateClauseSyntaxRules(document, html, descriptor, applicability) {
+  return [...html.matchAll(/data-syntax-rule=["']([^"']+)["']/giu)].map((match) => {
+    const tagStart = html.lastIndexOf("<", match.index);
+    const openEnd = html.indexOf(">", match.index);
+    const tag = /^<([a-z][\w-]*)\b/iu.exec(html.slice(tagStart, openEnd + 1))?.[1];
+    const close = tag ? html.toLowerCase().indexOf(`</${tag.toLowerCase()}>`, openEnd) : -1;
+    const rule = match[1];
+    return {
+      id: `${document}:${rule}`,
+      document,
+      path: descriptor.path,
+      sha256: descriptor.sha256,
+      rule,
+      textSha256: sha256(candidateClauseNormalize(html.slice(openEnd + 1, close < 0 ? openEnd + 1 : close))),
+      applicability,
+      status: "candidate-unexecuted",
+    };
+  });
+}
+
+function candidateClauseBcp14(
+  document,
+  html,
+  descriptor,
+  applicability,
+  documentIndex = candidateClauseHtmlIndex(html),
+) {
+  const clauses = new Map();
+  const occurrences = new Map();
+  const textElements = new Set(["p", "li", "td", "th"]);
+  for (const element of documentIndex.elements) {
+    if (!textElements.has(element.tag)) continue;
+    if (element.closeStart === null) {
+      throw new Error(`unclosed candidate BCP14 element ${element.tag} at ${element.start}`);
+    }
+    const value = candidateClauseNormalize(
+      documentIndex.masked.slice(element.openEnd, element.closeStart),
+    );
+    const keywords = [...new Set([...value.matchAll(/\b(MUST(?: NOT)?|SHOULD(?: NOT)?|MAY|REQUIRED)\b/gu)].map((entry) => entry[1]))];
+    if (keywords.length === 0) continue;
+    const textSha256 = sha256(value);
+    const section = element.sectionIds.at(-1) ?? null;
+    const id = `bcp14:${document}:${section ?? "unsectioned"}:${textSha256.slice(0, 12)}`;
+    clauses.set(id, {
+      id,
+      kind: "bcp14",
+      document,
+      path: descriptor.path,
+      sha256: descriptor.sha256,
+      section,
+      anchor: null,
+      facetId: null,
+      keywords,
+      textSha256,
+      applicability,
+      status: "raw-candidate-unreviewed",
+    });
+    const positions = occurrences.get(id) ?? [];
+    positions.push({ start: element.start, end: element.end });
+    occurrences.set(id, positions);
+  }
+  documentIndex.bcp14Occurrences = occurrences;
+  return [...clauses.values()];
+}
+
+function candidateClauseAnchoredElement(documentIndex, anchor) {
+  const matches = documentIndex.elementsById.get(anchor) ?? [];
+  if (matches.length !== 1) {
+    throw new Error(
+      matches.length === 0
+        ? `missing candidate source anchor ${anchor}`
+        : `duplicate candidate source anchor ${anchor}`,
+    );
+  }
+  return matches[0];
+}
+
+function candidateClauseHtmlIndex(html) {
+  const masked = candidateClauseMaskIgnoredHtml(html);
+  const elements = [];
+  const elementsById = new Map();
+  const stack = [];
+  const voidElements = new Set([
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
+    "param", "source", "track", "wbr",
+  ]);
+  for (let start = masked.indexOf("<"); start >= 0; start = masked.indexOf("<", start + 1)) {
+    let quote = null;
+    let end = start + 1;
+    for (; end < masked.length; end += 1) {
+      const character = masked[end];
+      if (quote !== null) {
+        if (character === quote) quote = null;
+      } else if (character === '"' || character === "'") {
+        quote = character;
+      } else if (character === ">") {
+        break;
+      }
+    }
+    if (end >= masked.length) break;
+    const raw = html.slice(start, end + 1);
+    const tagMatch = /^<\s*(\/?)\s*([a-z][\w:-]*)\b/iu.exec(raw);
+    if (!tagMatch) {
+      start = end;
+      continue;
+    }
+    const tag = tagMatch[2].toLowerCase();
+    if (tagMatch[1]) {
+      const openIndex = stack.findLastIndex((element) => element.tag === tag);
+      if (openIndex >= 0) {
+        for (let index = stack.length - 1; index >= openIndex; index -= 1) {
+          const element = stack.pop();
+          element.closeStart = start;
+          element.end = index === openIndex ? end + 1 : start;
+        }
+      }
+      start = end;
+      continue;
+    }
+    const id = /\bid\s*=\s*(["'])([^"']+)\1/iu.exec(raw)?.[2] ?? null;
+    const sectionIds = stack.at(-1)?.sectionIds.slice() ?? [];
+    if (tag === "section" && id !== null) sectionIds.push(id);
+    const element = {
+      id,
+      tag,
+      start,
+      openEnd: end + 1,
+      closeStart: null,
+      end: null,
+      sectionIds,
+    };
+    elements.push(element);
+    if (id !== null) {
+      const matches = elementsById.get(id) ?? [];
+      matches.push(element);
+      elementsById.set(id, matches);
+    }
+    if (/\/\s*>$/u.test(raw) || voidElements.has(tag)) {
+      element.closeStart = end + 1;
+      element.end = end + 1;
+    } else {
+      stack.push(element);
+    }
+    start = end;
+  }
+  return { masked, elements, elementsById, bcp14Occurrences: new Map() };
+}
+
+function candidateClauseMaskIgnoredHtml(html) {
+  const mask = (value) => value.replace(/[^\r\n]/gu, " ");
+  return html
+    .replace(/<!--[\s\S]*?-->/gu, mask)
+    .replace(/<(script|style)\b[\s\S]*?<\/\1>/giu, mask);
+}
+
+function candidateClauseGrammarProductions(grammar, source, descriptor) {
+  const records = [];
+  let current = null;
+  const append = () => {
+    if (current === null) return;
+    const value = current.lines.join(" ").replace(/\s+/gu, " ").trim();
+    records.push({
+      id: `${grammar}:${current.number}`,
+      grammar,
+      path: descriptor.path,
+      sha256: descriptor.sha256,
+      number: current.number,
+      name: current.name,
+      textSha256: sha256(value),
+      status: "candidate-unexecuted",
+    });
+  };
+  for (const line of source.split(/\r?\n/u)) {
+    const match = /^\[(\d+)\]\s+([^\s]+)\s+::=\s*(.*)$/u.exec(line);
+    if (match) {
+      append();
+      current = { number: Number(match[1]), name: match[2], lines: [match[3]] };
+    } else if (current !== null && /^\s+/u.test(line)) {
+      current.lines.push(line.trim());
+    } else if (/^@[A-Za-z][A-Za-z0-9_-]*$/u.test(line.trim())) {
+      append();
+      current = null;
+    } else if (line.trim() !== "") {
+      throw new Error(`unparsed ${grammar} grammar line after production ${current?.number ?? 0}`);
+    }
+  }
+  append();
+  return records;
+}
+
+function verifyCandidateClauseSources(root, checkoutPath, audit, errors) {
+  const checkout = collect(errors, "candidate clause-audit checkout", () =>
+    directoryPath(root, relative(root, checkoutPath)),
+  );
+  if (checkout === undefined) return;
+  const head = collect(errors, "candidate clause-audit checkout identity", () => gitHead(checkout));
+  if (head !== undefined && head !== expectedCandidateShacl.revision.suiteCommit) {
+    errors.push("candidate clause-audit checkout differs from the frozen suite commit");
+  }
+  const status = collect(errors, "candidate clause-audit checkout status", () =>
+    execFileSync("git", ["-C", checkout, "status", "--porcelain=v1", "--untracked-files=all"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }),
+  );
+  if (status !== undefined && status !== "") {
+    errors.push("candidate clause-audit checkout is not clean");
+  }
+  const facetsByDocument = new Map();
+  for (const mapping of expectedCandidateClauseAudit.mappings) {
+    for (const facet of mapping.sourceFacets) {
+      const facets = facetsByDocument.get(facet.document) ?? [];
+      facets.push({ ...facet, sourceStatus: mapping.sourceStatus });
+      facetsByDocument.set(facet.document, facets);
+    }
+  }
+  const applicability = {
+    overview: "informative-navigation",
+    core: "validation-processor",
+    nodeExpressions: "node-expression-processor",
+    sparql: "sparql-validation-processor",
+    sparqlRl: "sparql-rl-processor",
+    inferenceRules: "inference-rules-processor",
+    compact: "compact-syntax-parser",
+    ui: "renderer-or-ui",
+    profiling: "profile-author-or-data-author",
+  };
+  const syntaxDocuments = new Set(["core", "nodeExpressions", "sparql", "inferenceRules"]);
+  const clauseCandidates = [];
+  const syntaxRules = [];
+  const documentIndexes = new Map();
+  for (const [name, descriptor] of Object.entries(expectedCandidateClauseAudit.mappingRevision.documents)) {
+    const bytes = collect(errors, `candidate clause-audit document ${name}`, () =>
+      readFileSync(candidateRegularPath(checkout, descriptor.path)),
+    );
+    if (bytes === undefined) continue;
+    if (sha256(bytes) !== descriptor.sha256) {
+      errors.push(`candidate clause-audit document ${name} SHA-256 drifted`);
+      continue;
+    }
+    const html = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    const documentIndex = candidateClauseHtmlIndex(html);
+    documentIndexes.set(name, documentIndex);
+    if (syntaxDocuments.has(name)) syntaxRules.push(...candidateClauseSyntaxRules(name, html, descriptor, applicability[name]));
+    clauseCandidates.push(
+      ...candidateClauseBcp14(name, html, descriptor, applicability[name], documentIndex),
+    );
+    for (const facet of facetsByDocument.get(name) ?? []) {
+      for (const anchor of facet.anchors) {
+        const value = collect(errors, `candidate clause-audit ${facet.id} anchor ${anchor}`, () =>
+          candidateClauseAnchoredText(html, anchor, documentIndex),
+        );
+        if (value === undefined) continue;
+        clauseCandidates.push({
+          id: `facet:${facet.id}:${anchor}`,
+          kind: "source-facet",
+          document: name,
+          path: descriptor.path,
+          sha256: descriptor.sha256,
+          section: anchor,
+          anchor,
+          facetId: facet.id,
+          keywords: [],
+          textSha256: sha256(value),
+          applicability: applicability[name],
+          status: facet.sourceStatus,
+        });
+      }
+    }
+  }
+  const grammarProductions = [];
+  for (const [name, descriptor] of Object.entries(expectedCandidateClauseAudit.mappingRevision.grammars)) {
+    const bytes = collect(errors, `candidate clause-audit grammar ${name}`, () =>
+      readFileSync(candidateRegularPath(checkout, descriptor.path)),
+    );
+    if (bytes !== undefined && sha256(bytes) !== descriptor.sha256) {
+      errors.push(`candidate clause-audit grammar ${name} SHA-256 drifted`);
+    } else if (bytes !== undefined && name === "sparqlRl") {
+      grammarProductions.push(...candidateClauseGrammarProductions(name, new TextDecoder("utf-8", { fatal: true }).decode(bytes), descriptor));
+    }
+  }
+  if (!isDeepStrictEqual(audit?.clauseCandidates, clauseCandidates)) {
+    errors.push("candidate clause-audit raw clause candidates differ from the pinned source bytes");
+  }
+  if (!isDeepStrictEqual(audit?.syntaxRules, syntaxRules)) {
+    errors.push("candidate clause-audit syntax rules differ from the pinned source bytes");
+  }
+  if (!isDeepStrictEqual(audit?.grammarProductions, grammarProductions)) {
+    errors.push("candidate clause-audit grammar productions differ from the pinned source bytes");
+  }
+  const expectedFacetById = new Map(
+    expectedCandidateClauseAudit.mappings.flatMap((mapping) =>
+      mapping.sourceFacets.map((facet) => [facet.id, facet]),
+    ),
+  );
+  const actualJoinById = new Map(
+    (audit?.rawObligationJoins ?? []).map((join) => [join?.obligationId, join]),
+  );
+  for (const obligation of expectedCandidateClauseAudit.obligations) {
+    const expectedClauseIds = [];
+    const seen = new Set();
+    const add = (id) => {
+      if (!seen.has(id)) {
+        expectedClauseIds.push(id);
+        seen.add(id);
+      }
+    };
+    for (const facetId of obligation.sourceFacetIds) {
+      const facet = expectedFacetById.get(facetId);
+      const documentIndex = documentIndexes.get(facet?.document);
+      if (!facet || !documentIndex) continue;
+      for (const anchor of facet.anchors) {
+        add(`facet:${facet.id}:${anchor}`);
+        const scope = candidateClauseAnchoredElement(documentIndex, anchor);
+        for (const [id, occurrences] of documentIndex.bcp14Occurrences) {
+          if (
+            occurrences.some(
+              ({ start, end }) => start >= scope.start && end <= scope.end,
+            )
+          ) {
+            add(id);
+          }
+        }
+      }
+    }
+    if (!isDeepStrictEqual(actualJoinById.get(obligation.id)?.clauseCandidateIds, expectedClauseIds)) {
+      errors.push(
+        `candidate clause-audit raw BCP14 join differs from pinned anchor scope for ${obligation.id}`,
+      );
+    }
+  }
+}
+
 export function verifyShaclCandidateArtifacts(
   rootInput,
   { receiptRef, expectedImplementationCommit } = {},
@@ -282,16 +637,16 @@ export function verifyShaclCandidateArtifacts(
     errors.push("candidate receipt canonical path disagrees with its ref");
   }
 
-  if (receipt?.kind === "clause-audit") {
-    errors.push("candidate clause-audit evidence is unsupported until its E3 contract is independently frozen");
-  }
-  const boundReferences = [
-    ["candidate inventory artifact", receipt?.inventoryArtifact, true, null, null],
-    ["candidate cases artifact", receipt?.casesArtifact, true, null, null],
-  ];
-  for (const [laneName, lane] of Object.entries(receipt?.lanes ?? {})) {
-    boundReferences.push([`candidate ${laneName} stdout artifact`, lane?.stdoutArtifact, false, laneName, "stdout"]);
-    boundReferences.push([`candidate ${laneName} stderr artifact`, lane?.stderrArtifact, false, laneName, "stderr"]);
+  const clauseAudit = receipt?.kind === "clause-audit";
+  const boundReferences = [["candidate inventory artifact", receipt?.inventoryArtifact, true, null, null]];
+  if (clauseAudit) {
+    boundReferences.push(["candidate clause-audit artifact", receipt?.auditArtifact, true, null, null]);
+  } else {
+    boundReferences.push(["candidate cases artifact", receipt?.casesArtifact, true, null, null]);
+    for (const [laneName, lane] of Object.entries(receipt?.lanes ?? {})) {
+      boundReferences.push([`candidate ${laneName} stdout artifact`, lane?.stdoutArtifact, false, laneName, "stdout"]);
+      boundReferences.push([`candidate ${laneName} stderr artifact`, lane?.stderrArtifact, false, laneName, "stderr"]);
+    }
   }
   const seenPaths = new Set([receiptRef.path]);
   const loaded = new Map();
@@ -316,16 +671,20 @@ export function verifyShaclCandidateArtifacts(
     }
   }
   const inventory = loaded.get("candidate inventory artifact");
-  const cases = loaded.get("candidate cases artifact");
-  if (inventory !== undefined && cases !== undefined) {
+  const evidence = clauseAudit
+    ? loaded.get("candidate clause-audit artifact")
+    : loaded.get("candidate cases artifact");
+  if (inventory !== undefined && evidence !== undefined) {
+    const checkoutPath = `${root}/target/w3c/shacl-1.2/data-shapes-${expectedCandidateShacl.revision.suiteCommit.slice(0, 12)}`;
+    if (clauseAudit) verifyCandidateClauseSources(root, checkoutPath, evidence, errors);
     collect(errors, "candidate evidence policy", () =>
       validateCandidateShaclEvidence({
         receipt,
         inventory,
-        cases,
+        ...(clauseAudit ? { audit: evidence } : { cases: evidence }),
         raw,
         repositoryRoot: root,
-        checkoutPath: `${root}/target/w3c/shacl-1.2/data-shapes-${expectedCandidateShacl.revision.suiteCommit.slice(0, 12)}`,
+        checkoutPath,
         runDirectory,
       }, errors),
     );
