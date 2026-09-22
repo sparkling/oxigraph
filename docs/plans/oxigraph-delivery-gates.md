@@ -69,11 +69,14 @@ Corrected 2026-09-22: ground DATA materialization (`2e63c692`) and BNODE
 evaluation (`f706742b`) are delivered, as are the clause evidence contracts
 (`899a2d0c`, `8d71c036`). Remaining under ADR-0046 is the reviewed suite
 evidence transition, now blocked on nine selected-case failures from the first
-candidate suite execution (`run-VYL2oi`, 551 of 560 expected): three `validate`
-cases need a SHACL-declared function to be callable from inside `sh:select`
-text, and six `srlRules` cases need `NOT DATA`, `WHERE DATA` and `SET` in the
-SRL native lowering, which `srl/evaluate.rs` currently refuses as
-unimplemented. Diagnosis with source citations:
+candidate suite execution. Four of the nine are fixed in `9b79e301` and
+`6b4dad55` -- GD-only matching (`NOT DATA`, and the whole body of a
+`WHERE DATA` rule) must not contribute stratification dependencies -- taking the
+suite from 551 to 555 of 560 (`run-VYL2oi`, `run-3KlWyX`, `run-MnV8VH`). Five
+remain: three `validate` cases need a SHACL-declared function to be callable
+from inside `sh:select` text, which requires graph-capable custom-function
+registration in `spareval`, and two `srlRules` cases are blocked on the GD/G0
+source ambiguity that ADR-0046 records and forbids resolving locally. Diagnosis with source citations:
 `target/engineering-delivery/adr0046-e4/failure-diagnosis.json`. Inline DATA
 triple terms are unsupported even as objects, as the B+D fixture setup exposed.
 The accepted implementation candidate has 203 manifest-listed SRL cases, not the

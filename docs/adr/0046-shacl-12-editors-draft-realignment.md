@@ -3,8 +3,11 @@
 - **Status**: Accepted
 - **Date**: 2026-09-19
 - **Updated**: 2026-09-22 — candidate clause evidence contracts delivered
-  (`899a2d0c`, `8d71c036`); first candidate suite execution recorded, nine
-  selected cases fail on unimplemented engine features.
+  (`899a2d0c`, `8d71c036`); first candidate suite execution recorded. Four of
+  its nine selected-case failures fixed in `9b79e301` and `6b4dad55` (GD-only
+  matching must not create stratification dependencies), taking the suite from
+  551 to 555 of 560; five remain, three needing graph-capable custom-function
+  registration and two blocked on the recorded GD/G0 ambiguity.
 - Deciders: Oxigraph parity programme
 - Implementation status: DATA execution and fail-closed `sh:ruleProcessor`
   handling (A+C) delivered in `e9a285c8` on 2026-09-20. Body abbreviations and
@@ -511,13 +514,42 @@ The nine failures are unimplemented engine features, diagnosed against source in
   resolve. `spareval` already offers `with_custom_function`, but its
   `Fn(&[Term]) -> Option<Term>` signature has no dataset access, while these
   function bodies must read the data graph.
-- Six `srlRules` cases use `NOT DATA`, `WHERE DATA` and `SET`. The SRL native
-  Datalog lowering in `srl/evaluate.rs` explicitly refuses these, returning
-  `SrlError::Unsupported` with the message "specified upstream (issue #960
-  resolved) but not yet implemented here".
+- Six `srlRules` cases involve `NOT DATA` and `WHERE DATA`. The
+  `SrlError::Unsupported` messages in the Datalog lowering are a red herring
+  here: `native::required` routes any rule using the data graph to the native
+  path, so those messages are unreachable for these fixtures. Four of the six
+  failed in stratification and are now fixed (below); two remain, for a
+  different reason.
 
-These are pre-existing gaps in the Rust engine, unrelated to the evidence
-tooling above. They are ordinary buildable work under ADR-0044, each its own
+Four of the nine are now fixed. Stratification treated a `NOT DATA` group, and
+the whole body of a `WHERE DATA` rule, as ordinary dependencies. Both read the
+frozen graph GD, which no rule head can write, so neither can depend on any
+rule's output; a rule whose head predicate also appeared in its own negation
+was therefore rejected as recursive before evaluation. `9b79e301` excludes
+`data_only` negations from the dependency graph and `6b4dad55` excludes
+`WHERE DATA` rules entirely. GD semantics are untouched by both. Measured on
+the suite: 551 -> 553 -> 555 passes of 560 expected, with inventory
+conservation unchanged throughout (`run-VYL2oi`, `run-3KlWyX`, `run-MnV8VH`).
+
+Five failures remain. Three are the custom-function cases above, whose observed
+error is now confirmed verbatim as "The function <...> is not supported".
+Closing those needs a graph-capable custom-function registration in `spareval`,
+whose `with_custom_function` currently takes a pure `Fn(&[Term]) -> Option<Term>`
+while two of the three function bodies must read the data graph; that is a
+cross-crate interface change and its own slice.
+
+The other two, `eval-neg-data-03` and `eval-neg-data-06`, fail because GD
+includes inline `DATA{}` blocks, so a `NOT DATA` over an inline-asserted pattern
+does not hold. Upstream `eval-where-data-03` and the `eval-neg-data-06` comment
+("the DATA block is inferred") read as though GD should exclude those blocks.
+This is exactly the GD/G0 ambiguity this ADR already records. The change was
+implemented, made both cases pass, and was **reverted**: it contradicted this
+ADR's instruction to preserve the accepted A+C implementation rather than
+silently rebaseline DATA semantics, and it broke two existing tests that encode
+the current reading. Resolving it needs an upstream answer, not a local choice.
+
+The remainder are pre-existing gaps in the Rust engine, unrelated to the
+evidence tooling above. They are ordinary buildable work under ADR-0044, each its own
 slice. They have **not** been moved into the predeclared-unsupported or excluded
 sets: those are fixed by the readiness file, and a selected failure is a failure.
 Ordinary suite execution remains incomplete until they are implemented, and no
