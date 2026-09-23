@@ -5588,10 +5588,23 @@ fn workload_streaming_query_reset_records_a_data_cancellation_and_frees_the_slot
         {
             break;
         }
-        ensure!(
-            Instant::now() < deadline,
-            "streaming reset did not end the query observation"
-        );
+        if Instant::now() >= deadline {
+            // The stall seen once in run-qIJGBC left no state behind. Capture
+            // the query outcomes, admission occupancy and cancellation
+            // samples so a recurrence is diagnosable from its receipt.
+            let metrics = scrape(&running, "GET")?.body;
+            let state = metrics
+                .lines()
+                .filter(|line| {
+                    line.starts_with("oxigraph_queries_total")
+                        || line.starts_with("oxigraph_admission_active")
+                        || line.starts_with("oxigraph_admission_queued")
+                        || line.starts_with("oxigraph_admission_cancellation_latency_seconds_count")
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            anyhow::bail!("streaming reset did not end the query observation; state:\n{state}");
+        }
         thread::yield_now();
     }
     ensure!(
