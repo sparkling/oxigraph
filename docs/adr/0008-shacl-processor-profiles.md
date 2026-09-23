@@ -202,7 +202,10 @@ below remains open. Current alignment and remaining divergences:
 - **`WHERE DATA` / `NOT DATA`** is implemented in `e9a285c8` (2026-09-20):
   frozen base-plus-inline GD, accumulating GE, sticky WHERE DATA and local
   NOT DATA. Focused and feature-matrix evidence is recorded in ADR-0046;
-  the upstream suite repin remains separate.
+  the upstream suite repin remains separate. On 2026-09-23 ADR-0047 changed
+  the frozen graph to the base graph only (inline DATA blocks are inferred
+  triples), applied in `fede6934` and tracked upstream as
+  w3c/data-shapes#1276.
 - **`FOR`/`IN` was removed** from the grammar on 2026-08-12. It is not a pending
   obligation; our parser rejects the removed syntax instead of carrying it to
   execution as an unsupported extension.

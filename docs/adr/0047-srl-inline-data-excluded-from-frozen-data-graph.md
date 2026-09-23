@@ -2,6 +2,8 @@
 
 - **Status**: Accepted (provisional; revisit when upstream answers)
 - **Date**: 2026-09-23
+- **Reviewed**: 2026-09-23, independent Opus review ACCEPT at `ee02f946`
+  (`target/engineering-delivery/adr0047-review/review.json`)
 - Deciders: Oxigraph parity programme, on the owner's instruction of
   2026-09-23 to adopt reading B and track the upstream question
 - Upstream issue: [w3c/data-shapes#1276](https://github.com/w3c/data-shapes/issues/1276)
@@ -42,9 +44,10 @@ let X = evalRule(R, GE, G0)      # and evalRule is passed G0, not GD
 
 Evidence for B:
 
-- The pinned candidate tests `eval/eval-neg-data-03`, `eval-neg-data-06`
-  (commented `## DATA block is "inferred"`) and `eval-where-data-03` expect
-  reading B.
+- The pinned candidate tests `eval/eval-neg-data-03` and `eval-neg-data-06`
+  (commented `## DATA block is "inferred"`) expect reading B and fail under
+  reading A. `eval-where-data-03` is consistent with B but passes under both
+  readings, so it does not discriminate.
 - The algorithm's own calls pass `G0`, and `GI` classifies `DATA` triples as
   inferred.
 - The closed issue #791 resolved that data block triples "are added to the
