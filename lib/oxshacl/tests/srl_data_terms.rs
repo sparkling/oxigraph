@@ -371,16 +371,24 @@ fn data_labels_share_locally_imports_are_apart_and_nested_collisions_avoid_base(
 #[cfg(feature = "rdf-12")]
 #[test]
 fn data_terms_feed_ordinary_where_data_not_data_and_query_consumers() {
+    // Inline DATA triples are inferred, so WHERE DATA and NOT DATA see only the
+    // base graph (ADR-0047). The frozen consumer reads a base-graph triple term.
     let rules = parse(concat!(
         "PREFIX : <http://example/> ",
         "DATA { :holder :statement <<( :s :p :o )>> } ",
         "RULE { :ordinary :matched :yes } WHERE { :holder :statement ?term } ",
-        "RULE { :frozen :matched :yes } WHERE DATA { :holder :statement ?term } ",
+        "RULE { :frozen :matched :yes } WHERE DATA { :baseHolder :statement ?term } ",
+        "RULE { :inlineFrozen :matched :yes } WHERE DATA { :holder :statement ?term } ",
         "RULE { :negative :matched :yes } WHERE { ",
-        "  :holder :statement ?term . NOT DATA { :missing :statement ?term } ",
+        "  :holder :statement ?term . NOT DATA { :holder :statement ?term } ",
         "}"
     ));
-    let base = GraphSnapshot::default_graph(Dataset::new());
+    let base_quad = quad(
+        iri("baseHolder"),
+        iri("statement"),
+        triple(iri("u"), iri("v"), iri("w")),
+    );
+    let base = GraphSnapshot::default_graph(Dataset::from_iter([base_quad.clone()]));
     let execution = execute_srl_rules(&rules, &base, &ValidationOptions::default()).unwrap();
     let expected = Dataset::from_iter([
         quad(
@@ -392,9 +400,14 @@ fn data_terms_feed_ordinary_where_data_not_data_and_query_consumers() {
         marker("frozen"),
         marker("negative"),
     ]);
-    assert_isomorphic(execution.base().dataset(), &Dataset::new());
+    assert_isomorphic(
+        execution.base().dataset(),
+        &Dataset::from_iter([base_quad.clone()]),
+    );
     assert_isomorphic(execution.inference().dataset(), &expected);
-    assert_isomorphic(execution.entailed().dataset(), &expected);
+    let mut entailed = expected.clone();
+    entailed.insert(base_quad.clone());
+    assert_isomorphic(execution.entailed().dataset(), &entailed);
     let goal = SrlTriple {
         subject: SrlNode::Constant(SrlConstant::Iri(format!("{EX}holder"))),
         predicate: SrlPredicate::Node(SrlNode::Constant(SrlConstant::Iri(format!(
@@ -422,18 +435,27 @@ fn inline_only_documents_execute_in_native_and_datalog_lanes() {
     assert_isomorphic(datalog.inference().dataset(), &datalog_expected);
     assert_isomorphic(datalog.entailed().dataset(), &datalog_expected);
 
+    // WHERE DATA reads only the base graph (ADR-0047), so the native lane's
+    // frozen consumer matches a base-graph triple term, not the inline one.
+    let base_quad = quad(iri("t"), iri("p"), triple(iri("u"), iri("v"), iri("w")));
     let native = execute(
         concat!(
             "PREFIX : <http://example/> ",
             "DATA { :s :p <<( :u :v :w )>> } ",
-            "RULE { :native :matched :yes } WHERE DATA { :s :p ?statement }"
+            "RULE { :native :matched :yes } WHERE DATA { :t :p ?statement } ",
+            "RULE { :inlineNative :matched :yes } WHERE DATA { :s :p ?statement }"
         ),
-        Dataset::new(),
+        Dataset::from_iter([base_quad.clone()]),
     );
     let native_expected = Dataset::from_iter([inline, marker("native")]);
-    assert_isomorphic(native.base().dataset(), &Dataset::new());
+    assert_isomorphic(
+        native.base().dataset(),
+        &Dataset::from_iter([base_quad.clone()]),
+    );
     assert_isomorphic(native.inference().dataset(), &native_expected);
-    assert_isomorphic(native.entailed().dataset(), &native_expected);
+    let mut native_entailed = native_expected.clone();
+    native_entailed.insert(base_quad.clone());
+    assert_isomorphic(native.entailed().dataset(), &native_entailed);
 }
 
 #[cfg(not(feature = "rdf-12"))]
@@ -520,17 +542,21 @@ fn recursive_data_admission_stops_before_a_later_invalid_nested_term() {
 fn recursive_native_head_admission_stops_before_a_later_invalid_nested_term() {
     let rules = parse(concat!(
         "PREFIX : <http://example/> ",
-        "DATA { :seed :p :o } ",
         "RULE { :owner :items ( :first ( ( <<( \"invalid-subject\" :p :o )>> ) ) ) } ",
         "WHERE DATA { :seed :p :o }"
     ));
     let mut options = ValidationOptions::default();
     options.limits.max_derived_triples = 1;
 
+    // The WHERE DATA seed must be a base-graph triple (ADR-0047).
     assert!(matches!(
         execute_srl_rules(
             &rules,
-            &GraphSnapshot::default_graph(Dataset::new()),
+            &GraphSnapshot::default_graph(Dataset::from_iter([quad(
+                iri("seed"),
+                iri("p"),
+                iri("o"),
+            )])),
             &options,
         ),
         Err(SrlError::Validation(ValidationError::LimitExceeded {
