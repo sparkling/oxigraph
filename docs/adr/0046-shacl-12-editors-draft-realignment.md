@@ -587,6 +587,23 @@ all fixed in `7931a493`:
 - A declaration could replace a built-in `xsd:` cast. `xsd:` declarations are
   no longer exposed, and an already registered name is left in place.
 
+A second independent review accepted `7931a493`
+(`target/engineering-delivery/e4-custom-functions/review2.json`). Its
+non-blocking notes stay open except one: `compile_checked_with_imports` also
+restarted the timeout at each stage. `ea67fc6e` fixes that by carrying the
+remaining time forward; it has no regression test. The open notes are:
+
+- Already registered GeoSPARQL names are kept, although the specification
+  would allow overriding them. This is the safer reading.
+- A `sparql:` declaration with a body is still a hard error rather than being
+  ignored. This behaviour predates the change.
+- A failure inside a function body aborts validation, while the specification
+  makes it a function-call error, like the zero and many cases.
+- A limit error raised inside a call reports the remaining ceiling rather than
+  the configured one. It is almost always masked by the outer charge.
+- Ill-formed `sh:parameter` declarations are now accepted silently, because
+  parameters are documentation only.
+
 Declared functions are registered only for `sh:sparql` constraint and custom
 component queries. They are not available in node-expression `sh:select`,
 `sh:sparqlExpr`, SRL or SHACL-SPARQL rules. The specification says SHOULD, so
