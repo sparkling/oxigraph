@@ -6,6 +6,8 @@ mod dataset;
 mod entailment;
 mod error;
 #[cfg(feature = "http-client")]
+pub(crate) mod federation;
+#[cfg(feature = "http-client")]
 mod http;
 #[cfg(all(
     not(target_family = "wasm"),
@@ -40,6 +42,12 @@ pub use crate::sparql::entailment::{
     QueryEntailment, QueryEntailmentDataset, QueryEntailmentError, QueryEntailmentOptions,
 };
 pub use crate::sparql::error::UpdateEvaluationError;
+#[cfg(feature = "http-client")]
+pub use crate::sparql::federation::{
+    HttpServiceExecutionProfile, HttpServiceFailure, HttpServiceInvocationRecord,
+    HttpServiceInvocationState, HttpServiceObservation, HttpServiceObservationConfigurationError,
+    HttpServiceObservationSnapshot,
+};
 #[cfg(feature = "http-client")]
 use crate::sparql::http::HttpServiceHandler;
 pub use crate::sparql::update::{
@@ -134,6 +142,8 @@ pub struct SparqlEvaluator {
     with_http_default_service_handler: bool,
     #[cfg(feature = "http-client")]
     egress_policy: Option<EgressPolicy>,
+    #[cfg(feature = "http-client")]
+    http_service_observation: Option<HttpServiceObservation>,
     cancellation_token: Option<CancellationToken>,
     parser: SparqlParser,
     inner: QueryEvaluator,
@@ -298,6 +308,46 @@ impl SparqlEvaluator {
     #[inline]
     pub fn with_egress_policy(mut self, policy: EgressPolicy) -> Self {
         self.egress_policy = Some(policy);
+        self
+    }
+
+    /// Attaches a bounded, opt-in execution report for the built-in HTTP
+    /// `SERVICE` handler.
+    ///
+    /// The handle is cloneable and explicitly cumulative: this evaluator, its
+    /// clones, the prepared queries and updates derived from it, and every
+    /// execution of those all add to the same report. Create one handle per
+    /// logical query when query-local attribution is wanted. There is no
+    /// automatic reset, no reset operation that could erase observations while
+    /// result streams are alive, and no report for algebra that is never
+    /// executed.
+    ///
+    /// Only the built-in `SERVICE` consumer is reported. `LOAD` and nested
+    /// document retrieval are never counted, an explicitly registered custom or
+    /// default handler keeps its precedence and produces no records here, and
+    /// attaching a handle never enables a disabled default HTTP handler.
+    /// Observation never changes results, headers, blank-node labels, or error
+    /// disposition. See [`HttpServiceObservation`] for what is counted.
+    ///
+    /// ```
+    /// use oxigraph::sparql::{HttpServiceObservation, SparqlEvaluator};
+    /// use oxigraph::store::Store;
+    ///
+    /// let observation = HttpServiceObservation::new(16)?;
+    /// SparqlEvaluator::new()
+    ///     .with_deny_all_egress_policy()
+    ///     .with_http_service_observation(observation.clone())
+    ///     .parse_query("SELECT * WHERE { ?s ?p ?o }")?
+    ///     .on_store(&Store::new()?)
+    ///     .execute()?;
+    /// // This query holds no SERVICE call, so no invocation is reported.
+    /// assert_eq!(observation.snapshot().attempts(), 0);
+    /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
+    /// ```
+    #[cfg(feature = "http-client")]
+    #[inline]
+    pub fn with_http_service_observation(mut self, observation: HttpServiceObservation) -> Self {
+        self.http_service_observation = Some(observation);
         self
     }
 
@@ -587,11 +637,18 @@ impl SparqlEvaluator {
 
     #[cfg(feature = "http-client")]
     fn http_client(&self, purpose: EgressPurpose) -> HttpClient {
-        HttpClient::new(self.http_timeout, self.http_redirection_limit).with_egress(
+        let client = HttpClient::new(self.http_timeout, self.http_redirection_limit).with_egress(
             self.egress_policy.clone(),
             purpose,
             self.cancellation_token.clone(),
-        )
+        );
+        let Some(observation) = self.http_service_observation.clone() else {
+            return client;
+        };
+        // The report rides on the built-in SERVICE client only. Attaching it to
+        // any other purpose is a no-op, so LOAD and nested document retrieval
+        // are never counted.
+        client.with_http_service_observation(observation)
     }
 
     #[cfg_attr(not(feature = "http-client"), expect(unused_mut))]
@@ -792,6 +849,8 @@ impl Default for SparqlEvaluator {
             with_http_default_service_handler: true,
             #[cfg(feature = "http-client")]
             egress_policy: None,
+            #[cfg(feature = "http-client")]
+            http_service_observation: None,
             cancellation_token: None,
             parser: SparqlParser::new(),
             inner: QueryEvaluator::new(),

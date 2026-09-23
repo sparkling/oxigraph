@@ -1,3 +1,4 @@
+use crate::sparql::federation::{HttpServiceInvocation, HttpServiceObservation};
 use oxhttp::model::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE};
 use oxhttp::model::{Body, Method, Request, Response};
 use spareval::CancellationToken;
@@ -404,6 +405,10 @@ struct RequestContext {
     deadline: Option<Instant>,
     policy_metrics: Option<Arc<crate::store::policy_metrics::PolicyMetricsState>>,
     attempt_started: Option<Instant>,
+    // The opt-in built-in SERVICE report, and the logical invocation this
+    // operation contributes to it. Both are absent for every other purpose.
+    service_observation: Option<HttpServiceObservation>,
+    invocation: Option<Arc<HttpServiceInvocation>>,
 }
 
 impl RequestContext {
@@ -460,6 +465,13 @@ impl RequestContext {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         *slot = Some(error.clone());
+    }
+
+    /// Counts one HTTP-client dispatch this operation makes after admission.
+    fn count_dispatch(&self) {
+        if let Some(invocation) = &self.invocation {
+            invocation.dispatch();
+        }
     }
 
     fn ensure_alive(&self) -> Result<(), EgressError> {
@@ -527,6 +539,8 @@ impl HttpClient {
                 deadline: None,
                 policy_metrics: None,
                 attempt_started: None,
+                service_observation: None,
+                invocation: None,
             },
         }
     }
@@ -561,7 +575,33 @@ impl HttpClient {
     pub(crate) fn for_purpose(&self, purpose: EgressPurpose) -> Self {
         let mut client = self.clone();
         client.context.purpose = purpose;
+        if purpose != EgressPurpose::Service {
+            // Only the built-in SERVICE consumer is reported: LOAD and nested
+            // document retrieval must never reach a service report.
+            client.context.service_observation = None;
+            client.context.invocation = None;
+        }
         client
+    }
+
+    /// Attaches a bounded built-in `SERVICE` report to this client.
+    ///
+    /// Every other purpose keeps no report. Clones, policy-metrics binding,
+    /// and handler reconstruction preserve the attached report.
+    pub(crate) fn with_http_service_observation(
+        mut self,
+        observation: HttpServiceObservation,
+    ) -> Self {
+        if self.context.purpose == EgressPurpose::Service {
+            self.context.service_observation = Some(observation);
+        }
+        self
+    }
+
+    /// Returns the logical invocation this operation contributes to, if the
+    /// caller attached a report to the built-in `SERVICE` client.
+    pub(crate) fn service_invocation(&self) -> Option<Arc<HttpServiceInvocation>> {
+        self.context.invocation.clone()
     }
 
     pub(crate) fn with_policy_metrics(
@@ -575,6 +615,13 @@ impl HttpClient {
     pub(crate) fn for_operation(&self) -> Self {
         let mut client = self.clone();
         client.context.last_error = Arc::new(Mutex::new(None));
+        // One operation is one logical attempt. It is counted here, before
+        // authorization, so a denial before any dispatch is still reported.
+        client.context.invocation = client
+            .context
+            .service_observation
+            .as_ref()
+            .map(HttpServiceObservation::begin_invocation);
         client
     }
 
@@ -697,6 +744,10 @@ impl HttpClient {
                 )
             });
         context.ensure_alive()?;
+        // The request is admitted and about to be handed to the HTTP client. A
+        // transport failure is still a dispatch; internal redirects of an
+        // unrestricted legacy client are not separately visible here.
+        context.count_dispatch();
         let response = deadline_client
             .as_ref()
             .unwrap_or(&self.client)
