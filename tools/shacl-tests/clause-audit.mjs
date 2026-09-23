@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hiddenIndexEntriesWithFiles } from "./hidden-entries.mjs";
 import {
   candidateResidualClaims,
   candidateReviewedObligations,
@@ -1062,6 +1063,9 @@ function requireCleanGitCheckout(path, commit, label) {
     "",
     `${label} status`,
   );
+  if (hiddenIndexEntriesWithFiles(root).length > 0) {
+    throw new Error(`${label} hides a present file from git status`);
+  }
   return root;
 }
 

@@ -78,6 +78,7 @@ const nodeTests = new Set([
   "tools/evidence/verify-programme.test.mjs",
   "tools/evidence/receipt-evidence.test.mjs",
   "tools/evidence/adr-prereview.test.mjs",
+  "tools/shacl-tests/hidden-entries.test.mjs",
 ]);
 const evidenceChecks = new Set([
   "tools/shacl-tests/run.mjs",

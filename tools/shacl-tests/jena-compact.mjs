@@ -17,10 +17,8 @@ import {
   createCandidateRun,
   writeCandidateArtifact,
 } from "./inventory.mjs";
-import {
-  hiddenIndexEntriesWithFiles,
-  verifyShaclCandidateArtifacts,
-} from "../evidence/verify-programme.mjs";
+import { verifyShaclCandidateArtifacts } from "../evidence/verify-programme.mjs";
+import { hiddenIndexEntriesWithFiles } from "./hidden-entries.mjs";
 import { executeCandidateChild, parseEvidence } from "./run.mjs";
 
 const DEFINITION = {

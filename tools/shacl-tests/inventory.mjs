@@ -16,6 +16,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hiddenIndexEntriesWithFiles } from "./hidden-entries.mjs";
 
 const REPOSITORY = "https://github.com/w3c/data-shapes.git";
 const MAX_PINNED_FILE_BYTES = 32 * 1024 * 1024;
@@ -1031,6 +1032,9 @@ function assertGitIdentity(root, expectedCommit, label) {
   );
   if (status !== "") {
     throw new Error(`${label} is not clean:\n${status}`);
+  }
+  if (hiddenIndexEntriesWithFiles(root).length > 0) {
+    throw new Error(`${label} hides a present file from git status`);
   }
 }
 
