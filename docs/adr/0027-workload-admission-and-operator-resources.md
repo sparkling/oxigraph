@@ -1206,15 +1206,19 @@ released with no cancellation signal and no `data`/`cancelled` sample.
 It never does so after the deadline, and it fires at most once per request,
 whichever side observes the failure first. A new OxHTTP regression test,
 `response_writer_reset_reaches_transport_cancellation_once`, passes with the
-fix. Its negative control, the same test with the writer-side report removed,
-cannot run through the delivery harness, which only admits clean committed
-source. It was run five times as plain `cargo test` on an extracted copy of
-`f171a100` with only that call deleted, against a separate target directory,
-and failed all five times with callback count 0. Those logs, the exact script
-and their SHA-256 sums are kept under
-`target/engineering-delivery/g42-application/oxhttp-negative-control/`. They
-are local evidence, not delivery-harness receipts, and an earlier unlabelled
-"five of five" figure is replaced by this description.
+fix. Its negative control is receipted through the delivery harness. At
+`56a26b89`, whose code equals `f171a100`, the one call to `transport_write_failed`
+in `lib/oxhttp/src/server.rs` was deleted in the working tree, and the test ran
+five times: `run-kHOxe4`, `run-4icBGb`, `run-mYVdsq`, `run-wM2JRz` and
+`run-K7KBrj`. Each receipt records that exact three-line deletion as tracked diff
+`ceaee73f630903508a5f48e7e24bc33ed7d6a0d04bbab415e9ca5c5a57244e68`, and each
+fails with callback count 0. The source was then restored. An earlier version of
+this paragraph said the harness only admits clean committed source; that was
+false, since the harness records a dirty tree rather than refusing it, and the
+statement is withdrawn. Five earlier runs made with plain `cargo test` on an
+extracted copy are kept under
+`target/engineering-delivery/g42-application/oxhttp-negative-control/` as
+superseded local evidence.
 
 `f171a100` narrows the fix after independent review
 `9a2e27c6-5295-4a29-abc1-8ccc47eb0e7c`. A fixed-length response body that yields
