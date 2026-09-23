@@ -4854,7 +4854,28 @@ and with `rdf-12` (`run-5mn7Uh`); each run passes 4, because one `v1` test in
 the file is feature-exclusive. Old one-shot workspaces are refused by design, so
 resuming them is not a defect. Making them resumable would be an owner decision.
 
+Item 4 (derived indexes across an upgrade) was examined further. It is not an
+ordinary test-only slice today:
+
+- **Legacy edges.** The source is a version-0 or version-1 store, which
+  `Store::open` refuses with `UpgradeRequired`. `Store::derived_snapshot` needs
+  an open store, so no ADR-0024 derived index can exist on a legacy source.
+  There is nothing to carry across and nothing to test.
+- **Version 2 to version 3.** Derived indexes can exist on the source, but the
+  activated target is refused by ordinary open (`SchemaTooNew`) until profile
+  admission, the owner decision below. Once admitted, the storage-version
+  change would make `same_lineage`
+  (`lib/oxigraph/src/store/derived_generation.rs`) report every source index as
+  `DerivedGenerationError::Identity`. `DerivedIndex::state` reports that as
+  `Corrupt`, not as rebuild-required.
+
+So step 4 of this ADR's upgrade transaction ("rebuild rather than translate
+derived indexes") has no reachable subject until profile admission is decided.
+Implementing it then needs a production choice: rebuild during the upgrade, or
+report a distinct rebuild-required state instead of `Corrupt`. The item moves
+from buildable work to "decide with profile admission".
+
 With item 1 done, the legacy half of gate 2's metadata comparison is
 discharged: its correct outcome is refusal, and the refusal is now pinned. The
-derived-index item is the one genuinely open gate-2 item. This ADR stays
-Proposed.
+derived-index item is the one genuinely open gate-2 item, and it depends on the
+profile-admission decision. This ADR stays Proposed.
