@@ -135,6 +135,31 @@ function gitHead(path) {
   }).trim();
 }
 
+/**
+ * Lists index entries `git status` cannot see that still have a file on disk.
+ *
+ * `skip-worktree` and `assume-unchanged` entries are invisible to
+ * `git status`, so a modified file behind one passes a clean check. Such an
+ * entry is only harmless when its file is absent: nothing can then be read
+ * from it. The E3 oracle relies on exactly that, to present a checkout whose
+ * embedded corpus lacks some pinned files.
+ */
+export function hiddenIndexEntriesWithFiles(checkout) {
+  const listing = execFileSync("git", ["-C", checkout, "ls-files", "-v", "-z"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const present = [];
+  for (const entry of listing.split("\0")) {
+    if (entry === "") continue;
+    const tag = entry.slice(0, 1);
+    const path = entry.slice(2);
+    const hidden = tag === "S" || (tag !== tag.toUpperCase());
+    if (hidden && existsSync(join(checkout, path))) present.push(path);
+  }
+  return present;
+}
+
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -453,6 +478,12 @@ function verifyCandidateClauseSources(root, checkoutPath, audit, errors) {
   );
   if (status !== undefined && status !== "") {
     errors.push("candidate clause-audit checkout is not clean");
+  }
+  const hidden = collect(errors, "candidate clause-audit checkout hidden entries", () =>
+    hiddenIndexEntriesWithFiles(checkout),
+  );
+  if (hidden !== undefined && hidden.length > 0) {
+    errors.push("candidate clause-audit checkout hides a present file from git status");
   }
   const facetsByDocument = new Map();
   for (const mapping of expectedCandidateClauseAudit.mappings) {

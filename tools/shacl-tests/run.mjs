@@ -17,7 +17,10 @@ import {
   createCandidateRun,
   writeCandidateArtifact,
 } from "./inventory.mjs";
-import { verifyShaclCandidateArtifacts } from "../evidence/verify-programme.mjs";
+import {
+  hiddenIndexEntriesWithFiles,
+  verifyShaclCandidateArtifacts,
+} from "../evidence/verify-programme.mjs";
 
 const COUNT_FIELDS = [
   "discovered",
@@ -529,7 +532,11 @@ function verifyCandidateCheckout(checkout, targetRoot) {
   requireDirectoryInside(checkout, targetRoot, "candidate checkout");
   const head = git(checkout, ["rev-parse", "HEAD"]).trim();
   const status = git(checkout, ["status", "--porcelain=v1", "--untracked-files=all"]);
-  if (head !== candidateShaclRevision.suiteCommit || status !== "") {
+  if (
+    head !== candidateShaclRevision.suiteCommit ||
+    status !== "" ||
+    hiddenIndexEntriesWithFiles(checkout).length > 0
+  ) {
     throw new Error("candidate checkout is not the exact clean pinned revision");
   }
 }

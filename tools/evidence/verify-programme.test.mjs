@@ -2967,6 +2967,36 @@ test("E3 rejects a dirty or wrong-revision candidate checkout", async () => {
       ),
     );
 
+    // A tracked file hidden from `git status` by skip-worktree must still be
+    // rejected once it is present on disk.
+    const hidden = await oracleClauseAuditFixture();
+    try {
+      const hiddenCheckout = resolve(
+        hidden.root,
+        `target/w3c/shacl-1.2/data-shapes-${candidateShaclRevision.suiteCommit.slice(0, 12)}`,
+      );
+      const skipped = oracleGit(hiddenCheckout, ["ls-files", "-v"])
+        .split("\n")
+        .find((line) => line.startsWith("S "));
+      assert(skipped, "the oracle fixture has skip-worktree entries");
+      const path = resolve(hiddenCheckout, skipped.slice(2));
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, "tampered\n");
+      assert.equal(oracleGit(hiddenCheckout, ["status", "--porcelain=v1"]), "");
+      const hiddenResult = verifyShaclCandidateArtifacts(hidden.root, {
+        receiptRef: hidden.receiptRef,
+        expectedImplementationCommit: oracleImplementation,
+      });
+      assert.equal(hiddenResult.ok, false);
+      assert(
+        hiddenResult.errors.includes(
+          "candidate clause-audit checkout hides a present file from git status",
+        ),
+      );
+    } finally {
+      rmSync(hidden.root, { recursive: true, force: true });
+    }
+
     const wrongCheckout = resolve(
       wrongRevision.root,
       `target/w3c/shacl-1.2/data-shapes-${candidateShaclRevision.suiteCommit.slice(0, 12)}`,
