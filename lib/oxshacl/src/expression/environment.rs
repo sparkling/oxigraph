@@ -1,6 +1,9 @@
 use super::NodeExpression;
+use oxrdf::Term;
+#[cfg(feature = "sparql")]
+use oxrdf::Variable;
+#[cfg(feature = "sparql")]
 use oxrdf::vocab::xsd;
-use oxrdf::{Term, Variable};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Eq, PartialEq)]

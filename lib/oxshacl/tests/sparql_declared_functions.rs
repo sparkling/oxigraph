@@ -122,8 +122,12 @@ ex:item ex:name "un"@fr, "deux"@fr, "one"@en ."#,
     assert_eq!(values(&report), [Term::from(Literal::from("1 2"))]);
 }
 
+/// spareval yields no value for a call with an unbound argument before the
+/// registered function runs, which is how the SPARQL error in shacl12-sparql's
+/// `ex:langLabelCount(?unbound, 'en') = SPARQL error` example surfaces. This
+/// pins that observable behaviour; it does not exercise oxshacl code.
 #[test]
-fn an_unbound_argument_yields_an_unbound_result() {
+fn an_unbound_argument_makes_the_call_unbound() {
     let data = graph(&format!(
         r#"{TAGGED_NAMES}{}
 ex:item ex:name "un"@fr ."#,
@@ -185,4 +189,119 @@ fn an_undeclared_function_is_still_unsupported() {
         validate(&shapes(&data), &data, &ValidationOptions::default()),
         Err(ValidationError::Sparql(message)) if message.contains("not supported")
     ));
+}
+
+#[test]
+fn a_body_with_no_output_node_makes_the_call_unbound() {
+    // shacl12-sparql: any output count other than exactly one is an error.
+    let data = graph(&format!(
+        "
+ex:firstMember a sh:ListParameterExpressionFunction ;
+    rdfs:subClassOf sh:ListParameterExpression ;
+    sh:bodyExpression [ shnex:instancesOf [ shnex:arg 0 ] ] ;
+    sh:parameter [ sh:path shnex:arg0 ] .
+{}
+ex:a a ex:Pair .
+ex:b a ex:Pair .",
+        constraint(
+            "BIND (ex:firstMember(ex:Empty) AS ?none) .
+             BIND (ex:firstMember(ex:Pair) AS ?many) .
+             BIND (CONCAT(STR(BOUND(?none)), \" \", STR(BOUND(?many))) AS ?value)"
+        )
+    ));
+    let report = validate(&shapes(&data), &data, &ValidationOptions::default()).unwrap();
+    assert_eq!(values(&report), [Term::from(Literal::from("false false"))]);
+}
+
+#[test]
+fn repeated_calls_are_charged_against_one_path_visit_ceiling() {
+    // Each call visits the three typed nodes; one call fits under the limit,
+    // several together must not. This checks the aggregate outcome; that the
+    // bound applies inside each call is unit-tested in `sparql::functions`.
+    let data = graph(&format!(
+        "{COUNT_INSTANCES}{}
+ex:a a ex:Base .
+ex:b a ex:Base .
+ex:c a ex:Base .
+ex:r1 ex:row 1 . ex:r2 ex:row 2 . ex:r3 ex:row 3 . ex:r4 ex:row 4 .
+ex:r5 ex:row 5 . ex:r6 ex:row 6 . ex:r7 ex:row 7 . ex:r8 ex:row 8 .",
+        constraint("?row ex:row ?n . BIND (ex:countInstances(ex:Base) AS ?value)")
+    ));
+    let compiled = shapes(&data);
+    let single = graph(&format!(
+        "{COUNT_INSTANCES}{}
+ex:a a ex:Base .
+ex:b a ex:Base .
+ex:c a ex:Base .",
+        constraint("BIND (ex:countInstances(ex:Base) AS ?value)")
+    ));
+    let mut probe = ValidationOptions::default();
+    let mut limit = 0;
+    // Find the smallest path-visit limit one call succeeds under.
+    loop {
+        probe.limits.max_path_visits = limit;
+        if validate(&shapes(&single), &single, &probe).is_ok() {
+            break;
+        }
+        limit += 1;
+        assert!(
+            limit < 10_000,
+            "no path-visit limit lets a single call succeed"
+        );
+    }
+    let mut options = ValidationOptions::default();
+    options.limits.max_path_visits = limit;
+    let result = validate(&compiled, &data, &options);
+    assert!(
+        matches!(
+            result,
+            Err(ValidationError::LimitExceeded {
+                kind: LimitKind::PathVisits,
+                ..
+            })
+        ),
+        "eight calls must exceed a ceiling one call fits under: {result:?}"
+    );
+}
+
+#[test]
+fn a_declaration_named_like_a_builtin_cast_does_not_replace_it() {
+    let data = graph(&format!(
+        "
+xsd:integer a sh:ListParameterExpressionFunction ;
+    rdfs:subClassOf sh:ListParameterExpression ;
+    sh:bodyExpression [ sh:sparqlExpr \"42\" ] .
+{}",
+        constraint("BIND (STR(<http://www.w3.org/2001/XMLSchema#integer>(\"7\")) AS ?value)")
+    ));
+    let report = validate(&shapes(&data), &data, &ValidationOptions::default()).unwrap();
+    assert_eq!(values(&report), [Term::from(Literal::from("7"))]);
+}
+
+#[test]
+fn custom_component_validators_can_call_declared_functions() {
+    let data = graph(&format!(
+        "{COUNT_INSTANCES}
+ex:MinInstancesComponent a sh:ConstraintComponent ;
+    sh:parameter [ sh:path ex:minInstances ] ;
+    sh:validator [ a sh:SPARQLAskValidator ; sh:ask \"\"\"
+PREFIX ex: <http://example.org/>
+ASK {{ FILTER (ex:countInstances($value) >= $minInstances) }}\"\"\" ] .
+ex:Shape a sh:NodeShape ;
+    sh:targetNode ex:Base ;
+    ex:minInstances 2 .
+ex:a a ex:Base ."
+    ));
+    let report = validate(&shapes(&data), &data, &ValidationOptions::default()).unwrap();
+    assert_eq!(
+        report.results().len(),
+        1,
+        "one instance is below the minimum"
+    );
+    assert_eq!(
+        report.results()[0].value,
+        Some(Term::from(oxrdf::NamedNode::new_unchecked(
+            "http://example.org/Base"
+        )))
+    );
 }

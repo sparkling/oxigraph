@@ -194,6 +194,37 @@ pub(crate) struct NestedUsage {
 
 #[cfg(feature = "sparql")]
 impl NestedUsage {
+    /// Returns what `budget` has consumed so far.
+    pub(crate) fn of(budget: &Budget<'_>) -> Self {
+        Self {
+            estimated_memory: budget.estimated_memory(),
+            path_visits: budget.path_visits(),
+            query_solutions: budget.query_solutions(),
+        }
+    }
+
+    pub(crate) fn plus(self, other: Self) -> Self {
+        Self {
+            estimated_memory: self.estimated_memory.saturating_add(other.estimated_memory),
+            path_visits: self.path_visits.saturating_add(other.path_visits),
+            query_solutions: self.query_solutions.saturating_add(other.query_solutions),
+        }
+    }
+
+    /// Lowers `limits` by this usage, so a fresh budget built from them
+    /// enforces what is left of the original ceilings rather than a new one.
+    /// A ceiling that is already used up becomes zero, so the next charge
+    /// against it fails.
+    pub(crate) fn restrict(self, limits: &mut ValidationLimits) {
+        limits.max_estimated_memory_bytes = limits
+            .max_estimated_memory_bytes
+            .saturating_sub(self.estimated_memory);
+        limits.max_path_visits = limits.max_path_visits.saturating_sub(self.path_visits);
+        limits.max_query_solutions = limits
+            .max_query_solutions
+            .saturating_sub(self.query_solutions);
+    }
+
     /// Records everything `budget` consumed during one nested evaluation.
     pub(crate) fn accumulate(&mut self, budget: &Budget<'_>) {
         self.estimated_memory = self
@@ -298,6 +329,7 @@ impl<'a> Budget<'a> {
         self.estimated_memory
     }
 
+    #[cfg(feature = "sparql")]
     pub(crate) fn path_visits(&self) -> usize {
         self.path_visits
     }

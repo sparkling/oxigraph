@@ -96,7 +96,14 @@ impl ShapesGraph {
             shapes.push(compile_shape(&view, id, &mut budget)?);
         }
         let checked = checked_shapes.is_some();
-        let compiled = Self::from_parts(source.clone(), profiles, shapes, options, checked)?;
+        let compiled = Self::from_parts(
+            source.clone(),
+            profiles,
+            shapes,
+            options,
+            checked,
+            &mut budget,
+        )?;
         if let Some(expected) = checked_shapes {
             let actual = compiled.shapes.keys().cloned().collect::<BTreeSet<_>>();
             if let Some(missing) = expected.difference(&actual).next() {
@@ -119,12 +126,14 @@ impl ShapesGraph {
         shapes: impl IntoIterator<Item = Shape>,
         options: &ValidationOptions,
     ) -> Result<Self, CompileError> {
+        let mut budget = Budget::new(options)?;
         Self::from_parts(
             GraphSnapshot::default_graph(oxrdf::Dataset::new()),
             profiles,
             shapes,
             options,
             false,
+            &mut budget,
         )
         .map_err(Into::into)
     }
@@ -135,6 +144,7 @@ impl ShapesGraph {
         shapes: impl IntoIterator<Item = Shape>,
         options: &ValidationOptions,
         well_formedness_checked: bool,
+        #[cfg_attr(not(feature = "sparql"), expect(unused_variables))] budget: &mut Budget<'_>,
     ) -> Result<Self, ValidationError> {
         let mut map = ShapeMap::new();
         let mut constraints = 0_usize;
@@ -169,9 +179,9 @@ impl ShapesGraph {
         // execution can register them without re-reading the shapes graph.
         #[cfg(feature = "sparql")]
         let sparql_functions = {
-            let mut budget = Budget::new(options)?;
+            // Uses the caller's budget so compilation keeps one total timeout.
             RdfView::new(&source).declared_sparql_functions(
-                &mut budget,
+                budget,
                 options.limits.max_recursion_depth,
                 options.limits.max_list_items,
             )?

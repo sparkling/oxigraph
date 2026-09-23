@@ -41,46 +41,28 @@ pub(crate) struct DeclaredFunction {
     function: NamedNode,
     /// The compiled `sh:bodyExpression`, scoped to the function's arguments.
     body: NodeExpression,
-    /// The declared `sh:parameter` paths in `shnex:argN` order.
-    parameters: Vec<ParameterDeclaration>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct ParameterDeclaration {
-    /// The `shnex:argN` index naming the positional argument.
-    key: Term,
-    /// Whether `sh:optional true` was declared for the parameter.
-    optional: bool,
 }
 
 impl DeclaredFunction {
-    pub(crate) fn new(
-        function: NamedNode,
-        body: NodeExpression,
-        parameters: Vec<ParameterDeclaration>,
-    ) -> Self {
-        Self {
-            function,
-            body,
-            parameters,
-        }
-    }
-}
-
-impl ParameterDeclaration {
-    pub(crate) fn new(key: Term, optional: bool) -> Self {
-        Self { key, optional }
+    pub(crate) fn new(function: NamedNode, body: NodeExpression) -> Self {
+        Self { function, body }
     }
 }
 
 /// State shared between the registered closures and the calling evaluator.
+///
+/// `baseline` is the outer budget's consumption when the query began and
+/// `usage` grows with every call; their sum is what the limits apply to.
 ///
 /// `failure` holds the first limit, cancellation, or ill-formedness error a
 /// call hit. A SPARQL function can only return "no value", so the error is
 /// parked and re-raised once the query returns.
 #[derive(Debug, Default)]
 struct SharedState {
+    /// Consumption of all calls in this query.
     usage: NestedUsage,
+    /// The outer budget's consumption when the query started.
+    baseline: NestedUsage,
     failure: Option<ValidationError>,
 }
 
@@ -115,7 +97,11 @@ pub(crate) fn register(
     data: &GraphSnapshot,
     budget: &Budget<'_>,
 ) -> (QueryEvaluator, FunctionScope) {
-    let state = Arc::new(Mutex::new(SharedState::default()));
+    let state = Arc::new(Mutex::new(SharedState {
+        usage: NestedUsage::default(),
+        baseline: NestedUsage::of(budget),
+        failure: None,
+    }));
     let declarations = shapes.declared_sparql_functions();
     if declarations.is_empty() {
         return (evaluator, FunctionScope { state });
@@ -133,8 +119,17 @@ pub(crate) fn register(
     let deadline = budget
         .remaining_timeout()
         .map(|remaining| Instant::now() + remaining);
+    let registered = evaluator.custom_functions().cloned().collect::<Vec<_>>();
     for declaration in declarations.iter().cloned() {
         let name = declaration.function.clone();
+        // shacl12-sparql: an engine MUST ignore an attempt to redefine a
+        // function that is already registered, unless it was itself added as a
+        // custom SPARQL function. Built-in `xsd:` and `sparql:` functions are
+        // rejected at compile time; this keeps extension functions such as
+        // GeoSPARQL's.
+        if registered.contains(&name) {
+            continue;
+        }
         let shapes = Arc::clone(&shapes);
         let data = Arc::clone(&data);
         let options = Arc::clone(&options);
@@ -200,7 +195,7 @@ fn evaluate_call(
     deadline: Option<Instant>,
     state: &Arc<Mutex<SharedState>>,
 ) -> Result<Option<Term>, ValidationError> {
-    let scope = argument_scope(declaration, arguments)?;
+    let scope = argument_scope(arguments)?;
     let environment = ExpressionEnvironment::default().with_positional_arguments(scope);
 
     // The per-call budget shares the caller's cancellation token and ceilings,
@@ -210,6 +205,14 @@ fn evaluate_call(
     if let Some(deadline) = deadline {
         options.limits.timeout = Some(deadline.saturating_duration_since(Instant::now()));
     }
+    // Every call shares one global ceiling: each limit is lowered by what the
+    // caller had already used before the query and by what earlier calls in
+    // this query used, so K calls cannot each spend a full ceiling.
+    let used = {
+        let state = lock(state)?;
+        state.baseline.plus(state.usage)
+    };
+    used.restrict(&mut options.limits);
     let mut budget = Budget::new(&options)?;
     // shacl12-sparql: "the focusNode passed into a custom SPARQL function based
     // on a node expression is the IRI of the function itself".
@@ -225,57 +228,36 @@ fn evaluate_call(
     if let Ok(mut state) = lock(state) {
         state.usage.accumulate(&budget);
     }
-    // Exactly one output node is the value; none is "no value"; more than one
-    // is an evaluation failure per `CustomListParameterExpression-evaluation`.
+    // shacl12-sparql `EVALUATION OF CUSTOM SPARQL FUNCTIONS`: exactly one
+    // output node is the value; any other count makes the call an error.
+    // spareval can only express that error as "no value", so the call yields
+    // unbound without parking a failure: this is a SPARQL expression error,
+    // not a limit or cancellation that must abort validation.
     match result?.as_slice() {
-        [] => Ok(None),
         [value] => Ok(Some(value.clone())),
-        _ => Err(ValidationError::IllFormed(format!(
-            "custom SPARQL function <{}> produced more than one output node",
-            declaration.function
-        ))),
+        _ => Ok(None),
     }
 }
 
-/// Maps the positional arguments of a call onto the declared `shnex:argN` keys.
+/// Maps the positional arguments of a call onto `shnex:argN` scope keys.
 ///
-/// Declared parameters document the positional arguments, so a call cannot pass
-/// more of them than were declared. A missing argument is only tolerated when
-/// its parameter is `sh:optional true`, in which case the key stays unbound; an
-/// argument that is itself unbound is passed through as unbound, which is what
-/// `ex:langLabelCount(?none, 'en')` relies on.
-fn argument_scope(
-    declaration: &DeclaredFunction,
-    arguments: &[Term],
-) -> Result<Vec<(Term, Option<Term>)>, ValidationError> {
-    if declaration.parameters.is_empty() {
-        // An undeclared parameter list still names arguments by position.
-        return arguments
-            .iter()
-            .enumerate()
-            .map(|(index, argument)| Ok((list_index(index)?, Some(argument.clone()))))
-            .collect();
-    }
-    if arguments.len() > declaration.parameters.len() {
-        return Err(ValidationError::IllFormed(format!(
-            "custom SPARQL function <{}> accepts at most {} arguments, but {} were given",
-            declaration.function,
-            declaration.parameters.len(),
-            arguments.len()
-        )));
-    }
-    let mut scope = Vec::with_capacity(declaration.parameters.len());
-    for (index, parameter) in declaration.parameters.iter().enumerate() {
-        let argument = arguments.get(index).cloned();
-        if argument.is_none() && !parameter.optional {
-            return Err(ValidationError::IllFormed(format!(
-                "custom SPARQL function <{}> requires argument {index}",
-                declaration.function
-            )));
-        }
-        scope.push((parameter.key.clone(), argument));
-    }
-    Ok(scope)
+/// shacl12-sparql `EVALUATION OF CUSTOM SPARQL FUNCTIONS`: an argument whose
+/// evaluation errors makes the whole call an error unless its parameter is
+/// `sh:optional true`. spareval evaluates every argument before calling a
+/// registered function and yields no value (its representation of an
+/// expression error) as soon as one is unbound or erroneous, so this closure
+/// only ever receives complete, bound argument lists. It therefore cannot see
+/// an optional parameter's erroring argument: such a call is an error too,
+/// which is stricter than the specification. A call that simply omits
+/// trailing arguments leaves those keys unbound. `sh:parameter` declarations
+/// are documentation and are not enforced, so extra arguments are passed
+/// through by position.
+fn argument_scope(arguments: &[Term]) -> Result<Vec<(Term, Option<Term>)>, ValidationError> {
+    arguments
+        .iter()
+        .enumerate()
+        .map(|(index, argument)| Ok((list_index(index)?, Some(argument.clone()))))
+        .collect()
 }
 
 /// Names positional argument `index` the way `shnex:arg N` does.
@@ -313,8 +295,50 @@ mod tests {
         DeclaredFunction::new(
             NamedNode::new_unchecked("urn:function"),
             NodeExpression::Constant(Term::from(NamedNode::new_unchecked("urn:value"))),
-            Vec::new(),
         )
+    }
+
+    #[test]
+    fn a_call_gets_only_the_ceiling_left_by_the_caller_and_earlier_calls() {
+        // `shnex:instancesOf` visits paths, so a call needs path-visit room.
+        let class = NamedNode::new_unchecked("urn:Class");
+        let declaration = DeclaredFunction::new(
+            NamedNode::new_unchecked("urn:function"),
+            NodeExpression::InstancesOf(Box::new(NodeExpression::Constant(Term::from(
+                class.clone(),
+            )))),
+        );
+        let data = GraphSnapshot::default_graph(Dataset::from_iter([oxrdf::Quad::new(
+            NamedNode::new_unchecked("urn:a"),
+            NamedNode::new_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
+            class,
+            oxrdf::GraphName::DefaultGraph,
+        )]));
+        let options = ValidationOptions::default();
+        let state = |used: usize| {
+            Arc::new(Mutex::new(SharedState {
+                usage: NestedUsage::default(),
+                baseline: NestedUsage {
+                    path_visits: used,
+                    ..NestedUsage::default()
+                },
+                failure: None,
+            }))
+        };
+        let fresh = state(0);
+        assert!(call(&declaration, &[], &shapes(), &data, &options, None, &fresh).is_some());
+        assert!(lock(&fresh).unwrap().failure.is_none());
+
+        // The caller has already used the whole ceiling, so the same call fails.
+        let spent = state(options.limits.max_path_visits);
+        assert!(call(&declaration, &[], &shapes(), &data, &options, None, &spent).is_none());
+        assert!(matches!(
+            lock(&spent).unwrap().failure,
+            Some(ValidationError::LimitExceeded {
+                kind: crate::LimitKind::PathVisits,
+                ..
+            })
+        ));
     }
 
     #[test]

@@ -18,7 +18,7 @@ mod tests;
 
 pub(crate) use self::annotations::ResultAnnotation;
 pub(crate) use self::construct_policy::parse as parse_construct_policy;
-pub(crate) use self::functions::{DeclaredFunction, ParameterDeclaration};
+pub(crate) use self::functions::DeclaredFunction;
 pub(crate) use self::policy::substitute_path;
 use self::policy::{ExpectedQuery, validate_query_policy};
 pub(crate) use self::prebinding::expose_prebound_variables;
