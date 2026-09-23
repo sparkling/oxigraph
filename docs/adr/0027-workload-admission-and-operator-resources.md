@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-23 — cancellation-latency histogram delivered in `4617d33e`; accepted as ordinary delivery by independent review `6f97b635` at `73883f24`; streaming-reset transport cancellation fixed in OxHTTP at `5783f5e7`, pending its own review; ADR still Proposed, G4.2 still open (residual streaming-reset stall `run-qIJGBC` is an open defect)
+- Updated: 2026-09-23 — cancellation-latency histogram delivered in `4617d33e`; accepted as ordinary delivery by independent review `6f97b635` at `73883f24`; streaming-reset transport cancellation fixed in OxHTTP at `5783f5e7` and narrowed at `f171a100`, pending independent review; ADR still Proposed, G4.2 still open (streaming-reset stall `run-qIJGBC` is an open, undiagnosed defect)
 - Deciders: Oxigraph parity programme
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
@@ -1205,31 +1205,50 @@ released with no cancellation signal and no `data`/`cancelled` sample.
 (`ConnectionReset`, `BrokenPipe` or `ConnectionAborted`) to the same callback.
 It never does so after the deadline, and it fires at most once per request,
 whichever side observes the failure first. A new OxHTTP regression test,
-`response_writer_reset_reaches_transport_cancellation_once`, failed five of five
-times without the fix and passes with it.
+`response_writer_reset_reaches_transport_cancellation_once`, passes with the
+fix. Its negative control, the same test with the writer-side report removed,
+cannot run through the delivery harness, which only admits clean committed
+source. It was run five times as plain `cargo test` on an extracted copy of
+`f171a100` with only that call deleted, against a separate target directory,
+and failed all five times with callback count 0. Those logs, the exact script
+and their SHA-256 sums are kept under
+`target/engineering-delivery/g42-application/oxhttp-negative-control/`. They
+are local evidence, not delivery-harness receipts, and an earlier unlabelled
+"five of five" figure is replaced by this description.
+
+`f171a100` narrows the fix after independent review
+`9a2e27c6-5295-4a29-abc1-8ccc47eb0e7c`. A fixed-length response body that yields
+fewer bytes than it declares reports `ConnectionAborted` itself, so the kind
+filter alone could have turned an application body error into a transport
+cancellation. The writer path now also requires a raw OS error code, which a
+genuine socket reset always carries. The new test
+`short_response_body_is_not_reported_as_transport_cancellation` fails without
+that guard (callback count 1) and passes with it.
 
 Receipts, before and after. At `7593639c` a ten-run clean-tree series of the
 streaming-reset test gave 4 passes (`run-mqKKBb`, `run-3Vh7ea`, `run-gO2ZHi`,
 `run-QvkQhP`), 5 with no sample (`run-FLkwzT`, `run-QHntt8`, `run-NybPQW`,
 `run-URYNkH`, `run-UNloET`) and 1 stall (`run-t8vJ2x`). At `5783f5e7`, with the
-test no longer `#[ignore]`d, the same series gave 9 passes (`run-bNDdph`,
-`run-qlzAuT`, `run-MZxVhT`, `run-DzzLPK`, `run-uI6bMp`, `run-mZwRNV`,
-`run-zfL03C`, `run-K08cMy`, `run-9l59Xg`) and 1 stall (`run-qIJGBC`), where the
-query observation did not end within ten seconds. No run lost the sample. The
-stall is a residual open defect: it did not recur in a further 25 unreceipted
-diagnostic runs, so its state has not been captured and it is not diagnosed.
-Because the test is no longer ignored, it can fail the default suite
-intermittently until the stall is found. The test expects the Store outcome
-`abandoned`, which the evaluation-metrics contract specifies for an
-early-dropped iterator. An earlier "one in six" figure came from unreceipted
+test no longer `#[ignore]`d, it gave 9 passes and 1 stall (`run-qIJGBC`), with no
+lost sample; that stall did not recur in a further 25 unreceipted diagnostic
+runs and its state was not captured. At `f171a100` the series gave 10 passes
+in 10 (`run-1Yhcte`, `run-XNIPOh`, `run-sSav4k`, `run-XfJn3s`, `run-H2ipPd`,
+`run-4stoXI`, `run-iXY6bR`, `run-y4ar5v`, `run-d2xXLh`, `run-NTBTdw`). The
+`run-qIJGBC` stall remains unexplained: nothing in `f171a100` is known to cure
+it, so a single clean series does not prove it is gone, and it stays an open,
+undiagnosed defect. The test expects the Store outcome `abandoned`, which the
+evaluation-metrics contract specifies for an early-dropped iterator. An earlier "one in six" figure came from unreceipted
 runs and is withdrawn.
 
-Verified on clean committed source at `5783f5e7`, the last commit to change
-code in this slice: OxHTTP tests 103 passed (`run-RkJf2T`); CLI suite 457
-passed / 0 failed / 1 ignored (`run-JAxuDV`); Clippy compared against both
+Verified on clean committed source at `f171a100`, the last commit to change
+code in this slice: OxHTTP tests 104 passed (`run-E0xmvk`); CLI suite 457
+passed / 0 failed / 1 ignored (`run-IJzyfA`); Clippy compared against both
 recorded baselines, whose stderr hashes match the ones on record, at
-`run-XFkrWK` (default, 224 -> 224) and `run-NjAMS6` (no-default, 183 -> 183),
-with the OxHTTP crate's own Clippy output unchanged by the fix. At `1f6774d1`,
+`run-YtbVo3` (default, 224 -> 224) and `run-619MDs` (no-default, 183 -> 183),
+with the OxHTTP crate's own Clippy output unchanged; the six-case 1/4/16 demo
+drill passes with all six records (`run-yaQQmB`). At `5783f5e7` the same checks
+passed at `run-RkJf2T`, `run-JAxuDV`, `run-XFkrWK`, `run-NjAMS6` and
+`run-oGlhkN`. At `1f6774d1`,
 before the OxHTTP fix, the suite was 456 / 0 / 2 (`run-2ifqXK`) with Clippy at
 `run-lkwvSy` and `run-4aiW2Q`. One full-suite run there, `run-bjyTUc`, failed a
 single unrelated test,
@@ -1323,14 +1342,14 @@ The slice is accepted as ordinary delivery under ADR-0044 Class A. That is not
 qualification, promotion or publication.
 
 This ADR stays **Proposed**. Outstanding: an independent review of the OxHTTP
-fix in `5783f5e7`; the residual streaming-reset stall (`run-qIJGBC`), one in ten
-receipted runs after that fix, undiagnosed; mutation evidence for the
+fix in `5783f5e7` and `f171a100`; the streaming-reset stall (`run-qIJGBC`), one
+in ten receipted runs at `5783f5e7` and none in ten at `f171a100`, undiagnosed; mutation evidence for the
 `sparql_query_eval` fuzz check; numeric defaults and regression ceilings; and
 any calibration against real production load. The six-case 1/4/16 demo drill
 has run: it failed at `1f6774d1`-era code (`run-R9T4j5`, at `42bb1e05`) because
 it waited for a Store `cancelled` outcome the evaluator never produces for an
 early-dropped stream, and after `5783f5e7` corrected that wait it passed with
-all six demo records (`run-oGlhkN`). Its output is demo-grade local measurement
+all six demo records (`run-oGlhkN`, and again at `f171a100` in `run-yaQQmB`). Its output is demo-grade local measurement
 only, not a threshold, default or qualification claim. The
 task spec's focused/full feature matrix has run with one correction and one
 limit. Correction: its admission unit-contract command names `--bin oxigraph
