@@ -737,6 +737,97 @@ mod tests {
         )
     }
 
+    /// The legacy profile never projects governed identity, outcomes or outbox
+    /// state, and namespace mappings need their schema marker. Both refusals
+    /// must fail the transform and leave the source and backup untouched.
+    #[test]
+    fn transform_refuses_unsupported_default_metadata_without_touching_inputs() -> Result {
+        for (label, key, value, without_schema) in [
+            (
+                "governed default-column metadata",
+                b"\0oxigraph.unsupported.metadata\0".as_slice(),
+                b"x".as_slice(),
+                false,
+            ),
+            (
+                "namespace mapping without its schema marker",
+                b"".as_slice(),
+                b"".as_slice(),
+                true,
+            ),
+        ] {
+            let parent = tempfile::tempdir()?;
+            let source = parent.path().join("source");
+            {
+                let storage = RocksDbStorage::open(&source)?;
+                let mut transaction = storage.start_transaction()?;
+                transaction.insert(Quad::new(
+                    NamedNode::new("urn:refusal:s")?,
+                    NamedNode::new("urn:refusal:p")?,
+                    NamedNode::new("urn:refusal:o")?,
+                    GraphName::DefaultGraph,
+                ));
+                transaction.set_namespace(Namespace::new(
+                    NamespacePrefix::new("refusal")?,
+                    NamedNode::new("urn:refusal:")?,
+                ));
+                transaction.commit()?;
+                if without_schema {
+                    let mut raw = storage.db.start_transaction()?;
+                    raw.remove(&storage.default_cf, NAMESPACE_SCHEMA_KEY);
+                    raw.commit()?;
+                } else {
+                    storage.db.insert(&storage.default_cf, key, value)?;
+                }
+                storage.update_version(1)?;
+            }
+            let package = parent.path().join("backup");
+            let prepared = parent.path().join("prepared");
+            let options = UpgradeTransformOptions::default();
+            Store::backup_legacy(&source, &package, &options.backup)?;
+            Store::prepare_upgrade(&source, &package, &prepared, &options.backup)?;
+            let digest = |path: &Path| -> Result<Vec<(String, Vec<u8>)>> {
+                let mut files = std::fs::read_dir(path)?
+                    .map(|entry| {
+                        let entry = entry?;
+                        Ok((
+                            entry.file_name().to_string_lossy().into_owned(),
+                            Sha256::digest(std::fs::read(entry.path())?).to_vec(),
+                        ))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                files.sort();
+                Ok(files)
+            };
+            let source_before = digest(&source)?;
+            let backup_before = digest(&package.join("store"))?;
+            let result = Store::transform_prepared_upgrade(&source, &package, &prepared, &options);
+            let Err(error) = result else {
+                return Err(format!("{label}: the transform accepted it").into());
+            };
+            let refused = if without_schema {
+                matches!(
+                    error,
+                    crate::store::BackupError::Storage(StorageError::SchemaUnknown)
+                )
+            } else {
+                error
+                    .to_string()
+                    .contains("upgrade profile does not support this default-column metadata")
+            };
+            if !refused {
+                return Err(format!("{label}: unexpected error {error:?}").into());
+            }
+            if digest(&source)? != source_before {
+                return Err(format!("{label}: source changed").into());
+            }
+            if digest(&package.join("store"))? != backup_before {
+                return Err(format!("{label}: backup changed").into());
+            }
+        }
+        Ok(())
+    }
+
     #[cfg(all(feature = "rdf-12", target_os = "linux"))]
     #[test]
     fn activation_v1_preserves_nonempty_namespace_and_empty_named_graph() -> Result {
