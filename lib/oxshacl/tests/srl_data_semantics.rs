@@ -66,22 +66,35 @@ fn assert_not_inferred(execution: &SrlExecution, subject: &str, predicate: &str,
 }
 
 #[test]
-fn frozen_data_graph_contains_base_and_every_inline_block() {
+fn frozen_data_graph_is_the_base_graph_without_inline_blocks() {
+    // ADR-0047 (w3c/data-shapes#1276): inline DATA blocks are inferred
+    // triples. Ordinary rules see them; WHERE DATA and NOT DATA do not.
     let execution = execute(
         concat!(
             "PREFIX : <http://example/> ",
             "DATA { :inline1 :edge :inline2 } ",
-            "RULE { :root :joined ?end } WHERE DATA { ",
+            "RULE { :root :baseOnly :inline1 } WHERE DATA { :root :baseEdge :inline1 } ",
+            "RULE { :root :dataJoined :inline2 } WHERE DATA { ",
             "  :root :baseEdge :inline1 . ",
-            "  :inline1 :edge :inline2 . ",
-            "  :inline2 :edge ?end ",
+            "  :inline1 :edge :inline2 ",
             "} ",
-            "DATA { :inline2 :edge :end }",
+            "RULE { :root :ordinaryJoined :inline2 } WHERE { ",
+            "  :root :baseEdge :inline1 . ",
+            "  :inline1 :edge :inline2 ",
+            "} ",
+            "RULE { :root :inlineNotData :inline2 } WHERE { ",
+            "  :inline1 :edge :inline2 . ",
+            "  NOT DATA { :inline1 :edge :inline2 } ",
+            "}",
         ),
         &[("root", "baseEdge", "inline1")],
     );
 
-    assert_inferred(&execution, "root", "joined", "end");
+    assert_inferred(&execution, "inline1", "edge", "inline2");
+    assert_inferred(&execution, "root", "baseOnly", "inline1");
+    assert_not_inferred(&execution, "root", "dataJoined", "inline2");
+    assert_inferred(&execution, "root", "ordinaryJoined", "inline2");
+    assert_inferred(&execution, "root", "inlineNotData", "inline2");
 }
 
 #[test]

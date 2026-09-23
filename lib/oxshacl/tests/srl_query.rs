@@ -229,22 +229,34 @@ fn query_accepts_only_one_abstract_triple_pattern() {
 
 #[test]
 fn query_executes_where_data_rules() {
+    // WHERE DATA matches the input base graph only; inline DATA blocks are
+    // inferred triples (ADR-0047, w3c/data-shapes#1276).
     let rules = parse(concat!(
         "PREFIX : <http://example/> ",
-        "DATA { :subject :source :object } ",
-        "RULE { :subject :derived :object } WHERE DATA { :subject :source :object }",
+        "DATA { :subject :inline :object } ",
+        "RULE { :subject :derived :object } WHERE DATA { :subject :source :object } ",
+        "RULE { :subject :fromInline :object } WHERE DATA { :subject :inline :object }",
     ));
-    assert!(
+    let data = GraphSnapshot::default_graph(Dataset::from_iter([Quad::new(
+        iri("subject"),
+        iri("source"),
+        iri("object"),
+        GraphName::DefaultGraph,
+    )]));
+    let ask = |predicate: &str| {
         query_srl_rules(
             &rules,
-            &GraphSnapshot::default_graph(Dataset::new()),
+            &data,
             &goal(
                 iri_node("subject"),
-                iri_node("derived"),
+                iri_node(predicate),
                 iri_node("object"),
             ),
             &ValidationOptions::default(),
         )
         .unwrap()
-    );
+    };
+    assert!(ask("derived"));
+    assert!(ask("inline"));
+    assert!(!ask("fromInline"));
 }

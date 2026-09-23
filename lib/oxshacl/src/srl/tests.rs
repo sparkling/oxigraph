@@ -189,11 +189,13 @@ fn imports_without_a_resolver_fail_closed() {
 
 #[test]
 fn data_graph_execution_constructs_are_accepted() {
+    // Inline DATA blocks are inferred triples, not part of the frozen data
+    // graph (ADR-0047, w3c/data-shapes#1276).
     let rules = parse(concat!(
         "PREFIX : <http://example/> ",
         "DATA { :s :p :o } ",
         "RULE { :s :whereData :o } WHERE DATA { :s :p :o } ",
-        "RULE { :s :notData :o } WHERE { :s :p :o . NOT DATA { :s :missing :o } }",
+        "RULE { :s :notData :o } WHERE { :s :p :o . NOT DATA { :s :p :o } }",
     ));
     let execution = execute_srl_rules(
         &rules,
@@ -201,14 +203,17 @@ fn data_graph_execution_constructs_are_accepted() {
         &ValidationOptions::default(),
     )
     .unwrap();
-    for predicate in ["whereData", "notData"] {
-        assert!(execution.inference().dataset().contains(&Quad::new(
+    let inferred = |predicate: &str| {
+        execution.inference().dataset().contains(&Quad::new(
             NamedNode::new_unchecked("http://example/s"),
             NamedNode::new_unchecked(format!("http://example/{predicate}")),
             NamedNode::new_unchecked("http://example/o"),
             GraphName::DefaultGraph,
-        )));
-    }
+        ))
+    };
+    assert!(inferred("p"));
+    assert!(!inferred("whereData"));
+    assert!(inferred("notData"));
 }
 
 #[test]

@@ -96,9 +96,11 @@ pub(super) fn evaluate(
         .filter(|quad| !base.contains(quad))
         .collect::<Dataset>();
     let data = if rules(rule_set).any(rule_uses_data_graph) {
-        // Enforce the memory limit before allocating the frozen GD copy.
-        guard.memory(working.len().saturating_mul(ESTIMATED_QUAD_BYTES))?;
-        Some(working.clone())
+        // The frozen data graph is the input base graph only: inline DATA
+        // blocks are inferred triples (ADR-0047, w3c/data-shapes#1276).
+        // Enforce the memory limit before allocating the frozen copy.
+        guard.memory(base.len().saturating_mul(ESTIMATED_QUAD_BYTES))?;
+        Some(base.clone())
     } else {
         None
     };
