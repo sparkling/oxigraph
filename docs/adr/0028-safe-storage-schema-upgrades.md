@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-23 — residual audit recorded; legacy metadata refusals pinned in `918d3566`
+- Updated: 2026-09-23 — residual audit recorded; legacy metadata refusals pinned in `918d3566`; one-shot workspace refusal pinned in `3f6d7401`
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
@@ -4832,6 +4832,17 @@ The seven compiler warnings in the library-test receipts are in other test
 files that predate this change. The test adds one Clippy diagnostic,
 `tests_outside_test_module`, the same lint every existing test in this module
 reports.
+
+Item 6 is also done, in `3f6d7401`. The test
+`recovery_refuses_to_adopt_a_one_shot_preparation_workspace` in
+`lib/oxigraph/tests/upgrade_recovery.rs` shows that a workspace made by
+`prepare_upgrade` is not adopted by recovery. `resume_upgrade_recovery` from
+it, and `start_upgrade_recovery` over it, both fail. The workspace, source and
+backup stay byte-identical, and the workspace still verifies. Making the test
+expect acceptance makes it fail. It passes under default features (`run-RaKEuN`)
+and with `rdf-12` (`run-5mn7Uh`); each run passes 4, because one `v1` test in
+the file is feature-exclusive. Old one-shot workspaces are refused by design, so
+resuming them is not a defect. Making them resumable would be an owner decision.
 
 With item 1 done, the legacy half of gate 2's metadata comparison is
 discharged: its correct outcome is refusal, and the refusal is now pinned. The
