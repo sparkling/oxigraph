@@ -4833,6 +4833,16 @@ files that predate this change. The test adds one Clippy diagnostic,
 `tests_outside_test_module`, the same lint every existing test in this module
 reports.
 
+Item 5 is withdrawn after checking the code. `start_inner` already has
+real-process-kill coverage at both of its phases
+(`schema_upgrade_start_child_exits_before_and_after_the_initial_plan_is_synced`,
+recorded above on 2026-09-16). `resume_inner` has it for the copy loop and for
+phases 3 to 9. The span between `fault(2)` and `fault(3)` holds only a
+`SchemaUpgradeSnapshot::open` of the attempt copy and the comparison against the
+source. That open performs no writes, as recorded above, so a kill there leaves
+the same state as one at `fault(2)`. The audit misread an older "still open"
+note that a later section of this ADR had already closed.
+
 Item 6 is also done, in `3f6d7401`. The test
 `recovery_refuses_to_adopt_a_one_shot_preparation_workspace` in
 `lib/oxigraph/tests/upgrade_recovery.rs` shows that a workspace made by
