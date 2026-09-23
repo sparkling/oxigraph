@@ -27,6 +27,44 @@ and recorded. Nothing is half-applied.
 One unrelated process may be visible, `cargo check -p sf-serve`. It belongs to
 another project's session. Do not kill it.
 
+## 0. Later on 2026-09-23 (read first)
+
+The pause above was resumed the same day. Everything below is committed on
+`main`, receipted on clean source, and nothing is pushed.
+
+| Item | State | Evidence |
+| --- | --- | --- |
+| Upstream SRL question | filed as `sparkling`, https://github.com/w3c/data-shapes/issues/1276 | ADR-0047 |
+| SRL reading B | accepted | `fede6934`, `a660b3fd`, ADR-0047 |
+| Declared SPARQL functions | accepted after one rejection | `0e909e38`, `7931a493`, `9c32bc87`, `ea67fc6e`, ADR-0046 |
+| W3C SHACL candidate suite | 560 of 560 selected | `run-EP2SWE` at `70c6657e` |
+| E3 skip-worktree blocker | closed, review ACCEPT | `645f176b`, `70c6657e`, ADR-0046 |
+| Streaming-reset stall | watch: state captured on timeout, 20/20 series | `6e3432dd`, ADR-0027 |
+| G3.5 disposition baseline | delivered | `8e53c556`, ADR-0025 |
+| G3.4 24-relation equivalence | receipted | `run-mMO5iz`, `run-lzXwCP`, ADR-0024 |
+| Write-up helpers | `tools/evidence/receipt-evidence.mjs` and `adr-prereview.mjs` | harness README |
+| Parallelism | owner set max parallel to 1 | AGENTS.md |
+
+Process rules learned in this session:
+
+- Run the default and `--all-features` test sets, and Clippy for default, all
+  and no-default features. `rdf-12`-gated tests hid three failures once.
+- Use `receipt-evidence.mjs` for evidence rows. It flags dirty receipts and
+  counts every compiler warning; Clippy's documentation-link count misses rustc
+  lints.
+- Never `git checkout -- <path>` to compare against an older commit with work
+  uncommitted. Use a separate worktree-free method, such as `git show
+  <rev>:<file>` into `/tmp`.
+- Wait on a background process by PID (`kill -0`), not with `pgrep -f` on its
+  command line, which also matches the waiting shell.
+
+Remaining Class A work, each its own multi-step slice: the G3.2 frozen-corpus
+differential harness; the G3.5 catalogue, planner and result-equivalence oracle;
+the G4.3 residual audit; G4.4 stage 3+ and G4.5 leased transactions; G4.6 and
+G4.7; and the G4.8 eligibility oracle and evaluators. Items needing separate
+owner authority (push, G1.7, qualification, promotion, publication) are
+unchanged.
+
 ## 1. Model routing changed
 
 **Owner instruction, 2026-09-23: Opus replaces Fable in the harness.** Committed
