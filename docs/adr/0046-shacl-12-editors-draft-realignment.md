@@ -513,6 +513,19 @@ entries and supplies no blob for the other 423, so the fixture cannot present a
 complete clean checkout. Closing it needs either the full tree embedded or an
 explicit reviewed notion of a partial corpus.
 
+`645f176b` adopts the partial-corpus rule. The verifier and both candidate
+runners also list index entries that `git status` cannot see, meaning
+`skip-worktree` or `assume-unchanged` entries. Such an entry is rejected when
+its file exists on disk. The oracle's 423 hidden files stay absent, so nothing
+can be read from them, while a present file behind a hidden entry is refused.
+A new oracle case writes a file behind a `skip-worktree` entry, confirms
+`git status` stays empty, and expects rejection; the case fails when the check
+is removed. The real pinned checkout has no hidden entries. At `645f176b` the
+verifier contracts pass 39/39 (`run-3mzmtA`, and 39/39 on Node 20.20.2), and
+all three candidate commands pass on clean source: the suite 560 of 560
+(`run-W7ERnF`), the clause audit (`run-UDBtlu`) and Jena compact 32/32
+(`run-OWuQY7`).
+
 The candidate suite then ran for the first time, against committed source
 `899a2d0c`. Two of three commands pass: the clause audit (`run-AdTbwc`) reports
 9 documents, 233 clause candidates, 219 syntax rules, 153 grammar productions and

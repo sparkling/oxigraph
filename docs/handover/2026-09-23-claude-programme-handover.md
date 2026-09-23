@@ -178,7 +178,7 @@ promotion.
 | --- | --- | --- |
 | E4 reviewed suite evidence transition | A | Suite passes 560/560 (`run-RbLLo0` at `cf47b9b2`, review ACCEPT of `7931a493`); do the ADR-0046 evidence transition review |
 | ADR-0047 upstream question | watch | Check w3c/data-shapes#1276; follow ADR-0047's revisit section when answered |
-| E3 skip-worktree | A, needs a decision | Embed the full pinned tree, or define a reviewed "partial corpus" notion |
+| E3 skip-worktree | fixed pending review | `645f176b` rejects hidden index entries whose files are present (ADR-0046) |
 | G3.5 remainder | A | Planner, catalog, source selection, bound batching; each needs a semantic proof against the `75b3cc80` baseline |
 | G3.2 | A | Frozen-corpus differential harness; revalidate the ADR first |
 | G3.4 | A | Indexed-versus-oracle spatial equivalence across 24 relations |
