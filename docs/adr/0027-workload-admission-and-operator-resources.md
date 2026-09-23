@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-23 — cancellation-latency histogram delivered in `4617d33e`; accepted as ordinary delivery by independent review `6f97b635` at `73883f24`; streaming-reset transport cancellation fixed in OxHTTP at `5783f5e7` and narrowed at `f171a100`, pending independent review; ADR still Proposed, G4.2 still open (streaming-reset stall `run-qIJGBC` is an open, undiagnosed defect)
+- Updated: 2026-09-23 — cancellation-latency histogram delivered in `4617d33e`; accepted as ordinary delivery by independent review `6f97b635` at `73883f24`; streaming-reset transport cancellation fixed in OxHTTP at `5783f5e7`, narrowed at `f171a100`, and accepted by independent review `454f0d66` at `0ae194fb`; ADR still Proposed, G4.2 still open (streaming-reset stall `run-qIJGBC` is an open, undiagnosed defect)
 - Deciders: Oxigraph parity programme
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
@@ -1336,17 +1336,31 @@ confirmed the previous defect fixed and rejected a new one; the eighth accepted:
   runs, the streaming-reset series, the fuzz figures, the feature-matrix
   correction and every numeric claim in `cli/README.md`.
 
+The OxHTTP streaming-reset fix that followed (`5783f5e7`, narrowed in
+`f171a100`) was reviewed separately:
+
+- session `9a2e27c6-5295-4a29-abc1-8ccc47eb0e7c`, **REJECT**: confirmed the fix
+  sound but found that a short response body's synthesized `ConnectionAborted`
+  could be misreported as a transport failure, and that the negative-control
+  figure had no receipt. Fixed in `f171a100` and `56a26b89`.
+- session `e694c20a-c17d-42f7-937f-81480b733f0b`, **REJECT**: confirmed both
+  fixed and rejected a false statement that the harness only admits clean
+  committed source. Withdrawn, and the negative control receipted, in
+  `0ae194fb`.
+- session `454f0d66-b0d4-488e-9303-ba82915011b7`, **ACCEPT**, with no blocking
+  issues, at `0ae194fb`.
+
 The review artifacts are under `target/engineering-delivery/g42-application/`:
 `review.json`, `review4-opus.json`, `review5-opus.json`, `review6-opus.json`,
 `review7-opus.json`, `review8-opus.json`, `review9-opus.json`,
-`review10-opus.json` and `review11-opus.json`. The other files there are not verdicts: `review2.json` ended
+`review10-opus.json` and `review11-opus.json`, and for the OxHTTP fix
+`review12-opus.json`, `review13-opus.json` and `review14-opus.json`. The other files there are not verdicts: `review2.json` ended
 on a rate-limit error with no verdict, and `review3.json` is an empty Fable run
 stopped when the owner replaced Fable with Opus.
 The slice is accepted as ordinary delivery under ADR-0044 Class A. That is not
 qualification, promotion or publication.
 
-This ADR stays **Proposed**. Outstanding: an independent review of the OxHTTP
-fix in `5783f5e7` and `f171a100`; the streaming-reset stall (`run-qIJGBC`), one
+This ADR stays **Proposed**. Outstanding: the streaming-reset stall (`run-qIJGBC`), one
 in ten receipted runs at `5783f5e7` and none in ten at `f171a100`, undiagnosed; mutation evidence for the
 `sparql_query_eval` fuzz check; numeric defaults and regression ceilings; and
 any calibration against real production load. The six-case 1/4/16 demo drill
