@@ -10,7 +10,17 @@ import { pathToFileURL } from "node:url";
 export const EMPTY_DIFF_SHA256 =
   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-export function summarizeReceipt(name, receipt) {
+// Counts compiler/Clippy diagnostics from the per-target "generated N
+// warnings" summaries, which cover rustc lints as well as Clippy's own.
+export function countWarnings(log) {
+  let total = 0;
+  for (const match of log.matchAll(/generated (\d+) warnings?/g)) {
+    total += Number(match[1]);
+  }
+  return total;
+}
+
+export function summarizeReceipt(name, receipt, stderr = "") {
   const source = receipt.source ?? {};
   const result = receipt.result ?? {};
   const clean =
@@ -34,11 +44,13 @@ export function summarizeReceipt(name, receipt) {
     status: receipt.status,
     exitCode: result.code ?? null,
     tests,
+    warnings: countWarnings(stderr),
   };
 }
 
 export function renderRow(summary) {
   const outcome = [summary.status, `exit ${summary.exitCode}`];
+  if (summary.warnings > 0) outcome.push(`**${summary.warnings} compiler warnings**`);
   if (summary.tests) {
     outcome.push(
       `${summary.tests.passed} passed, ${summary.tests.failed} failed, ${summary.tests.ignored} ignored`,
@@ -55,8 +67,15 @@ export const HEADER = [
 
 export function render(root, names) {
   const rows = names.map((name) => {
-    const path = join(root, "target/engineering-delivery", name, "result.json");
-    return renderRow(summarizeReceipt(name, JSON.parse(readFileSync(path, "utf8"))));
+    const directory = join(root, "target/engineering-delivery", name);
+    const receipt = JSON.parse(readFileSync(join(directory, "result.json"), "utf8"));
+    let stderr = "";
+    try {
+      stderr = readFileSync(join(directory, "stderr.log"), "utf8");
+    } catch {
+      // Older receipts may lack a captured log; report no warnings then.
+    }
+    return renderRow(summarizeReceipt(name, receipt, stderr));
   });
   return [...HEADER, ...rows].join("\n");
 }

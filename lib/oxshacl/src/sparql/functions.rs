@@ -368,7 +368,7 @@ mod tests {
         assert!(matches!(
             lock(&spent).unwrap().failure,
             Some(ValidationError::LimitExceeded {
-                kind: crate::LimitKind::PathVisits,
+                kind: LimitKind::PathVisits,
                 limit,
             }) if limit == options.limits.max_path_visits
         ));
@@ -447,7 +447,7 @@ mod tests {
             matches!(
                 scope.finish(&mut budget),
                 Err(ValidationError::LimitExceeded {
-                    kind: crate::LimitKind::Time,
+                    kind: LimitKind::Time,
                     ..
                 })
             ),

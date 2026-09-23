@@ -616,7 +616,7 @@ this is a known gap rather than a violation.
 | --- | --- | --- | --- |
 | `cargo test --locked -p oxshacl` | `run-zlOwZO` | `7931a493` | 246 passed, 0 failed |
 | `cargo test --locked -p oxshacl --all-features` | `run-CqeTry` | `7931a493` | 283 passed, 0 failed |
-| `cargo clippy` default / all / no default features | `run-n17eyy`, `run-fVHh13`, `run-eK9cf4` | `7931a493` | passed; the only warnings are two `srl/evaluate/native.rs` diagnostics, present before this change, in the no-default build |
+| `cargo clippy` default / all / no default features | `run-n17eyy`, `run-fVHh13`, `run-eK9cf4` | `7931a493` | passed; the only warnings are in the no-default build: two `srl/evaluate/native.rs` diagnostics that predate this change, reported for both the library and test targets (4 in total) |
 | `node tools/shacl-tests/run.mjs` | `run-6RNt9N` | `7931a493` | 560 of 560 selected, 7 predeclared unsupported, 2 excluded, 0 failed |
 
 The other two, `eval-neg-data-03` and `eval-neg-data-06`, fail because GD

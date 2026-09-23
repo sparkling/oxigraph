@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { EMPTY_DIFF_SHA256, renderRow, summarizeReceipt } from "./receipt-evidence.mjs";
+import { EMPTY_DIFF_SHA256, countWarnings, renderRow, summarizeReceipt } from "./receipt-evidence.mjs";
 
 function receipt(overrides = {}) {
   return {
@@ -61,4 +61,14 @@ test("a non-cargo failed receipt reports its exit code without test counts", () 
   );
   assert.equal(summary.tests, null);
   assert.match(renderRow(summary), /failed; exit 1 \|$/);
+});
+
+test("compiler warnings are counted from every target summary", () => {
+  const log = [
+    "warning: `oxshacl` (lib) generated 1 warning",
+    "warning: `oxshacl` (lib test) generated 2 warnings (run `cargo clippy --fix`)",
+  ].join("\n");
+  assert.equal(countWarnings(log), 3);
+  const summary = summarizeReceipt("run-W", receipt({ result: { display: "cargo clippy", code: 0 } }), log);
+  assert.match(renderRow(summary), /\*\*3 compiler warnings\*\*/);
 });
