@@ -3,7 +3,7 @@
     reason = "bounded node-expression compiler roles are split into auditable submodules"
 )]
 
-use super::rdf::{RdfView, as_literal, as_named, rdf, shnex, to_shape_id};
+use super::rdf::{RdfView, as_literal, rdf, shnex, to_shape_id};
 use crate::NodeExpression;
 use crate::constraint::literal_bool;
 use crate::control::{Budget, LimitKind, ValidationError};
@@ -309,9 +309,7 @@ impl RdfView<'_> {
                     descending,
                 }
             }
-            "instancesOf" => {
-                NodeExpression::InstancesOf(as_named(value.clone(), &shnex("instancesOf"))?)
-            }
+            "instancesOf" => NodeExpression::InstancesOf(Box::new(parse(value, budget)?)),
             "nodesMatching" => {
                 NodeExpression::NodesMatching(to_shape_id(value).ok_or_else(|| {
                     ValidationError::IllFormed("shnex:nodesMatching requires a shape".to_owned())

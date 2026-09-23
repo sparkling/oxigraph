@@ -268,6 +268,32 @@ pub fn evaluate_expression(
     )
 }
 
+/// Evaluates a node expression on a caller-supplied budget.
+///
+/// Used by custom SPARQL functions, which run inside a query where the outer
+/// budget cannot be borrowed and therefore pass a per-call budget built from
+/// the same options.
+#[cfg(feature = "sparql")]
+pub(crate) fn evaluate_expression_with_budget(
+    expression: &crate::NodeExpression,
+    shapes: &ShapesGraph,
+    data: &GraphSnapshot,
+    focus: &Term,
+    environment: &crate::ExpressionEnvironment,
+    budget: &mut Budget<'_>,
+) -> Result<Vec<Term>, ValidationError> {
+    let options = budget.options().clone();
+    let max_depth = options.limits.max_recursion_depth;
+    let mut context = ValidationContext {
+        graph: data,
+        shapes,
+        max_depth,
+        conformance_disallows: &options.conformance_disallows,
+        sub_class_of_in_shapes_graph: options.sub_class_of_in_shapes_graph,
+    };
+    expression.evaluate(data, focus, environment, &mut context, budget, 0, max_depth)
+}
+
 pub(super) struct ValidationContext<'a> {
     graph: &'a GraphSnapshot,
     shapes: &'a ShapesGraph,

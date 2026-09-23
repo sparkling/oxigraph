@@ -115,8 +115,8 @@ pub enum NodeExpression {
     Max(Box<Self>),
     /// Produces the numeric sum of the nested expression's terms.
     Sum(Box<Self>),
-    /// Produces graph nodes that are instances of the given class.
-    InstancesOf(NamedNode),
+    /// Produces graph nodes that are instances of every computed class.
+    InstancesOf(Box<Self>),
     /// Produces graph nodes that conform to the given shape.
     NodesMatching(ShapeId),
     /// Produces a boolean indicating whether a computed node conforms to a computed shape.
@@ -435,7 +435,24 @@ impl NodeExpression {
                 )?;
                 vec![Term::Literal(sum_terms(&values)?)]
             }
-            Self::InstancesOf(class) => context.instances_of(class, budget)?,
+            Self::InstancesOf(types) => {
+                // shacl12-node-expr `InstanceOfExpression-evaluation`: the value
+                // of shnex:instancesOf is itself a node expression, every one of
+                // its output nodes must be an IRI, and the result is the union of
+                // the SHACL instances of each of them.
+                let types =
+                    types.evaluate(graph, focus, environment, context, budget, next, max_depth)?;
+                let mut output = Vec::new();
+                for class in types {
+                    let Term::NamedNode(class) = class else {
+                        return Err(ValidationError::IllFormed(
+                            "shnex:instancesOf classes must be IRIs".to_owned(),
+                        ));
+                    };
+                    output.extend(context.instances_of(&class, budget)?);
+                }
+                deduplicate(output)
+            }
             Self::NodesMatching(shape) => {
                 let mut output = Vec::new();
                 for node in context.all_nodes(budget)? {
@@ -493,9 +510,13 @@ impl NodeExpression {
                 vec![bool_term(matches)]
             }
             #[cfg(feature = "sparql")]
-            Self::SparqlSelect(query) => {
-                crate::sparql::evaluate_node_expression(query, graph, Some(focus), budget)?
-            }
+            Self::SparqlSelect(query) => crate::sparql::evaluate_node_expression_in_scope(
+                query,
+                graph,
+                Some(focus),
+                environment,
+                budget,
+            )?,
             #[cfg(feature = "sparql")]
             Self::SparqlFunction {
                 expression,

@@ -9,6 +9,7 @@ use spargebra::{Query, SparqlParser};
 
 mod annotations;
 mod construct_policy;
+mod functions;
 mod policy;
 mod prebinding;
 mod runtime;
@@ -17,10 +18,11 @@ mod tests;
 
 pub(crate) use self::annotations::ResultAnnotation;
 pub(crate) use self::construct_policy::parse as parse_construct_policy;
+pub(crate) use self::functions::{DeclaredFunction, ParameterDeclaration};
 pub(crate) use self::policy::substitute_path;
 use self::policy::{ExpectedQuery, validate_query_policy};
 pub(crate) use self::prebinding::expose_prebound_variables;
-pub(crate) use self::runtime::{Watchdog, evaluate_node_expression, evaluate_node_function};
+pub(crate) use self::runtime::{Watchdog, evaluate_node_expression_in_scope, evaluate_node_function};
 
 /// A validated SHACL-SPARQL `SELECT` constraint.
 #[derive(Clone, Debug)]
@@ -125,6 +127,7 @@ impl SparqlConstraint {
 
     pub(crate) fn evaluate(
         &self,
+        shapes: &crate::ShapesGraph,
         graph: &GraphSnapshot,
         focus: &Term,
         values: &[Term],
@@ -138,7 +141,7 @@ impl SparqlConstraint {
         }
         budget.check()?;
         if let Some(custom) = &self.custom {
-            return self.evaluate_custom(custom, graph, focus, values, budget);
+            return self.evaluate_custom(custom, shapes, graph, focus, values, budget);
         }
         let mut query = SparqlParser::new()
             .parse_query(&self.select)
@@ -154,6 +157,7 @@ impl SparqlConstraint {
         let evaluator = QueryEvaluator::new()
             .without_optimizations()
             .with_cancellation_token(cancellation);
+        let (evaluator, scope) = functions::register(evaluator, shapes, graph, budget);
         let dataset = graph.isolated_default_dataset();
         let results = evaluator
             .prepare(&query)
@@ -172,6 +176,9 @@ impl SparqlConstraint {
             violations.push(self.map_solution(&solution, focus, values, None)?);
         }
         watchdog.finish();
+        // A failure inside a registered function only reached the evaluator as
+        // an unbound value, so it is re-raised before the solutions are used.
+        scope.finish(budget)?;
         budget.check()?;
         Ok(violations)
     }
@@ -179,6 +186,7 @@ impl SparqlConstraint {
     fn evaluate_custom(
         &self,
         custom: &CustomConstraint,
+        shapes: &crate::ShapesGraph,
         graph: &GraphSnapshot,
         focus: &Term,
         values: &[Term],
@@ -206,6 +214,7 @@ impl SparqlConstraint {
                 let evaluator = QueryEvaluator::new()
                     .without_optimizations()
                     .with_cancellation_token(cancellation);
+                let (evaluator, scope) = functions::register(evaluator, shapes, graph, budget);
                 let dataset = graph.isolated_default_dataset();
                 let mut prepared = evaluator
                     .prepare(&parsed)
@@ -223,6 +232,7 @@ impl SparqlConstraint {
                     .execute(&dataset)
                     .map_err(|error| ValidationError::Sparql(error.to_string()))?;
                 watchdog.finish();
+                scope.finish(budget)?;
                 budget.check()?;
                 match results {
                     QueryResults::Boolean(true) => {}
@@ -267,6 +277,7 @@ impl SparqlConstraint {
         let evaluator = QueryEvaluator::new()
             .without_optimizations()
             .with_cancellation_token(cancellation);
+        let (evaluator, scope) = functions::register(evaluator, shapes, graph, budget);
         let dataset = graph.isolated_default_dataset();
         let mut prepared = evaluator
             .prepare(&parsed)
@@ -292,6 +303,7 @@ impl SparqlConstraint {
             violations.push(self.map_solution(&solution, focus, values, Some(custom))?);
         }
         watchdog.finish();
+        scope.finish(budget)?;
         budget.check()?;
         Ok(violations)
     }

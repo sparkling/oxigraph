@@ -4,6 +4,8 @@ use crate::constraint::literal_bool;
 use crate::control::{Budget, ValidationError};
 use crate::expression::CustomNodeExpressionKind;
 use crate::path::term_key;
+#[cfg(feature = "sparql")]
+use crate::sparql::{DeclaredFunction, ParameterDeclaration};
 use crate::{NodeExpression, ShapeId};
 use oxrdf::{Literal, NamedNode, NamedOrBlankNode, Term};
 use std::cell::RefCell;
@@ -280,6 +282,59 @@ pub(super) fn argument(
     Ok(Some(NodeExpression::Argument(key)))
 }
 
+/// Reads the `sh:parameter` paths of a list-parameter function in `shnex:argN` order.
+///
+/// Per shacl12-node-expr `CustomListParameterFunction-syntax` these parameters
+/// are documentation: they name the positional arguments but do not have to be
+/// present. When they are absent the function still accepts arguments, so an
+/// undeclared function reports no positional keys and takes none.
+#[cfg(feature = "sparql")]
+pub(super) fn list_parameter_keys(
+    view: &RdfView<'_>,
+    definition: &Definition,
+) -> Result<Vec<(Term, bool)>, ValidationError> {
+    let id = ShapeId::from(definition.function.clone());
+    let mut keys = BTreeMap::new();
+    for parameter in view.objects(&id, &sh("parameter")) {
+        let parameter = to_shape_id(&parameter).ok_or_else(|| {
+            ValidationError::IllFormed(format!(
+                "custom function <{}> has a non-node sh:parameter",
+                definition.function
+            ))
+        })?;
+        let path = as_named(view.exactly_one(&parameter, &sh("path"))?, &sh("path"))?;
+        let Some(index) = path
+            .as_str()
+            .strip_prefix(&shnex("arg"))
+            .and_then(|index| index.parse::<usize>().ok())
+        else {
+            return Err(ValidationError::IllFormed(format!(
+                "custom list-parameter function <{}> declares parameter path <{path}> outside shnex:argN",
+                definition.function
+            )));
+        };
+        let optional = view
+            .optional_one(&parameter, &sh("optional"))?
+            .map(|term| {
+                let literal = as_literal(term, &sh("optional"))?;
+                literal_bool(&literal).ok_or_else(|| {
+                    ValidationError::IllFormed("sh:optional must be xsd:boolean".to_owned())
+                })
+            })
+            .transpose()?
+            .unwrap_or(false);
+        if keys.insert(index, optional).is_some() {
+            return Err(ValidationError::IllFormed(format!(
+                "custom list-parameter function <{}> declares parameter <{path}> twice",
+                definition.function
+            )));
+        }
+    }
+    keys.into_iter()
+        .map(|(index, optional)| Ok((list_index(index)?, optional)))
+        .collect()
+}
+
 fn named_definition(
     view: &RdfView<'_>,
     function: NamedNode,
@@ -426,6 +481,47 @@ impl RdfView<'_> {
         Registry::new(self, budget)?
             .call(self, &node)
             .map(|call| call.is_some())
+    }
+
+    /// Compiles every `sh:ListParameterExpressionFunction` for SPARQL registration.
+    ///
+    /// shacl12-sparql recommends exposing exactly these functions to the SPARQL
+    /// engine, so named-parameter functions — which have no positional argument
+    /// order — are skipped.
+    #[cfg(feature = "sparql")]
+    pub(in crate::compile) fn declared_sparql_functions(
+        &self,
+        budget: &mut Budget<'_>,
+        max_depth: usize,
+        max_items: usize,
+    ) -> Result<Vec<DeclaredFunction>, ValidationError> {
+        let registry = Registry::new(self, budget)?;
+        let mut output = Vec::new();
+        for definition in registry.definitions().cloned().collect::<Vec<_>>() {
+            if !matches!(definition.kind, CustomNodeExpressionKind::ListParameter) {
+                continue;
+            }
+            let parameters = list_parameter_keys(self, &definition)?
+                .into_iter()
+                .map(|(key, optional)| ParameterDeclaration::new(key, optional))
+                .collect();
+            // A body may call other declared functions, but not itself: the
+            // recursion guard is the same one the inline call path uses.
+            let active_functions =
+                RefCell::new(BTreeSet::from([definition.function.as_str().to_owned()]));
+            let body = self.expression_scoped(
+                &definition.body,
+                budget,
+                1,
+                max_depth,
+                max_items,
+                &registry,
+                Some(&definition.scope()),
+                &active_functions,
+            )?;
+            output.push(DeclaredFunction::new(definition.function, body, parameters));
+        }
+        Ok(output)
     }
 
     pub(in crate::compile) fn validate_custom_node_expression_functions(

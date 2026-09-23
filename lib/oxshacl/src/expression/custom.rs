@@ -1,4 +1,4 @@
-use super::environment::ArgumentBinding;
+use super::environment::{ArgumentBinding, ScopeArgument};
 use super::{ExpressionContext, ExpressionEnvironment, NodeExpression};
 use crate::control::{Budget, ValidationError};
 use crate::model::GraphSnapshot;
@@ -66,7 +66,10 @@ impl CustomNodeExpression {
                 .map(|(key, expression)| {
                     (
                         term_key(key),
-                        ArgumentBinding::Expression(expression.clone()),
+                        ScopeArgument {
+                            key: key.clone(),
+                            binding: ArgumentBinding::Expression(expression.clone()),
+                        },
                     )
                 })
                 .collect(),
@@ -82,7 +85,13 @@ impl CustomNodeExpression {
                             self.function, key
                         )));
                     }
-                    bindings.insert(term_key(key), ArgumentBinding::Values(values));
+                    bindings.insert(
+                        term_key(key),
+                        ScopeArgument {
+                            key: key.clone(),
+                            binding: ArgumentBinding::Values(values),
+                        },
+                    );
                 }
                 bindings
             }

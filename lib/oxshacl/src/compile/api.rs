@@ -165,11 +165,24 @@ impl ShapesGraph {
             }
         }
         super::validate_dependencies(&map)?;
+        // Declared functions are compiled once here so that every query
+        // execution can register them without re-reading the shapes graph.
+        #[cfg(feature = "sparql")]
+        let sparql_functions = {
+            let mut budget = Budget::new(options)?;
+            RdfView::new(&source).declared_sparql_functions(
+                &mut budget,
+                options.limits.max_recursion_depth,
+                options.limits.max_list_items,
+            )?
+        };
         let compiled = Self {
             source,
             profiles,
             shapes: map,
             well_formedness_checked,
+            #[cfg(feature = "sparql")]
+            sparql_functions,
         };
         #[cfg(feature = "sparql")]
         super::custom::validate_parameter_shapes(&compiled, options)?;
@@ -199,5 +212,11 @@ impl ShapesGraph {
     /// Looks up a compiled shape by identifier.
     pub fn shape(&self, id: &ShapeId) -> Option<&Shape> {
         self.shapes.get(&shape_key(id))
+    }
+
+    /// Returns the `sh:ListParameterExpressionFunction` declarations to register.
+    #[cfg(feature = "sparql")]
+    pub(crate) fn declared_sparql_functions(&self) -> &[crate::sparql::DeclaredFunction] {
+        &self.sparql_functions
     }
 }

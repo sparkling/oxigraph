@@ -13,13 +13,29 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(target_family = "wasm"))]
 use std::time::Instant;
 
-pub(crate) fn evaluate_node_expression(
+/// Evaluates a `sh:select` body with the enclosing custom-function scope pre-bound.
+///
+/// Scope variables are pre-bound by name per shacl12-sparql
+/// `SelectExpression-evaluation`; a scope variable named `this` is a failure
+/// because `this` is reserved for the focus node.
+pub(crate) fn evaluate_node_expression_in_scope(
     query: &str,
     graph: &GraphSnapshot,
     focus: Option<&Term>,
+    environment: &crate::ExpressionEnvironment,
     budget: &mut Budget<'_>,
 ) -> Result<Vec<Term>, ValidationError> {
-    evaluate_node_expression_with_substitutions(query, graph, focus, &[], budget)
+    for variable in environment.scope_variables() {
+        if variable.as_str() == "this" {
+            return Err(ValidationError::IllFormed(
+                "a node-expression scope variable may not be named `this`".to_owned(),
+            ));
+        }
+    }
+    // A scope argument that produced no term contributes no substitution, so the
+    // body sees the variable as unbound.
+    let substitutions = environment.scope_substitutions();
+    evaluate_node_expression_with_substitutions(query, graph, focus, &substitutions, budget)
 }
 
 fn evaluate_node_expression_with_substitutions(
@@ -35,12 +51,23 @@ fn evaluate_node_expression_with_substitutions(
             limit: budget.limits().max_query_bytes,
         });
     }
-    let query = if let Some(focus) = focus {
-        let query = ensure_this_projection(query);
-        bind_this(&replace_this_in_patterns(&query, focus), focus)?
-    } else {
-        query.to_owned()
+    // An aggregate projection cannot also project `?this`, so an injected
+    // `?this` would make it invalid. Such a query is left as written and `this`
+    // is pre-bound by substitution instead (shacl12-sparql
+    // `SelectExpression-evaluation`).
+    let aggregate = focus.is_some() && is_aggregate_projection(query);
+    let query = match focus {
+        Some(focus) if !aggregate => {
+            let query = ensure_this_projection(query);
+            bind_this(&replace_this_in_patterns(&query, focus), focus)?
+        }
+        _ => query.to_owned(),
     };
+    let mut substitutions = substitutions.to_vec();
+    if aggregate && let Some(focus) = focus {
+        substitutions.push((Variable::new_unchecked("this"), focus.clone()));
+    }
+    let substitutions = substitutions.as_slice();
     let mut parsed = SparqlParser::new()
         .parse_query(&query)
         .map_err(|error| ValidationError::Sparql(error.to_string()))?;
@@ -399,6 +426,28 @@ pub(super) fn bind_this(query: &str, focus: &Term) -> Result<String, ValidationE
     bound.push_str(" } ");
     bound.push_str(&query[position..]);
     Ok(bound)
+}
+
+/// Whether the top-level SELECT groups its solutions (explicit GROUP BY or an
+/// aggregate in the projection). Such a projection cannot list `?this`.
+fn is_aggregate_projection(query: &str) -> bool {
+    let Ok(Query::Select(select)) = SparqlParser::new().parse_query(query) else {
+        return false;
+    };
+    let mut expression = &select.expression;
+    loop {
+        expression = match expression {
+            QueryExpression::Project { inner, .. }
+            | QueryExpression::Distinct { inner }
+            | QueryExpression::Reduced { inner }
+            | QueryExpression::Slice { inner, .. }
+            | QueryExpression::OrderBy { inner, .. }
+            | QueryExpression::Extend { inner, .. }
+            | QueryExpression::Filter { inner, .. } => inner,
+            QueryExpression::Group { .. } => return true,
+            _ => return false,
+        };
+    }
 }
 
 fn ensure_this_projection(query: &str) -> String {

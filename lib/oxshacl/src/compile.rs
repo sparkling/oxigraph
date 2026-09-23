@@ -56,6 +56,9 @@ pub struct ShapesGraph {
     profiles: ProfileSet,
     shapes: ShapeMap,
     well_formedness_checked: bool,
+    /// `sh:ListParameterExpressionFunction` declarations exposed to SPARQL.
+    #[cfg(feature = "sparql")]
+    sparql_functions: Vec<crate::sparql::DeclaredFunction>,
 }
 
 /// Compiles one node-expression RDF term under the supplied resource limits.

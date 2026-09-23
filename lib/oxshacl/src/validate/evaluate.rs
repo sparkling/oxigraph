@@ -427,7 +427,9 @@ pub(super) fn evaluate_constraint(
             Ok(violations)
         }
         #[cfg(feature = "sparql")]
-        Constraint::Sparql(constraint) => constraint.evaluate(context.graph, focus, values, budget),
+        Constraint::Sparql(constraint) => {
+            constraint.evaluate(context.shapes, context.graph, focus, values, budget)
+        }
     }
 }
 

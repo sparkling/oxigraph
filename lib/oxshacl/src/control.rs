@@ -180,6 +180,32 @@ pub enum ValidationError {
     Rule(String),
 }
 
+/// Resources consumed by an evaluation that ran on a separate [`Budget`].
+///
+/// Accumulated while a custom SPARQL function executes and folded into the
+/// outer budget by [`Budget::charge_nested`] once the query returns.
+#[cfg(feature = "sparql")]
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct NestedUsage {
+    pub estimated_memory: usize,
+    pub path_visits: usize,
+    pub query_solutions: usize,
+}
+
+#[cfg(feature = "sparql")]
+impl NestedUsage {
+    /// Records everything `budget` consumed during one nested evaluation.
+    pub(crate) fn accumulate(&mut self, budget: &Budget<'_>) {
+        self.estimated_memory = self
+            .estimated_memory
+            .saturating_add(budget.estimated_memory());
+        self.path_visits = self.path_visits.saturating_add(budget.path_visits());
+        self.query_solutions = self
+            .query_solutions
+            .saturating_add(budget.query_solutions());
+    }
+}
+
 pub(crate) struct Budget<'a> {
     options: &'a ValidationOptions,
     started: Instant,
@@ -270,6 +296,47 @@ impl<'a> Budget<'a> {
 
     pub(crate) fn estimated_memory(&self) -> usize {
         self.estimated_memory
+    }
+
+    pub(crate) fn path_visits(&self) -> usize {
+        self.path_visits
+    }
+
+    #[cfg(feature = "sparql")]
+    pub(crate) fn query_solutions(&self) -> usize {
+        self.query_solutions
+    }
+
+    /// Returns the policy this budget enforces.
+    ///
+    /// A nested evaluation that cannot borrow this budget clones these options
+    /// so it observes the same cancellation token and limit ceilings.
+    #[cfg(feature = "sparql")]
+    pub(crate) fn options(&self) -> &ValidationOptions {
+        self.options
+    }
+
+    /// Charges resources consumed by a nested evaluation that ran on its own budget.
+    ///
+    /// Custom SPARQL functions evaluate SHACL node expressions inside a query,
+    /// where this budget cannot be borrowed. Their usage is accumulated
+    /// separately and folded back here so a function called mid-query is still
+    /// charged against the caller's ceilings.
+    #[cfg(feature = "sparql")]
+    pub(crate) fn charge_nested(&mut self, usage: NestedUsage) -> Result<(), ValidationError> {
+        self.path_visits = self.path_visits.saturating_add(usage.path_visits);
+        self.limit(
+            self.path_visits,
+            self.options.limits.max_path_visits,
+            LimitKind::PathVisits,
+        )?;
+        self.query_solutions = self.query_solutions.saturating_add(usage.query_solutions);
+        self.limit(
+            self.query_solutions,
+            self.options.limits.max_query_solutions,
+            LimitKind::QuerySolutions,
+        )?;
+        self.charge_memory(usage.estimated_memory)
     }
 
     pub(crate) fn elapsed(&self) -> Duration {

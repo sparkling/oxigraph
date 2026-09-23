@@ -10,13 +10,28 @@ fn empty_graph() -> GraphSnapshot {
     GraphSnapshot::default_graph(Dataset::new())
 }
 
+fn empty_shapes() -> crate::ShapesGraph {
+    crate::ShapesGraph::from_shapes(
+        crate::ProfileSet::new([crate::ProfileId::Core12Subset20260723]).unwrap(),
+        Vec::new(),
+        &ValidationOptions::default(),
+    )
+    .unwrap()
+}
+
 fn evaluate(
     constraint: &SparqlConstraint,
     values: &[Term],
 ) -> Result<Vec<Violation>, ValidationError> {
     let options = ValidationOptions::default();
     let mut budget = Budget::new(&options)?;
-    constraint.evaluate(&empty_graph(), &focus(), values, &mut budget)
+    constraint.evaluate(
+        &empty_shapes(),
+        &empty_graph(),
+        &focus(),
+        values,
+        &mut budget,
+    )
 }
 
 #[test]
@@ -69,6 +84,7 @@ fn this_is_prebound_inside_exists_patterns() {
     let focus = focus();
     let violations = constraint
         .evaluate(
+            &empty_shapes(),
             &GraphSnapshot::default_graph(dataset),
             &focus,
             std::slice::from_ref(&focus),
@@ -349,6 +365,7 @@ fn custom_validators_obey_the_query_byte_limit() {
     let value = Term::from(NamedNode::new_unchecked("urn:value"));
     let error = constraint
         .evaluate(
+            &empty_shapes(),
             &empty_graph(),
             &focus(),
             std::slice::from_ref(&value),
