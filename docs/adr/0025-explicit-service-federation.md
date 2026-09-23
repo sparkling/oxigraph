@@ -5,7 +5,8 @@
 - Updated: 2026-09-23 — first G3.5 telemetry slice delivered (`75b3cc80`,
   opt-in HTTP SERVICE execution observations) and accepted by independent review
   `690ae0dc`; the stale "no loopback fixtures" statement corrected. Still
-  Proposed; no planner or catalog.
+  Proposed; no planner or catalog. SERVICE failure-disposition baseline added
+  in `8e53c556`.
 - Deciders: Oxigraph parity programme
 - Implementation status: partially implemented. Opt-in HTTP SERVICE execution
   observations are delivered by `75b3cc80`. G1.6 has satisfied the
@@ -241,6 +242,44 @@ Non-blocking notes carried forward:
   {service_name}"` in `sparql/http.rs` is a plain literal, so the placeholder is
   emitted verbatim. This is upstream behaviour, not introduced here, and
   belongs in a separate cleanup.
+
+## Delivered: SERVICE failure-disposition baseline (2026-09-23)
+
+`8e53c556` adds `service_failure_disposition_is_a_typed_error_that_silent_hides`
+to `lib/oxigraph/tests/sparql_egress_policy.rs`. It is the controlled-loopback
+oracle for the acceptance item that timeout, denial, partial stream, malformed
+response and `SERVICE SILENT` preserve their specified disposition. It covers
+seven failure kinds:
+
+- policy denial before connect;
+- a redirect;
+- an HTTP 503;
+- a malformed results body;
+- an unsupported media type;
+- a body shorter than its declared length;
+- an encoded response over its limit.
+
+Without `SILENT`, each is a typed egress error, or a `SERVICE` error where no
+egress kind applies. With `SILENT`, each yields exactly the incoming empty
+solution. Request cancellation and whole-request deadlines, which `SILENT` must
+not hide, and remote timeouts are covered by existing tests. Changing one
+expected kind makes the test fail.
+
+At `8e53c556` on clean source:
+
+| Suite | Receipt | Result |
+| --- | --- | --- |
+| egress policy | `run-V0Pr3O` | 13 passed |
+| service HTTP | `run-bwMOzJ` | 13 passed |
+| federation observation | `run-V63Ew2` | 16 passed |
+
+Clippy for the test target equals the same-source baseline without the change
+(139 diagnostics each, measured locally). The three compiler warnings in those
+receipts come from `store/outbox.rs` and `store/change_codec.rs` and are
+already present at `75b3cc80` (`run-ZOlwBM`, `run-IhJB8k`).
+
+This is the disposition half of the oracle a planner will be checked against.
+The result-equivalence half needs a planner to compare with.
 
 This ADR stays **Proposed**. The federation planner, endpoint catalog, source
 selection, bound batching, and per-endpoint reports remain undelivered G3.5
