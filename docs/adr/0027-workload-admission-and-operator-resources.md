@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-23 — cancellation-latency histogram delivered in `4617d33e`; code last changed in `1f6774d1`; still Proposed, G4.2 still open (streaming-reset stall `run-t8vJ2x` is an open defect)
+- Updated: 2026-09-23 — cancellation-latency histogram delivered in `4617d33e`; code last changed in `1f6774d1`; cancellation-latency slice accepted as ordinary delivery by independent review `6f97b635` at `73883f24`; ADR still Proposed, G4.2 still open (streaming-reset stall `run-t8vJ2x` is an open defect)
 - Deciders: Oxigraph parity programme
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
@@ -1265,8 +1265,8 @@ the first receipts were produced on a dirty tree at the parent commit, and the
 "no new Clippy diagnostics" claim was false. Both were confirmed and are
 corrected above.
 
-Seven further independent Opus/high reviews followed, each confirming the
-previous defect fixed and rejecting a new one:
+Eight further independent Opus/high reviews followed. The first seven each
+confirmed the previous defect fixed and rejected a new one; the eighth accepted:
 
 - session `e2ecafec-46ae-4d1a-89c6-2de7108d159a`, **REJECT**: a false claim that
   no transport observer exists after admission, a wrong default Clippy count and
@@ -1294,19 +1294,24 @@ previous defect fixed and rejecting a new one:
 - session `ac89ce9f-96af-4914-9689-245bcfbc6732`, **REJECT**: confirmed the
   review count and order, and rejected the status header's self-referential
   "record last corrected in the commit that adds this line", which had gone stale
-  after later record-only commits. That clause is removed, and every entry in
-  this list now names its commit explicitly instead of referring to itself.
+  after later record-only commits. That clause and the two review-list entries
+  that used the same wording were corrected in `73883f24`.
+- session `6f97b635-ef7a-40aa-8af8-f4fd11b37297`, **ACCEPT**, with no blocking
+  issues, at `73883f24`. It confirmed every commit credit in this list, and
+  re-verified the zero Clippy delta, the suite, the kept failure and isolation
+  runs, the streaming-reset series, the fuzz figures, the feature-matrix
+  correction and every numeric claim in `cli/README.md`.
 
 The review artifacts are under `target/engineering-delivery/g42-application/`:
 `review.json`, `review4-opus.json`, `review5-opus.json`, `review6-opus.json`,
-`review7-opus.json`, `review8-opus.json`, `review9-opus.json` and
-`review10-opus.json`. The other files there are not verdicts: `review2.json` ended
+`review7-opus.json`, `review8-opus.json`, `review9-opus.json`,
+`review10-opus.json` and `review11-opus.json`. The other files there are not verdicts: `review2.json` ended
 on a rate-limit error with no verdict, and `review3.json` is an empty Fable run
 stopped when the owner replaced Fable with Opus.
-No independent review has yet accepted the slice.
+The slice is accepted as ordinary delivery under ADR-0044 Class A. That is not
+qualification, promotion or publication.
 
-This ADR stays **Proposed**. Outstanding: an independent review that accepts
-this slice; the open streaming-reset stall (`run-t8vJ2x`), where the query
+This ADR stays **Proposed**. Outstanding: the open streaming-reset stall (`run-t8vJ2x`), where the query
 observation did not end within ten seconds of a client reset, which the SO_ERROR
 race does not explain; the ignored 1/4/16 demo drill; mutation evidence for the
 `sparql_query_eval` fuzz check; numeric defaults and regression ceilings; and
