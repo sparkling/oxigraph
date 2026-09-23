@@ -20,11 +20,11 @@
 //! * the resources each call consumed are accumulated in shared state and
 //!   charged to the outer budget once the query finishes, so work done inside
 //!   a function counts against the caller's totals;
-//! * a limit, cancellation, or ill-formedness failure is parked in the same
-//!   shared state and re-raised afterwards, because a SPARQL function can only
-//!   report "no value" to the evaluator.
+//! * a limit or cancellation is parked in the same shared state and re-raised
+//!   afterwards, because a SPARQL function can only report "no value" to the
+//!   evaluator; any other body failure is a SPARQL error of that call.
 
-use crate::control::{Budget, NestedUsage, ValidationError, ValidationOptions};
+use crate::control::{Budget, LimitKind, NestedUsage, ValidationError, ValidationOptions};
 use crate::model::GraphSnapshot;
 use crate::{ExpressionEnvironment, NodeExpression, ShapesGraph};
 use oxrdf::{Literal, NamedNode, Term};
@@ -54,8 +54,7 @@ impl DeclaredFunction {
 /// `baseline` is the outer budget's consumption when the query began and
 /// `usage` grows with every call; their sum is what the limits apply to.
 ///
-/// `failure` holds the first limit, cancellation, or ill-formedness error a
-/// call hit. A SPARQL function can only return "no value", so the error is
+/// `failure` holds the first limit or cancellation a call hit. A SPARQL function can only return "no value", so the error is
 /// parked and re-raised once the query returns.
 #[derive(Debug, Default)]
 struct SharedState {
@@ -151,9 +150,10 @@ pub(crate) fn register(
 
 /// Evaluates one custom-function call inside a running SPARQL query.
 ///
-/// Returns `None` both for a genuinely empty result and for a failure; in the
-/// failure case the error is recorded in `state` and re-raised by
-/// [`FunctionScope::finish`], so an unbound result never masks an error.
+/// Returns `None` for any result other than exactly one node and for a body
+/// evaluation failure, both of which are SPARQL errors. A resource limit or
+/// cancellation is also recorded in `state` and re-raised by
+/// [`FunctionScope::finish`], so it can never be hidden as an unbound value.
 fn call(
     declaration: &DeclaredFunction,
     arguments: &[Term],
@@ -177,9 +177,16 @@ fn call(
         state,
     ) {
         Ok(output) => output,
+        // shacl12-sparql: an evaluation failure of the body makes the call a
+        // SPARQL error, which spareval can only express as no value. Resource
+        // limits and cancellation are not evaluation failures of the function:
+        // they must stop validation, so those are parked and re-raised.
+        Err(error) if !is_resource_stop(&error) => None,
         Err(error) => {
             if let Ok(mut state) = lock(state) {
-                state.failure.get_or_insert(error);
+                state
+                    .failure
+                    .get_or_insert(configured_limit(error, options));
             }
             None
         }
@@ -260,6 +267,31 @@ fn argument_scope(arguments: &[Term]) -> Result<Vec<(Term, Option<Term>)>, Valid
         .collect()
 }
 
+/// Whether `error` is a resource limit or cancellation rather than a failure
+/// of the function's own evaluation.
+fn is_resource_stop(error: &ValidationError) -> bool {
+    matches!(
+        error,
+        ValidationError::Cancelled | ValidationError::LimitExceeded { .. }
+    )
+}
+
+/// Reports a limit error against the configured ceiling rather than the
+/// reduced one a call's budget enforced (see [`NestedUsage::restrict`]).
+fn configured_limit(error: ValidationError, options: &ValidationOptions) -> ValidationError {
+    let ValidationError::LimitExceeded { kind, limit } = error else {
+        return error;
+    };
+    let limits = &options.limits;
+    let limit = match kind {
+        LimitKind::PathVisits => limits.max_path_visits,
+        LimitKind::QuerySolutions => limits.max_query_solutions,
+        LimitKind::EstimatedMemory => limits.max_estimated_memory_bytes,
+        _ => limit,
+    };
+    ValidationError::LimitExceeded { kind, limit }
+}
+
 /// Names positional argument `index` the way `shnex:arg N` does.
 fn list_index(index: usize) -> Result<Term, ValidationError> {
     let index = i64::try_from(index).map_err(|_| {
@@ -332,13 +364,38 @@ mod tests {
         // The caller has already used the whole ceiling, so the same call fails.
         let spent = state(options.limits.max_path_visits);
         assert!(call(&declaration, &[], &shapes(), &data, &options, None, &spent).is_none());
+        // The error names the configured ceiling, not the reduced one (zero).
         assert!(matches!(
             lock(&spent).unwrap().failure,
             Some(ValidationError::LimitExceeded {
                 kind: crate::LimitKind::PathVisits,
-                ..
-            })
+                limit,
+            }) if limit == options.limits.max_path_visits
         ));
+    }
+
+    #[test]
+    fn a_body_evaluation_failure_is_a_call_error_not_a_validation_failure() {
+        // `shnex:instancesOf` requires IRI classes; a literal is an evaluation
+        // failure of the body, which makes the call a SPARQL error (unbound).
+        let declaration = DeclaredFunction::new(
+            NamedNode::new_unchecked("urn:function"),
+            NodeExpression::InstancesOf(Box::new(NodeExpression::Constant(Term::from(
+                Literal::from("not a class"),
+            )))),
+        );
+        let state = Arc::new(Mutex::new(SharedState::default()));
+        let output = call(
+            &declaration,
+            &[],
+            &shapes(),
+            &GraphSnapshot::default_graph(Dataset::new()),
+            &ValidationOptions::default(),
+            None,
+            &state,
+        );
+        assert!(output.is_none());
+        assert!(lock(&state).unwrap().failure.is_none());
     }
 
     #[test]
