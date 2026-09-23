@@ -1265,8 +1265,8 @@ the first receipts were produced on a dirty tree at the parent commit, and the
 "no new Clippy diagnostics" claim was false. Both were confirmed and are
 corrected above.
 
-Three further independent Opus/high reviews followed, each rejecting a new
-record defect while confirming the previous one fixed:
+Six further independent Opus/high reviews followed, each confirming the
+previous defect fixed and rejecting a new one:
 
 - session `e2ecafec-46ae-4d1a-89c6-2de7108d159a`, **REJECT**: a false claim that
   no transport observer exists after admission, a wrong default Clippy count and
@@ -1278,20 +1278,23 @@ record defect while confirming the previous one fixed:
   said the change had not been re-reviewed, the stall was missing from the
   outstanding list, and the receipts were not bound to HEAD. Corrected in
   `6faadff7`.
-- session `abdda876-f67f-4391-af19-bcbd7d213a3e`, **REJECT**: confirmed the
-  zero Clippy delta, the feature-matrix record and the status header, and
-  rejected an unreceipted host load figure and three unreceipted isolated runs
-  in the verification paragraph. Replaced by receipts in the commit that adds
-  this entry.
 - session `fbfd58a8-435f-44a3-b408-92e3e6c9d614`, **REJECT**: `6faadff7` marked
   the feature matrix done while the slice still added three Clippy diagnostics
   and the query-fuzz check was unmet, and the status header named the wrong
   commit. Fixed in code by `1f6774d1` (Clippy delta now zero) and in this record
   by the commit that adds this entry.
+- session `abdda876-f67f-4391-af19-bcbd7d213a3e`, **REJECT**: confirmed the
+  zero Clippy delta, the feature-matrix record and the status header, and
+  rejected an unreceipted host load figure and three unreceipted isolated runs
+  in the verification paragraph. Replaced by receipts in `a40a2d21`.
+- session `5209095c-20a1-4f6d-9c35-addb29394543`, **REJECT**: confirmed the
+  receipted isolation runs and re-verified every numeric claim, and rejected this
+  paragraph for saying "three" further reviews when five were listed. Corrected
+  by the commit that adds this entry.
 
 The review artifacts are under `target/engineering-delivery/g42-application/`:
-`review.json`, `review4-opus.json`, `review5-opus.json`, `review6-opus.json` and
-`review7-opus.json` and `review8-opus.json`. The other files there are not verdicts: `review2.json` ended
+`review.json`, `review4-opus.json`, `review5-opus.json`, `review6-opus.json`,
+`review7-opus.json`, `review8-opus.json` and `review9-opus.json`. The other files there are not verdicts: `review2.json` ended
 on a rate-limit error with no verdict, and `review3.json` is an empty Fable run
 stopped when the owner replaced Fable with Opus.
 No independent review has yet accepted the slice.
