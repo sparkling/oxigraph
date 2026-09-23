@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-22 — cancellation-latency histogram delivered in `4617d33e`; still Proposed, G4.2 still open
+- Updated: 2026-09-23 — cancellation-latency histogram delivered in `4617d33e` and corrected through `959d2248` after four independent reviews; still Proposed, G4.2 still open (streaming-reset stall `run-t8vJ2x` is an open defect)
 - Deciders: Oxigraph parity programme
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
@@ -1216,12 +1216,13 @@ specifies for an early-dropped iterator. Making it deterministic needs the
 response writer to route a write-side transport failure into the lease's
 cancellation token.
 
-Verified on clean committed source at `96d1370f`: CLI suite 456 passed / 0
-failed / 2 ignored (`run-s4AL08`); Clippy compared against both recorded
-baselines, whose stderr hashes match the ones on record, at `run-QG2srf`
-(default) and `run-50ZlZ3` (no-default-features). Earlier receipts at
-`6c1463ee` (`run-JTIX2d`, `run-GX9e5d`, `run-tDOnTy`) gave the same results and
-are kept as history. Both applicable spareval fuzz targets ran without a crash,
+Verified on clean committed source at `959d2248`: CLI suite 456 passed / 0
+failed / 2 ignored (`run-7KMfO3`); Clippy compared against both recorded
+baselines, whose stderr hashes match the ones on record, at `run-mgSkFe`
+(default) and `run-7fTUoB` (no-default-features). Earlier receipts at
+`96d1370f` (`run-s4AL08`, `run-QG2srf`, `run-50ZlZ3`) and `6c1463ee`
+(`run-JTIX2d`, `run-GX9e5d`, `run-tDOnTy`) gave the same results and are kept
+as history. Both applicable spareval fuzz targets ran without a crash,
 but only one is mutation evidence: `run-rktpZc` (`sparql_update_eval`, 11382 runs, about 4100
 mutations beyond its seed corpus) is a genuine one-minute run, but `run-tSYzGW`
 (`sparql_query_eval`) spent its budget replaying a 14199-file seed corpus, with a
@@ -1254,10 +1255,30 @@ preserved, the spareval cancellation signal sound, the `#[ignore]` a documented
 deferral rather than a weakened assertion -- and rejected two evidence defects:
 the first receipts were produced on a dirty tree at the parent commit, and the
 "no new Clippy diagnostics" claim was false. Both were confirmed and are
-corrected above. The change has not been re-reviewed since.
+corrected above.
 
-This ADR stays **Proposed**. Numeric defaults, regression ceilings, the
-feature matrix, independent review of this application, the ignored 1/4/16 demo
-drill and any calibration against real production load remain outstanding, and
-G4.2 remains open until those are done and accepted.
+Three further independent Opus/high reviews followed, each rejecting a new
+record defect while confirming the previous one fixed:
+
+- session `e2ecafec-46ae-4d1a-89c6-2de7108d159a`, **REJECT**: a false claim that
+  no transport observer exists after admission, a wrong default Clippy count and
+  an overstated fuzz description. Corrected in `96d1370f`.
+- session `7ec16155-f863-4a0e-a17b-3aecadcf07db`, **REJECT**: the streaming-reset
+  flake rate had no receipt. Replaced by the receipted ten-run series in
+  `959d2248`.
+- session `6f8687b8-b3ae-4205-bbe1-f1093e42b7aa`, **REJECT**: this section still
+  said the change had not been re-reviewed, the stall was missing from the
+  outstanding list, and the receipts were not bound to HEAD. Corrected by the
+  commit that adds this paragraph.
+
+The review artifacts are under `target/engineering-delivery/g42-application/`.
+No independent review has yet accepted the slice.
+
+This ADR stays **Proposed**. Outstanding: an independent review that accepts
+this slice; the open streaming-reset stall (`run-t8vJ2x`), where the query
+observation did not end within ten seconds of a client reset, which the SO_ERROR
+race does not explain; the ignored 1/4/16 demo drill; numeric defaults and
+regression ceilings; and any calibration against real production load. The
+focused/full feature matrix has run (see the evidence record). G4.2 remains
+open until the outstanding items are done and accepted.
 
