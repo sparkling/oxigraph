@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-23 — cancellation-latency histogram delivered in `4617d33e`; code last changed in `1f6774d1`; cancellation-latency slice accepted as ordinary delivery by independent review `6f97b635` at `73883f24`; ADR still Proposed, G4.2 still open (streaming-reset stall `run-t8vJ2x` is an open defect)
+- Updated: 2026-09-23 — cancellation-latency histogram delivered in `4617d33e`; accepted as ordinary delivery by independent review `6f97b635` at `73883f24`; streaming-reset transport cancellation fixed in OxHTTP at `5783f5e7`, pending its own review; ADR still Proposed, G4.2 still open (residual streaming-reset stall `run-qIJGBC` is an open defect)
 - Deciders: Oxigraph parity programme
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
@@ -1192,39 +1192,50 @@ cancellation clones. Requests cancelled before admission record no sample, by
 design. The label vocabulary stays fixed, so no class, principal or policy
 identity is exported.
 
-One behaviour this slice does **not** make deterministic, recorded so the plan
-does not overstate it. An earlier version of this section said a mid-response
-transport reset has no observer after admission. That was wrong, and this
-document's own 2026-09-10 section above already contradicted it: the
-`RequestTransportCancellation` monitor is installed for every admitted request
-and does turn a reset into a lease cancellation, as the non-ignored
-`workload_active_reset_cancels_update_before_commit_and_survives_restart` test
-proves. The real limitation is narrower. That monitor is best-effort because
-`SO_ERROR` is consuming, and on a streaming read the response writer usually
-consumes the error first. The lease is then released without a cancellation
-signal and no `data`/`cancelled` latency sample is recorded. A receipted series
-of ten clean-tree harness runs of the streaming-reset test at `7593639c` gave 4
-passes (`run-mqKKBb`, `run-3Vh7ea`, `run-gO2ZHi`, `run-QvkQhP`), 5 runs with no
-`data`/`cancelled` sample (`run-FLkwzT`, `run-QHntt8`, `run-NybPQW`,
-`run-URYNkH`, `run-UNloET`), and 1 run where the query observation did not end
-within ten seconds (`run-t8vJ2x`). The stall is not explained by the SO_ERROR
-race, which loses the sample rather than stalling, and is an open defect. An
-earlier "one in six" figure came from unreceipted runs and is withdrawn. That test is
-committed `#[ignore]`d with this reason and with its expected Store outcome
-corrected to `abandoned`, which is what the evaluation-metrics contract
-specifies for an early-dropped iterator. Making it deterministic needs the
-response writer to route a write-side transport failure into the lease's
-cancellation token.
+Transport cancellation on a streaming response, corrected by `5783f5e7`. An
+earlier version of this section said a mid-response transport reset has no
+observer after admission. That was wrong: the `RequestTransportCancellation`
+monitor is installed for every admitted request, as this document's own
+2026-09-10 section records. The real defect was narrower and is now fixed.
+`SO_ERROR` is consuming, and on a streaming response the response writer usually
+hits the reset before the 10 ms monitor polls it. The write failed, the server
+returned, and the stopped monitor never invoked the callback, so the lease was
+released with no cancellation signal and no `data`/`cancelled` sample.
+`5783f5e7` makes the server report a write-side transport failure
+(`ConnectionReset`, `BrokenPipe` or `ConnectionAborted`) to the same callback.
+It never does so after the deadline, and it fires at most once per request,
+whichever side observes the failure first. A new OxHTTP regression test,
+`response_writer_reset_reaches_transport_cancellation_once`, failed five of five
+times without the fix and passes with it.
 
-Verified on clean committed source at `1f6774d1`, the last commit to change
-code in this slice; later commits change only this ADR, so these receipts are
-current: CLI suite 456 passed / 0 failed / 2 ignored (`run-2ifqXK`); Clippy
-compared against both recorded baselines, whose stderr hashes match the ones on
-record, at `run-lkwvSy` (default) and `run-4aiW2Q` (no-default-features). One
-earlier full-suite run at the same commit, `run-bjyTUc`, failed a single
-unrelated test, `owl_workload_deadline_supports_inference_and_persistent_journey`,
-with `EAGAIN` (os error 11), a transient resource error. The same test passed in
-the full rerun `run-2ifqXK` and in three receipted isolated runs (`run-3Ui1JT`,
+Receipts, before and after. At `7593639c` a ten-run clean-tree series of the
+streaming-reset test gave 4 passes (`run-mqKKBb`, `run-3Vh7ea`, `run-gO2ZHi`,
+`run-QvkQhP`), 5 with no sample (`run-FLkwzT`, `run-QHntt8`, `run-NybPQW`,
+`run-URYNkH`, `run-UNloET`) and 1 stall (`run-t8vJ2x`). At `5783f5e7`, with the
+test no longer `#[ignore]`d, the same series gave 9 passes (`run-bNDdph`,
+`run-qlzAuT`, `run-MZxVhT`, `run-DzzLPK`, `run-uI6bMp`, `run-mZwRNV`,
+`run-zfL03C`, `run-K08cMy`, `run-9l59Xg`) and 1 stall (`run-qIJGBC`), where the
+query observation did not end within ten seconds. No run lost the sample. The
+stall is a residual open defect: it did not recur in a further 25 unreceipted
+diagnostic runs, so its state has not been captured and it is not diagnosed.
+Because the test is no longer ignored, it can fail the default suite
+intermittently until the stall is found. The test expects the Store outcome
+`abandoned`, which the evaluation-metrics contract specifies for an
+early-dropped iterator. An earlier "one in six" figure came from unreceipted
+runs and is withdrawn.
+
+Verified on clean committed source at `5783f5e7`, the last commit to change
+code in this slice: OxHTTP tests 103 passed (`run-RkJf2T`); CLI suite 457
+passed / 0 failed / 1 ignored (`run-JAxuDV`); Clippy compared against both
+recorded baselines, whose stderr hashes match the ones on record, at
+`run-XFkrWK` (default, 224 -> 224) and `run-NjAMS6` (no-default, 183 -> 183),
+with the OxHTTP crate's own Clippy output unchanged by the fix. At `1f6774d1`,
+before the OxHTTP fix, the suite was 456 / 0 / 2 (`run-2ifqXK`) with Clippy at
+`run-lkwvSy` and `run-4aiW2Q`. One full-suite run there, `run-bjyTUc`, failed a
+single unrelated test,
+`owl_workload_deadline_supports_inference_and_persistent_journey`, with
+`EAGAIN` (os error 11), a transient resource error. The same test passed in the
+full rerun `run-2ifqXK` and in three receipted isolated runs (`run-3Ui1JT`,
 `run-nhVnMY`, `run-GjPMrW`, clean tree at `d85f7116`, which changes no code).
 `run-bjyTUc` is kept as a recorded failure. An earlier version of this sentence
 cited a host load figure and isolated runs that had no receipts; both are
@@ -1311,11 +1322,16 @@ stopped when the owner replaced Fable with Opus.
 The slice is accepted as ordinary delivery under ADR-0044 Class A. That is not
 qualification, promotion or publication.
 
-This ADR stays **Proposed**. Outstanding: the open streaming-reset stall (`run-t8vJ2x`), where the query
-observation did not end within ten seconds of a client reset, which the SO_ERROR
-race does not explain; the ignored 1/4/16 demo drill; mutation evidence for the
+This ADR stays **Proposed**. Outstanding: an independent review of the OxHTTP
+fix in `5783f5e7`; the residual streaming-reset stall (`run-qIJGBC`), one in ten
+receipted runs after that fix, undiagnosed; mutation evidence for the
 `sparql_query_eval` fuzz check; numeric defaults and regression ceilings; and
-any calibration against real production load. The
+any calibration against real production load. The six-case 1/4/16 demo drill
+has run: it failed at `1f6774d1`-era code (`run-R9T4j5`, at `42bb1e05`) because
+it waited for a Store `cancelled` outcome the evaluator never produces for an
+early-dropped stream, and after `5783f5e7` corrected that wait it passed with
+all six demo records (`run-oGlhkN`). Its output is demo-grade local measurement
+only, not a threshold, default or qualification claim. The
 task spec's focused/full feature matrix has run with one correction and one
 limit. Correction: its admission unit-contract command names `--bin oxigraph
 workload::`, but `workload` is a module of the `oxigraph-cli` library
