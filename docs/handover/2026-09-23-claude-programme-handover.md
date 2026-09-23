@@ -80,7 +80,12 @@ held exactly: 569 declared, 567 eligible, 7 unsupported, 2 excluded.
     dependency, because it reads the frozen GD, which no rule writes.
   - `6b4dad55`: the same for a whole `WHERE DATA` rule.
 - **5 selected failures remain**, all real, none reclassified:
-  - 3 `validate` cases (`sparql/functions/*`). A SHACL-declared function called
+  - 3 `validate` cases (`sparql/functions/*`) **resolved after this handover
+    was first written**: `0e909e38` registers declared list-parameter
+    functions with SPARQL without a spareval change. The suite now passes
+    560 of 560 (`run-E3L2Ng`). The earlier diagnosis follows.
+
+    A SHACL-declared function called
     inside `sh:select` text is not resolvable. Architectural blocker:
     spareval's `CustomFunctionRegistry` is `Fn(&[Term]) -> Option<Term> + Send
     + Sync`, while the function bodies need `&mut Budget` and `&mut
@@ -171,7 +176,7 @@ promotion.
 
 | Work | Class | Next concrete step |
 | --- | --- | --- |
-| E4 residual 3 custom-function cases | A, cross-crate | Design a graph- and budget-capable custom-function interface for spareval |
+| E4 reviewed suite evidence transition | A | The suite passes 560/560 (`run-E3L2Ng`); do the ADR-0046 evidence transition review |
 | ADR-0047 upstream question | watch | Check w3c/data-shapes#1276; follow ADR-0047's revisit section when answered |
 | E3 skip-worktree | A, needs a decision | Embed the full pinned tree, or define a reviewed "partial corpus" notion |
 | G3.5 remainder | A | Planner, catalog, source selection, bound batching; each needs a semantic proof against the `75b3cc80` baseline |

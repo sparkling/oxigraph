@@ -14,6 +14,10 @@
   [w3c/data-shapes#1276](https://github.com/w3c/data-shapes/issues/1276).
   Inline `DATA` blocks are no longer part of the frozen data graph
   (`fede6934`); the suite runs 557 of 560 (`run-5zBsV0`).
+- **Updated**: 2026-09-23 — the three custom-function cases pass: declared
+  `sh:ListParameterExpressionFunction`s are registered with SPARQL
+  (`0e909e38`). The candidate suite now passes **560 of 560** selected cases
+  with no failures (`run-E3L2Ng`).
 - Deciders: Oxigraph parity programme
 - Implementation status: DATA execution and fail-closed `sh:ruleProcessor`
   handling (A+C) delivered in `e9a285c8` on 2026-09-20. Body abbreviations and
@@ -489,8 +493,11 @@ checkout helper while expecting a clean one, a verifier that read
 `sourceStatus` from facets when that field belongs to the mapping, and a
 byte-drift test that did not restore artifact mtime before verifying. No
 fixture, exclusion, pin, digest or expected result was adjusted to turn a
-failure green. Verified at clean committed HEAD on Node 24.14.1 and Node 20.20.2,
-39/39, receipts `run-PH6dxc` and `run-Z1l0Pb`.
+failure green. Verified on Node 24.14.1 and Node 20.20.2, 39/39, receipts
+`run-PH6dxc` and `run-Z1l0Pb`. Corrected 2026-09-23: those receipts ran at
+`899a2d0c` with `tools/evidence/verify-programme.test.mjs` modified in the
+working tree, the verifier-side test later committed as `8d71c036`. They are a
+dirty tree, not "clean committed HEAD" as this record previously said.
 
 Independent Fable/high review returned **INCONCLUSIVE**, not acceptance. It
 confirmed no pin was weakened, that the verifier still recomputes independently,
@@ -546,6 +553,21 @@ Closing those needs a graph-capable custom-function registration in `spareval`,
 whose `with_custom_function` currently takes a pure `Fn(&[Term]) -> Option<Term>`
 while two of the three function bodies must read the data graph; that is a
 cross-crate interface change and its own slice.
+That turned out not to need a spareval change. `0e909e38` compiles each
+declared list-parameter function once with the shapes graph and registers a
+closure on every SHACL-SPARQL evaluator. The closure evaluates the compiled
+body through the existing node-expression path, with a real validation
+context and a per-call budget built from the caller's options. That budget
+uses the same cancellation token, the caller's remaining deadline and the
+same ceilings. Usage is charged back to the outer budget after the query. A
+limit, cancellation or ill-formedness error inside a call is re-raised rather
+than becoming an unbound value, because spareval's registry can only return
+"no value". Two supporting changes were needed. `shnex:instancesOf` now takes
+a node expression, as `InstanceOfExpression-evaluation` specifies; the public
+`NodeExpression::InstancesOf` variant changes from `NamedNode` to
+`Box<NodeExpression>`. And a select expression that aggregates pre-binds
+`this` by substitution instead of projecting it. Independent tests are in
+`lib/oxshacl/tests/sparql_declared_functions.rs`.
 
 The other two, `eval-neg-data-03` and `eval-neg-data-06`, fail because GD
 includes inline `DATA{}` blocks, so a `NOT DATA` over an inline-asserted pattern
@@ -560,6 +582,16 @@ On 2026-09-23 the owner chose reading B explicitly. ADR-0047 records the
 decision and the upstream issue (w3c/data-shapes#1276). `fede6934` applies it
 and updates the three tests; both cases now pass (`run-5zBsV0`, 557 of 560).
 
+With both clusters closed, the candidate suite passes 560 of 560 selected
+cases at `0e909e38` (`run-E3L2Ng`), with 569 discovered, 567 eligible, 7
+predeclared unsupported and 2 excluded; the receipt reports `complete: true`
+and no errors. The command exits 2, not 0, because `tools/shacl-tests/run.mjs`
+returns 2 whenever predeclared unsupported cases exist; that is its designed
+signal, not a failure. This is ordinary suite execution only: it grants no
+conformance, qualification, promotion or publication claim, and the reviewed
+suite evidence transition is still separate work.
+
+The historical note that follows described the state before the fixes above.
 The remainder are pre-existing gaps in the Rust engine, unrelated to the
 evidence tooling above. They are ordinary buildable work under ADR-0044, each its own
 slice. They have **not** been moved into the predeclared-unsupported or excluded

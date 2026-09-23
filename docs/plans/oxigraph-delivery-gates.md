@@ -78,7 +78,9 @@ from inside `sh:select` text, which requires graph-capable custom-function
 registration in `spareval`. The two `srlRules` cases blocked on the GD/G0
 source ambiguity now pass: ADR-0047 adopts the base-graph-only reading
 provisionally (`fede6934`, `run-5zBsV0`, 557 of 560) and tracks
-w3c/data-shapes#1276. Three failures remain. Diagnosis with source citations:
+w3c/data-shapes#1276. The last three pass after `0e909e38` registers declared
+list-parameter functions with SPARQL: the suite passes 560 of 560 with no
+failures (`run-E3L2Ng`). Diagnosis with source citations:
 `target/engineering-delivery/adr0046-e4/failure-diagnosis.json`. Inline DATA
 triple terms are unsupported even as objects, as the B+D fixture setup exposed.
 The accepted implementation candidate has 203 manifest-listed SRL cases, not the
