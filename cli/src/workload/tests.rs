@@ -7,6 +7,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
 
+#[expect(
+    clippy::panic,
+    reason = "a bounded test helper must fail the test if the monotonic clock never advances"
+)]
 fn wait_until_strictly_after(marker: Instant) -> Instant {
     for _ in 0..1_000_000 {
         let now = Instant::now();
@@ -2767,6 +2771,11 @@ fn final_release_timestamp_follows_admission_metrics_contention() -> Result<()> 
 }
 
 #[test]
+#[expect(
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    reason = "the panic is the deliberate mutex poison this test exists to create"
+)]
 fn poisoned_admission_metrics_still_release_and_record_once() -> Result<()> {
     let controller = controller(1, 0, 1, 0)?;
     let lease = acquire(&controller, "default")?;
