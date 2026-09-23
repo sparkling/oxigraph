@@ -186,7 +186,7 @@ promotion.
 | G4.4 stage 3+, G4.6, G4.7 | A | Slice by explicit dependencies and consumer contracts |
 | G4.8 | A | Eligibility oracle, then analytical evaluators |
 | G4.3 | A | Exact residual audit; keep the completed ENOSPC and process-kill audits |
-| Streaming stall | A | Capture state on failure; the instrumented diagnostic approach is below |
+| Streaming stall | A, watch | `6e3432dd` captures state on timeout; 20/20 at `6e3432dd` (ADR-0027). Diagnose from the first captured recurrence |
 | G1.7, qualification, promotion, publication, push | outside ordinary delivery | Needs separate explicit owner authority |
 
 For the stall: a diagnostic variant of the test that dumps

@@ -1240,7 +1240,18 @@ in 10 (`run-1Yhcte`, `run-XNIPOh`, `run-sSav4k`, `run-XfJn3s`, `run-H2ipPd`,
 `run-4stoXI`, `run-iXY6bR`, `run-y4ar5v`, `run-d2xXLh`, `run-NTBTdw`). The
 `run-qIJGBC` stall remains unexplained: nothing in `f171a100` is known to cure
 it, so a single clean series does not prove it is gone, and it stays an open,
-undiagnosed defect. The test expects the Store outcome `abandoned`, which the
+undiagnosed defect.
+
+Updated 2026-09-23: `6e3432dd` makes the test capture the query-outcome
+counters, admission occupancy and cancellation-latency sample counts from
+`/metrics` whenever it times out, so a recurrence leaves diagnosable state in
+its receipt. A receipted series of 20 at `6e3432dd` passed 20 of 20, each run
+executing exactly one test on clean source (`run-qzIvDl`, `run-I8dUMy`, `run-X1kRew`, `run-kz4vJn`, `run-9fDdxZ`, `run-DDS2E4`, `run-qXnEpF`, `run-bXs0g3`, `run-bKNUAH`, `run-TzgBND`, `run-MSdQUu`, `run-hkewsc`, `run-oyVfMX`, `run-xfoZpy`, `run-9ePIgt`, `run-iguYQq`, `run-jyDbMu`, `run-G8YcEi`, `run-3PKdmL`, `run-qRAlvT`). Counting the 10 at
+`f171a100`, 30 consecutive receipted runs have passed since `run-qIJGBC`. That
+is evidence the stall is rare, not that it is gone. The defect stays open until
+a captured recurrence is explained or the cause is found by other means.
+
+The test expects the Store outcome `abandoned`, which the
 evaluation-metrics contract specifies for an early-dropped iterator. An earlier "one in six" figure came from unreceipted
 runs and is withdrawn.
 
