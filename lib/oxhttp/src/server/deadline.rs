@@ -38,12 +38,16 @@ impl RequestTransportCancellation {
 struct State {
     stop: bool,
     transport_failed: bool,
+    /// Set once the application callback has run, so it runs at most once
+    /// whether the monitor or the response writer observes the failure first.
+    notified: bool,
 }
 
 pub(super) struct RequestWatch {
     state: Arc<(Mutex<State>, Condvar)>,
     worker: Option<JoinHandle<()>>,
     deadline: Option<Instant>,
+    cancellation: Option<RequestTransportCancellation>,
 }
 
 impl RequestWatch {
@@ -63,9 +67,11 @@ impl RequestWatch {
             Mutex::new(State {
                 stop: false,
                 transport_failed: false,
+                notified: false,
             }),
             Condvar::new(),
         ));
+        let writer_cancellation = cancellation.clone();
         let watched = Arc::clone(&state);
         let worker = Builder::new()
             .name("HTTP request watch".into())
@@ -101,7 +107,8 @@ impl RequestWatch {
                             // SO_ERROR is consuming. Latch the result and force
                             // later transport operations to fail before callback.
                             state.transport_failed = true;
-                            let stopped = state.stop;
+                            let stopped = state.stop || state.notified;
+                            state.notified = true;
                             drop(state);
                             drop(stream.shutdown(Shutdown::Both));
                             if !stopped {
@@ -134,7 +141,49 @@ impl RequestWatch {
             state,
             worker: Some(worker),
             deadline,
+            cancellation: writer_cancellation,
         }))
+    }
+
+    /// Reports a transport failure observed by the response writer.
+    ///
+    /// `SO_ERROR` is consuming, so when the writer hits a reset first the
+    /// monitor never sees it. Without this, a reset that lands while a response
+    /// is streaming would end the request without ever reaching the
+    /// application's cancellation token. Deadline expiry is not a transport
+    /// failure and is not reported here. The callback runs at most once per
+    /// request, whichever side observes the failure first.
+    pub(super) fn transport_write_failed(&self, error: &Error) {
+        if self.cancellation.is_none()
+            || !matches!(
+                error.kind(),
+                ErrorKind::ConnectionReset
+                    | ErrorKind::BrokenPipe
+                    | ErrorKind::ConnectionAborted
+            )
+        {
+            return;
+        }
+        if self
+            .deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            return;
+        }
+        let mut state = self
+            .state
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.notified || state.stop {
+            return;
+        }
+        state.notified = true;
+        state.transport_failed = true;
+        drop(state);
+        drop(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            (self.cancellation.as_ref().unwrap().callback)();
+        })));
     }
 
     pub(super) fn check(&self) -> Result<()> {

@@ -4390,29 +4390,41 @@ fn run_g42_demo_case(read_only: bool, capacity: usize, source_commit: &str) -> R
     let cancellation_before = cancellation_histograms(&scrape(&running, "GET")?.body)?;
     let query_cancelled_before =
         metric_counter(&running, "oxigraph_queries_total{outcome=\"cancelled\"}")?;
+    // An early-dropped streaming iterator is `abandoned` under the
+    // evaluation-metrics contract; the admission sample below is the
+    // cancellation evidence.
+    let query_abandoned_before =
+        metric_counter(&running, "oxigraph_queries_total{outcome=\"abandoned\"}")?;
     for index in 0..8 {
         let abandoned = g42_active_reset(&running)?;
         drop(abandoned);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            let cancelled =
-                metric_counter(&running, "oxigraph_queries_total{outcome=\"cancelled\"}")?;
-            if cancelled == query_cancelled_before + index + 1 {
+            let ended =
+                metric_counter(&running, "oxigraph_queries_total{outcome=\"abandoned\"}")?;
+            if ended == query_abandoned_before + index + 1 {
                 break;
             }
             ensure!(
                 Instant::now() < deadline,
-                "streaming reset did not reach a query cancellation checkpoint"
+                "streaming reset did not end the query observation"
             );
             thread::yield_now();
         }
         wait_data_occupancy(&running, 0, 0)?;
     }
     let cancellation_after = cancellation_histograms(&scrape(&running, "GET")?.body)?;
+    let query_abandoned_delta =
+        metric_counter(&running, "oxigraph_queries_total{outcome=\"abandoned\"}")?
+            .saturating_sub(query_abandoned_before);
+    ensure!(query_abandoned_delta == 8);
     let query_cancelled_delta =
         metric_counter(&running, "oxigraph_queries_total{outcome=\"cancelled\"}")?
             .saturating_sub(query_cancelled_before);
-    ensure!(query_cancelled_delta == 8);
+    ensure!(
+        query_cancelled_delta == 0,
+        "an early-dropped stream must not be reported as an evaluator cancellation"
+    );
     assert_cancellation_delta(
         &cancellation_before,
         &cancellation_after,
@@ -4566,7 +4578,7 @@ fn run_g42_demo_case(read_only: bool, capacity: usize, source_commit: &str) -> R
             "cancelled":{
                 "submitted":8,"terminal":8,"histogram_delta":histogram_json(&cancelled_delta),
                 "series_delta_counts":{"data_cancelled":8,"data_timed_out":0,"operator_cancelled":0,"operator_timed_out":0},
-                "evaluator_query_cancelled_delta":query_cancelled_delta,
+                "evaluator_query_abandoned_delta":query_abandoned_delta,
                 "p95":p95_json(&cancelled_delta)?
             },
             "timed_out":{
@@ -5528,34 +5540,18 @@ fn workload_active_reset_cancels_update_before_commit_and_survives_restart() -> 
 }
 
 /// The streaming read path. A transport reset while a SELECT response is
-/// actively streaming should free the data slot and record one admission
-/// `data`/`cancelled` cancellation-latency sample. The Store-level query outcome
-/// is `abandoned`, not `cancelled`: the result iterator is dropped before EOF,
-/// and the documented evaluation-metrics contract classifies an early drop as
-/// abandoned.
+/// actively streaming frees the data slot and records one admission
+/// `data`/`cancelled` cancellation-latency sample. The response writer usually
+/// observes the reset before OxHTTP's polling monitor, because `SO_ERROR` is
+/// consuming; the server now reports that writer-side failure to the same
+/// cancellation callback, so the lease token is cancelled either way.
 ///
-/// Ignored because that outcome is not deterministic, not because a mechanism
-/// is missing. OxHTTP's `RequestTransportCancellation` monitor is installed for
-/// every admitted request (`workload.rs`) and does convert a reset into a lease
-/// cancellation; the non-ignored update test proves it. But the monitor is
-/// documented as best-effort: `SO_ERROR` is consuming, and "socket I/O may
-/// consume an error before this best-effort observer sees it". On a streaming
-/// read the response writer usually hits the reset first, so the lease is
-/// released without a cancellation signal and no latency sample is recorded.
-/// A receipted series of ten clean-tree harness runs at `7593639c`
-/// (`run-FLkwzT` .. `run-UNloET`, listed in ADR-0027) gave 4 passes, 5 runs
-/// with no `data`/`cancelled` sample, and 1 run (`run-t8vJ2x`) where the query
-/// observation did not end within ten seconds. That stall is not explained by
-/// the SO_ERROR race, which would lose the sample rather than stall, and is
-/// recorded as an open defect.
-///
-/// Making this deterministic needs the response writer to route a write-side
-/// transport failure into the lease's cancellation token. Do not satisfy the
-/// test by weakening it or by cancelling on a deadline instead: it configures
-/// no request deadline so that a `timed_out` sample would itself be a failure.
+/// The Store-level query outcome is `abandoned`, not `cancelled`: the result
+/// iterator is dropped before EOF when the write fails, and the evaluation-metrics
+/// contract classifies an early drop as abandoned. The evaluator never returned
+/// `QueryEvaluationError::Cancelled`, so claiming it would be wrong.
 #[cfg(target_os = "linux")]
 #[test]
-#[ignore = "nondeterministic: best-effort transport observer races the response writer for SO_ERROR; see ADR-0027"]
 fn workload_streaming_query_reset_records_a_data_cancellation_and_frees_the_slot() -> Result<()> {
     let running = start_with_workload_entailment_and_store_setup(
         &config(),

@@ -1212,3 +1212,40 @@ fn socket_context_is_available_without_admission() -> Result<()> {
     drop(stream);
     worker.join().unwrap()
 }
+
+#[test]
+fn response_writer_reset_reaches_transport_cancellation_once() -> Result<()> {
+    // An endless streamed body: the response writer keeps writing until the
+    // peer resets, so the writer, not the polling monitor, is the side most
+    // likely to consume SO_ERROR first. The callback must still run, and only
+    // once.
+    struct Endless;
+    impl Read for Endless {
+        fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+            buf.fill(b'x');
+            Ok(buf.len())
+        }
+    }
+    let calls = Arc::new(AtomicUsize::new(0));
+    let admission_calls = Arc::clone(&calls);
+    let (mut stream, worker) = connect(
+        Server::new(|_| Response::builder().body(Body::from_read(Endless)).unwrap())
+        .with_request_admission(move |_, _| {
+            let mut context = Extensions::new();
+            let calls = Arc::clone(&admission_calls);
+            context.insert(RequestTransportCancellation::new(move || {
+                calls.fetch_add(1, Ordering::SeqCst);
+            }));
+            Ok(context)
+        }),
+    )?;
+    stream.write_all(b"GET / HTTP/1.1\r\nhost: localhost\r\n\r\n")?;
+    // Read enough to prove the body is streaming, then drop the socket with
+    // unread data so Linux sends a reset.
+    let mut first = [0; 4096];
+    stream.read_exact(&mut first)?;
+    drop(stream);
+    assert!(worker.join().unwrap().is_err());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    Ok(())
+}

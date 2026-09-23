@@ -458,7 +458,8 @@ fn accept_request(
             watch.check()?;
         }
         let writer = BufWriter::with_capacity(BUFFER_CAPACITY, stream);
-        stream = if (bounded_body && request_is_head) || (response_limit.is_some() && bodyless) {
+        let written = if (bounded_body && request_is_head) || (response_limit.is_some() && bodyless)
+        {
             crate::io::encode_head_response(
                 &mut response,
                 writer,
@@ -471,9 +472,19 @@ fn accept_request(
             encode_response_with_connection(&mut response, writer, true)
         } else {
             encode_response(&mut response, writer)
-        }?
-        .into_inner()
-        .map_err(|e| e.into_error())?;
+        }
+        .and_then(|writer| writer.into_inner().map_err(|e| e.into_error()));
+        stream = match written {
+            Ok(stream) => stream,
+            Err(error) => {
+                // The writer may consume the socket error before the monitor
+                // polls it; report it so the request is still cancelled.
+                if let Some(watch) = &request_watch {
+                    watch.transport_write_failed(&error);
+                }
+                return Err(error);
+            }
+        };
         if let Some(watch) = &request_watch {
             watch.check()?;
         }
