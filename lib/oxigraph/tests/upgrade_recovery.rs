@@ -39,6 +39,27 @@ fn inventory(path: &Path) -> Result<BTreeMap<PathBuf, (u64, [u8; 32])>> {
         .collect()
 }
 
+/// Hashes every regular file below `root`, keyed by relative path.
+fn tree(root: &Path) -> Result<BTreeMap<PathBuf, (u64, [u8; 32])>> {
+    let mut files = BTreeMap::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                let bytes = fs::read(&path)?;
+                files.insert(
+                    path.strip_prefix(root)?.to_path_buf(),
+                    (bytes.len() as u64, Sha256::digest(bytes).into()),
+                );
+            }
+        }
+    }
+    Ok(files)
+}
+
 fn assert_guarded(path: &Path) {
     assert!(matches!(
         Store::open(path),
@@ -176,5 +197,46 @@ fn recovery_refuses_checkpoint_tampering_option_changes_and_attempt_exhaustion()
         PreparedUpgrade::guard_name(),
         ".oxigraph-upgrade-incomplete"
     );
+    Ok(())
+}
+
+/// Workspaces made by the older one-shot `prepare_upgrade` and
+/// `transform_prepared_upgrade` path are not recovery directories. Resuming
+/// recovery from one must be refused, and starting recovery over one must not
+/// adopt it, without changing the workspace, source or backup.
+#[test]
+fn recovery_refuses_to_adopt_a_one_shot_preparation_workspace() -> Result {
+    let dir = tempfile::tempdir()?;
+    let source = dir.path().join("source");
+    let backup = dir.path().join("backup");
+    let prepared = dir.path().join("prepared");
+    fixture(0, &source)?;
+    let options = UpgradeRecoveryOptions::default();
+    Store::backup_legacy(&source, &backup, &options.transform.backup)?;
+    Store::prepare_upgrade(&source, &backup, &prepared, &options.transform.backup)?;
+    let before = (
+        inventory(&source)?,
+        inventory(&backup.join("store"))?,
+        tree(&prepared)?,
+    );
+
+    let resumed = Store::resume_upgrade_recovery(&source, &backup, &prepared, &options);
+    if resumed.is_ok() {
+        return Err("resuming recovery adopted a one-shot preparation workspace".into());
+    }
+    let started = Store::start_upgrade_recovery(&source, &backup, &prepared, &options);
+    if started.is_ok() {
+        return Err("starting recovery adopted an existing preparation workspace".into());
+    }
+
+    let after = (
+        inventory(&source)?,
+        inventory(&backup.join("store"))?,
+        tree(&prepared)?,
+    );
+    if after != before {
+        return Err("a refused recovery changed its inputs or the workspace".into());
+    }
+    PreparedUpgrade::verify(&prepared, &options.transform.backup)?;
     Ok(())
 }
