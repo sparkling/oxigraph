@@ -521,10 +521,33 @@ can be read from them, while a present file behind a hidden entry is refused.
 A new oracle case writes a file behind a `skip-worktree` entry, confirms
 `git status` stays empty, and expects rejection; the case fails when the check
 is removed. The real pinned checkout has no hidden entries. At `645f176b` the
-verifier contracts pass 39/39 (`run-3mzmtA`, and 39/39 on Node 20.20.2), and
-all three candidate commands pass on clean source: the suite 560 of 560
-(`run-W7ERnF`), the clause audit (`run-UDBtlu`) and Jena compact 32/32
-(`run-OWuQY7`).
+verifier contracts pass 39/39 on Node 24.14.1 (`run-3mzmtA`), and all three
+candidate commands pass on clean source: the suite 560 of 560 (`run-W7ERnF`),
+the clause audit (`run-UDBtlu`) and Jena compact 32/32 (`run-OWuQY7`). This
+record previously also claimed a Node 20 run at `645f176b`; no such receipt
+exists, and the claim is withdrawn.
+
+Independent review accepted `645f176b`
+(`target/engineering-delivery/e3-hidden-entries/review.json`) with three
+non-blocking gaps, closed in `70c6657e`:
+
+- A path that is not valid UTF-8 escaped the check, because git quotes it and
+  the text decode named a nonexistent file. Paths are now handled as raw bytes.
+- `clause-audit.mjs` and `inventory.mjs` still used `git status` alone. All five
+  checkout readers now share `tools/shacl-tests/hidden-entries.mjs`.
+- The unreceipted Node 20 claim above.
+
+`tools/shacl-tests/hidden-entries.test.mjs` covers `skip-worktree`,
+`assume-unchanged`, absent files and a non-UTF-8 path. The last case fails
+against the previous text-decoding version. At `70c6657e`: contracts 60/60
+(`run-2LZGNa`), suite 560 of 560 (`run-EP2SWE`), clause audit 233 candidates
+(`run-M8CDh1`) and Jena compact 32/32 (`run-BLxHdd`), all on clean source. The
+same 60 tests also pass 60/60 under Node 20.20.2. That was a local run the
+harness does not receipt, because it only admits the Node it runs under.
+
+The review also noted that "an absent file is harmless" holds because every
+file the readers use is either tree-hashed or pinned by name. A future reader of
+an unpinned checkout path would need its own hash. This blocker is closed.
 
 The candidate suite then ran for the first time, against committed source
 `899a2d0c`. Two of three commands pass: the clause audit (`run-AdTbwc`) reports
