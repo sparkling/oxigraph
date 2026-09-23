@@ -52,9 +52,20 @@ impl ShapesGraph {
         options: &ValidationOptions,
         resolver: &R,
     ) -> Result<Self, CompileError> {
-        let closure = imports::resolve(source, options, resolver)?;
-        let checked_shapes = well_formed::check(&closure, &profiles, options)?;
-        Self::compile_internal(&closure, profiles, options, Some(checked_shapes))
+        // Import resolution, syntax checking and compilation share the caller's
+        // total timeout, as in `compile_checked`.
+        let budget = Budget::new(options)?;
+        let mut remaining = options.clone();
+        let closure = imports::resolve(source, &remaining, resolver)?;
+        budget.check()?;
+        remaining.limits.timeout = budget.remaining_timeout();
+        let checked_shapes = well_formed::check(&closure, &profiles, &remaining)?;
+        budget.check()?;
+        remaining.limits.timeout = budget.remaining_timeout();
+        let compiled =
+            Self::compile_internal(&closure, profiles, &remaining, Some(checked_shapes))?;
+        budget.check()?;
+        Ok(compiled)
     }
 
     fn compile_internal(
