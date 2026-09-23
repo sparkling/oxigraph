@@ -120,6 +120,11 @@ node tools/evidence/receipt-evidence.mjs run-XXXXXX run-YYYYYY
 node tools/evidence/adr-prereview.mjs [--allow-commit HASH] docs/adr/00NN-*.md
 ```
 
+Review order: run both helpers first and fix what they report. Then send the
+independent reviewer the code, receipts and the helper output, and ask it to
+focus on correctness. That keeps review rounds for defects a script cannot find.
+One review runs at a time.
+
 Their tests run through the delivery entry point:
 
 ```sh
