@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-17
+- Updated: 2026-09-23 — residual audit recorded; legacy metadata refusals pinned in `918d3566`
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
@@ -4771,3 +4771,69 @@ ADR-0022 supplies backup/restore evidence and ADR-0020 supplies future durable
 metadata identities. The bounded activation API/CLI does not close the remaining
 G4.3 compatibility, older-binary rollback and frozen legacy-fixture/crash gates;
 this ADR remains Proposed.
+
+
+## Residual audit and the legacy metadata refusals (2026-09-23)
+
+A read-only audit on Opus/high
+(`target/engineering-delivery/g43-residual-audit/audit.md`, frozen at
+`e9dc013e`) listed what remains for G4.3. It found these buildable items:
+
+1. **Legacy metadata refusals.** The two refusal branches of the legacy
+   projection had no assertion. This is done: see below.
+2. **Real-OS faults at `fsync`.** The `LD_PRELOAD` shim intercepts only `write`
+   and `pwrite`, so no real-OS fault is injected at any `fsync` boundary. The
+   synthetic phase callbacks do cover those points.
+3. **Backup and restore crash coverage.** `backup_with_receipt_inner` and
+   `restore_inner` have synthetic phase hooks but no real-process-kill or
+   `ENOSPC` coverage. Both are on the mandatory prefix of every upgrade.
+4. **Derived indexes across an upgrade.** Derived indexes are never rebuilt or
+   validated across an upgrade edge. `same_lineage()` rejects a
+   `storage_version` change, so a derived index is orphaned by an upgrade
+   without anything reporting it. This is a production change as well as a
+   test.
+5. **v2-to-v3 construction interior.** The v2-to-v3 construction step between
+   the copy loop and `write_envelope` has coarser fault granularity than the
+   loop around it.
+6. **Old workspaces.** Old preparation or transformation workspaces are not
+   resumable, and nothing pins that refusal.
+
+It also sorted the rest:
+
+- **Owner decisions.** Making version 3 the current schema on ordinary open
+  ("profile admission"), and reconfirming envelope-admission scope.
+- **Evaluator authority, frozen qualification or promotion.** The full
+  logical/subsystem comparison, exact-receipt qualification, frozen size classes
+  and version windows, and the system-RocksDB lane.
+- **Already covered but still listed as open.** Gate-1 compatibility rejection,
+  interrupted-workspace inspection, the v2-to-v3 metadata/receipt/outbox
+  comparison (`SchemaUpgradeSnapshot::compare`), the legacy path's metadata
+  comparison, and synthetic faults at every journal boundary. The legacy
+  comparison is not applicable: the path refuses governed metadata by design.
+
+`918d3566` closes item 1 with
+`transform_refuses_unsupported_default_metadata_without_touching_inputs` in
+`lib/oxigraph/src/storage/rocksdb_upgrade.rs`. For each case it builds a
+version-1 source, runs backup, preparation and the transform, and checks two
+things: the typed refusal, and that the source and backup are byte-identical
+afterwards. The cases are a governed default-column key, and a namespace
+mapping whose schema marker was removed. Removing either refusal makes the test
+fail, which was checked for each branch.
+
+At `918d3566` on clean source:
+
+| Check | Receipt | Result |
+| --- | --- | --- |
+| the new test | `run-ORC4yi` | passed |
+| `upgrade_transformation` | `run-ikFMeU` | 4 passed |
+| library tests | `run-ZLabhC` | 289 passed, 0 failed, 1 ignored |
+
+The seven compiler warnings in the library-test receipts are in other test
+files that predate this change. The test adds one Clippy diagnostic,
+`tests_outside_test_module`, the same lint every existing test in this module
+reports.
+
+With item 1 done, the legacy half of gate 2's metadata comparison is
+discharged: its correct outcome is refusal, and the refusal is now pinned. The
+derived-index item is the one genuinely open gate-2 item. This ADR stays
+Proposed.
