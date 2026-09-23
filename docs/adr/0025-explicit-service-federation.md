@@ -2,11 +2,16 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-08-27
+- Updated: 2026-09-23 — first G3.5 telemetry slice delivered (`75b3cc80`,
+  opt-in HTTP SERVICE execution observations) and accepted by independent review
+  `690ae0dc`; the stale "no loopback fixtures" statement corrected. Still
+  Proposed; no planner or catalog.
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; planned by G3.5. G1.6 has satisfied
-  the runtime-derived service-claim prerequisite for later advertisement, but
-  no federation planner or endpoint catalog has been implemented
+- Implementation status: partially implemented. Opt-in HTTP SERVICE execution
+  observations are delivered by `75b3cc80`. G1.6 has satisfied the
+  runtime-derived service-claim prerequisite for later advertisement, but no
+  federation planner, endpoint catalog, source selection or bound batching has
+  been implemented
 - **Depends on**:
   [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md),
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)
@@ -164,8 +169,80 @@ No FedShop or controlled-loopback test fixtures exist anywhere in this
 repository (checked by search, not assumed), which will also gate this ADR's
 own acceptance boundary regardless of when planning work begins.
 
+Corrected 2026-09-23: the fixture half of that statement is no longer true.
+`lib/oxigraph/tests/sparql_service_http.rs` and its `support.rs` and
+`variable_service.rs` modules now provide real controlled-loopback endpoints
+that record the requests they serve, together with version and media-type
+negotiation, ordinary and `SILENT` HTTP failures, remote timeout, variable
+endpoints and per-response blank-node scope. No FedShop pin or G3.5 planning
+corpus exists yet, so that half still stands.
+
 G3.5 remains at 0% progress on the task board; this is accurate, not stale --
-genuinely no delivery work has landed toward it. This scoping is recorded so
+genuinely no delivery work has landed toward it. (Superseded 2026-09-23: see
+the delivered telemetry slice below.) This scoping is recorded so
 a future session does not have to re-derive that `HttpServiceHandler` already
 exists and already serves as the correctness oracle, or re-discover why the
 catalog-alone slice was declined.
+
+## Delivered: opt-in HTTP SERVICE execution observations (2026-09-23)
+
+Commit `75b3cc80` delivers the first G3.5 slice, built to the prepared contract
+in `target/engineering-delivery/g35-planning/coordinator-g35-next-task.md`. It
+gives an embedded caller a measurement of what the built-in HTTP `SERVICE`
+handler actually did, which later request-reduction work needs as its
+consumer-side baseline. It is not an endpoint catalog, a join planner, source
+selection or bound batching, and it makes no estimate or endpoint-choice claim.
+Its fixed execution profile is `unplanned-http-v1`.
+
+`HttpServiceObservation::new(retained_attempt_limit)` accepts 0 to 1024 retained
+records. `SparqlEvaluator::with_http_service_observation` attaches it, and
+`snapshot()` reports logical attempts, admitted HTTP-client dispatches, decoded
+bytes delivered to the results parser, parsed rows, and completed, failed,
+abandoned and in-progress counts, each with a saturation flag. It also reports
+bounded per-invocation records and a count of records omitted by the cap. The
+observer travels on the existing `HttpClient`, counts only `SERVICE` egress,
+and never changes query results, headers, retries or blank-node labels. It
+keeps no endpoint IRI, query text, RDF term, credential or error text, which
+preserves ADR-0019's payload-free telemetry boundary.
+
+One finding about existing behaviour: spareval dispatches a `SERVICE` when the
+query is executed, before the first solution is polled. This was confirmed on
+unmodified source and is unchanged by the slice. So an observation taken right
+after `execute()` can already show one attempt, in progress.
+
+Verified at `75b3cc80` on a clean tree through the delivery harness:
+- The independent oracle `federation_observation` passes 16 tests in each
+  feature configuration (`run-99EeoR`, `run-LxRJ4R`).
+- The existing service, egress-policy and capability suites pass 10, 13, 12 and
+  4 (`run-EFTUUJ`, `run-IhJB8k`, `run-ZOlwBM`, `run-totBWE`).
+- The library passes 58 (`run-s7oNDg`).
+- The handler-rebinding and no-default-features builds compile (`run-gzmZhR`,
+  `run-GnGcnD`).
+- Clippy reports no new diagnostics against a same-source baseline without the
+  change (`run-7OIKnb` 112 and `run-Ey2Czx` 94, equal to the baselines).
+
+Independent Opus/high review (session `690ae0dc-4cbb-4d22-87f9-ffe6602b2cd4`)
+returned **ACCEPT** with no blocking issues. It checked the terminal-state
+machine against its failure modes, that no drain or retention occurs, the
+privacy boundary, purpose scoping, locking, and all eleven receipts.
+Non-blocking notes carried forward:
+
+- The two Clippy baselines are plain-cargo logs, not harness receipts. They
+  were taken at the parent commit `9169748e`, recorded in `frozen-head.txt`,
+  and hashed under `target/engineering-delivery/g35-observation/`.
+- The corrected pre-poll oracle assertion tolerates zero or one attempts
+  before the first poll. It is weaker in form than the original, which asserted
+  behaviour spareval never had.
+- Criterion 8's statistics, text and spatial handler-rebinding legs are covered
+  by inspection plus compilation, as the contract allows, not by a runtime test.
+- Per-record dispatch, byte and row counts have no saturation flag; only the
+  snapshot totals do, which is what the contract requires.
+- The pre-existing error text `"No valid SPARQL solutions returned by
+  {service_name}"` in `sparql/http.rs` is a plain literal, so the placeholder is
+  emitted verbatim. This is upstream behaviour, not introduced here, and
+  belongs in a separate cleanup.
+
+This ADR stays **Proposed**. The federation planner, endpoint catalog, source
+selection, bound batching, and per-endpoint reports remain undelivered G3.5
+work. Each needs its own semantic proof against this baseline. Nothing here
+grants server, advertisement, qualification or default-promotion authority.
