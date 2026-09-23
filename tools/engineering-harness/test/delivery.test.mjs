@@ -100,6 +100,7 @@ test("literal native commands are admitted; broad or protected entry points are 
   assert.equal(admitCommand(["cargo", "build", "--locked", "--release", "-p", "oxigraph-cli"]).kind, "build");
   assert.equal(admitCommand(["node", "--test", "--test-reporter=tap", "tools/engineering-harness/test/delivery.test.mjs"]).kind, "node-test");
   assert.equal(admitCommand(["node", "--test", "--test-reporter=tap", "tools/evidence/verify-programme.test.mjs"]).kind, "node-test");
+  assert.equal(admitCommand(["node", "--test", "--test-reporter=tap", "tools/evidence/receipt-evidence.test.mjs", "tools/evidence/adr-prereview.test.mjs"]).kind, "node-test");
   for (const argv of [
     ["cargo", "test"], ["cargo", "publish", "--locked"], ["cargo", "test", "--locked", "--config", "x=y"],
     ["cargo", "test", "--locked", "--", "--list"], ["cargo", "test", "--locked", "--", "--unknown"],

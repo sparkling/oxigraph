@@ -76,6 +76,8 @@ const nodeTests = new Set([
   "tools/engineering-harness/test/task-profile.test.mjs",
   "tools/agentic-qe/process-runner.test.mjs",
   "tools/evidence/verify-programme.test.mjs",
+  "tools/evidence/receipt-evidence.test.mjs",
+  "tools/evidence/adr-prereview.test.mjs",
 ]);
 const evidenceChecks = new Set([
   "tools/shacl-tests/run.mjs",

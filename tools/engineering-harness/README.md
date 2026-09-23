@@ -102,7 +102,36 @@ must be `[]`, and its worker ID must differ from every implementing worker.
 For unavailability return `status: "unavailable"` with exact client, requested
 model/effort and `error`; the controller stops without substituting a model.
 
+### Evidence write-up helpers
+
+Most rejected reviews in the 2026-09-22/23 sessions were about the write-up,
+not the code: an unreceipted figure, a receipt taken on a dirty tree, or
+wording that went stale on the next commit. Two helpers catch these before
+review. Neither is a model call or a substitute for the independent review.
+
+```sh
+# Evidence table rows generated from receipts, each with its own head and
+# whether its tracked diff was empty. Dirty receipts are flagged.
+node tools/evidence/receipt-evidence.mjs run-XXXXXX run-YYYYYY
+
+# Pre-review check: missing or dirty receipts and "this commit" wording are
+# errors; unknown hashes are warnings (they may be session IDs or upstream
+# commits, which --allow-commit accepts).
+node tools/evidence/adr-prereview.mjs [--allow-commit HASH] docs/adr/00NN-*.md
+```
+
+Their tests run through the delivery entry point:
+
+```sh
+node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task <live-ruflo-task-id> --check "Evidence helpers pass" -- node --test --test-reporter=tap tools/evidence/receipt-evidence.test.mjs tools/evidence/adr-prereview.test.mjs
+```
+
 ### Native parallel contributors
+
+**Suspended 2026-09-23:** the owner set maximum parallelism to 1 (see
+`AGENTS.md`). Run one model-bearing process and one build or test at a time;
+the contributor mechanics below apply in series only.
+
 
 The programme coordinator uses native Claude Code `cc/claude-opus-5` / `max`,
 following the owner's 2026-09-22 Claude-only restoration and 2026-09-23 Opus
