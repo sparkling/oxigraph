@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-23 — cancellation-latency histogram delivered in `4617d33e` and corrected through `959d2248` after four independent reviews; still Proposed, G4.2 still open (streaming-reset stall `run-t8vJ2x` is an open defect)
+- Updated: 2026-09-23 — cancellation-latency histogram delivered in `4617d33e`; code last changed in `1f6774d1`, record last corrected in the commit that adds this line; still Proposed, G4.2 still open (streaming-reset stall `run-t8vJ2x` is an open defect)
 - Deciders: Oxigraph parity programme
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
@@ -1216,13 +1216,16 @@ specifies for an early-dropped iterator. Making it deterministic needs the
 response writer to route a write-side transport failure into the lease's
 cancellation token.
 
-Verified on clean committed source at `959d2248`: CLI suite 456 passed / 0
-failed / 2 ignored (`run-7KMfO3`); Clippy compared against both recorded
-baselines, whose stderr hashes match the ones on record, at `run-mgSkFe`
-(default) and `run-7fTUoB` (no-default-features). Earlier receipts at
-`96d1370f` (`run-s4AL08`, `run-QG2srf`, `run-50ZlZ3`) and `6c1463ee`
-(`run-JTIX2d`, `run-GX9e5d`, `run-tDOnTy`) gave the same results and are kept
-as history. Both applicable spareval fuzz targets ran without a crash,
+Verified on clean committed source at `1f6774d1`, the last commit to change
+code in this slice; later commits change only this ADR, so these receipts are
+current: CLI suite 456 passed / 0 failed / 2 ignored (`run-2ifqXK`); Clippy
+compared against both recorded baselines, whose stderr hashes match the ones on
+record, at `run-lkwvSy` (default) and `run-4aiW2Q` (no-default-features). One
+earlier full-suite run at the same commit, `run-bjyTUc`, failed a single
+unrelated test with `EAGAIN` (os error 11) at host load average about 42; that
+test passed three times in isolation and in the rerun, and `run-bjyTUc` is kept
+as a recorded failure. Earlier receipts at `959d2248`, `96d1370f` and
+`6c1463ee` are kept as history. Both applicable spareval fuzz targets ran without a crash,
 but only one is mutation evidence: `run-rktpZc` (`sparql_update_eval`, 11382 runs, about 4100
 mutations beyond its seed corpus) is a genuine one-minute run, but `run-tSYzGW`
 (`sparql_query_eval`) spent its budget replaying a 14199-file seed corpus, with a
@@ -1235,18 +1238,19 @@ the corpus replays without a crash. The corpus is left untouched, and pre-existi
 2026-09-08/09 crash and OOM artifacts in its artifact directory predate this
 slice and are not re-triaged here.
 
-Clippy result stated precisely, because an earlier wording of it was wrong:
-this slice adds **three** diagnostics in each feature configuration (224 -> 227
-default, 183 -> 186 no-default, both counted as `for further information visit` lines;
-an earlier 223 -> 226 default figure came from a different count method), not zero. It adds no new lint class. All three
-are in `cli/src/workload/tests.rs` and come from two deliberately added
-`panic!` calls -- a bounded monotonic-clock guard, and the intentional mutex
-poison that the new metrics-poisoning test requires -- one of which trips both
-the `panic` and the `panic!()-in-a-Result-function` lints. The panic-lint sites
-in that file go from 14 to 17, which is how the attribution was checked. An
-earlier (file, lint) normalization reported only two increases and hid the
-third, because two lints fire on one added line; per-target counts are the
-honest check.
+Clippy result: **no new diagnostics** in either feature configuration. At
+`1f6774d1` the counts equal the recorded baselines exactly: 224 default and 183
+no-default, counted as `for further information visit` lines, with the
+`oxigraph-cli (lib test)` target at 72 in both and no unfulfilled lint
+expectations. This is the reviewed gate contract (session `b8a87f42`), which
+replaced the task spec's literal "zero warnings" with "no new diagnostics against
+the recorded baseline". The pre-existing baseline diagnostics are outside this
+slice. Earlier commits in the slice did add three diagnostics per configuration
+(224 -> 227, 183 -> 186), all from two deliberate test `panic!` calls: a bounded
+monotonic-clock guard, and the mutex poison the metrics-poisoning test requires,
+which trips two lints. `1f6774d1` scopes both with
+`#[expect(..., reason = "...")]`, which fails the build if the lint ever stops
+firing, so the delta is now zero.
 
 Independent Fable/high review of the application (session
 `5a1d019d-4285-4288-8fc2-e839a96fc4db`) returned **REJECT**, on evidence rather
@@ -1268,17 +1272,35 @@ record defect while confirming the previous one fixed:
   `959d2248`.
 - session `6f8687b8-b3ae-4205-bbe1-f1093e42b7aa`, **REJECT**: this section still
   said the change had not been re-reviewed, the stall was missing from the
-  outstanding list, and the receipts were not bound to HEAD. Corrected by the
-  commit that adds this paragraph.
+  outstanding list, and the receipts were not bound to HEAD. Corrected in
+  `6faadff7`.
+- session `fbfd58a8-435f-44a3-b408-92e3e6c9d614`, **REJECT**: `6faadff7` marked
+  the feature matrix done while the slice still added three Clippy diagnostics
+  and the query-fuzz check was unmet, and the status header named the wrong
+  commit. Fixed in code by `1f6774d1` (Clippy delta now zero) and in this record
+  by the commit that adds this entry.
 
-The review artifacts are under `target/engineering-delivery/g42-application/`.
+The review artifacts are under `target/engineering-delivery/g42-application/`:
+`review.json`, `review4-opus.json`, `review5-opus.json`, `review6-opus.json` and
+`review7-opus.json`. The other files there are not verdicts: `review2.json` ended
+on a rate-limit error with no verdict, and `review3.json` is an empty Fable run
+stopped when the owner replaced Fable with Opus.
 No independent review has yet accepted the slice.
 
 This ADR stays **Proposed**. Outstanding: an independent review that accepts
 this slice; the open streaming-reset stall (`run-t8vJ2x`), where the query
 observation did not end within ten seconds of a client reset, which the SO_ERROR
-race does not explain; the ignored 1/4/16 demo drill; numeric defaults and
-regression ceilings; and any calibration against real production load. The
-focused/full feature matrix has run (see the evidence record). G4.2 remains
+race does not explain; the ignored 1/4/16 demo drill; mutation evidence for the
+`sparql_query_eval` fuzz check; numeric defaults and regression ceilings; and
+any calibration against real production load. The
+task spec's focused/full feature matrix has run with one correction and one
+limit. Correction: its admission unit-contract command names `--bin oxigraph
+workload::`, but `workload` is a module of the `oxigraph-cli` library
+(`cli/src/lib.rs`), so that filter matches zero tests and the harness correctly
+rejects it (`run-EZ4Jci`, `run-5k6ZvZ`). The same filter was run against
+`--lib`: 71/71 in both configurations (`run-qN4uHS`, `run-mMDx5G`). Limit: the
+`sparql_query_eval` fuzz check asks for positive libFuzzer mutation evidence,
+which this corpus cannot produce in one minute, as recorded above. That check is
+**not** met and stays outstanding. G4.2 remains
 open until the outstanding items are done and accepted.
 
