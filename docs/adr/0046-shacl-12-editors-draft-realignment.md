@@ -8,6 +8,12 @@
   matching must not create stratification dependencies), taking the suite from
   551 to 555 of 560; five remain, three needing graph-capable custom-function
   registration and two blocked on the recorded GD/G0 ambiguity.
+- **Updated**: 2026-09-23 — the GD/G0 ambiguity is decided provisionally by
+  [ADR-0047](0047-srl-inline-data-excluded-from-frozen-data-graph.md) and
+  reported upstream as
+  [w3c/data-shapes#1276](https://github.com/w3c/data-shapes/issues/1276).
+  Inline `DATA` blocks are no longer part of the frozen data graph
+  (`fede6934`); the suite runs 557 of 560 (`run-5zBsV0`).
 - Deciders: Oxigraph parity programme
 - Implementation status: DATA execution and fail-closed `sh:ruleProcessor`
   handling (A+C) delivered in `e9a285c8` on 2026-09-20. Body abbreviations and
@@ -188,7 +194,8 @@ landable and independently reviewable.
    the surface prose is misleading:
 
    - `GD` = base graph ∪ all inline `DATA{}` blocks, **frozen for the whole
-     evaluation** and never mutated by derivation. `GE` (the evaluation graph)
+     evaluation** and never mutated by derivation. (Superseded by ADR-0047:
+     the frozen data graph is the base graph only.) `GE` (the evaluation graph)
      starts at `GD` and accumulates derived triples stratum by stratum.
    - `WHERE DATA` pins *both* graph arguments to `GD`, which makes it **sticky**:
      every nested element of that rule — including a plain `NOT{}` carrying no
@@ -452,6 +459,8 @@ The pinned SRL algorithm defines GD from base plus inline DATA but calls
 evalRule with G0. Preserve the accepted A+C implementation and record this
 source ambiguity as a limit on literal algorithm-equivalence claims. Do not
 silently rebaseline DATA semantics or change fixtures to resolve it.
+ADR-0047 (2026-09-23) is the explicit decision this paragraph required: it
+adopts the `G0` reading, and fixtures stay unchanged.
 
 The remaining sequence is candidate evidence tooling, complete ground DATA
 materialization and BNODE evaluation, candidate clause mappings, then ordinary
@@ -547,6 +556,9 @@ implemented, made both cases pass, and was **reverted**: it contradicted this
 ADR's instruction to preserve the accepted A+C implementation rather than
 silently rebaseline DATA semantics, and it broke two existing tests that encode
 the current reading. Resolving it needs an upstream answer, not a local choice.
+On 2026-09-23 the owner chose reading B explicitly. ADR-0047 records the
+decision and the upstream issue (w3c/data-shapes#1276). `fede6934` applies it
+and updates the three tests; both cases now pass (`run-5zBsV0`, 557 of 560).
 
 The remainder are pre-existing gaps in the Rust engine, unrelated to the
 evidence tooling above. They are ordinary buildable work under ADR-0044, each its own

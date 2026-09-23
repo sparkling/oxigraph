@@ -75,15 +75,17 @@ candidate suite execution. Four of the nine are fixed in `9b79e301` and
 suite from 551 to 555 of 560 (`run-VYL2oi`, `run-3KlWyX`, `run-MnV8VH`). Five
 remain: three `validate` cases need a SHACL-declared function to be callable
 from inside `sh:select` text, which requires graph-capable custom-function
-registration in `spareval`, and two `srlRules` cases are blocked on the GD/G0
-source ambiguity that ADR-0046 records and forbids resolving locally. Diagnosis with source citations:
+registration in `spareval`. The two `srlRules` cases blocked on the GD/G0
+source ambiguity now pass: ADR-0047 adopts the base-graph-only reading
+provisionally (`fede6934`, `run-5zBsV0`, 557 of 560) and tracks
+w3c/data-shapes#1276. Three failures remain. Diagnosis with source citations:
 `target/engineering-delivery/adr0046-e4/failure-diagnosis.json`. Inline DATA
 triple terms are unsupported even as objects, as the B+D fixture setup exposed.
 The accepted implementation candidate has 203 manifest-listed SRL cases, not the
 198 `.srl` files previously described as cases. No new pin is applied yet.
 The selected inference inventory remains 14 unexecuted obligations plus seven
-predeclared unsupported cases. Preserve A+C semantics while recording the
-pinned GD/G0 source ambiguity as a conformance-claim limitation.
+predeclared unsupported cases. The pinned GD/G0 source ambiguity remains a
+conformance-claim limitation until #1276 is answered (ADR-0047).
 The wider G3/G4 programme remains open. These ordinary tests make no new
 semantic-qualification, promotion or publication claim.
 

@@ -54,8 +54,10 @@ mapping.
 | [ADR-0044 — Post-deployment production tuning](0044-post-deployment-production-tuning.md) | Accepted | Classify every remaining obligation as buildable now, externally blocked, or post-deployment tuning; only the third waits on a live production setting, and it blocks no development or deployment |
 | [ADR-0045 — Linux-only target platform](0045-linux-only-target-platform.md) | Accepted | Target Linux x86_64 only; remove Apple and Windows CI jobs and release artifacts rather than carry platform obligations no available host can discharge |
 | [ADR-0046 — SHACL 1.2 editor's-draft realignment](0046-shacl-12-editors-draft-realignment.md) | Accepted | Record which live specification governs each rule surface after the Working Group's reorganization, correct two stale draft-open rejections, and sequence the re-pin behind the fixes |
+| [ADR-0047 — SRL inline DATA excluded from the frozen data graph](0047-srl-inline-data-excluded-from-frozen-data-graph.md) | Accepted (provisional) | Treat inline `DATA` blocks as inferred triples invisible to `WHERE DATA` and `NOT DATA`, matching the candidate tests, pending the Working Group's answer to w3c/data-shapes#1276 |
 
-The index contains 46 decisions. ADR-0046 realigns the SHACL 1.2 work to the
+The index contains 47 decisions. ADR-0047 resolves an inconsistency in the SRL
+algorithm provisionally and tracks it upstream. ADR-0046 realigns the SHACL 1.2 work to the
 live editor's drafts: our SRL surface is now governed by the separate SPARQL-RL
 specification, `shacl12-rules` was renamed upstream (its TR URL 301-redirects
 and its editor's-draft path 404s), and two "draft-open" rejections are stale in

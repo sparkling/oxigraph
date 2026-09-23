@@ -88,12 +88,13 @@ held exactly: 569 declared, 567 eligible, 7 unsupported, 2 excluded.
     already mutably borrowed during constraint evaluation. This needs a
     cross-crate interface change. See
     `target/engineering-delivery/adr0046-e4/custom-function-analysis.json`.
-  - 2 `srlRules` cases (`eval-neg-data-03`, `eval-neg-data-06`). They fail
-    because GD includes inline `DATA{}` blocks. Upstream fixtures read the other
-    way. **ADR-0046 already records this GD/G0 ambiguity and forbids a local
-    rebaseline.** A local fix was implemented, made both pass, and was reverted.
-    Upstream `w3c/data-shapes#1271` (opened 2026-09-21, open, 0 comments) is
-    related but does not resolve it.
+  - 2 `srlRules` cases (`eval-neg-data-03`, `eval-neg-data-06`) **resolved
+    after this handover was first written.** On 2026-09-23 the owner chose
+    reading B: inline `DATA{}` blocks are inferred, not part of the frozen
+    data graph. Reported upstream as
+    [w3c/data-shapes#1276](https://github.com/w3c/data-shapes/issues/1276),
+    decided in ADR-0047, applied in `fede6934`; the suite now runs 557 of 560
+    (`run-5zBsV0`).
 
 ### G4.2: workload cancellation latency (ADR-0027)
 
@@ -171,7 +172,7 @@ promotion.
 | Work | Class | Next concrete step |
 | --- | --- | --- |
 | E4 residual 3 custom-function cases | A, cross-crate | Design a graph- and budget-capable custom-function interface for spareval |
-| E4 residual 2 GD/G0 cases | blocked (B) | Wait for an upstream answer; do not rebaseline |
+| ADR-0047 upstream question | watch | Check w3c/data-shapes#1276; follow ADR-0047's revisit section when answered |
 | E3 skip-worktree | A, needs a decision | Embed the full pinned tree, or define a reviewed "partial corpus" notion |
 | G3.5 remainder | A | Planner, catalog, source selection, bound batching; each needs a semantic proof against the `75b3cc80` baseline |
 | G3.2 | A | Frozen-corpus differential harness; revalidate the ADR first |

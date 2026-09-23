@@ -1,24 +1,21 @@
 # Oxigraph fork instructions
 
-## Independent model session capacity (2026-09-19 user amendment)
+## Model session parallelism (2026-09-23 owner amendment)
 
-Do not impose a fixed repository-wide session-count cap on independent Codex
-(ChatGPT subscription) or Claude Code subscription processes. Four distinct
-concurrent Codex sessions completed successfully on Codex 0.155.1; Claude
-session capacity was not benchmarked. Do not add repository overrides for
-native subagent counts. Client defaults and enforced per-session limits still
-apply; independent sessions do not establish infinite capacity.
-Select parallel work from ready dependencies and file ownership; preserve the
-single integration writer and existing build/resource isolation. Historical
-in-session capacity observations are not a global model-session limit.
+Maximum parallelism is 1. On 2026-09-23 the owner ordered parallelisation
+stopped and max parallel set to 1, superseding the 2026-09-19 "no fixed cap"
+amendment. For this programme:
 
-Use the existing engineering delivery workflow's contributor proposals for
-parallel native work: each contributor owns exclusive proposal paths and an
-exact source identity; one root applies the aggregate after independent review.
-Dispatch dependency-ready work immediately and assign review help when acceptance
-is waiting. The 32-core host is a build resource, not a model-session limit.
-The command owner must exclude overlapping builds/tests that share Cargo outputs
-for their full lifetime; the current delivery wrapper does not enforce that lock.
+- Run at most one model-bearing process at a time: one native Claude session,
+  contributor, worker or reviewer. Do not dispatch a second while one runs.
+- Do not use parallel native subagents, contributor fan-out or background
+  reviews that overlap other model work. Run work in series.
+- Run at most one harness build or test command at a time. This also avoids the
+  shared Cargo output race described below.
+- Keep the single integration writer and the existing build isolation.
+
+Only the owner can raise this limit.
+
 Use configured task-specific model defaults, escalating concrete hard decisions.
 On 2026-09-22 the owner restored Claude-only programme execution through the
 configured 9router Claude subscription connection, superseding the 2026-09-20
