@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-09-09
+- Updated: 2026-09-23 — G3.4 24-relation equivalence run receipted at `276442ba`
 - Deciders: Oxigraph parity programme
 - Implementation status: G3.0 native local lifecycle implemented: snapshot/delta
   inputs, durable generation reconciliation/activation, bounded provider output,
@@ -558,6 +558,17 @@ catch-up/restart. Run the [usable example](../../lib/oxigraph/examples/spatial_s
 with `cargo run --locked -p oxigraph --features spatial-index --example spatial_service`.
 This closes the callable native spatial SPARQL slice, not frozen performance
 receipts, production promotion, broad GeoSPARQL conformance or all of G3.4.
+
+Updated 2026-09-23: the G3.4 indexed-versus-oracle equivalence run across all 24
+relations was executed through the delivery harness on clean source at
+`276442ba`. `spatial_index` passes 10 of 10 (`run-mMO5iz`). Its equivalence test
+compares, for every admitted query shape and every name in the 24-entry
+`RELATIONS` table, the provider's matches and total count with direct exact
+`spargeo` evaluation over the whole store. `spatial_service` passes 10 of 10
+(`run-lzXwCP`), checking the same 24 names through SPARQL `SERVICE`. This is the
+buildable equivalence evidence named in the delivery gates. The frozen
+performance receipts and the default-promotion decision remain post-deployment
+work under ADR-0044.
 
 ### Complete lifecycle and provider boundary
 
