@@ -90,12 +90,19 @@ same commit:
 
 ## Evidence
 
-Both receipts are bound to `fede6934` with an empty tracked diff.
+Each receipt records its source head and tracked-diff hash. All three ran on
+clean committed source (empty tracked diff). `0df117ff` is a documentation-only
+commit on top of `fede6934`, so its code is identical.
 
-| Check | Receipt | Result |
-| --- | --- | --- |
-| `cargo test --locked -p oxshacl` | `run-WNm30W` | command passed, 243 passed, 0 failed |
-| `node tools/shacl-tests/run.mjs` (candidate suite) | `run-5zBsV0` | 557 of 560; both `eval-neg-data` cases now pass |
+| Check | Receipt | Head | Result |
+| --- | --- | --- | --- |
+| `cargo test --locked -p oxshacl` | `run-RwaL22` | `0df117ff` | command passed, 243 passed, 0 failed |
+| `node tools/shacl-tests/run.mjs` (candidate suite) | `run-5zBsV0` | `fede6934` | 557 of 560; both `eval-neg-data` cases now pass |
+| `cargo clippy --locked -p oxshacl --all-targets --all-features` | `run-S8irbr` | `0df117ff` | command passed, no diagnostics |
+
+An earlier test receipt, `run-WNm30W`, ran on `f24f54e4` with the change still
+uncommitted. It is superseded by `run-RwaL22` and is not evidence for
+`fede6934`.
 
 The candidate command still exits non-zero. Its only three failures are the
 `sparql/functions/*` custom-function cases recorded in ADR-0046, which this
