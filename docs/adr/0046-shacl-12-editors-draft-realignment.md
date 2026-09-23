@@ -17,7 +17,9 @@
 - **Updated**: 2026-09-23 — the three custom-function cases pass: declared
   `sh:ListParameterExpressionFunction`s are registered with SPARQL
   (`0e909e38`). The candidate suite now passes **560 of 560** selected cases
-  with no failures (`run-E3L2Ng`).
+  with no failures (`run-E3L2Ng`). Independent review rejected `0e909e38` on
+  five resource-safety and specification points, fixed in `7931a493`, which
+  still passes 560 of 560 (`run-6RNt9N`).
 - Deciders: Oxigraph parity programme
 - Implementation status: DATA execution and fail-closed `sh:ruleProcessor`
   handling (A+C) delivered in `e9a285c8` on 2026-09-20. Body abbreviations and
@@ -569,6 +571,34 @@ a node expression, as `InstanceOfExpression-evaluation` specifies; the public
 `this` by substitution instead of projecting it. Independent tests are in
 `lib/oxshacl/tests/sparql_declared_functions.rs`.
 
+Independent review of `0e909e38` returned REJECT with five blocking findings,
+all fixed in `7931a493`:
+
+- Each call built a fresh budget, so K calls could spend K full ceilings. Each
+  call's budget now covers only what the caller and earlier calls have left.
+- Compiling the declarations restarted the caller's timeout. It now uses the
+  caller's budget.
+- A body with no output node counted as success. Any count other than one now
+  yields no value, which is spareval's only expression-error signal.
+- The unbound-argument and arity handling could never run, because spareval
+  stops at an unbound argument before calling the function. Arguments now map
+  by position and the limitation is documented: an unbound argument to an
+  optional parameter is an error, stricter than the specification.
+- A declaration could replace a built-in `xsd:` cast. `xsd:` declarations are
+  no longer exposed, and an already registered name is left in place.
+
+Declared functions are registered only for `sh:sparql` constraint and custom
+component queries. They are not available in node-expression `sh:select`,
+`sh:sparqlExpr`, SRL or SHACL-SPARQL rules. The specification says SHOULD, so
+this is a known gap rather than a violation.
+
+| Command | Receipt | Head | Outcome |
+| --- | --- | --- | --- |
+| `cargo test --locked -p oxshacl` | `run-zlOwZO` | `7931a493` | 246 passed, 0 failed |
+| `cargo test --locked -p oxshacl --all-features` | `run-CqeTry` | `7931a493` | 283 passed, 0 failed |
+| `cargo clippy` default / all / no default features | `run-n17eyy`, `run-fVHh13`, `run-eK9cf4` | `7931a493` | passed; the only warnings are two `srl/evaluate/native.rs` diagnostics, present before this change, in the no-default build |
+| `node tools/shacl-tests/run.mjs` | `run-6RNt9N` | `7931a493` | 560 of 560 selected, 7 predeclared unsupported, 2 excluded, 0 failed |
+
 The other two, `eval-neg-data-03` and `eval-neg-data-06`, fail because GD
 includes inline `DATA{}` blocks, so a `NOT DATA` over an inline-asserted pattern
 does not hold. Upstream `eval-where-data-03` and the `eval-neg-data-06` comment
@@ -583,7 +613,7 @@ decision and the upstream issue (w3c/data-shapes#1276). `fede6934` applies it
 and updates the three tests; both cases now pass (`run-5zBsV0`, 557 of 560).
 
 With both clusters closed, the candidate suite passes 560 of 560 selected
-cases at `0e909e38` (`run-E3L2Ng`), with 569 discovered, 567 eligible, 7
+cases at `0e909e38` (`run-E3L2Ng`) and again at `7931a493` (`run-6RNt9N`), with 569 discovered, 567 eligible, 7
 predeclared unsupported and 2 excluded; the receipt reports `complete: true`
 and no errors. The command exits 2, not 0, because `tools/shacl-tests/run.mjs`
 returns 2 whenever predeclared unsupported cases exist; that is its designed
