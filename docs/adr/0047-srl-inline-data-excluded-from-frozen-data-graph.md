@@ -2,14 +2,17 @@
 
 - **Status**: Accepted (provisional; revisit when upstream answers)
 - **Date**: 2026-09-23
-- **Reviewed**: 2026-09-23, independent Opus review ACCEPT at `ee02f946`
+- **Reviewed**: 2026-09-23, independent Opus review ACCEPT at `ee02f946`.
+  That review relied on default-feature receipts and did not catch the three
+  `rdf-12` tests fixed later in `a660b3fd`.
   (`target/engineering-delivery/adr0047-review/review.json`)
 - Deciders: Oxigraph parity programme, on the owner's instruction of
   2026-09-23 to adopt reading B and track the upstream question
 - Upstream issue: [w3c/data-shapes#1276](https://github.com/w3c/data-shapes/issues/1276)
 - Amends: [ADR-0046](0046-shacl-12-editors-draft-realignment.md), which
   recorded this ambiguity and forbade a silent local rebaseline
-- Implementation: `fede6934`
+- Implementation: `fede6934`, with three `rdf-12` tests completed in
+  `a660b3fd`
 
 ## Context
 
@@ -91,6 +94,14 @@ same commit:
   (renamed from `frozen_data_graph_contains_base_and_every_inline_block`)
 - `lib/oxshacl/tests/srl_query.rs::query_executes_where_data_rules`
 
+Three more tests, gated on the `rdf-12` feature, also encoded reading A. The
+default-feature run did not compile them, so they were missed until an
+all-features run and updated in `a660b3fd`:
+`data_terms_feed_ordinary_where_data_not_data_and_query_consumers`,
+`inline_only_documents_execute_in_native_and_datalog_lanes` and
+`recursive_native_head_admission_stops_before_a_later_invalid_nested_term`
+in `lib/oxshacl/tests/srl_data_terms.rs`.
+
 ## Evidence
 
 Each receipt records its source head and tracked-diff hash. All three ran on
@@ -102,6 +113,11 @@ commit on top of `fede6934`, so its code is identical.
 | `cargo test --locked -p oxshacl` | `run-RwaL22` | `0df117ff` | command passed, 243 passed, 0 failed |
 | `node tools/shacl-tests/run.mjs` (candidate suite) | `run-5zBsV0` | `fede6934` | 557 of 560; both `eval-neg-data` cases now pass |
 | `cargo clippy --locked -p oxshacl --all-targets --all-features` | `run-S8irbr` | `0df117ff` | command passed, no diagnostics |
+| `cargo test --locked -p oxshacl --all-features` | `run-Gg1n83` | `a660b3fd` | command passed, 270 passed, 0 failed |
+
+The default-feature test run does not cover the `rdf-12` tests. Between
+`fede6934` and `a660b3fd` the all-features suite had three failing tests;
+`run-Gg1n83` is the first all-features receipt after the change.
 
 An earlier test receipt, `run-WNm30W`, ran on `f24f54e4` with the change still
 uncommitted. It is superseded by `run-RwaL22` and is not evidence for
