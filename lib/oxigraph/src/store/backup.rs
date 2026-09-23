@@ -1732,4 +1732,85 @@ mod tests {
         }
         Ok(())
     }
+
+    /// The libtest filter of one helper `#[test]`, which never names the crate.
+    fn helper(name: &str) -> String {
+        let module = module_path!();
+        let path = module.split_once("::").map_or(module, |(_, rest)| rest);
+        format!("{path}::{name}")
+    }
+
+    /// A real OS-level process kill at every phase of
+    /// `backup_with_receipt_inner`, the backup every upgrade path takes first.
+    /// Phases 0-3 precede the manifest rename: no receipt may exist, and the
+    /// partial package must fail verification. Phase 4 follows the rename but
+    /// precedes the final directory fsync: the manifest is visible and
+    /// verifies, which proves namespace visibility only, not durability across
+    /// a further power loss. That is why the production API reports this window
+    /// as indeterminate. The source store is unchanged in every case.
+    #[test]
+    fn receipt_backup_child_exits_at_every_phase() -> TestResult {
+        for stop in 0_u8..=4 {
+            let directory = tempfile::tempdir()?;
+            let source = directory.path().join("source");
+            let destination = directory.path().join(format!("backup-{stop}"));
+            {
+                let store = Store::open(&source)?;
+                let node = NamedNode::new_unchecked("urn:backup:kill");
+                store.insert(Quad::new(
+                    node.clone(),
+                    node.clone(),
+                    node,
+                    GraphName::DefaultGraph,
+                ))?;
+            }
+            let before = Store::open_read_only(&source)?.backup_checkpoint()?.0;
+            let status = std::process::Command::new(std::env::current_exe()?)
+                .arg("--exact")
+                .arg(helper("receipt_backup_process_helper"))
+                .env("OXIGRAPH_RECEIPT_BACKUP_TEST_SOURCE", &source)
+                .env("OXIGRAPH_RECEIPT_BACKUP_TEST_DESTINATION", &destination)
+                .env("OXIGRAPH_RECEIPT_BACKUP_TEST_EXIT_AT", stop.to_string())
+                .status()?;
+            assert_eq!(status.code(), Some(73), "the child did not reach {stop}");
+            let verified = BackupReceipt::verify(&destination, &TransactionStartControl::new());
+            if stop < 4 {
+                assert!(!destination.join(MANIFEST).exists(), "phase {stop}");
+                assert!(verified.is_err(), "phase {stop}: partial package verified");
+            } else {
+                assert!(destination.join(MANIFEST).exists());
+                verified?;
+            }
+            let store = Store::open_read_only(&source)?;
+            assert_eq!(store.backup_checkpoint()?.0, before, "phase {stop}");
+            assert_eq!(store.len()?, 1, "phase {stop}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::exit,
+        reason = "bounded child models an exact backup crash point"
+    )]
+    fn receipt_backup_process_helper() -> TestResult {
+        let Some(source) = std::env::var_os("OXIGRAPH_RECEIPT_BACKUP_TEST_SOURCE") else {
+            return Ok(()); // An ordinary run: only the parent test re-invokes this.
+        };
+        let destination = std::env::var_os("OXIGRAPH_RECEIPT_BACKUP_TEST_DESTINATION")
+            .ok_or("the parent test passed no destination")?;
+        let stop = std::env::var("OXIGRAPH_RECEIPT_BACKUP_TEST_EXIT_AT")?.parse::<u8>()?;
+        let store = Store::open(source)?;
+        store.backup_with_receipt_inner(
+            Path::new(&destination),
+            &BackupOptions::default(),
+            |phase| {
+                if phase == stop {
+                    std::process::exit(73);
+                }
+                Ok(())
+            },
+        )?;
+        Err("the child returned instead of exiting at its crash point".into())
+    }
 }
