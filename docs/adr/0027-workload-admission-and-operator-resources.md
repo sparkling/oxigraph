@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-23 — cancellation-latency histogram delivered in `4617d33e`; code last changed in `1f6774d1`, record last corrected in the commit that adds this line; still Proposed, G4.2 still open (streaming-reset stall `run-t8vJ2x` is an open defect)
+- Updated: 2026-09-23 — cancellation-latency histogram delivered in `4617d33e`; code last changed in `1f6774d1`; still Proposed, G4.2 still open (streaming-reset stall `run-t8vJ2x` is an open defect)
 - Deciders: Oxigraph parity programme
 - Implementation status: G4.2 active; native opt-in global/class admission,
   eligible FIFO, queue timeout/token cancellation, separate operator reserve
@@ -1265,7 +1265,7 @@ the first receipts were produced on a dirty tree at the parent commit, and the
 "no new Clippy diagnostics" claim was false. Both were confirmed and are
 corrected above.
 
-Six further independent Opus/high reviews followed, each confirming the
+Seven further independent Opus/high reviews followed, each confirming the
 previous defect fixed and rejecting a new one:
 
 - session `e2ecafec-46ae-4d1a-89c6-2de7108d159a`, **REJECT**: a false claim that
@@ -1282,7 +1282,7 @@ previous defect fixed and rejecting a new one:
   the feature matrix done while the slice still added three Clippy diagnostics
   and the query-fuzz check was unmet, and the status header named the wrong
   commit. Fixed in code by `1f6774d1` (Clippy delta now zero) and in this record
-  by the commit that adds this entry.
+  by `d85f7116`.
 - session `abdda876-f67f-4391-af19-bcbd7d213a3e`, **REJECT**: confirmed the
   zero Clippy delta, the feature-matrix record and the status header, and
   rejected an unreceipted host load figure and three unreceipted isolated runs
@@ -1290,11 +1290,17 @@ previous defect fixed and rejecting a new one:
 - session `5209095c-20a1-4f6d-9c35-addb29394543`, **REJECT**: confirmed the
   receipted isolation runs and re-verified every numeric claim, and rejected this
   paragraph for saying "three" further reviews when five were listed. Corrected
-  by the commit that adds this entry.
+  in `23840f88`.
+- session `ac89ce9f-96af-4914-9689-245bcfbc6732`, **REJECT**: confirmed the
+  review count and order, and rejected the status header's self-referential
+  "record last corrected in the commit that adds this line", which had gone stale
+  after later record-only commits. That clause is removed, and every entry in
+  this list now names its commit explicitly instead of referring to itself.
 
 The review artifacts are under `target/engineering-delivery/g42-application/`:
 `review.json`, `review4-opus.json`, `review5-opus.json`, `review6-opus.json`,
-`review7-opus.json`, `review8-opus.json` and `review9-opus.json`. The other files there are not verdicts: `review2.json` ended
+`review7-opus.json`, `review8-opus.json`, `review9-opus.json` and
+`review10-opus.json`. The other files there are not verdicts: `review2.json` ended
 on a rate-limit error with no verdict, and `review3.json` is an empty Fable run
 stopped when the owner replaced Fable with Opus.
 No independent review has yet accepted the slice.
