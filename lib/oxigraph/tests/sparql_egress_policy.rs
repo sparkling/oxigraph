@@ -746,3 +746,117 @@ fn unsafe_policy_configuration_is_rejected_without_echoing_input() {
             .is_err()
     );
 }
+
+/// G3.5 disposition baseline (ADR-0025): for each built-in `SERVICE` failure,
+/// the typed egress kind a non-SILENT invocation reports, and that `SILENT`
+/// hides it as one unchanged empty solution. A federation planner may change
+/// the work done, never this disposition. Request cancellation and request
+/// deadlines, which `SILENT` must not hide, are covered by
+/// `service_cancellation_is_not_hidden_by_silent`.
+#[test]
+fn service_failure_disposition_is_a_typed_error_that_silent_hides() -> Result<(), Box<dyn Error>> {
+    type Case = (
+        &'static str,
+        fn(&str) -> Vec<Response>,
+        fn(&str) -> EgressPolicy,
+        Option<EgressErrorKind>,
+    );
+    let cases: [Case; 7] = [
+        (
+            "policy denial before connect",
+            |_| Vec::new(),
+            |_| EgressPolicy::deny_all(),
+            Some(EgressErrorKind::PolicyDenied),
+        ),
+        (
+            "redirect",
+            |iri| {
+                vec![
+                    Response::ok("text/plain", Vec::new())
+                        .with_status("302 Found")
+                        .with_header("Location", iri),
+                ]
+            },
+            allowed_policy,
+            Some(EgressErrorKind::PolicyDenied),
+        ),
+        (
+            "HTTP status failure",
+            |_| {
+                vec![
+                    Response::ok("text/plain", b"down".to_vec())
+                        .with_status("503 Service Unavailable"),
+                ]
+            },
+            allowed_policy,
+            None,
+        ),
+        (
+            "malformed results body",
+            |_| {
+                vec![Response::ok(
+                    "application/sparql-results+json",
+                    b"{\"head\":".to_vec(),
+                )]
+            },
+            allowed_policy,
+            None,
+        ),
+        (
+            "unsupported result media type",
+            |_| vec![Response::ok("text/html", b"<html/>".to_vec())],
+            allowed_policy,
+            None,
+        ),
+        (
+            "response shorter than its declared length",
+            |_| {
+                vec![
+                    Response::ok("application/sparql-results+json", JSON_RESULT)
+                        .with_declared_length(JSON_RESULT.len() + 20),
+                ]
+            },
+            allowed_policy,
+            Some(EgressErrorKind::RemoteFailure),
+        ),
+        (
+            "encoded response over its limit",
+            |_| {
+                vec![Response::ok(
+                    "application/sparql-results+json",
+                    vec![b'x'; 128],
+                )]
+            },
+            |origin| allowed_policy(origin).with_encoded_response_limit(32),
+            Some(EgressErrorKind::EncodedResponseTooLarge),
+        ),
+    ];
+    for (name, responses, policy, kind) in cases {
+        for silent in [false, true] {
+            let endpoint = Endpoint::spawn(responses)?;
+            let evaluator = SparqlEvaluator::new().with_egress_policy(policy(&endpoint.origin()));
+            let result = service(evaluator, endpoint.iri(), silent);
+            endpoint.finish()?;
+            if silent {
+                assert_eq!(
+                    result.map_err(|error| error.to_string())?,
+                    1,
+                    "{name}: SILENT must yield exactly the incoming empty solution"
+                );
+            } else {
+                let Err(error) = result else {
+                    return Err(format!("{name}: a non-SILENT invocation must fail").into());
+                };
+                if let Some(kind) = kind {
+                    assert_egress(&error, kind, EgressPurpose::Service);
+                } else {
+                    assert!(
+                        matches!(error, QueryEvaluationError::Service(_)),
+                        "{name}: expected a SERVICE error, got {error:?}"
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
