@@ -591,7 +591,10 @@ A second independent review accepted `7931a493`
 (`target/engineering-delivery/e4-custom-functions/review2.json`). Its
 non-blocking notes stay open except one: `compile_checked_with_imports` also
 restarted the timeout at each stage. `ea67fc6e` fixes that by carrying the
-remaining time forward; it has no regression test. The open notes are:
+remaining time forward; it has no regression test. At `cf47b9b2`, a
+documentation-only commit on top of that fix, `run-TASppF` (246 passed),
+`run-62tfOD` (283 passed), `run-B1Ywmn` (Clippy, passed) and `run-RbLLo0`
+(candidate suite 560 of 560) all pass on clean source. The open notes are:
 
 - Already registered GeoSPARQL names are kept, although the specification
   would allow overriding them. This is the safer reading.
