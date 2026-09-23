@@ -594,16 +594,22 @@ restarted the timeout at each stage. `ea67fc6e` fixes that by carrying the
 remaining time forward; it has no regression test. At `cf47b9b2`, a
 documentation-only commit on top of that fix, `run-TASppF` (246 passed),
 `run-62tfOD` (283 passed), `run-B1Ywmn` (Clippy, passed) and `run-RbLLo0`
-(candidate suite 560 of 560) all pass on clean source. The open notes are:
+(candidate suite 560 of 560) all pass on clean source. `9c32bc87` still passes
+560 of 560 (`run-E0WMgz`). Its Clippy receipt `run-ohSlHU` reported two
+unused-qualification warnings that an earlier comparison, which only counted
+lints printing a documentation link, missed. `3501d029` removes them and makes
+the receipt helper count every warning. At `3501d029`: `run-WrfTq8` (284
+passed), `run-z4Xly4` and `run-bOVV7w` (Clippy, no warnings). The open notes are:
 
 - Already registered GeoSPARQL names are kept, although the specification
   would allow overriding them. This is the safer reading.
 - A `sparql:` declaration with a body is still a hard error rather than being
   ignored. This behaviour predates the change.
-- A failure inside a function body aborts validation, while the specification
-  makes it a function-call error, like the zero and many cases.
-- A limit error raised inside a call reports the remaining ceiling rather than
-  the configured one. It is almost always masked by the outer charge.
+- Fixed in `9c32bc87`: a failure inside a function body now yields no value
+  (a function-call error), like the zero and many cases. Only limits and
+  cancellation still abort validation.
+- Fixed in `9c32bc87`: a limit error raised inside a call now reports the
+  configured ceiling.
 - Ill-formed `sh:parameter` declarations are now accepted silently, because
   parameters are documentation only.
 
