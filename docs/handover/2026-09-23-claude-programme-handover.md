@@ -158,8 +158,9 @@ response writer consumed `SO_ERROR` before the polling monitor saw it, so
   most once and never after the deadline.
 - `f171a100` narrows that to OS socket errors only. A short response body
   synthesizes `ConnectionAborted` itself.
-- Negative control, receipted in place: `run-kHOxe4`, `run-4icBGb`,
-  `run-mYVdsq`, `run-wM2JRz`, `run-K7KBrj`, each failing with callback count 0.
+- Negative control, receipted in place on a deliberately dirty tree (the fix
+  reverted): `run-kHOxe4`, `run-4icBGb`, `run-mYVdsq`, `run-wM2JRz`,
+  `run-K7KBrj`, each failing with callback count 0.
 - The streaming-reset test is **un-ignored**: 10/10 at `f171a100`, up from 4/10.
   The six-case 1/4/16 demo drill passes (`run-yaQQmB`).
 - Independent review ACCEPTed at `0ae194fb` (session `454f0d66`).
