@@ -1222,9 +1222,13 @@ current: CLI suite 456 passed / 0 failed / 2 ignored (`run-2ifqXK`); Clippy
 compared against both recorded baselines, whose stderr hashes match the ones on
 record, at `run-lkwvSy` (default) and `run-4aiW2Q` (no-default-features). One
 earlier full-suite run at the same commit, `run-bjyTUc`, failed a single
-unrelated test with `EAGAIN` (os error 11) at host load average about 42; that
-test passed three times in isolation and in the rerun, and `run-bjyTUc` is kept
-as a recorded failure. Earlier receipts at `959d2248`, `96d1370f` and
+unrelated test, `owl_workload_deadline_supports_inference_and_persistent_journey`,
+with `EAGAIN` (os error 11), a transient resource error. The same test passed in
+the full rerun `run-2ifqXK` and in three receipted isolated runs (`run-3Ui1JT`,
+`run-nhVnMY`, `run-GjPMrW`, clean tree at `d85f7116`, which changes no code).
+`run-bjyTUc` is kept as a recorded failure. An earlier version of this sentence
+cited a host load figure and isolated runs that had no receipts; both are
+withdrawn and replaced by the receipts above. Earlier receipts at `959d2248`, `96d1370f` and
 `6c1463ee` are kept as history. Both applicable spareval fuzz targets ran without a crash,
 but only one is mutation evidence: `run-rktpZc` (`sparql_update_eval`, 11382 runs, about 4100
 mutations beyond its seed corpus) is a genuine one-minute run, but `run-tSYzGW`
@@ -1274,6 +1278,11 @@ record defect while confirming the previous one fixed:
   said the change had not been re-reviewed, the stall was missing from the
   outstanding list, and the receipts were not bound to HEAD. Corrected in
   `6faadff7`.
+- session `abdda876-f67f-4391-af19-bcbd7d213a3e`, **REJECT**: confirmed the
+  zero Clippy delta, the feature-matrix record and the status header, and
+  rejected an unreceipted host load figure and three unreceipted isolated runs
+  in the verification paragraph. Replaced by receipts in the commit that adds
+  this entry.
 - session `fbfd58a8-435f-44a3-b408-92e3e6c9d614`, **REJECT**: `6faadff7` marked
   the feature matrix done while the slice still added three Clippy diagnostics
   and the query-fuzz check was unmet, and the status header named the wrong
@@ -1282,7 +1291,7 @@ record defect while confirming the previous one fixed:
 
 The review artifacts are under `target/engineering-delivery/g42-application/`:
 `review.json`, `review4-opus.json`, `review5-opus.json`, `review6-opus.json` and
-`review7-opus.json`. The other files there are not verdicts: `review2.json` ended
+`review7-opus.json` and `review8-opus.json`. The other files there are not verdicts: `review2.json` ended
 on a rate-limit error with no verdict, and `review3.json` is an empty Fable run
 stopped when the owner replaced Fable with Opus.
 No independent review has yet accepted the slice.
