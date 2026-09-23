@@ -1249,3 +1249,33 @@ fn response_writer_reset_reaches_transport_cancellation_once() -> Result<()> {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     Ok(())
 }
+
+#[test]
+fn short_response_body_is_not_reported_as_transport_cancellation() -> Result<()> {
+    // A body that declares more bytes than it yields makes the encoder fail
+    // with a synthesized ConnectionAborted. That is an application body error,
+    // not a peer transport failure, so the cancellation callback must not run.
+    let calls = Arc::new(AtomicUsize::new(0));
+    let admission_calls = Arc::clone(&calls);
+    let (mut stream, worker) = connect(
+        Server::new(|_| {
+            Response::builder()
+                .body(Body::from_read_and_len(std::io::Cursor::new(vec![b'x'; 4]), 64))
+                .unwrap()
+        })
+        .with_request_admission(move |_, _| {
+            let mut context = Extensions::new();
+            let calls = Arc::clone(&admission_calls);
+            context.insert(RequestTransportCancellation::new(move || {
+                calls.fetch_add(1, Ordering::SeqCst);
+            }));
+            Ok(context)
+        }),
+    )?;
+    stream.write_all(b"GET / HTTP/1.1\r\nhost: localhost\r\n\r\n")?;
+    let error = worker.join().unwrap().unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::ConnectionAborted);
+    assert!(error.raw_os_error().is_none());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    Ok(())
+}

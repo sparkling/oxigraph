@@ -153,8 +153,14 @@ impl RequestWatch {
     /// application's cancellation token. Deadline expiry is not a transport
     /// failure and is not reported here. The callback runs at most once per
     /// request, whichever side observes the failure first.
+    ///
+    /// Only an OS-level socket error counts. `ConnectionAborted` is also used by
+    /// response bodies to report a short read of their own content, so a
+    /// synthesized error kind alone is not evidence that the peer failed; the
+    /// error must carry a raw OS error code.
     pub(super) fn transport_write_failed(&self, error: &Error) {
         if self.cancellation.is_none()
+            || error.raw_os_error().is_none()
             || !matches!(
                 error.kind(),
                 ErrorKind::ConnectionReset
