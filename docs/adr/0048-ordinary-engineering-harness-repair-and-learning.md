@@ -2,6 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-09-24
+- **Updated**: 2026-09-24, after verified Semantic Builder delegation
 - **Deciders**:
 - **Tags**: metaharness, native-subscriptions, routing, frozen-evaluators, learning
 - **Amends if accepted**: ADR-0017 and ADR-0043 ordinary engineering delivery only
@@ -31,9 +32,9 @@ The `src/` paths in this table are relative to `tools/engineering-harness/`.
 | --- | --- | --- |
 | Ordinary delivery | `tools/engineering-harness/bin/oxigraph-delivery.mjs`; `workflow`, `run`, `route`; root applies native read-only proposals | Preserve this entry and sole integration writer |
 | Upstream runtime | `src/workflow.mjs` imports `HarnessKernel`, `AlgorithmRouter`, `AgentPool`, `VerifierRegistry` | `nativeStage` creates a new pool per stage; retain one run-scoped pool |
-| Ordinary routing | `src/delivery.mjs` selects explicit role defaults and reasoned overrides | No measured quality/latency model selection in this path |
+| Ordinary routing | `src/delivery.mjs` selects explicit role defaults and reasoned overrides | Bind project policy to shared runtime routing; do not add a second Router |
 | Frozen engineering lane | `src/routing/quality-router.mjs`, `src/runtime/native-pool.mjs`, native Codex/Claude adapters and versioned application receipts | Reuse reviewed mechanisms without activating old G1 tasks or rewriting their fingerprints |
-| Ordinary evidence | Source checks, command observations, independent review, compact `ordinary-workflow-v2` references and live MCP readback | Add exact evaluator/route identities and outcome reduction; receipts remain host-attested, not OS isolation |
+| Ordinary evidence | Source checks, command observations, independent review, compact `ordinary-workflow-v2` references and live MCP readback | Consume shared runtime receipts and outcome reduction; retain local handoff bindings and honest isolation limits |
 | Semantic qualification | Separate `tools/metaharness` Darwin adapter, pinned 41-command semantic inventory and mutation requirements | Keep separate; no `qualify`, synthetic qualification or G1.7 execution in ordinary repair |
 
 The engineering npm lock records `metaharness` 0.4.8, harness 0.2.0, Router
@@ -49,10 +50,22 @@ and generated scaffolds are not evidence that a repository task executed.
 
 ## Decision
 
-Repair the existing ordinary engineering workflow in bounded slices, using
-Semantic Builder's customised upstream runtime as a reference for invariants.
-Do not copy Builder's task corpus, authority rules, model allocations, timeout
-override, paid API experiment or product evaluator into Oxigraph.
+Keep one thin project entrypoint and delegate execution to the existing/customised
+shared `@metaharness/harness` runtime. The shared runtime owns Router selection,
+escalation, API/native transports, workspaces, receipts, repair/review and
+GEPA/evolution/learning. Oxigraph owns tasks, frozen evaluators, mutation and
+ownership bindings, transport policy, and sole integration. Do not add a local
+Router, retry state machine, workspace manager, receipt reducer, GEPA, Flywheel
+or AgenticOW controller. Reuse the supported runtime facade; do not copy its
+internals or transplant Builder's task corpus, product law or timeout exception.
+
+Verified implementation reference: Semantic Builder `main` commit
+`df74b4911cf05fa7ecdcdfe13c5e0d8533e97b12`, run
+`run-2026-09-24T18-24-37-723Z-4f9af644`, receipt
+`sha256:2f2c08d4008bd7100f152056b0172157ad034783a9a7fa3561e6110b87a6c8a2`.
+That run is green and the lean entry delegates to its existing shared runtime.
+This proves the Builder implementation, not an installed or accepted Oxigraph
+adapter, live API execution, or portable cross-repository deployment.
 
 This is an executable proposal for a later authorized repair session. Creating
 or accepting this ADR does not resume product work, activate evolution, replace
@@ -67,20 +80,13 @@ package export maps. Read actual declarations and implementation at that
 resolution. Use `search_ruvnet` for source discovery and live Ruflo guidance for
 reachable capabilities; neither is a substitute for installed API evidence.
 
-Inspect these package-local surfaces before selecting callbacks:
-
-- `@metaharness/harness`: kernel, pool, algorithm router, policy, verifier,
-  recovery and receipt exports; constructor options, callback/result types,
-  cancellation, exception handling and receipt verification behavior.
-- `@metaharness/router`: `Router`, `predict`, `route`, quality-bar fallback and
-  calibration declarations. Wrap quality eligibility and measured latency
-  explicitly; never encode latency as token price or claim a missing API.
-- `@metaharness/darwin/gepa`: actual optimizer, reflection, evaluator, metric
-  and promotion contracts for the selected version. Avoid CLI mutators that
-  select OpenRouter or unrelated provider transports.
-- `@metaharness/avo` and any proposed direct Flywheel dependency: actual
-  supervision/storage ports, side effects and local task adaptation. A
-  transitive install or `swebench` export is not a reason to adopt that domain.
+Inspect the shared runtime's supported entrypoint, task/evaluator bindings,
+transport policy, cancellation, result and receipt contracts first. Verify
+actual delegation with injected transports and commands, including refusal,
+repair and exact receipt provenance. Project code does not reconstruct the
+upstream kernel, Router, pool, recovery or learning loop. If a required seam is
+missing, return that bounded gap to the shared-runtime owner; do not create a
+project-local substitute. Package presence alone proves no execution.
 
 Use injected native/command doubles to prove import, callback invocation,
 error/cancel propagation and receipt validation before any live worker. Keep
@@ -98,7 +104,7 @@ separate fresh-context session after author completion. Keep one source writer
 on canonical `main`; workers propose exact files and do no Git or test work.
 No new branch, detached checkout or Git worktree is permitted.
 
-Current ordinary routes are native Claude Code through configured 9router:
+Current native routes are Claude Code through configured 9router:
 
 | Role | Exact model | Effort |
 | --- | --- | --- |
@@ -107,6 +113,18 @@ Current ordinary routes are native Claude Code through configured 9router:
 | Documentation | `cc/claude-opus-5` | `low` |
 | Independent review | `cc/claude-opus-5` | `high` |
 | Build, tests, hashes and replay | No model | Deterministic |
+
+Prospective API authoring uses only `deepseek/deepseek-v4.1-flash` through the
+shared runtime's isolated OpenRouter adapter, followed by deterministic
+verification and declared native subscription repair when needed. A verified
+cheap candidate skips native authoring/repair, not required independent review.
+API authoring and native repair/review are separate transports; frontier
+subscription models never use OpenRouter. Current `AGENTS.md` forbids OpenRouter:
+this lane remains disabled until explicit repository policy authorization and
+the corresponding scoped configuration change. This Proposed ADR grants neither
+that exception nor API spending authority. Do not activate Codex implicitly.
+If later authorized, the API key reaches only the shared API adapter, never
+native workers, generic tools or verifiers.
 
 Existing reasoned Sonnet/Opus overrides remain governed by `routeDelivery`;
 explicit Max selection still needs its recorded owner/unresolved basis.
@@ -133,20 +151,21 @@ unknown; native-client invocations are counted separately.
 
 ### 3. Route only within proven quality and capability boundaries
 
-Add a versioned ordinary-delivery route identity containing task family, role,
-native host, exact model, effort, transport profile identity, evaluator digest,
-harness/policy digest and context features. Do not pool efforts or transfer
-mixed-provider frozen-lane history into ordinary Claude evidence.
+Supply project task/evaluator identity, declared native candidates, ownership
+and transport restrictions to the shared runtime. It owns versioned route
+identities, history, upstream Router invocation and escalation. Do not pool
+efforts or transfer mixed-provider frozen-lane history into ordinary Claude
+evidence, and do not implement parallel local selection or retry state.
 
-Invoke the upstream Router for every model-backed stage after host, role,
-read/write and capability admission. Retain configured incumbents for cold
+Require shared routing to enforce host, role, read/write and capability
+admission before selection. Retain configured incumbents for cold
 start and label them uncalibrated. Deterministic all-required-verifier success
 is the quality floor; a model completion or an upstream best-effort fallback
 cannot satisfy it. Model-reported confidence never overrides application tests.
 
 Once comparable evidence clears that floor, prefer lower observed time from
 ready assignment to accepted integration, including context, failed attempts,
-repair, review and verification. Store model/tool/build/queue durations
+repair, review and verification. Consume shared model/tool/build/queue durations
 separately; warm-cache and different evaluator results are not comparable speed
 proof. Record ordinary observations without creating a model experiment
 programme. Train only from explicitly eligible paired same-task evidence;
@@ -189,31 +208,26 @@ honestly until required read confinement is demonstrated.
 ### 5. Complete one lifecycle with immutable evidence
 
 Retain the host bridge and its live `mcp-read`, `native-worker`, `root-apply`
-and `mcp-handoff` actions. Do not create another scheduler or MCP server.
-Allocate one upstream pool for the workflow, retaining workers across stages
-while preserving fresh reviewer identity and context.
+and `mcp-handoff` bindings. Delegate execution, pool ownership, workspace
+management, repair and review to the shared runtime. Do not create another
+scheduler, MCP server or local lifecycle controller. Preserve fresh reviewer
+identity/context and the project's sole integration writer.
 
-The sequence is admission, intended-red baseline, native proposal, root apply,
+The sequence is admission, intended-red baseline, admitted proposal, root apply,
 candidate rebuild, focused/impacted deterministic verification, independent
 review, repair if needed, final stable-source verification and exact MCP
 readback. Review only a deterministically green candidate. No review from an
 earlier patch carries forward after bytes change. Preserve all contributor
 identities; no implementer or implementation analyst can review its own work.
 
-Persist task/spec/evaluator/source/patch hashes, requested and observed native
-identity, route snapshot, command argv/exits/artifacts, review findings,
-failure classification, attempts, timestamps, cleanup result and final status.
-Use receipt-last immutable finalization and exact readback. Validate referenced
-local evidence at handoff; never rebuild missing evidence to make an old
-receipt valid. Distinguish kernel-chain validity, command success,
-`ready-for-owner-review`, root integration and product acceptance.
-
-Publish one immutable outcome delta per run. The sole integrator validates and
-serially reduces those deltas, idempotently rejecting duplicate or conflicting
-identities. A crash or late cleanup failure cannot leave a success-shaped
-terminal result. Recovery consumes fresh source/control checks; old responses
-do not become a new run. Persist the existing limitation where crash-resume is
-not implemented instead of claiming it from append-only events.
+Consume the shared runtime's immutable receipts, route outcomes and reduction;
+do not recreate them locally. Bind local command/artifact/source evidence and
+MCP handoff to those exact records. Require task/evaluator/policy/patch identity,
+requested and observed transport/model, attempts, review, failure classification,
+timestamps and final cleanup status. Missing or invalid receipts cannot accept
+output. Distinguish kernel-chain validity, command success, owner review,
+integration and product acceptance. Preserve failed records and historical
+readers; never reconstruct missing evidence to make an old receipt valid.
 
 ### 6. Memory, GEPA, AVO and Flywheel are separate authorities
 
@@ -223,28 +237,19 @@ and learned project context. Retrieve exact keys after stores. Use the separate
 No CLI fallback, raw SQL, whole-database reads or database-sidecar manipulation.
 Memory outages are recorded and do not block otherwise authorized delivery.
 
-Engineering GEPA evolves planner/context/review/retry/tool/retrieval policy
-around frozen native models. Inject native reflection and direct Oxigraph
-evaluators through the verified GEPA API. Seal holdout labels and evaluator
-implementation; reflection receives opaque epoch task IDs and permitted
-failure feedback. Freeze route/model/evaluator/corpus identities for the epoch.
-Do not use stock SWE-bench, synthetic scores or generic real-sandbox success
-as semantic or product evidence.
+Engineering evolution and learning remain shared-runtime responsibilities,
+including GEPA, Flywheel and any admitted AVO/AgenticOW use. Oxigraph supplies
+authorized task evidence and direct frozen evaluators, not another evolution
+controller, corpus scheduler or promotion loop. No local wrapper directly
+launches GEPA or replaces shared promotion/replay decisions.
 
-Promotion requires at least five reliable train and five sealed holdout tasks,
-predeclared metric and improvement threshold, no correctness/security
-regression, clean replay, preserved last-known-good and separately authorized
-human promotion. Smaller runs are diagnostic only. Null results retain the
-seed. AVO may search bounded coordinated policy variations for a named outcome
-and must stop at an independently verified winner or honest null.
-
-Flywheel may collect validated immutable outcomes and propose candidates. Before
-claiming operation, prove its named API executes, binds corpus/embedding/model
-identity and yields a replayable proposal; package presence and store counts
-are insufficient. It cannot grade or activate its own policy. Keep automatic
-daemon generation/activation off until the same frozen evaluation and explicit
-promotion transaction governs it. Engineering, semantic qualification and
-Ruflo retrieval learning retain separate corpora, namespaces and receipts.
+Any later authorized epoch must retain frozen model/route/evaluator identities,
+sealed holdouts, opaque reflection IDs, direct correctness checks, clean replay
+and separate promotion authority. Diagnostic or null results do not promote.
+No benchmark sweep is a prerequisite to ordinary delivery. Stock SWE-bench or
+generic sandbox scores prove no Oxigraph semantics. Engineering, semantic
+qualification and Ruflo retrieval learning remain separate; this ADR activates
+none of them and authorizes no daemon or automatic policy promotion.
 
 ## Staged implementation and validation
 
@@ -252,12 +257,13 @@ Ruflo retrieval learning retain separate corpora, namespaces and receipts.
    Verify physical path, `main`, HEAD, dirty paths, owner and process inventory.
    Preserve unrelated work and protected runtime state. Confirm one active
    model process and one build/test command; a document is not a resume order.
-2. Inventory upstream APIs and existing tests. Freeze focused acceptance tests
-   for routing, transport, pool reuse, immutable outcome reduction and lifecycle
-   failures. Commit evaluator changes before task registration.
-3. Repair ordinary routing/pool/evidence seams through the existing harness
-   workflow, one verified slice at a time. Keep frozen-lane readers byte-compatible;
-   add versioned ordinary records rather than rewriting historical formats.
+2. Verify the cited Builder implementation and supported shared-runtime facade.
+   Freeze adapter tests for real delegation, project bindings, transport refusal,
+   receipt provenance and lifecycle failure propagation. Commit evaluators first.
+3. Converge the existing entry onto that facade through the existing harness,
+   one verified slice at a time. Keep historical readers byte-compatible and
+   local ownership intact. Missing shared seams go to the shared-runtime owner.
+   Do not duplicate routing, escalation, workspaces, receipts or evolution.
 4. Validate with injected workers first, then one explicitly authorized real
    ordinary outcome. Record actual native identity and separate simulated proof.
    The chosen task must exercise observable Oxigraph behavior or a demonstrated
@@ -289,12 +295,15 @@ failures. Never invoke broad `npm test` blindly: G1.7 tests share that inventory
 
 ## Acceptance criteria
 
-- Existing entry executes real upstream callbacks, one persistent pool and
-  admitted native subscription workers; active Claude-only/serial policy holds.
+- Thin entry delegates to the existing/customised shared runtime; injected
+  evidence proves execution ownership, not decorative imports. No duplicate
+  Router, retry, workspace, receipt or evolution controller remains active.
 - Intended-red evaluator, rebuilt candidate and independent green-candidate
   review bind identical source/evaluator identities; out-of-scope edits fail.
-- No secret reaches prompts, logs, generic children or receipts; disabled hosts,
-  OpenRouter and silent fallback are rejected by deterministic tests.
+- Native Claude/serial policy holds. OpenRouter remains refused until explicit
+  repository authorization; prospective tests prove isolated DeepSeek authoring,
+  verified-success short-circuit and declared native repair/review. No secret
+  reaches prompts, logs, generic children or receipts; silent fallback fails.
 - Model/effort identity, cold start, capability floors and failure attribution
   are explicit. Faster selection requires comparable quality-cleared evidence.
 - Failure, cancellation, drift, duplicate delta, interrupted finalization and
@@ -337,7 +346,7 @@ Oxigraph project connection; cross-project memory pollution is not permitted.
 
 ### Negative
 
-- Versioned ordinary records and adapters require maintenance and migration tests.
+- Thin adapter compatibility and project bindings require maintenance tests.
 - Serial, fresh-context review adds time; missing paired evidence limits speed
   claims and leaves configured incumbents in place.
 
