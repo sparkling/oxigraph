@@ -1,4 +1,4 @@
-# ADR-0048: Repair ordinary engineering routing and evidence learning
+# ADR-0048: Repair ordinary engineering policy drift without rebuilding the harness
 
 - **Status**: Proposed
 - **Date**: 2026-09-24
@@ -44,14 +44,14 @@ Paths in the following tables are relative to `tools/engineering-harness/`.
 | --- | --- | --- |
 | `bin/oxigraph-delivery.mjs` | `workflow`, `run`, `route`; preflight before workflow-directory creation | Keep this entry; no replacement CLI |
 | `src/workflow.mjs:runWorkflow` | Owns task/control refresh, proposal, root apply, checks, repair, independent review and handoff | Keep as sole ordinary transition owner |
-| `src/workflow.mjs:nativeStage` | Real `HarnessKernel`, one-step `AlgorithmRouter`, new `AgentPool` per stage, structural verifier | Extract public-package composition; retain one pool per workflow |
-| `src/delivery.mjs:routeDelivery` | Explicit Claude role defaults and reasoned overrides; no model-quality Router call | Add one ordinary policy adapter; do not describe current defaults as learned |
+| `src/workflow.mjs:nativeStage` | Real `HarnessKernel`, one-step `AlgorithmRouter`, one admitted host callback and structural verifier per stage | Keep this small public-package adapter in place; a persistent pool has no selection or lifecycle value while each stage has one eligible route |
+| `src/delivery.mjs:routeDelivery` | Explicit Claude role defaults and reasoned overrides; no model-quality Router call | Keep static policy while each role has one eligible route; do not describe current defaults as learned |
 | `src/delivery.mjs:runDelivery` | Agentic-QE command supervision, exact argv/source/artifact observations | Preserve command admission and existing failure checks |
 | `src/workflow-host.mjs` | `stdioHost` and callback-injected `relayWorkflowHost`; leaves native-worker/root-apply to host | Keep bridge; not a native client launcher or MCP server |
 | `src/routing/quality-router.mjs` | `QualityFirstRouter` wraps public `Router`; cold start demands paired Codex/Claude evidence | Frozen-lane mechanism, not usable unchanged for Claude-only ordinary work |
 | `src/runtime/native-pool.mjs` | `NativeWorkerPool` requires both Codex and Claude declarations | Preserve frozen contracts; do not activate this pool in ordinary delivery |
 | `src/receipts/application.mjs` | Versioned frozen application receipts | Not the ordinary workflow receipt writer; leave untouched |
-| `src/workflow.mjs` evidence | `ordinary-workflow-v2`, content-bound local events/checks, exact MCP readback | Extend additively; not durable crash-resume or independent host authentication |
+| `src/workflow.mjs` evidence | `ordinary-workflow-v2`, content-bound local events/checks, exact MCP readback | Keep; bind final integration through existing live task/MCP completion after root commits, not a second local evidence subsystem |
 
 Already implemented, not repair backlog: failed-check feedback stops later
 checks/review; review rejection triggers fresh repair/check/review; unchanged
@@ -67,9 +67,12 @@ with `application.mjs`. Do not reopen that completed defect or rewrite old
 receipts to make them ordinary evidence.
 
 Actual remaining policy mismatch: `runWorkflow` still sends an implementation
-prompt inviting native children/contributors; contributor fixtures retain the
-September 19 no-cap framing. Current owner policy requires serial execution.
-Correct prospective prompts/admission without relabelling historical records.
+prompt inviting native children/contributors; `workerOutput` accepts active
+contributor arrays; contributor fixtures retain the superseded September 19
+no-cap framing. Current owner policy forbids fan-out and allows one model-bearing
+process at a time. Remove that prospective execution path without relabelling
+historical records. Existing repair, review, route, command and evidence behavior
+is otherwise the implementation to preserve, not a platform to replace.
 
 ### Public package identities and acquisition
 
@@ -109,78 +112,45 @@ Its green receipt proves neither Oxigraph execution nor portability.
 
 ## Target ownership and exact seams
 
-### 1. One local controller, public primitives
+### 1. Keep the existing controller and public package adapter
 
-Keep `runWorkflow(spec, host, io)` in `src/workflow.mjs` as the outer controller.
-The existing CLI still calls it; `runDelivery` still conducts deterministic
-commands. Proposed new `src/ordinary-runtime.mjs` is only public-package
-composition for native stages, not another lifecycle or dispatcher.
+Keep `runWorkflow(spec, host, io)` in `src/workflow.mjs` as the sole outer
+controller. Keep `nativeStage` in that file as the small adapter to public
+`HarnessKernel`, `AlgorithmRouter`, `AgentPool`, `VerifierRegistry` and
+`predicateVerifier`. `runDelivery` remains the deterministic command boundary.
+No new runtime module, lifecycle, dispatcher or workspace manager is needed.
 
-Create its run-scoped runtime once at `runWorkflow` entry. It owns one
-`AgentPool`, registers `AgentSpec` callbacks, and constructs kernel stages with
-`new HarnessKernel({ router, pool, verifiers, budget, ... })`. Workers use public
-`AgentSpec.run({ goal, step, upstream })`; pass the current route/source/feedback
-through `goal.context`, not a stale first-attempt closure. Invoke
-`kernel.run(goal, stageId)` with a workflow-bound unique stage ID.
+Each stage has exactly one policy-admitted host callback. Creating its one-agent
+pool beside that stage is cheap and prevents an upstream bandit from selecting a
+different role route. A persistent pool would require mutable route/request
+context, retain diagnostics across unrelated attempts and still would not reuse
+kernel receipt, breaker or retry state. Do not extract or persist it until an
+observed multi-agent stage needs actual pool selection and has tests proving the
+benefit. Object-count reduction is not a harness outcome.
 
-`AlgorithmRouter` classifies intent and compiles stage DAGs. It does **not**
-choose model/effort. The public `AgentPool` selects agents by handled step kind
-using UCB; expose only the policy-selected route for that stage's exact kind so
-its bandit cannot bypass model admission. Keep self-reported quality neutral;
-pool statistics are diagnostics, not application-quality training evidence.
+`AlgorithmRouter` chooses the one stage algorithm; it does not choose the native
+model. `VerifierRegistry` checks result structure; it does not replace Oxigraph
+commands or independent review. Preserve zero kernel retries. Existing outer
+repair owns one failure-directed retry loop and stops on unchanged source/failure.
+Account or requested-model unavailability keeps its exact error and never becomes
+a quality label, retry cascade or transport fallback.
 
-`VerifierRegistry`/`predicateVerifier` validate the native result structure.
-They do not replace `runDelivery`'s application checks or independent review.
-Keep prerequisite/repair transitions outside the kernel: its installed loop
-continues through ordered steps and supplies neither Oxigraph root application
-nor exact task control. Do not force the whole workflow into an assumed turnkey
-kernel lifecycle.
+### 2. Keep static model policy until selection exists
 
-Installed `HarnessKernel.run` has no `AbortSignal` parameter and creates its
-own receipt log, breaker and retry state per call. Reusing a pool does not make
-those run-scoped. Preserve zero internal duplicate retries; the existing outer
-repair loop owns progress-driven repair. A run-scoped public `CircuitBreaker`
-may guard classified transient host faults in the adapter; account/model
-unavailability always pauses with exact client, model, effort and error.
-No request-count or subscription-spend ceiling becomes a repair policy.
-Keep native `costUsd` compatibility values and cost-scoring weight at zero;
-reported usage stays telemetry, never a selection, retry or stopping input.
+Keep `routeDelivery` as the only ordinary model-policy function. Current owner
+policy permits one Claude route per role, with reasoned Sonnet/Opus overrides.
+Under that policy a new `@metaharness/router` adapter has no choice to make and
+cannot learn a comparative outcome. Adding feature vectors, candidate schemas,
+reducers or a tie-breaker now would duplicate policy without changing execution.
 
-### 2. Model selection belongs to one ordinary adapter
-
-Proposed `src/ordinary-routing.mjs` owns ordinary candidate admission and wraps
-public `Router`; `routeDelivery` remains the public policy entry and delegates
-there. Do not alter or import the frozen `QualityFirstRouter`/`NativeWorkerPool`
-as the ordinary path. This is local policy around upstream algorithms, not a
-new k-NN implementation or a second active ordinary model selector.
-
-Candidate identity binds native host, exact model, effort, role, policy digest,
-task class, evaluator digest and harness revision. Reject absent/malformed
-dimensions and mismatched evidence before selection. Reuse pure
-`src/routing/features.mjs:canonicalSha256` where appropriate, but do not call its
-hash-derived `routingEmbedding` a semantic embedding or a validated predictor.
-Start with frozen categorical task features, fixed dimensions and injected
-examples; no embedding service or model experiment is required.
-
-Call `new Router({ candidates, k })` with equal neutral `costPerMTok` values and
-no `qualityBar` for quality prediction. Check actual all-required-verifier
-outcomes independently. Upstream's `metBar: true` without a bar is not product
-acceptance. Cold start retains the configured role route, labelled uncalibrated;
-empty history never forces paired Codex execution or blocks delivery. Do not
-fabricate positive examples to make the Router choose an incumbent.
-
-Preserve role/capability/owner selection first. Only comparable, quality-cleared
-evidence may justify another eligible route. The package has no accepted-outcome
-latency selector: the local adapter may compare tied qualified candidates using
-observed assignment-to-accepted-integration time, including repair, review and
-verification. Otherwise retain the incumbent. Report worker and whole-outcome
-time separately; no speed claim follows from model latency alone.
-
-Classify failures before escalation: preparation/process/artifact faults belong
-to the integrator; evaluator defects belong to the verifier owner; exit 1 needs
-diagnosis. Confirmed authoring defects may exclude that route and select an
-admitted route with a non-decreasing task capability floor. Native outage is not
-a negative quality label or permission for transport fallback.
+The public Router remains available for a later separately authorized slice only
+after at least two simultaneously eligible candidates exist for one role and the
+repository has paired same-task, same-evaluator, all-verifier-cleared evidence.
+That later design must bind host, exact model, effort, role, policy, evaluator and
+harness revision; exclude infrastructure/evaluator failures; use neutral
+subscription cost fields; and compare accepted-outcome time only after correctness.
+Cold start, missing comparison data or one eligible candidate retains the current
+configured route. Codex or API activation is never a calibration prerequisite.
 
 ### 3. Native host and integration policy stay local
 
@@ -216,25 +186,31 @@ key, prompt secret or alternate transport is introduced. Readiness uses the
 authorized native route, not login metadata. No readiness call occurs in this
 ADR-only task.
 
-Cancellation belongs to the outer host/process boundary. Proposed `io.signal`
-stops new transitions; injected host `cancelNative({ runId, requestId })` targets
-only the pending native request and confirms matching identity, settlement and
-termination. This is a new adapter contract, not an upstream API. Closing stdin
-alone proves no child termination. Retain outstanding evidence and withhold
-handoff until confirmation; label that proof host-supplied, not authenticated.
-Reuse Agentic-QE command supervision; claim no new containment or crash recovery.
+The active host, not this controller, owns the native process. Existing stdio
+closure and timeout fail the workflow but do not prove remote process termination.
+Do not invent `AbortSignal`/`cancelNative` support in this repair without a
+reproduced orphaned-process defect and a host API that can confirm matching
+request identity and termination. Agentic-QE continues to supervise local
+deterministic commands. State this limitation; do not claim containment or crash
+recovery that does not exist.
 
-### 4. Evidence, feedback and learning have separate owners
+### 4. Preserve evidence; finish integration through existing authority
 
-Root/verifier owner freezes one exact ordinary task specification and evaluator
-revision before authoring. Bind baseline commit/tree, evaluator content digest,
-allowed paths, commands, required outputs, review policy and intended failure.
-Add these bindings as workflow spec schema 2; keep schema 1 byte interpretation
-unchanged and ineligible for new learned routing without the required evidence.
-Build prerequisites first; missing imports/tools are not discriminating red.
-Root commits evaluator-only changes, proves the intended baseline failure, then
-references that prior revision from the task. Never self-reference a commit.
-Reuse one live terminal-outcome task; correct stale scope once, not per defect.
+Root/verifier owner freezes one exact ordinary task and evaluator before authoring.
+The live Ruflo task/control and implementation handoff bind baseline commit/tree,
+evaluator patch/content digest, allowed paths, commands, required outputs, review
+policy and intended failure. Build prerequisites first; missing imports/tools are
+not a discriminating red. Under the same authorized task, root applies the
+content-bound evaluator patch before authoring, runs the admitted command to prove
+the intended red, and keeps evaluator paths outside the worker mutation scope so
+`outsideObservation` freezes them. Final integration commits evaluator and source
+together after green verification. No separate red commit or self-referential task
+registration is required. Reuse one live terminal outcome; correct stale scope once.
+
+Do not add a speculative workflow schema solely to repeat task-control fields.
+If implementation inspection proves a required binding is absent from both the
+live task and `ordinary-workflow-v2`, add only that field to the existing spec and
+evidence with strict compatibility tests. Absence must be demonstrated first.
 
 Keep failed attempts immutable and add justified regression lineage under that
 same outcome. Deterministic checks precede independent review; changed bytes
@@ -242,37 +218,20 @@ invalidate earlier checks/review. Root verifies exact application, commits the
 accepted slice, then closes the live task. `ready-for-owner-review` is not an
 integrated product outcome.
 
-Proposed `src/ordinary-evidence.mjs` extends existing local evidence binding, not
-the frozen application receipt schema. Preserve historical ordinary v1/v2
-bytes and emit an explicitly versioned successor only when new fields land.
-Bind task/spec/evaluator/route/source identities, requested and observed native
-model/effort, stage/attempt IDs, checks, review, failure class and elapsed phases.
-CLI writes under existing ignored `target/engineering-delivery/`; no protected
-`.runtime`, database, qualification or `/var/lib` state is repurposed.
+Keep `ordinary-workflow-v2`, local event/check references and exact MCP handoff.
+They already bind task/spec/source/route, requested native identity, check evidence,
+review and failure-directed attempts. Preserve negative records and historical
+bytes. Upstream stage receipts remain nested stage evidence; no merge, reducer,
+new receipt database or Router-history projection is needed for this repair.
 
-Validate stage chains with public `ReceiptLog.fromJSON(...).verify()`, plus
-locally expected sequence/count, task bindings and final digest. A self-consistent
-truncated chain can pass upstream verification; chain validity alone does not
-prove completeness. Keep original stage chains; `ReceiptLog.merge` rehashes
-entries and must not rewrite historical stage provenance. Bind actual request
-payload digests locally: the kernel's input hash covers step/action, not the
-complete task/source payload. Thrown worker errors need outer failure evidence.
-
-One sole-writer reduction in `ordinary-evidence.mjs` may derive an idempotent
-ordinary outcome view from immutable run files. Reject duplicate/conflicting
-attempt IDs and incomplete/tampered records. No separate daemon or mutable
-global Router history is needed. Mark observations trainable only after direct
-verification, review and exact integration binding; ordinary observations alone
-are not paired comparisons. Training requires explicitly eligible paired
-same-task results; single outcomes remain diagnostic. No model self-score, stale
-reviewer, infrastructure fault or legacy dual-host receipt becomes a quality label.
-
-After commit, root uses proposed CLI `finalize --result FILE --commit SHA` backed
-by `ordinary-evidence.mjs:finalizeOrdinaryOutcome`. It compares committed content
-with the exact verified candidate and writes a separate integration record;
-it never rewrites the workflow or stage records. Coordinator stores/readbacks
-that record through the verified project MCP before closing the task. Failed or
-interrupted finalization leaves the outcome awaiting integration, not accepted.
+After root commits the exact verified candidate, the coordinator rechecks the
+commit's files against the returned candidate identity, updates the existing live
+task/evidence record with commit SHA, workflow key, evaluator identity, commands,
+review and remaining gates, retrieves it through the Oxigraph-bound MCP and only
+then completes the task. This is existing coordinator authority, not a new
+`finalize` CLI subcommand. A failed write/readback leaves the task in progress.
+The local workflow result remains `ready-for-owner-review`; never rewrite it as an
+integrated record.
 
 Search/store project facts only through an Oxigraph-bound structured Ruflo MCP
 connection; verify stores by exact retrieval. User memory is reusable context,
@@ -280,51 +239,42 @@ not the repository ledger. Optional recall failure must not block delivery,
 but missing mandatory live task authorization or handoff readback must fail
 closed; never synthesize either from memory or local files.
 
-### 5. Evolution is deferred, not supplied by an imaginary shared runtime
+### 5. Evolution and learning remain deferred
 
 Ordinary source imports no GEPA, AVO or Flywheel controller. The separate
 `tools/metaharness/qualify.mjs` imports Darwin root functions `evolve`,
 `generateBaselineHarness`, `inspectVariant`, `runVariantTask` and
 `validateGeneratedCode` for its protected qualification boundary. Leave it alone.
 
-If separately authorized later, Oxigraph's existing engineering owner must
-compose `gepaOptimize({ seed, evaluate, reflect, ... })` from the public
-`@metaharness/darwin/gepa` subpath. Its evaluator and native reflector are
-injected callbacks, not supplied Oxigraph workers. Flywheel requires an explicit
-direct dependency and separate reviewed adapter before importing
-`runFlywheelGenerations({ rootPolicy, proposer, evaluator, holdout, signer, ... })`.
-No transitive package, built-in promotion rule or default budget grants authority.
-Resolve subscription-neutral options, sealed holdouts, opaque reflection IDs,
-frozen evaluators, replay and human promotion before activation. AVO/AgenticOW
-remain optional and inactive; no learning benchmark blocks ordinary repair.
+If separately authorized later, use public Darwin/GEPA with Oxigraph evaluator
+and native-reflection callbacks. No transitive package, built-in promotion rule
+or default budget grants authority. Resolve subscription-neutral options, sealed
+holdouts, opaque reflection IDs, frozen evaluators, replay and human promotion
+before activation. Router learning, Flywheel, AVO and AgenticOW remain inactive;
+no learning benchmark blocks ordinary repair.
 
 ## Implementation slices and owners
 
-Execute these slices serially after explicit repair authorization. The native
-Claude coordinator owns sequencing/control, verifier owner owns evaluator truth,
-read-only author proposes source, root alone applies/commits, and a fresh native
-reviewer owns the green-candidate review. One task spans the repair outcome.
-All new/touched modules must finish below 500 lines; split existing 606-line
-`test/workflow.test.mjs` without changing its assertions.
+Execute one bounded repair outcome serially after explicit authorization. Native
+Claude coordinator owns sequencing/control; verifier owns evaluator truth;
+read-only author proposes source; root alone applies/commits; fresh native review
+owns green-candidate review. Do not create tasks per finding.
 
 | Slice | Exact mutation scope | Required evidence / owner |
 | --- | --- | --- |
-| S0: admit bounded seams | `src/workflow.mjs`, `src/delivery.mjs`, `test/delivery.test.mjs` | Verifier adds exact-path/command and spec-v2 admission tests first; root proves red then applies native-proposed allowlist repair through current workflow |
-| S1: runtime and serial host | `src/ordinary-runtime.mjs` (new), `src/workflow.mjs`, `src/workflow-host.mjs`; `test/ordinary-runtime.test.mjs`, `test/workflow-host.test.mjs`, `test/support/ordinary-workflow-fixture.mjs` (new), `test/workflow.test.mjs` | Root extracts fixtures/tests without assertion loss; injected public pool proves reuse across repair/review, current context, no fan-out, exact native error and cancellation handling |
-| S2: ordinary routing | `src/ordinary-routing.mjs` (new), `src/delivery.mjs`, `src/ordinary-runtime.mjs`; `test/ordinary-routing.test.mjs` (new), `test/delivery.test.mjs` | Verifier proves public Router callback, cold-start incumbent, effort isolation, owner override, capability floor, native-only refusal and no cost/usage gate |
-| S3: additive evidence | `src/ordinary-evidence.mjs` (new), `src/workflow.mjs`, `bin/oxigraph-delivery.mjs`; `test/ordinary-evidence.test.mjs` (new), `test/workflow.test.mjs` | Verifier tests original chains, missing/tampered/truncated records, failed attempt retention, duplicate reduction, interrupted finalization and exact integration binding |
-| S4: complete join | Only necessary repairs in the S1-S3 paths; `README.md` within this package if explicitly included | Root runs focused/impacted checks on both Nodes; native independent review; one authorized real ordinary outcome; scoped main commits and exact handback |
+| O0: freeze current defect and admit test split | `src/workflow.mjs`, `src/delivery.mjs`, `test/workflow.test.mjs`, `test/delivery.test.mjs` | Verifier proves current implementation prompt contains superseded fan-out/no-cap language and active contributor results are accepted. Admit only literal `README.md`, `test/workflow-policy.test.mjs` and `test/support/ordinary-workflow-fixture.mjs` mutation paths, plus the policy test as an executable Node test. No model call. |
+| O1: remove superseded contributor execution | `src/workflow.mjs`, `README.md`, `test/workflow.test.mjs`, new `test/workflow-policy.test.mjs`, new `test/support/ordinary-workflow-fixture.mjs` | Prompt requires one native worker and no subagents/contributors; non-empty active contributor results fail before root apply/review/handoff; single implementation ID remains excluded from review; existing repair, route, source, check and MCP behavior stays green. Split the 606-line test, preserve unaffected assertions and replace superseded contributor-acceptance assertions with rejection-before-apply coverage; every touched file ends below 500 lines. |
+| O2: complete exact join | Only necessary O0-O1 repairs; no package/lock, Router, frozen qualification, product or native-adapter changes | Focused tests on current Node and Node 20; authorized real ordinary harness-maintenance outcome; exact root commit; fresh review; live task/MCP commit binding and readback. |
 
-S0 admits exactly the new helper/test paths named above, including the support
-fixture, and no wildcard directory, shell or arbitrary Node
-escape hatch. Until S0 passes, keep regressions in the currently admitted tests;
-after it passes move them mechanically into the frozen split inventory before
-authoring S1-S3. New tests assert behavior through existing controller seams;
-failure because an unimplemented module cannot import is not acceptance proof.
-The author may not change frozen evaluator bytes to pass its own candidate.
-Evaluator files/fixtures become read-only dependencies after their freeze, not
-author mutation paths. No package, lock, frozen routing/history/receipt, native adapter, product source
-or qualification path is in these slices' mutation inventory.
+O0 is a bootstrap inside current admitted files. It adds literal `README.md`,
+`test/workflow-policy.test.mjs` and `test/support/ordinary-workflow-fixture.mjs`
+to `ordinaryHarnessPath`; only `test/workflow-policy.test.mjs` joins `nodeTests`.
+No wildcard directory, arbitrary Node command, shell or package change. O1 moves
+shared fixtures and unaffected assertions after those paths are admitted, then
+replaces obsolete contributor-pass cases with current serial-policy rejections.
+Verifier bytes become read-only before candidate work.
+No new runtime/routing/evidence module, CLI action, package, lock, frozen
+history/receipt, product source or qualification path belongs to this repair.
 
 ### Commands and acceptance
 
@@ -341,8 +291,9 @@ node tools/engineering-harness/bin/oxigraph-delivery.mjs run \
   tools/agentic-qe/process-runner.test.mjs
 ```
 
-After S0, add the exact four new `test/*.test.mjs` paths in S1-S3 to the same
-literal command; the support fixture is imported, not an executable test target.
+After O0, add the exact `tools/engineering-harness/test/workflow-policy.test.mjs`
+path to the same literal command; the support fixture is imported, not an
+executable test target.
 Repeat serially with
 `/home/claude/.local/share/mise/installs/node/20.20.2/bin/node` replacing the
 first `node`. Verify that executable exists and reports Node 20 first.
@@ -354,9 +305,9 @@ Start implementation through
 with a reviewed exact ordinary spec and attached authorized native host.
 The CLI alone cannot service native/MCP requests. `FILE.json` is an operator
 input under `target/engineering-delivery/`, not a new frozen G1 registry entry.
-After S3 and exact scoped commit, finalize through
-`node tools/engineering-harness/bin/oxigraph-delivery.mjs finalize --result FILE --commit SHA`.
-This proposed subcommand does not exist at the audited baseline.
+After exact scoped commit, use existing structured MCP task/evidence operations
+to bind and read back the commit before task completion. Do not add a local
+`finalize` action.
 No broad `npm test`, `qualify`, `qualify:synthetic`, `g1.7:*`, provider benchmark
 or factory generation belongs in this validation recipe.
 
@@ -367,18 +318,17 @@ run required default/all-feature tests and relevant Clippy/fuzz/build checks
 through the same entry, then bind produced artifacts. One Cargo command runs
 at a time; no stale binary or concurrent crash-test rebuild can count as proof.
 
-Acceptance requires all S0-S3 fixtures green on current Node and Node 20,
-unchanged historical evidence, one run-scoped ordinary pool, exactly one model
-selector, no duplicate controller, deterministic-green independent review,
-exact root integration and verified MCP handoff. Injected tests prove adapter
-contracts only. A live native run, held-out learning improvement or semantic
-qualification must never be inferred from them. New receipts do not close a
-product gate unless the corresponding product behavior was tested.
+Acceptance requires O0-O1 fixtures green on current Node and Node 20, unchanged
+historical evidence, exactly one static ordinary route policy, no contributor
+fan-out, no duplicate controller, deterministic-green independent review, exact
+root integration and verified MCP handoff/readback. Injected tests prove adapter
+contracts only. No Router learning, persistent-pool benefit, live product run,
+held-out improvement or semantic qualification is inferred.
 
 ## Stop, rollback and handback
 
-Before S0, owner must authorize source repair and identify a real active harness
-task plus Oxigraph-bound MCP control. Before S4, owner must select and authorize
+Before O0, owner must authorize source repair and identify a real active harness
+task plus Oxigraph-bound MCP control. Before O2, owner must select and authorize
 the real outcome and any runtime-state writes. No live task is invented here.
 Reconcile active sessions to the one-process rule before native dispatch.
 Stop on unexpected source changes, wrong checkout, native unavailability,
