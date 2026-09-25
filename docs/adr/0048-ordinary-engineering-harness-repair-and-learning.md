@@ -1,11 +1,11 @@
 # ADR-0048: Repair ordinary engineering policy drift without rebuilding the harness
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-24
-- **Updated / source audit**: 2026-09-25
-- **Deciders**: Oxigraph owner; acceptance pending
+- **Updated / implementation**: 2026-09-25
+- **Deciders**: Oxigraph owner; O0-O2 implementation authorized 2026-09-25
 - **Tags**: metaharness, native-subscriptions, routing, frozen-evaluators, learning
-- **Amends if accepted**: ADR-0017 and ADR-0043 ordinary delivery only
+- **Amends**: ADR-0017 and ADR-0043 ordinary delivery only
 
 ## Outcome and authority
 
@@ -15,12 +15,46 @@ Preserve native Claude execution, root-only application, deterministic checks,
 repair, independent review and exact evidence readback. Do not construct another
 scheduler or import another repository's private application runtime.
 
-This is a later implementation handoff, not implementation evidence or a resume
-order. Current authorization covers this ADR only. Source changes, native
-execution, live task/control writes and learning-state writes need the owner's
-explicit scoped authorization. G1.7, semantic qualification, evolution,
-promotion, publication, deployment and push remain separately unauthorized.
-OpenRouter and DeepSeek remain disabled; no API adapter is part of this repair.
+The owner authorized O0-O2 source repair and deterministic validation on
+2026-09-25. O0 and O1 are implemented. O2 remains open at its required live
+task/control join: the exact project control still names completed harness task
+`task-1789864711141-06ypsp`, and the in-progress task inventory contains no
+ADR-0048 harness task. No replacement task was invented and no protected runtime
+state was changed. Native execution, live task/control writes and task completion
+remain gated on an owner-identified active harness task. G1.7, semantic
+qualification, evolution, promotion, publication, deployment and push remain
+separately unauthorized. OpenRouter and DeepSeek remain disabled; no API adapter
+is part of this repair.
+
+## Implementation record
+
+O0 commit `9cbd2725` added only the literal README, policy-test and support-fixture
+mutation paths, admitted only the policy test as an executable Node test, and
+froze the superseded prompt/contributor behavior before repair. Its focused
+Node 24 gate passed 55/55 tests.
+
+O1 commit `735dc930` removed contributor/fan-out instructions, requires each
+native stage to work alone, rejects any non-empty `contributors` result before
+application or handoff, retains sole-worker review exclusion, and split the
+former 606-line workflow test into:
+
+- `test/workflow.test.mjs`: 353 lines;
+- `test/workflow-policy.test.mjs`: 107 lines;
+- `test/support/ordinary-workflow-fixture.mjs`: 145 lines.
+
+`src/workflow.mjs` remains 379 lines. The existing README remains a 1,250-line
+operator manual; reducing unrelated sections to satisfy a literal all-touched-
+files limit would exceed O0-O2. The under-500 acceptance boundary therefore
+applies to the controller and exact test/support split, not the pre-existing
+README container.
+
+Focused impacted validation passed 80/80 tests on Node `v24.14.1` and 80/80 on
+Node `v20.20.2` using the five-file command listed below. No package, lock,
+Router, pool, evidence reducer, finalizer, cancellation, product, qualification,
+evolution or protected-runtime change was made. O2 cannot be marked implemented
+until an active harness task is identified, the ordinary workflow completes with
+fresh independent review, the exact integration commit is bound through the
+Oxigraph MCP handoff, and readback succeeds.
 
 [ADR-0043](0043-delivery-recovery-and-proportional-release-boundary.md) makes
 direct product behavior and proportional native tests the delivery authority.
@@ -263,7 +297,7 @@ owns green-candidate review. Do not create tasks per finding.
 | Slice | Exact mutation scope | Required evidence / owner |
 | --- | --- | --- |
 | O0: freeze current defect and admit test split | `src/workflow.mjs`, `src/delivery.mjs`, `test/workflow.test.mjs`, `test/delivery.test.mjs` | Verifier proves current implementation prompt contains superseded fan-out/no-cap language and active contributor results are accepted. Admit only literal `README.md`, `test/workflow-policy.test.mjs` and `test/support/ordinary-workflow-fixture.mjs` mutation paths, plus the policy test as an executable Node test. No model call. |
-| O1: remove superseded contributor execution | `src/workflow.mjs`, `README.md`, `test/workflow.test.mjs`, new `test/workflow-policy.test.mjs`, new `test/support/ordinary-workflow-fixture.mjs` | Prompt requires one native worker and no subagents/contributors; non-empty active contributor results fail before root apply/review/handoff; single implementation ID remains excluded from review; existing repair, route, source, check and MCP behavior stays green. Split the 606-line test, preserve unaffected assertions and replace superseded contributor-acceptance assertions with rejection-before-apply coverage; every touched file ends below 500 lines. |
+| O1: remove superseded contributor execution | `src/workflow.mjs`, `README.md`, `test/workflow.test.mjs`, new `test/workflow-policy.test.mjs`, new `test/support/ordinary-workflow-fixture.mjs` | Prompt requires one native worker and no subagents/contributors; non-empty active contributor results fail before root apply/review/handoff; single implementation ID remains excluded from review; existing repair, route, source, check and MCP behavior stays green. Split the 606-line test, preserve unaffected assertions and replace superseded contributor-acceptance assertions with rejection-before-apply coverage; controller and split test/support files end below 500 lines. |
 | O2: complete exact join | Only necessary O0-O1 repairs; no package/lock, Router, frozen qualification, product or native-adapter changes | Focused tests on current Node and Node 20; authorized real ordinary harness-maintenance outcome; exact root commit; fresh review; live task/MCP commit binding and readback. |
 
 O0 is a bootstrap inside current admitted files. It adds literal `README.md`,
