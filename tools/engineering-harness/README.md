@@ -139,6 +139,11 @@ represents exactly one implementation worker or one independent reviewer.
 Implementation and review prompts explicitly forbid subagents, contributors,
 child sessions and independent native sessions.
 
+Serial-policy regression coverage is executed by
+`test/workflow-policy.test.mjs`. Shared setup lives in
+`test/support/ordinary-workflow-fixture.mjs` and is imported support, not a
+direct `node --test` target.
+
 The programme coordinator uses native Claude Code `cc/claude-opus-5` / `max`,
 following the owner's 2026-09-22 Claude-only restoration and 2026-09-23 Opus
 selection. Root services the workflow bridge and applies reviewed proposals. At
