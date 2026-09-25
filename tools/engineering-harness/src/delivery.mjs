@@ -70,6 +70,7 @@ const cargoValues = new Set([
 ]);
 const nodeTests = new Set([
   "tools/engineering-harness/test/delivery.test.mjs",
+  "tools/engineering-harness/test/workflow-policy.test.mjs",
   "tools/engineering-harness/test/workflow.test.mjs",
   "tools/engineering-harness/test/astra-routing.test.mjs",
   "tools/engineering-harness/test/cli.test.mjs",

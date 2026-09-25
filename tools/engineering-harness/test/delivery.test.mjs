@@ -99,6 +99,7 @@ test("literal native commands are admitted; broad or protected entry points are 
   ]).kind, "cargo-test");
   assert.equal(admitCommand(["cargo", "build", "--locked", "--release", "-p", "oxigraph-cli"]).kind, "build");
   assert.equal(admitCommand(["node", "--test", "--test-reporter=tap", "tools/engineering-harness/test/delivery.test.mjs"]).kind, "node-test");
+  assert.equal(admitCommand(["node", "--test", "--test-reporter=tap", "tools/engineering-harness/test/workflow-policy.test.mjs"]).kind, "node-test");
   assert.equal(admitCommand(["node", "--test", "--test-reporter=tap", "tools/evidence/verify-programme.test.mjs"]).kind, "node-test");
   assert.equal(admitCommand(["node", "--test", "--test-reporter=tap", "tools/evidence/receipt-evidence.test.mjs", "tools/evidence/adr-prereview.test.mjs", "tools/shacl-tests/hidden-entries.test.mjs"]).kind, "node-test");
   for (const argv of [
@@ -106,6 +107,7 @@ test("literal native commands are admitted; broad or protected entry points are 
     ["cargo", "test", "--locked", "--", "--list"], ["cargo", "test", "--locked", "--", "--unknown"],
     ["cargo", "test", "--locked", "--ignored"], ["cargo", "test", "--locked", "--manifest-path", "elsewhere/Cargo.toml"],
     ["node", "--test", "--test-reporter=tap", "tools/engineering-harness/test/g17-qualification-cli.test.mjs"],
+    ["node", "--test", "--test-reporter=tap", "tools/engineering-harness/test/support/ordinary-workflow-fixture.mjs"],
     ["node", "--eval", "process.exit(0)"], ["npm", "test"], ["sh", "-c", "true"], ["ruflo", "status"],
     ["cargo", "test", "--locked\n"],
   ]) assert.throws(() => admitCommand(argv), JSON.stringify(argv));

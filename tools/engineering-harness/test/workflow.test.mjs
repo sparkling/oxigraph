@@ -198,8 +198,10 @@ test("flat native contributors retain exact attribution without a provider-wide 
   const implementers = [contributor("file-owner"), ...Array.from({ length: 4 }, (_, i) =>
     contributor(`analyst-${i}`, [], { model: "cc/claude-sonnet-5", effort: "high" }))];
   const reviewers = [contributor("review-child-1"), contributor("review-child-2")];
+  let implementationInstructions;
   const host = attributedHost(f, (result, request) => {
     const review = request.payload.route.role === "review";
+    if (!review) implementationInstructions = request.payload.instructions;
     if (review) assert.deepEqual(request.payload.implementationWorkerIds, ["implementation", ...implementers.map(c => c.workerId)]);
     result.contributors = review ? reviewers : implementers;
   });
@@ -215,6 +217,8 @@ test("flat native contributors retain exact attribution without a provider-wide 
   assert.deepEqual(implementationEvent.result.contributors, implementers);
   assert.deepEqual(result.review.contributors, reviewers);
   assert.equal(result.mcpReadback, true);
+  assert.match(implementationInstructions, /Native children or independent native sessions may contribute/);
+  assert.match(implementationInstructions, /no provider-wide session cap is inferred/);
 });
 
 test("every implementation participant is excluded from aggregate and delegated review", async () => {
@@ -361,6 +365,18 @@ test("task contracts reject unknown fields, protected paths and product commands
     { ...spec, checks: [{ completionCheck: "invalid", argv: ["cargo", "test", "--locked", "-p", "oxigraph"] }] }]) {
     assert.throws(() => validateWorkflow(invalid));
   }
+});
+test("harness scope admits only the exact ordinary policy split paths", () => {
+  for (const admitted of [
+    "tools/engineering-harness/README.md",
+    "tools/engineering-harness/test/workflow-policy.test.mjs",
+    "tools/engineering-harness/test/support/ordinary-workflow-fixture.mjs",
+  ]) assert.doesNotThrow(() => validateWorkflow({ ...spec, paths: [admitted] }));
+  for (const rejected of [
+    "tools/engineering-harness/README-copy.md",
+    "tools/engineering-harness/test/workflow-policy-copy.test.mjs",
+    "tools/engineering-harness/test/support/ordinary-workflow-fixture-copy.mjs",
+  ]) assert.throws(() => validateWorkflow({ ...spec, paths: [rejected] }));
 });
 test("worker failure projection keeps raw process text local and bounds spec size", () => {
   const raw = { status: "failed", directory: "/local/run", result: { code: 1, stderrTail: "private output must remain local", output: "x".repeat(100000) } };

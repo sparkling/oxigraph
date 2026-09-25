@@ -11,7 +11,18 @@ export const digest = hash;
 const bytesDigest = (value) => createHash("sha256").update(value).digest("hex");
 const equal = (a, b) => digest(a) === digest(b);
 const text = (value) => typeof value === "string" && value.trim().length > 0;
-const ordinaryHarnessPath = (path) => /^(?:tools\/engineering-harness\/(?:src\/(?:delivery|workflow|workflow-host)\.mjs|bin\/oxigraph-delivery\.mjs|test\/(?:delivery|workflow)\.test\.mjs))$/.test(path);
+const ordinaryHarnessPaths = new Set([
+  "tools/engineering-harness/README.md",
+  "tools/engineering-harness/bin/oxigraph-delivery.mjs",
+  "tools/engineering-harness/src/delivery.mjs",
+  "tools/engineering-harness/src/workflow-host.mjs",
+  "tools/engineering-harness/src/workflow.mjs",
+  "tools/engineering-harness/test/delivery.test.mjs",
+  "tools/engineering-harness/test/support/ordinary-workflow-fixture.mjs",
+  "tools/engineering-harness/test/workflow-policy.test.mjs",
+  "tools/engineering-harness/test/workflow.test.mjs",
+]);
+const ordinaryHarnessPath = (path) => ordinaryHarnessPaths.has(path);
 const manifestPath = (path) => /^(?:Cargo\.(?:toml|lock)|(?:cli|testsuite|oxrocksdb-sys)\/Cargo\.(?:toml|lock)|(?:lib|cli|testsuite)\/[a-zA-Z0-9_./-]+\/Cargo\.(?:toml|lock))$/.test(path);
 const shaclEvidencePath = new Set([
   "tools/shacl-tests/inventory.mjs",
