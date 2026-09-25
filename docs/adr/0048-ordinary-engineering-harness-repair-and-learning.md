@@ -1,6 +1,6 @@
 # ADR-0048: Repair ordinary engineering policy drift without rebuilding the harness
 
-- **Status**: Accepted
+- **Status**: Implemented
 - **Date**: 2026-09-24
 - **Updated / implementation**: 2026-09-25
 - **Deciders**: Oxigraph owner; O0-O2 implementation authorized 2026-09-25
@@ -16,15 +16,13 @@ repair, independent review and exact evidence readback. Do not construct another
 scheduler or import another repository's private application runtime.
 
 The owner authorized O0-O2 source repair and deterministic validation on
-2026-09-25. O0 and O1 are implemented. O2 remains open at its required live
-task/control join: the exact project control still names completed harness task
-`task-1789864711141-06ypsp`, and the in-progress task inventory contains no
-ADR-0048 harness task. No replacement task was invented and no protected runtime
-state was changed. Native execution, live task/control writes and task completion
-remain gated on an owner-identified active harness task. G1.7, semantic
-qualification, evolution, promotion, publication, deployment and push remain
-separately unauthorized. OpenRouter and DeepSeek remain disabled; no API adapter
-is part of this repair.
+2026-09-25. All three slices are implemented. O2 used authorized harness task
+`task-1790303000367-v7837i`, workflow
+`workflow-5981be74-0e05-43ae-be2c-c4f6b01a3e9b`, and the existing structured
+Ruflo task/control and evidence handoff. No protected runtime state was committed.
+G1.7, semantic qualification, evolution, promotion, publication, deployment and
+push remain separately unauthorized. OpenRouter and DeepSeek remain disabled;
+no API adapter is part of this repair.
 
 ## Implementation record
 
@@ -48,13 +46,29 @@ files limit would exceed O0-O2. The under-500 acceptance boundary therefore
 applies to the controller and exact test/support split, not the pre-existing
 README container.
 
+O2 commit `2f211c5319ff745bb16529301ea8fe8dba71a103` records the final ordinary
+workflow clarification in `tools/engineering-harness/README.md`. Native
+implementation session `claude-session:a6f1f4a1-1d19-4a70-a5cf-a99238787482`
+used `cc/claude-opus-5` at `xhigh`; fresh independent review session
+`claude-session:f85fb093-c76a-47be-9504-233ff13eb0e3` used the same model at
+`high`, returned `ACCEPT`, and both sessions reported empty contributor lists.
+The accepted workflow result remains the immutable local
+`ready-for-owner-review` record at
+`target/engineering-delivery/workflow-rWFjcO/result.json`, SHA-256
+`6bf405e36c8d2c4523fb55e326488925a86c982e7b9abb8ed93f3d1e50ce98ae`.
+
 Focused impacted validation passed 80/80 tests on Node `v24.14.1` and 80/80 on
-Node `v20.20.2` using the five-file command listed below. No package, lock,
-Router, pool, evidence reducer, finalizer, cancellation, product, qualification,
-evolution or protected-runtime change was made. O2 cannot be marked implemented
-until an active harness task is identified, the ordinary workflow completes with
-fresh independent review, the exact integration commit is bound through the
-Oxigraph MCP handoff, and readback succeeds.
+Node `v20.20.2` using the five-file command listed below. Results are
+`target/engineering-delivery/run-3Sqk4F/result.json`, SHA-256
+`c9131a8f3ed2863950f0b1c2b76172497d508902896b36c8fb079f480c9bd828`, and
+`target/engineering-delivery/run-YfGHDv/result.json`, SHA-256
+`2957e6ffae124a245caf53f62036a1855f68b3ccd7b9468ab03faf9e6df81a03`.
+Integration evidence was stored and retrieved exactly at
+`programme-task-evidence/adr0048-o2-integration-2f211c53`; programme control
+`programme-controls/oxigraph-six-hour-delivery-course-correction-v1` read back
+the same task, workflow and commit. No package, lock, Router, pool, evidence
+reducer, finalizer, cancellation, product, qualification, evolution or
+protected-runtime change was made.
 
 [ADR-0043](0043-delivery-recovery-and-proportional-release-boundary.md) makes
 direct product behavior and proportional native tests the delivery authority.
@@ -87,12 +101,12 @@ Paths in the following tables are relative to `tools/engineering-harness/`.
 | `src/receipts/application.mjs` | Versioned frozen application receipts | Not the ordinary workflow receipt writer; leave untouched |
 | `src/workflow.mjs` evidence | `ordinary-workflow-v2`, content-bound local events/checks, exact MCP readback | Keep; bind final integration through existing live task/MCP completion after root commits, not a second local evidence subsystem |
 
-Already implemented, not repair backlog: failed-check feedback stops later
+Already implemented before this repair: failed-check feedback stops later
 checks/review; review rejection triggers fresh repair/check/review; unchanged
 failure stops for integrator judgment; reviewer identities exclude every author;
 source drift, protected paths, stale responses, bad readback and no-op delivery
-fail closed. Existing `test/workflow.test.mjs` and `test/delivery.test.mjs`
-exercise these contracts; this audit did not rerun them.
+fail closed. O2 validation reran these contracts through the focused five-file
+suite on Node 24 and Node 20.
 
 Effort isolation is also already implemented: `src/routing/history.mjs`
 normalizes optional effort maps and `quality-router.mjs:currentFingerprint`
@@ -100,13 +114,12 @@ separates them. Its public fingerprint deliberately remains legacy-compatible
 with `application.mjs`. Do not reopen that completed defect or rewrite old
 receipts to make them ordinary evidence.
 
-Actual remaining policy mismatch: `runWorkflow` still sends an implementation
-prompt inviting native children/contributors; `workerOutput` accepts active
-contributor arrays; contributor fixtures retain the superseded September 19
-no-cap framing. Current owner policy forbids fan-out and allows one model-bearing
-process at a time. Remove that prospective execution path without relabelling
-historical records. Existing repair, review, route, command and evidence behavior
-is otherwise the implementation to preserve, not a platform to replace.
+O1 resolved the policy mismatch: `runWorkflow` now requires one native worker
+without subagents or contributors, `workerOutput` rejects non-empty contributor
+arrays before application or handoff, and current fixtures encode the September
+23 one-process rule. Historical records remain unchanged. Existing repair,
+review, route, command and evidence behavior remains the implementation to
+preserve, not a platform to replace.
 
 ### Public package identities and acquisition
 
@@ -216,9 +229,8 @@ argument: it is not a drop-in replacement for the host callback.
 The host preserves `CLAUDE_CONFIG_DIR`, `ANTHROPIC_BASE_URL` and gateway
 `ANTHROPIC_AUTH_TOKEN` through the existing `nativeChildEnvironment("claude")`
 allowlist. Generic commands/verifiers keep `scrubbedChildEnvironment`; no API
-key, prompt secret or alternate transport is introduced. Readiness uses the
-authorized native route, not login metadata. No readiness call occurs in this
-ADR-only task.
+key, prompt secret or alternate transport is introduced. O2 readiness and
+execution used the authorized native route, not login metadata or a fallback.
 
 The active host, not this controller, owns the native process. Existing stdio
 closure and timeout fail the workflow but do not prove remote process termination.
@@ -312,12 +324,12 @@ history/receipt, product source or qualification path belongs to this repair.
 
 ### Commands and acceptance
 
-From canonical repository root, after verifying the live task/control and
-replacing `task-REPLACE-WITH-LIVE-ID`, the currently admitted baseline command is:
+From canonical repository root, after verifying the live task/control, the O2
+validation command used the authorized task ID:
 
 ```sh
 node tools/engineering-harness/bin/oxigraph-delivery.mjs run \
-  --task task-REPLACE-WITH-LIVE-ID --check "Ordinary delivery contracts pass" -- \
+  --task task-1790303000367-v7837i --check "Ordinary delivery contracts pass" -- \
   node --test --test-reporter=tap \
   tools/engineering-harness/test/workflow.test.mjs \
   tools/engineering-harness/test/delivery.test.mjs \
@@ -357,14 +369,14 @@ historical evidence, exactly one static ordinary route policy, no contributor
 fan-out, no duplicate controller, deterministic-green independent review, exact
 root integration and verified MCP handoff/readback. Injected tests prove adapter
 contracts only. No Router learning, persistent-pool benefit, live product run,
-held-out improvement or semantic qualification is inferred.
+held-out improvement or semantic qualification is inferred. The implementation
+record above satisfies these O0-O2 acceptance conditions.
 
 ## Stop, rollback and handback
 
-Before O0, owner must authorize source repair and identify a real active harness
-task plus Oxigraph-bound MCP control. Before O2, owner must select and authorize
-the real outcome and any runtime-state writes. No live task is invented here.
-Reconcile active sessions to the one-process rule before native dispatch.
+The owner authorized source repair and the single ADR-0048 harness task before
+O2. The Oxigraph-bound control and evidence records were read back exactly.
+Reconcile active sessions to the one-process rule before any future native dispatch.
 Stop on unexpected source changes, wrong checkout, native unavailability,
 unconfirmed cancellation, evaluator drift or missing required evidence.
 Missing public seams go to the owner as a precise package/API gap; no private
@@ -382,13 +394,11 @@ evidence paths, candidate and integrated commit, independent review and exact
 MCP readback. List live and promotion gates not run. Do not report this ADR
 commit as implementation, calibrated routing or product progress.
 
-Audit used source/declarations and structured MCP recall only: no install,
-build, test, native dispatch, qualification or protected-runtime write.
-User-pattern recall succeeded; the phase-gating pattern is superseded by
-`metaharness-full-operational-harness-v1`. Available project MCP serves Semantic
-Builder, not Oxigraph; no Oxigraph-bound recall or ADR graph update was possible.
-No exact causal-query tool was available. Preserve source-based supersession
-checks; register ADR memory/edges only through a verified Oxigraph connection.
+The original audit used source/declarations and structured MCP recall only. O0-O2
+then used the existing ordinary engineering harness, deterministic Node checks,
+native Claude implementation and independent review, plus exact Oxigraph-bound
+structured Ruflo evidence storage and readback. No install, semantic
+qualification, evolution, promotion, publication, deployment or push occurred.
 
 ## References
 
