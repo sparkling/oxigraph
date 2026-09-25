@@ -131,70 +131,34 @@ Their tests run through the delivery entry point:
 node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task <live-ruflo-task-id> --check "Evidence helpers pass" -- node --test --test-reporter=tap tools/evidence/receipt-evidence.test.mjs tools/evidence/adr-prereview.test.mjs
 ```
 
-### Native parallel contributors
+### Native serial execution
 
-**Suspended 2026-09-23:** the owner set maximum parallelism to 1 (see
-`AGENTS.md`). Run one model-bearing process and one build or test at a time;
-the contributor mechanics below apply in series only.
-
+The owner-set maximum parallelism is 1 (see `AGENTS.md`). Run one model-bearing
+process and one build or test at a time. Each `native-worker` request therefore
+represents exactly one implementation worker or one independent reviewer.
+Implementation and review prompts explicitly forbid subagents, contributors,
+child sessions and independent native sessions.
 
 The programme coordinator uses native Claude Code `cc/claude-opus-5` / `max`,
 following the owner's 2026-09-22 Claude-only restoration and 2026-09-23 Opus
-selection. Root services the
-workflow bridge and applies reviewed proposals. At the next authorized programme
-start, record the actual Claude session ID in the live `programmeCoordinator`
-field; never relabel a historical Codex session. Worker and reviewer defaults
-remain task-specific. No additional scheduler or delivery role is needed.
+selection. Root services the workflow bridge and applies reviewed proposals. At
+the next authorized programme start, record the actual Claude session ID in the
+live `programmeCoordinator` field; never relabel a historical Codex session.
+Worker and reviewer defaults remain task-specific. No additional scheduler or
+delivery role is needed.
 
-Choose parallel work from ready dependencies and exclusive proposal ownership,
-not a repository-wide provider/session cap. Native child slots and independent
-Claude sessions are distinct execution paths. The active Claude host
-dispatches workers, handles completions and returns one aggregate result through
-the existing bridge; no additional scheduler or concurrent writer is introduced.
-See the [strategy and remaining-work comparison](../../docs/plans/native-agent-strategy-reassessment.md).
+For compatibility, a native result may omit `contributors` or return an empty
+array. Any non-empty value fails before application for implementation results
+and before handoff for review results. Historical evidence remains unchanged.
 
-When delegation occurs, include every additional participant in the native
-result's optional `contributors` array, excluding the aggregate worker itself:
+The controller accumulates the one aggregate implementation ID from each repair
+attempt. It supplies `implementationWorkerIds` to review and rejects a reviewer
+whose ID appears in that set. Full attribution remains in content-bound events
+for every attempt, including rejected and repaired candidates. Identities and
+client/provider attribution remain host-supplied and inspected, not independently
+authenticated.
 
-```json
-{
-  "contributors": [{
-    "client": "actual native client",
-    "workerId": "actual-native-session-id",
-    "model": "cc/claude-opus-5",
-    "effort": "xhigh",
-    "paths": ["tools/engineering-harness/src/workflow-host.mjs"],
-    "sourceSha256": "COPY-THE-CURRENT-REQUEST-SOURCE-DIGEST-AFTER-VERIFICATION",
-    "reason": "Bounded adapter change with a settled interface and focused acceptance checks"
-  }]
-}
-```
-
-Omitting this field declares a single worker, preserving existing callers.
-Use unique actual worker IDs, exact supported models/efforts and paths from the
-workflow inventory. Bind each contribution to the request's current
-`sourceSha256`; stale contributions require actual reconciliation, not digest
-relabelling. Implementation contributors have exclusive proposed-file
-ownership; `paths: []` records an analysis-only participant. Review scopes may
-overlap. A concrete model/effort `reason` is required; optional `selection`
-uses the existing route policy. Max/Ultra contributors require the existing
-explicit selection. These are
-actual contributors, not queued assignments or claims of observed concurrency.
-
-The controller accumulates all aggregate and contributor implementation IDs
-across repairs. It supplies `implementationWorkerIds` to review and rejects any
-aggregate reviewer or review contributor in that set. This includes analysts
-who contributed to implementation. Full attribution remains in the content-bound
-events for every attempt, including rejected and repaired candidates; compact
-handoff evidence also carries `implementationWorkerIds` and review contributors.
-Do not treat the deduplicated ID list as an attempt or usage ledger. Identities,
-client/provider attribution and completeness are still host-supplied and
-inspected, not independently authenticated. Root must inspect real native
-execution evidence; an omitted hidden participant cannot be detected by JSON
-validation alone.
-
-Keep one source-stable workflow, one root writer and one competing build lane.
-Group coupled changes rather than allocating one model per file. Role defaults
+Keep one source-stable workflow, one root writer and one build lane. Role defaults
 are starting policies, not measured speed/token rankings; use explicit overrides
 for difficult work, bounded context and independent evidence-derived review.
 Record actual native usage when available without quotas or billing estimates.

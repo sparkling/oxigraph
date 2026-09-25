@@ -1,100 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { checkFeedback, digest, jsonReference, readWorkflowFiles, runWorkflow, validateWorkflow, verifyJsonReference } from "../src/workflow.mjs";
-import { admitCommand } from "../src/delivery.mjs";
 import { relayWorkflowHost, stdioHost } from "../src/workflow-host.mjs";
 import { PassThrough, Writable } from "node:stream";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-
-const path = "tools/engineering-harness/src/workflow-host.mjs";
-const spec = {
-  schema: 1, taskId: "task-workflow-test", scope: "harness", goal: "Implement the declared harness change",
-  completionCheck: "Exact source passes independent review and native assertions",
-  paths: [path], checks: [{ completionCheck: "Focused tests pass", argv: ["node", "--test", "--test-reporter=tap", "tools/engineering-harness/test/workflow.test.mjs"] }],
-};
-function fixture(options = {}) {
-  let content = "before";
-  let outside = "unchanged";
-  let checks = 0;
-  let implementations = 0;
-  let reviews = 0;
-  const actions = [];
-  const feedback = [];
-  const evidence = new Map();
-  let eventId = 0;
-  const observe = () => ({ head: "a".repeat(40), branch: "main", trackedDiffSha256: digest(content), untracked: [] });
-  const putEvidence = (evidencePath, value, tampered = false) => {
-    const bytes = JSON.stringify(value, null, 2) + "\n";
-    evidence.set(evidencePath, { bytes, value });
-    return { path: evidencePath, sha256: tampered ? "0".repeat(64) : sha(bytes) };
-  };
-  const io = {
-    observe,
-    outside: () => outside,
-    files: () => [{ path, sha256: options.sha ? options.sha(content) : null, content }],
-    event: (event) => options.missingEventEvidence ? undefined :
-      putEvidence(`/evidence/event-${++eventId}.json`, event, options.tamperedEventEvidence),
-    checkReference: (run) => {
-      const { directory, ...record } = run;
-      return options.missingCheckEvidence ? undefined :
-        putEvidence(join(directory, "result.json"), record, options.tamperedCheckEvidence);
-    },
-    verifyReference: (reference, expected) => {
-      const stored = evidence.get(reference?.path);
-      return stored !== undefined && sha(stored.bytes) === reference.sha256 &&
-        (expected === undefined || digest(stored.value) === digest(expected));
-    },
-    execute: async (check) => {
-      checks++;
-      const source = observe();
-      const failed = options.failChecks === true || checks <= (options.failChecks ?? 0);
-      const run = { directory: `/evidence/check-${checks}`, taskId: spec.taskId, source, sourceAfter: source, sourceStable: true,
-        command: admitCommand(check.argv), plan: { completionCheck: check.completionCheck },
-        status: failed ? "failed" : "command-passed", result: { passed: !failed, code: failed ? 1 : 0, durationMs: checks * 10 }, failure: failed ? "real check failure" : null };
-      if (options.checkDrift) content += "drift";
-      if (options.staleCheck) run.source = { wrong: true };
-      return run;
-    },
-  };
-  const host = async (request) => {
-    actions.push(request.action);
-    let result;
-    if (request.action === "mcp-read") {
-      result = { task: { taskId: spec.taskId, status: "in_progress" }, control: {
-        activeHarnessTaskId: spec.taskId, activeDeliveryTaskId: spec.taskId, ownerReviewHold: { active: options.hold ?? true },
-      } };
-      if (options.missingTask) result.task = null;
-    } else if (request.action === "native-worker") {
-      const { route } = request.payload;
-      const review = route.role === "review";
-      if (review) reviews++; else { implementations++; feedback.push(request.payload.feedback); }
-      result = { client: "test-double", workerId: review && !options.sameWorker ? `review-${reviews}` : "implementation", model: route.model,
-        effort: route.effort, status: "completed", summary: "fixture result", verdict: "ACCEPT", findings: [], changes: [] };
-      if (!review) result.changes = options.noChanges ? [] : [{ path, content: options.stalled ? "after" : `after-${implementations}` }];
-      if (!review && options.badPath) result.changes[0].path = options.badPath;
-      if (review && reviews <= (options.rejectReviews ?? 0)) { result.verdict = "REJECT"; result.findings = ["Fix the exact review finding"]; }
-      if (review && options.reviewWrites) content += "unexpected review edit";
-      if (options.unavailable) result = { client: "Claude native collaboration", model: route.model, effort: route.effort, status: "unavailable", error: "fixture: requested model unavailable" };
-      if (options.proposalDrift) content += "concurrent edit";
-    } else if (request.action === "root-apply") {
-      content = request.payload.changes[0].content;
-      if (options.outsideWrite) outside = "changed";
-      result = { writer: options.wrongWriter ? "worker" : "root", applied: true };
-    } else if (request.action === "mcp-handoff") {
-      result = { value: options.badReadback ? { stale: true } : request.payload.evidence };
-    } else throw new Error(`unexpected fixture action ${request.action}`);
-    const { action, payload, ...identity } = request;
-    return { ...identity, ...(options.crossTask ? { taskId: "task-other" } : {}), result };
-  };
-  return { io, host, actions, feedback, counters: () => ({ checks, implementations, reviews }) };
-}
-// Match real file digests while keeping these controller tests filesystem-free.
-import { createHash } from "node:crypto";
-const sha = (value) => createHash("sha256").update(value).digest("hex");
-function setup(options) { return fixture({ sha, ...options }); }
+import {
+  ordinaryWorkflowPath as path,
+  ordinaryWorkflowSpec as spec,
+  setupOrdinaryWorkflowFixture as setup,
+} from "./support/ordinary-workflow-fixture.mjs";
 
 test("workflow executes native edit, apply, deterministic check, independent review and exact MCP handoff", async () => {
   const f = setup();
@@ -178,180 +95,6 @@ test("reviewer must be distinct, MCP readback must match, and no-op cannot compl
   }
 });
 
-const contributor = (workerId, paths = [path], extra = {}) => ({
-  client: "native-test-double", workerId, model: "cc/claude-opus-5", effort: "medium", paths,
-  reason: "Bounded work against an independently specified contract", ...extra,
-});
-const attributedHost = (f, update) => async (request) => {
-  const response = await f.host(request);
-  if (request.action === "native-worker") {
-    update(response.result, request, f.counters());
-    for (const entry of Array.isArray(response.result.contributors) ? response.result.contributors : []) {
-      if (entry && !Object.hasOwn(entry, "sourceSha256")) entry.sourceSha256 = request.sourceSha256;
-    }
-  }
-  return response;
-};
-
-test("flat native contributors retain exact attribution without a provider-wide worker cap", async () => {
-  const f = setup();
-  const implementers = [contributor("file-owner"), ...Array.from({ length: 4 }, (_, i) =>
-    contributor(`analyst-${i}`, [], { model: "cc/claude-sonnet-5", effort: "high" }))];
-  const reviewers = [contributor("review-child-1"), contributor("review-child-2")];
-  let implementationInstructions;
-  const host = attributedHost(f, (result, request) => {
-    const review = request.payload.route.role === "review";
-    if (!review) implementationInstructions = request.payload.instructions;
-    if (review) assert.deepEqual(request.payload.implementationWorkerIds, ["implementation", ...implementers.map(c => c.workerId)]);
-    result.contributors = review ? reviewers : implementers;
-  });
-  let implementationEvent;
-  const event = f.io.event;
-  f.io.event = (value) => {
-    if (value.request.payload?.route?.role === "implement") implementationEvent = value;
-    return event(value);
-  };
-  const result = await runWorkflow(spec, host, f.io);
-  assert.equal(result.status, "ready-for-owner-review");
-  assert.deepEqual(result.implementationWorkerIds, ["implementation", ...implementers.map(c => c.workerId)]);
-  assert.deepEqual(implementationEvent.result.contributors, implementers);
-  assert.deepEqual(result.review.contributors, reviewers);
-  assert.equal(result.mcpReadback, true);
-  assert.match(implementationInstructions, /Native children or independent native sessions may contribute/);
-  assert.match(implementationInstructions, /no provider-wide session cap is inferred/);
-});
-
-test("every implementation participant is excluded from aggregate and delegated review", async () => {
-  for (const aggregate of [true, false]) {
-    const f = setup();
-    const host = attributedHost(f, (result, request) => {
-      if (request.payload.route.role !== "review") result.contributors = [contributor("implementation-child")];
-      else if (aggregate) result.workerId = "implementation-child";
-      else result.contributors = [contributor("implementation-child")];
-    });
-    await assert.rejects(runWorkflow(spec, host, f.io), /not independent/);
-    assert.ok(!f.actions.includes("mcp-handoff"));
-  }
-});
-
-test("contributors from failed attempts cannot review repaired candidates", async () => {
-  const f = setup({ failChecks: 1 });
-  const host = attributedHost(f, (result, request, counts) => {
-    if (request.payload.route.role === "review") result.contributors = [contributor("first-attempt-analyst", [])];
-    else result.contributors = counts.implementations === 1 ? [contributor("first-attempt-analyst", [])] : [];
-  });
-  await assert.rejects(runWorkflow(spec, host, f.io), /not independent/);
-  assert.equal(f.counters().implementations, 2);
-  assert.ok(!f.actions.includes("mcp-handoff"));
-});
-
-test("invalid contributor identities, routes and ownership fail before application", async () => {
-  for (const contributors of [
-    {}, [null], [contributor("implementation")],
-    [contributor("duplicate", []), contributor("duplicate", [])],
-    [contributor("one"), contributor("two")],
-    [contributor("outside", ["AGENTS.md"])],
-    [contributor("duplicate-path", [path, path])],
-    [contributor("missing-client", [], { client: "" })],
-    [contributor("unsupported-model", [], { model: "unrequested-model" })],
-    [contributor("codex-route", [], { model: "gpt-5.6-terra" })],
-    [contributor("codex-decision-route", [], { model: "gpt-6-astra", effort: "high" })],
-    [contributor("unqualified-alias", [], { model: "claude-opus-5" })],
-    [contributor("off-gateway-model", [], { model: "cc/claude-haiku-4-5" })],
-    [contributor("unsupported-effort", [], { effort: "infinite" })],
-    [contributor("ultra-effort", [], { effort: "ultra" })],
-    [contributor("missing-source", [], { sourceSha256: undefined })],
-    [contributor("stale-source", [], { sourceSha256: "f".repeat(64) })],
-    [contributor("missing-reason", [], { reason: "" })],
-    [contributor("unselected-max", [], { effort: "max" })],
-    [contributor("extra", [], { providerKey: "not-admitted" })],
-  ]) {
-    const f = setup();
-    const host = attributedHost(f, result => { result.contributors = contributors; });
-    await assert.rejects(runWorkflow(spec, host, f.io));
-    assert.ok(!f.actions.includes("root-apply"));
-    assert.equal(f.counters().checks, 0);
-  }
-});
-
-test("spec role overrides reject Codex and unqualified models before any host request", async () => {
-  for (const implement of [
-    { model: "gpt-5.6-terra", effort: "medium", reason: "codex override" },
-    { model: "gpt-6-astra", effort: "high", reason: "codex decision override" },
-    { model: "claude-opus-5", effort: "xhigh", reason: "unqualified alias" },
-    { model: "cc/claude-opus-5", effort: "ultra", reason: "owner", selection: "owner" },
-    { model: "cc/claude-opus-5", effort: "max", reason: "unselected max" },
-  ]) {
-    assert.throws(() => validateWorkflow({ ...spec, implement }));
-    const f = setup();
-    await assert.rejects(runWorkflow({ ...spec, implement }, f.host, f.io));
-    assert.deepEqual(f.actions, []);
-    assert.deepEqual(f.counters(), { checks: 0, implementations: 0, reviews: 0 });
-  }
-  assert.doesNotThrow(() => validateWorkflow({ ...spec,
-    implement: { model: "cc/claude-sonnet-5", effort: "high", reason: "bounded harness edit" },
-    review: { model: "cc/claude-opus-5", effort: "max", reason: "owner-selected review", selection: "owner" } }));
-});
-
-test("native worker stages carry the gateway-qualified role defaults", async () => {
-  const f = setup();
-  const routes = [];
-  const host = attributedHost(f, (result, request) => { routes.push(request.payload.route); });
-  const result = await runWorkflow(spec, host, f.io);
-  assert.equal(result.status, "ready-for-owner-review");
-  assert.deepEqual(routes.map(({ role, model, effort }) => [role, model, effort]), [
-    ["implement", "cc/claude-opus-5", "xhigh"],
-    ["review", "cc/claude-opus-5", "high"],
-  ]);
-  assert.deepEqual(routes[0].nativeDispatch, { provider: "claude", model: "cc/claude-opus-5", effort: "xhigh" });
-  assert.deepEqual(routes[1].nativeDispatch, { provider: "claude", model: "cc/claude-opus-5", effort: "high" });
-});
-
-test("explicit contributor effort selection remains available without changing aggregate route", async () => {
-  const f = setup();
-  const host = attributedHost(f, (result, request) => {
-    if (request.payload.route.role === "implement") result.contributors = [contributor("selected", [], {
-      model: "cc/claude-opus-5", effort: "max", selection: "owner", reason: "Owner-selected invariant analysis",
-    })];
-  });
-  const result = await runWorkflow(spec, host, f.io);
-  assert.ok(result.implementationWorkerIds.includes("selected"));
-  assert.equal(result.review.model, "cc/claude-opus-5");
-});
-
-test("delegated proposals do not relax global source stability", async () => {
-  const f = setup({ proposalDrift: true });
-  const host = attributedHost(f, result => { result.contributors = [contributor("child")]; });
-  await assert.rejects(runWorkflow(spec, host, f.io), /Source changed/);
-  assert.ok(!f.actions.includes("root-apply"));
-});
-
-test("review contributors must bind the applied candidate rather than the implementation source", async () => {
-  const f = setup();
-  let implementationSource;
-  const host = attributedHost(f, (result, request) => {
-    assert.equal(request.payload.sourceSha256, request.sourceSha256);
-    if (request.payload.route.role === "implement") implementationSource = request.sourceSha256;
-    else result.contributors = [contributor("stale-reviewer", [], { sourceSha256: implementationSource })];
-  });
-  await assert.rejects(runWorkflow(spec, host, f.io));
-  assert.ok(!f.actions.includes("mcp-handoff"));
-});
-
-test("review rejection does not release earlier contributors for later candidate review", async () => {
-  const f = setup({ rejectReviews: 1 });
-  const host = attributedHost(f, (result, request, counts) => {
-    if (request.payload.route.role === "implement" && counts.implementations === 1) {
-      result.contributors = [contributor("earlier-owner")];
-    } else if (request.payload.route.role === "review" && counts.reviews === 2) {
-      result.workerId = "earlier-owner";
-    }
-  });
-  await assert.rejects(runWorkflow(spec, host, f.io), /not independent/);
-  assert.equal(f.counters().reviews, 2);
-  assert.ok(!f.actions.includes("mcp-handoff"));
-});
-
 test("native unavailability reports exact client/model/error without substitution or repair", async () => {
   const f = setup({ unavailable: true });
   await assert.rejects(runWorkflow(spec, f.host, f.io), /Claude native collaboration; model=cc\/claude-opus-5; fixture: requested model unavailable/);
@@ -365,18 +108,6 @@ test("task contracts reject unknown fields, protected paths and product commands
     { ...spec, checks: [{ completionCheck: "invalid", argv: ["cargo", "test", "--locked", "-p", "oxigraph"] }] }]) {
     assert.throws(() => validateWorkflow(invalid));
   }
-});
-test("harness scope admits only the exact ordinary policy split paths", () => {
-  for (const admitted of [
-    "tools/engineering-harness/README.md",
-    "tools/engineering-harness/test/workflow-policy.test.mjs",
-    "tools/engineering-harness/test/support/ordinary-workflow-fixture.mjs",
-  ]) assert.doesNotThrow(() => validateWorkflow({ ...spec, paths: [admitted] }));
-  for (const rejected of [
-    "tools/engineering-harness/README-copy.md",
-    "tools/engineering-harness/test/workflow-policy-copy.test.mjs",
-    "tools/engineering-harness/test/support/ordinary-workflow-fixture-copy.mjs",
-  ]) assert.throws(() => validateWorkflow({ ...spec, paths: [rejected] }));
 });
 test("worker failure projection keeps raw process text local and bounds spec size", () => {
   const raw = { status: "failed", directory: "/local/run", result: { code: 1, stderrTail: "private output must remain local", output: "x".repeat(100000) } };
