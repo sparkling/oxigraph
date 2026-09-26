@@ -2,10 +2,23 @@
 
 - **Status**: Implemented
 - **Date**: 2026-09-24
-- **Updated / implementation**: 2026-09-25
+**Updated**: 2026-09-26 (model access and spending amendment; implementation status unchanged)
 - **Deciders**: Oxigraph owner; O0-O2 implementation authorized 2026-09-25
 - **Tags**: metaharness, native-subscriptions, routing, frozen-evaluators, learning
 - **Amends**: ADR-0017 and ADR-0043 ordinary delivery only
+
+## 2026-09-26 model access and spending amendment
+
+The owner authorizes Claude Code and Codex through the configured 9router gateway
+and direct OpenRouter access through the existing private environment credentials.
+This supersedes earlier access prohibitions. Existing task model assignments and
+native harness adapters remain configured; access authorization does not claim
+that an automatic OpenRouter dispatcher has been implemented here.
+Each metered OpenRouter request is limited to $1. There is no task or cumulative
+spending cap. Retain spend accounting, unknown-charge records and protection
+against replaying the same request. Subscription-covered frontier models continue
+through their subscription routes. Every API dispatcher must enforce the $1
+maximum before dispatch; credentials alone are not enforcement.
 
 ## Outcome and authority
 
