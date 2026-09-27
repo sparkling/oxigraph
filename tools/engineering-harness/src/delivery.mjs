@@ -14,21 +14,25 @@ import { scrubbedChildEnvironment } from "../../child-environment.mjs";
 
 export const repository = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../.."));
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
-// Claude roles through the configured 9router subscription. Owner, 2026-09-23:
-// Opus replaces Fable for review, difficult work and decisions. Only exact cc/
-// model IDs are admitted for new delivery; Fable is no longer an admitted route.
+// ADR-0049 ordinary routes; frozen qualification provider policy is separate.
 const roles = Object.freeze({
   build: [null, null],
   test: [null, null],
-  implement: ["cc/claude-opus-5", "xhigh"],
-  documentation: ["cc/claude-opus-5", "low"],
-  review: ["cc/claude-opus-5", "high"],
-  difficult: ["cc/claude-opus-5", "xhigh"],
-  decision: ["cc/claude-opus-5", "max"],
+  implement: ["deepseek/deepseek-v4.1-flash", "high"],
+  documentation: ["cc/claude-sonnet-5[1m]", "medium"],
+  review: ["deepseek/deepseek-v4.1-flash", "high"],
+  difficult: ["cc/claude-opus-5-5[1m]", "high"],
+  decision: ["cc/claude-opus-5-5[1m]", "high"],
 });
 const efforts = {
   "cc/claude-opus-5": ["low", "medium", "high", "xhigh", "max"],
   "cc/claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
+  "cc/claude-opus-5-5[1m]": ["low", "medium", "high", "xhigh", "max"],
+  "cc/claude-sonnet-5[1m]": ["low", "medium", "high", "xhigh", "max"],
+  "gpt-5.6-sol": ["low", "medium", "high", "xhigh"],
+  "gpt-5.6-terra": ["low", "medium", "high", "xhigh"],
+  "gpt-6-astra": ["low", "medium", "high", "xhigh", "max", "ultra"],
+  "deepseek/deepseek-v4.1-flash": ["high"],
 };
 
 export function routeDelivery({ role, taskId, completionCheck, model, effort, reason, selection }) {
@@ -48,14 +52,16 @@ export function routeDelivery({ role, taskId, completionCheck, model, effort, re
   if (effort !== undefined && selectedEffort === "max" && !["owner", "unresolved"].includes(selection)) {
     throw new Error("An explicit Max effort needs selection=owner or selection=unresolved, plus reason and completion check");
   }
+  const transport = selectedModel === null ? null : selectedModel === "deepseek/deepseek-v4.1-flash" ? "openrouter-api" : "native-subscription";
   return {
-    policy: "adr-0043-ordinary-delivery-v1", role, taskId, completionCheck,
+    policy: "adr-0049-ordinary-delivery-v1", role, taskId, completionCheck, transport,
     model: selectedModel, effort: selectedEffort, reason: reason ?? "role default",
     selection: selection ?? "role-policy",
     status: "planned-not-dispatched", ownerConversationChanged: false,
-    nativeDispatch: selectedModel === null ? null
-      : { provider: "claude", model: selectedModel, effort: selectedEffort },
-    instructions: "One writer on canonical main. Use the delivery entry point for every build/test. Native subscription only; no model fallback. A safety refusal or unavailable model is returned as status unavailable with the exact client, model and error. Return exact findings and commands; a tracked agent is not proof of execution.",
+    nativeDispatch: transport !== "native-subscription" ? null
+      : { provider: selectedModel.startsWith("gpt-") ? "codex" : "claude", model: selectedModel, effort: selectedEffort },
+    apiDispatch: transport !== "openrouter-api" ? null : { provider: "openrouter", model: selectedModel, effort: selectedEffort },
+    instructions: "One writer on canonical main. Direct implementation, repair, tests and builds are allowed. API credentials stay isolated from native/tools/verifiers. Native unavailability pauses with exact client/model/error. Only confirmed nonexecuted HTTP402 permits lighter subscription fallback; capability/output failure uses declared capable repair. A tracked agent is not execution proof.",
   };
 }
 
@@ -72,6 +78,7 @@ const nodeTests = new Set([
   "tools/engineering-harness/test/delivery.test.mjs",
   "tools/engineering-harness/test/workflow-policy.test.mjs",
   "tools/engineering-harness/test/workflow.test.mjs",
+  "tools/engineering-harness/test/ordinary-api.test.mjs",
   "tools/engineering-harness/test/astra-routing.test.mjs",
   "tools/engineering-harness/test/cli.test.mjs",
   "tools/engineering-harness/test/task-profile.test.mjs",
@@ -156,7 +163,7 @@ export function admitCommand(argv) {
       args.length === 1 && args[0] === "--source-only") {
     return { program: process.execPath, args: [command, ...args], kind: "evidence-check" };
   }
-  throw new Error("Command not registered for ordinary delivery; add a reviewed adapter, do not bypass the harness");
+  throw new Error("Command not registered for ordinary delivery; add a reviewed adapter or run an authorized direct check");
 }
 
 function git(args) {

@@ -136,8 +136,11 @@ and persistence tests, pinned semantic profiles, evidence validation, and the
 relevant JavaScript harness contracts. Follow the applicable CI matrix and ADR
 gates; do not infer untested coverage.
 
-For changed JavaScript harness or evidence contracts, run the relevant focused
-test files first under both the current supported Node runtime and Node 20,
+For changed ordinary engineering harness contracts, use Node 24. Historical
+Node 20 replay obligations remain attached to frozen qualification/evidence
+contracts; ordinary engineering does not reinterpret those historical results.
+For changed frozen evidence contracts, run the relevant focused test files
+under their pinned supported runtimes,
 then run any explicit non-G1.7 matrix required by the applicable ADR. Inspect
 package scripts before invoking a broad `npm test`: repository-wide commands
 include G1.7 surfaces and are not the default validation lane. Do not invoke

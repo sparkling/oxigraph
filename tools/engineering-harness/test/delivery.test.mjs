@@ -15,25 +15,26 @@ test("source drift or missing process observation prevents command success", () 
   assert.equal(deliveryStatus(before, before, null, null).status, "failed");
   assert.equal(deliveryStatus(before, before, { passed: true }, "cannot read artifact").status, "failed");
 });
-test("routine role models use Opus on gateway-qualified native Claude", () => {
+test("ordinary role defaults distinguish API and native transports", () => {
   for (const [role, model, effort] of [
-    ["implement", "cc/claude-opus-5", "xhigh"], ["documentation", "cc/claude-opus-5", "low"],
-    ["review", "cc/claude-opus-5", "high"], ["difficult", "cc/claude-opus-5", "xhigh"],
-    ["decision", "cc/claude-opus-5", "max"],
+    ["implement", "deepseek/deepseek-v4.1-flash", "high"], ["documentation", "cc/claude-sonnet-5[1m]", "medium"],
+    ["review", "deepseek/deepseek-v4.1-flash", "high"], ["difficult", "cc/claude-opus-5-5[1m]", "high"],
+    ["decision", "cc/claude-opus-5-5[1m]", "high"],
   ]) {
     const route = routeDelivery({ role, taskId, completionCheck });
     assert.equal(route.model, model);
     assert.equal(route.effort, effort);
-    assert.deepEqual(route.nativeDispatch, { provider: "claude", model, effort });
+    assert.deepEqual(route.nativeDispatch, model.startsWith("deepseek/") ? null : { provider: "claude", model, effort });
+    assert.equal(route.transport, model.startsWith("deepseek/") ? "openrouter-api" : "native-subscription");
     assert.equal(route.selection, "role-policy");
     assert.equal(route.status, "planned-not-dispatched");
     assert.equal(route.ownerConversationChanged, false);
   }
 });
-test("no gpt/Codex model and no unqualified alias can route on any model-bearing role", () => {
+test("unqualified aliases and unsupported models remain refused", () => {
   for (const role of ["implement", "documentation", "review", "difficult", "decision"]) {
     for (const model of [
-      "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-6-astra", "cc/gpt-6-astra",
+      "gpt-5.6-luna", "cc/gpt-6-astra",
       "claude-opus-5", "claude-fable-5-1", "claude-sonnet-5", "claude-haiku-4-5",
       "cc/claude-haiku-4-5", "cc/claude-fable-5-1", "opus", "fable", "sonnet", "cc/",
     ]) {
@@ -42,6 +43,13 @@ test("no gpt/Codex model and no unqualified alias can route on any model-bearing
       assert.throws(() => routeDelivery({ role, taskId, completionCheck, model, effort: "max",
         reason: "owner escalation", selection: "owner" }), `${role}/${model}/max`);
     }
+  }
+});
+test("authorized Codex routes retain exact effort and native transport", () => {
+  for (const model of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra"]) {
+    const route = routeDelivery({ role: "implement", taskId, completionCheck, model, effort: "high", reason: "owner authorized native route" });
+    assert.equal(route.transport, "native-subscription");
+    assert.deepEqual(route.nativeDispatch, { provider: "codex", model, effort: "high" });
   }
 });
 test("supported gateway efforts are low..max, Ultra is rejected, explicit Max needs owner selection", () => {
@@ -194,7 +202,8 @@ test("CLI route is inspectable without any model execution; invalid run rejects 
   const cli = "tools/engineering-harness/bin/oxigraph-delivery.mjs";
   const route = JSON.parse(execFileSync(process.execPath, [cli, "route", "--task", taskId,
     "--role", "implement", "--check", completionCheck], { encoding: "utf8" }));
-  assert.deepEqual(route.nativeDispatch, { provider: "claude", model: "cc/claude-opus-5", effort: "xhigh" });
+  assert.equal(route.nativeDispatch, null);
+  assert.deepEqual(route.apiDispatch, { provider: "openrouter", model: "deepseek/deepseek-v4.1-flash", effort: "high" });
   assert.throws(() => execFileSync(process.execPath, [cli, "run", "--task", taskId, "--", "cargo", "publish", "--locked"], { stdio: "pipe" }));
 });
 

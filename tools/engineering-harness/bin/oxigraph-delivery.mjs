@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { repository } from "../src/delivery.mjs";
 import { jsonReference, preflightWorkflow, runWorkflow } from "../src/workflow.mjs";
 import { stdioHost } from "../src/workflow-host.mjs";
+import { createOrdinaryApi, withOrdinaryApi } from "../src/ordinary-api.mjs";
 import { ensureDirectoryInsideRepository } from "../../agentic-qe/path-policy.mjs";
 
 const help = `Ordinary Oxigraph delivery (ADR-0043)
@@ -13,7 +14,7 @@ const help = `Ordinary Oxigraph delivery (ADR-0043)
   route --task ID --role implement --check "observable completion" [--model MODEL --effort EFFORT --reason REASON --selection owner|unresolved]
   workflow --spec FILE.json  (JSON-line bridge to the active native coding host)
 Use live Ruflo MCP before dispatch and after execution. Route is a plan, not a model invocation.
-No shell, publication, provider execution, qualification, or G1.7 commands are admitted.
+Ordinary API packets use isolated OpenRouter transport. No shell, publication, qualification, or G1.7 commands are admitted.
 `;
 try {
   const [action, ...args] = process.argv.slice(2);
@@ -52,7 +53,9 @@ try {
       const bridge = stdioHost(directory);
       let eventId = 0;
       try {
-        const result = await runWorkflow(spec, bridge.request, {
+        const apiDirectory = ensureDirectoryInsideRepository(join(repository, "target", "engineering-delivery", "api-ledger"));
+        const result = await runWorkflow(spec, withOrdinaryApi(bridge.request,
+          createOrdinaryApi({ directory: apiDirectory })), {
           preflight,
           event: (event) => {
             const path = join(directory, `event-${++eventId}.json`);

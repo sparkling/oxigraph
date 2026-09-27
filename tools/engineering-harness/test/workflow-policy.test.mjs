@@ -18,7 +18,7 @@ const contributor = (workerId) => ({
   reason: "Previously valid bounded contribution",
 });
 
-test("ordinary native prompts require one worker and forbid delegation", async () => {
+test("ordinary packet prompts preserve root-only mutation and independent review", async () => {
   const fixtureState = setup();
   const instructions = new Map();
   const host = updateNativeResults(fixtureState, (result, request) => {
@@ -27,11 +27,8 @@ test("ordinary native prompts require one worker and forbid delegation", async (
   });
   const result = await runWorkflow(spec, host, fixtureState.io);
   assert.deepEqual(result.implementationWorkerIds, ["implementation"]);
-  for (const role of ["implement", "review"]) {
-    assert.match(instructions.get(role), /Work alone/);
-    assert.match(instructions.get(role), /Do not spawn subagents, contributors, child sessions, or independent native sessions/);
-    assert.doesNotMatch(instructions.get(role), /no provider-wide session cap|may contribute bounded ready work/);
-  }
+  assert.match(instructions.get("implement"), /Root alone applies changes/);
+  assert.match(instructions.get("review"), /independent of all implementationWorkerIds/);
 });
 
 test("implementation contributors fail before root application", async () => {
@@ -61,10 +58,8 @@ test("single implementation worker remains excluded from review", async () => {
   assert.ok(!fixtureState.actions.includes("mcp-handoff"));
 });
 
-test("spec role overrides reject Codex and unqualified models before any host request", async () => {
+test("spec role overrides reject unqualified models before any host request", async () => {
   for (const implement of [
-    { model: "gpt-5.6-terra", effort: "medium", reason: "codex override" },
-    { model: "gpt-6-astra", effort: "high", reason: "codex decision override" },
     { model: "claude-opus-5", effort: "xhigh", reason: "unqualified alias" },
     { model: "cc/claude-opus-5", effort: "ultra", reason: "owner", selection: "owner" },
     { model: "cc/claude-opus-5", effort: "max", reason: "unselected max" },
@@ -81,15 +76,15 @@ test("spec role overrides reject Codex and unqualified models before any host re
   }));
 });
 
-test("native stages retain gateway-qualified role defaults", async () => {
+test("ordinary stages retain explicit direct API role defaults", async () => {
   const fixtureState = setup();
   const routes = [];
   const host = updateNativeResults(fixtureState, (_result, request) => routes.push(request.payload.route));
   const result = await runWorkflow(spec, host, fixtureState.io);
   assert.equal(result.status, "ready-for-owner-review");
   assert.deepEqual(routes.map(({ role, model, effort }) => [role, model, effort]), [
-    ["implement", "cc/claude-opus-5", "xhigh"],
-    ["review", "cc/claude-opus-5", "high"],
+    ["implement", "deepseek/deepseek-v4.1-flash", "high"],
+    ["review", "deepseek/deepseek-v4.1-flash", "high"],
   ]);
 });
 

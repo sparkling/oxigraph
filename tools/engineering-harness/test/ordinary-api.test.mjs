@@ -1,0 +1,128 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { apiDefaults, createOrdinaryApi, renderOrdinaryPrompt, withOrdinaryApi } from "../src/ordinary-api.mjs";
+import { runWorkflow } from "../src/workflow.mjs";
+import { ordinaryWorkflowSpec as spec, setupOrdinaryWorkflowFixture as setup } from "./support/ordinary-workflow-fixture.mjs";
+
+const request = (task = "task-a", role = "implement") => ({ schema: 1, runId: "run", requestId: 1,
+  taskId: task, specSha256: task, sourceSha256: "a".repeat(64), action: "native-worker",
+  payload: { route: { role, model: apiDefaults.model, effort: "high", transport: "openrouter-api" },
+    goal: "fix source", completionCheck: "passes", files: [{ path: "a.mjs", content: "before" }],
+    feedback: { authorRationale: "never pass this to review" }, initialFiles: [], checks: [] } });
+const result = { summary: "done", verdict: "ACCEPT", findings: [], changes: [] };
+const completion = (content = JSON.stringify(result), id = "provider-1") => new Response(JSON.stringify({
+  id, model: apiDefaults.model, usage: { cost: 0.01 }, choices: [{ finish_reason: "stop", message: { content } }],
+}), { status: 200 });
+const setupApi = (fetchImpl, options = {}) => {
+  const directory = mkdtempSync(join(tmpdir(), "ordinary-api-"));
+  return { directory, api: createOrdinaryApi({ directory, fetchImpl, apiKey: () => "test-secret", ...options }) };
+};
+
+test("API uses bounded current defaults, captures real cost and refuses request replay", async () => {
+  let calls = 0;
+  const { api, directory } = setupApi(async (url, options) => {
+    calls++;
+    assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
+    const body = JSON.parse(options.body);
+    assert.equal(body.max_tokens, 131072);
+    assert.deepEqual(body.reasoning, { effort: "high", exclude: true });
+    assert.deepEqual(body.provider, { max_price: { prompt: 0.5, completion: 2 }, require_parameters: true });
+    return completion();
+  });
+  const out = await api(request());
+  assert.equal(out.evidence.actualUsd, 0.01);
+  assert.equal(out.result.workerId, "provider-1");
+  assert.ok(out.evidence.maximumUsd <= 1);
+  assert.equal(apiDefaults.maxTotalUsd, null);
+  await assert.rejects(api(request()), /request-replay-refused/);
+  assert.equal(calls, 1);
+  assert.ok(!readdirSync(directory).some((p) => readFileSync(join(directory, p), "utf8").includes("test-secret")));
+});
+
+test("pre-dispatch bounds and cancellation invoke no transport", async () => {
+  const fetchImpl = () => { throw new Error("must not dispatch"); };
+  const { api } = setupApi(fetchImpl);
+  const oversized = request(); oversized.payload.files[0].content = "x".repeat(2000000);
+  await assert.rejects(api(oversized), /request-cost-bound/);
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(setupApi(fetchImpl, { signal: controller.signal }).api(request()), /cancelled-before-dispatch/);
+});
+
+test("completed invalid output retains cost and holds task A but leaves task B eligible", async () => {
+  let calls = 0;
+  const { api } = setupApi(async () => ++calls === 1 ? completion("not JSON") : completion());
+  await assert.rejects(api(request()), (error) => error.code === "completed-invalid-output" && error.evidence.actualUsd === 0.01);
+  await assert.rejects(api(request()), /task-output-held/);
+  assert.equal((await api(request("task-b"))).evidence.actualUsd, 0.01);
+  assert.equal(calls, 2);
+});
+
+test("malformed or escaping API changes use shared validator and capable repair", async () => {
+  const state = setup(); const nativeRoutes = []; let calls = 0;
+  const { api } = setupApi(async () => {
+    calls++;
+    return completion(JSON.stringify({ ...result, changes: calls === 1 ? [{ path: "../escape", content: "bad" }] : [] }), `provider-${calls}`);
+  });
+  const host = async (r) => { if (r.action === "native-worker") nativeRoutes.push(r.payload.route.model); return state.host(r); };
+  const out = await runWorkflow(spec, withOrdinaryApi(host, api), state.io);
+  assert.equal(out.status, "ready-for-owner-review");
+  assert.deepEqual(nativeRoutes, ["cc/claude-opus-5-5[1m]"]);
+  assert.equal(out.review.apiEvidence.actualUsd, 0.01);
+});
+
+test("only explicit nonexecuted HTTP402 is credit fallback evidence", async () => {
+  const { api } = setupApi(async () => new Response(JSON.stringify({ error: { code: 402 } }), { status: 402 }));
+  await assert.rejects(api(request()), (error) => error.code === "confirmed-credit-rejection" && error.evidence.actualUsd === 0);
+  const auth = setupApi(async () => new Response(JSON.stringify({ error: { code: 401 } }), { status: 401 }));
+  await assert.rejects(auth.api(request()), (error) => error.code === "authentication-rejected" && error.evidence.actualUsd === 0);
+  assert.ok(!readdirSync(auth.directory).some((p) => p.startsWith("hold-") || p === "unknown-charge.json"));
+  await assert.rejects(auth.api({ ...request(), requestId: 2 }), /authentication-rejected/);
+  for (const [status, body] of [[402, { error: { code: 402 }, id: "executed" }]]) {
+    const candidate = setupApi(async () => new Response(JSON.stringify(body), { status }));
+    await assert.rejects(candidate.api(request()), /completion-unknown/);
+    await assert.rejects(candidate.api(request("unrelated")), /completion-unknown/);
+  }
+});
+
+test("pinned dated snapshot is admitted and model mismatch retains known accounting", async () => {
+  for (const [model, accepted] of [["deepseek/deepseek-v4.1-flash-20260910", true], ["deepseek/deepseek-v4.1-flash-other", false]]) {
+    const candidate = setupApi(async () => new Response(JSON.stringify({ id: "known-completion", model,
+      usage: { cost: 0.02 }, choices: [{ finish_reason: "stop", message: { content: JSON.stringify(result) } }] })));
+    if (accepted) assert.equal((await candidate.api(request())).evidence.resolvedModel, model);
+    else await assert.rejects(candidate.api(request()), (error) => error.code === "completed-model-mismatch" && error.evidence.actualUsd === 0.02);
+  }
+});
+
+test("fresh review renderer excludes author feedback and retains current source/checks", () => {
+  const value = renderOrdinaryPrompt(request("task", "review"));
+  assert.ok(!value.includes("authorRationale"));
+  assert.equal(JSON.parse(value).files[0].content, "before");
+  assert.deepEqual(JSON.parse(value).checks, []);
+});
+
+test("real production callback seam routes API author and fresh review through existing workflow", async () => {
+  const state = setup(); let calls = 0;
+  const { api } = setupApi(async (_url, options) => {
+    const prompt = JSON.parse(JSON.parse(options.body).messages[0].content);
+    calls++;
+    return completion(JSON.stringify({ ...result, changes: prompt.mode === "implementation"
+      ? [{ path: spec.paths[0], content: "actual-proposal" }] : [] }), `provider-${calls}`);
+  });
+  const out = await runWorkflow(spec, withOrdinaryApi(state.host, api), state.io);
+  assert.equal(out.status, "ready-for-owner-review");
+  assert.equal(out.review.workerId, "provider-2");
+  assert.deepEqual(out.implementationWorkerIds, ["provider-1"]);
+  assert.equal(calls, 2);
+});
+
+test("confirmed credit fallback uses lighter independent native sessions, not Opus", async () => {
+  const state = setup(); const models = [];
+  const { api } = setupApi(async () => new Response(JSON.stringify({ error: { code: 402 } }), { status: 402 }));
+  const host = async (r) => { if (r.action === "native-worker") models.push(r.payload.route.model); return state.host(r); };
+  const out = await runWorkflow(spec, withOrdinaryApi(host, api), state.io);
+  assert.equal(out.status, "ready-for-owner-review");
+  assert.deepEqual(models, ["cc/claude-sonnet-5[1m]", "cc/claude-sonnet-5[1m]"]);
+});

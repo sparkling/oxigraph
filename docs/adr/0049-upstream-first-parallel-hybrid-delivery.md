@@ -9,6 +9,16 @@
 
 ## September 28 implementation handoff (current plan)
 
+Implementation in progress: ordinary delivery now has an isolated direct API
+callback at its existing kernel/host seam, explicit native/API routes, shared
+packet rendering and worker-output validation, per-request bounds and replay
+records, exact known model/snapshot admission, task-scoped completed-output holds,
+auth/credit/unknown-completion attribution, actual metering in kernel evidence,
+and capable native repair. The first focused slice passes 61 ordinary harness
+tests on Node 24 plus JavaScript syntax and whitespace checks. This is injected
+contract evidence, not a live model cascade or completion of this ADR. Pool,
+resource isolation and initial live proof remain unverified; programme stays paused.
+
 This section supersedes conflicting September 26 proposals below. Those sections
 remain historical source findings, not another executable checklist. Status remains
 Proposed: documentation refresh does not claim this repository implemented Builder.

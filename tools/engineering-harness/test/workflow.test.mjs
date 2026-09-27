@@ -97,7 +97,8 @@ test("reviewer must be distinct, MCP readback must match, and no-op cannot compl
 
 test("native unavailability reports exact client/model/error without substitution or repair", async () => {
   const f = setup({ unavailable: true });
-  await assert.rejects(runWorkflow(spec, f.host, f.io), /Claude native collaboration; model=cc\/claude-opus-5; fixture: requested model unavailable/);
+  const nativeSpec = { ...spec, implement: { model: "cc/claude-opus-5-5[1m]", effort: "high", reason: "native outage regression" } };
+  await assert.rejects(runWorkflow(nativeSpec, f.host, f.io), /Claude native collaboration; model=cc\/claude-opus-5-5\[1m\]; fixture: requested model unavailable/);
   assert.equal(f.counters().implementations, 1);
   assert.equal(f.counters().checks, 0);
 });
