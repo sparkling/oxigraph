@@ -12,9 +12,10 @@
 This section supersedes conflicting September 26 proposals below. Those sections
 remain historical source findings, not another executable checklist. Status remains
 Proposed: documentation refresh does not claim this repository implemented Builder.
-Implement only after the owner authorizes this ADR; reconcile explicit local host
-and concurrency restrictions in the same first slice. No publication or application
-programme resumption follows from documentation or harness acceptance.
+Owner authorized matching Builder models/limits and removal of stale Claude-only,
+no-API, fixed-session and mandatory harness-only rules on September 28. Policy
+reconciliation is authorized now; runtime activation still requires implementation
+and proof. No publication or application programme resumption follows.
 
 ### Finish criteria and scope discipline
 
@@ -26,10 +27,11 @@ contract; reuse the existing implementation when it already satisfies the contra
 Keep one task/outcome through repair; no new task, calibration, inventory or repin
 for each finding. Focused regression, independent review and impacted build once
 per coherent slice; broader join at acceptance, not between every small repair.
-Propose removal of mandatory worker-only maintenance repair where it causes
-self-hosting loops; amend local instructions with owner approval before using direct
-scoped repair. Application execution still uses the project harness. Direct edits
-never inherit old worker acceptance receipts.
+Direct application and harness implementation, repair, tests and builds are
+authorized; harness dispatch is not compulsory. Retain orchestration and learning
+as useful execution paths, not gates on direct work. Preserve scoped checks,
+independent review, source/data isolation and one integration writer. Direct edits
+never inherit old worker acceptance receipts or manufacture runner evidence.
 
 Completion means: configured routes work, deterministic checks and independent
 review pass, failure/repair and source-handoff contracts are proved, and restart
@@ -85,8 +87,8 @@ new evolution campaign.
   Builder reference Opus/high `cc/claude-opus-5-5[1m]`. Verify exact client alias
   locally; no model rename presented as runtime proof.
 - Only proven nonexecuted HTTP402 credit rejection permits lighter Sonnet/Sol
-  subscription fallback. Admit Sol only where Codex is authorized; Claude-only
-  repositories use eligible Sonnet after policy amendment. Never Opus solely for
+  subscription fallback. Both native hosts are authorized; remove stale Claude-only
+  restrictions consistently in instructions/configuration/runtime. Never Opus solely for
   exhausted credits. Authentication, unknown completion and local request-limit
   failures do not authorize fallback. Native unavailable pauses with exact
   client/model/error; never switch transport silently.
@@ -170,14 +172,15 @@ G1.7 state and `tools/metaharness` boundary. No rebaseline or qualification run.
   validated job configuration, not arbitrary inherited environment. Bind artifacts
   to actual allocated target/compiler result; no shared binary overwritten during
   crash-test `current_exe()` re-execution.
-- Current AGENTS explicitly caps model processes/harness commands at one and bans
-  OpenRouter/Codex. Only owner can lift; first authorized implementation amends
-  those exact restrictions and ordinary workflow policy. Frozen safety boundaries
-  remain. No concurrency or model transport was enabled by this document.
+- September 28 AGENTS amendment removes the prior one-process/one-command cap,
+  Claude-only/OpenRouter bans and mandatory harness-only execution. Runtime route
+  admission still needs implementation/proof; policy permission alone is not
+  operational concurrency. Frozen safety boundaries remain.
 - Standardize ordinary Node24 runtime separately from historical Node20 replay
   obligations. No reinterpretation of old dual-runtime evidence as a current pass.
 
-Future implementer validation uses focused ordinary tests, not broad `npm test`
+Direct validation is permitted; the recorded harness-wrapped equivalent below
+remains available. Use focused ordinary tests, not broad `npm test`
 (which includes separately governed surfaces):
 ```bash
 node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task <existing-task-id> --check "ordinary harness contracts pass" -- node --test --test-reporter=tap tools/engineering-harness/test/delivery.test.mjs tools/engineering-harness/test/workflow-policy.test.mjs tools/engineering-harness/test/workflow.test.mjs

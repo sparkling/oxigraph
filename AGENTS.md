@@ -1,35 +1,36 @@
 # Oxigraph fork instructions
 
-## Model session parallelism (2026-09-23 owner amendment)
+## Models, parallelism and direct work (2026-09-28 owner amendment)
 
-Maximum parallelism is 1. On 2026-09-23 the owner ordered parallelisation
-stopped and max parallel set to 1, superseding the 2026-09-19 "no fixed cap"
-amendment. For this programme:
+Match Builder's approved ordinary engineering policy. This supersedes the
+September 22-23 Claude-only, one-model-process and one-build-command restrictions.
+Claude Code and Codex are authorized through configured subscriptions; direct
+OpenRouter is authorized for the isolated engineering API adapter. Preserve native
+gateway settings. Native client/model unavailability pauses with its exact error,
+not a silent transport fallback.
 
-- Run at most one model-bearing process at a time: one native Claude session,
-  contributor, worker or reviewer. Do not dispatch a second while one runs.
-- Do not use parallel native subagents, contributor fan-out or background
-  reviews that overlap other model work. Run work in series.
-- Run at most one harness build or test command at a time. This also avoids the
-  shared Cargo output race described below.
-- Keep the single integration writer and the existing build isolation.
+- Default API planning, implementation and separately qualified fresh-context
+  review use `deepseek/deepseek-v4.1-flash`; capability/output repair uses native
+  Opus/high (`cc/claude-opus-5-5[1m]`). Same-model review is not cross-model consensus.
+- Only proven nonexecuted HTTP402 credit rejection permits lighter native
+  Sonnet/Sol fallback. Auth errors, unknown completion and local request-cost
+  refusals are not fallback reasons. Preserve stronger declared review policies.
+- Metered API requests have a $1/request ceiling and no task/session/programme
+  total ceiling (`maxRequestUsd: 1`, `maxTotalUsd: null`). Keep actual/unknown cost
+  accounting and replay protection. Never expose keys to native/tools/verifiers.
+- No fixed repository-wide model-session cap. Admit independent work by accepted
+  dependencies, file/resource ownership and measured host capacity. Retain one
+  canonical integrator and isolated candidate roots. Parallel Cargo jobs require
+  separate targets; shared DBs, ports and output files remain exclusive.
+- Direct source implementation, repair, tests and builds are allowed. Harness
+  dispatch is not a prerequisite, including for application work. Keep the
+  harness available for orchestration and learning; do not remove those features.
+  Direct changes require scoped tests/build/review and cannot inherit earlier
+  worker acceptance receipts or manufacture runner-owned evidence.
 
-Only the owner can raise this limit.
-
-Use configured task-specific model defaults, escalating concrete hard decisions.
-On 2026-09-22 the owner restored Claude-only programme execution through the
-configured 9router Claude subscription connection, superseding the 2026-09-20
-Codex coordinator selection. Use native Claude Code with exact `cc/` model IDs.
-On 2026-09-23 the owner replaced Fable with Opus in the harness, so every
-model-bearing role now uses `cc/claude-opus-5`: `max` for coordination and
-decisions, `xhigh` for implementation and difficult work, `low` for
-documentation and `high` for review. Fable is no longer an admitted route. The
-prefix selects the configured subscription route. Do not dispatch Codex workers or contributors for this programme.
-The Claude coordinator owns sequencing, allocation and acceptance; root remains
-the sole source writer and engineering-workflow host. Select worker and reviewer
-routes independently. This setup change does not resume paused application work.
-Balance accepted correctness, elapsed time and total reported context/review/repair
-tokens from ordinary work, without quota gates or a benchmark programme.
+ADR-0049 records matching request defaults and implementation/proof status.
+Policy authorization is not runtime activation proof. Application work stays paused;
+qualification, protected state and publication still need their own authorization.
 
 ## Precedence and evidence
 
@@ -85,14 +86,14 @@ without exact authorization.
 Ordinary local validation does not authorize:
 
 - any `g1.7:*` command or live containment/qualification run;
-- provider-backed execution, benchmarking, or qualification;
+- provider-backed semantic benchmarking or qualification;
 - evidence promotion or baseline replacement;
 - pushing, publishing, deploying, uploading, opening external changes, or
   updating public artefacts.
 
-The presence of a script or credential grants no authority. Where provider
-execution is explicitly authorized, use native provider clients and
-authentication only; never use OpenRouter.
+The presence of a script or credential grants no authority. Ordinary engineering
+model access is authorized above; it does not authorize provider-backed semantic
+qualification or changes to frozen qualification-provider policy.
 
 ## Specifications
 
