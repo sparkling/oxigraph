@@ -2,10 +2,197 @@
 
 - **Status**: Proposed
 - **Date**: 2026-09-26
-- **Updated**: 2026-09-26
+- **Updated**: 2026-09-28
 - **Deciders**:
 - **Tags**: engineering, ruflo, metaharness, parallel-delivery, openrouter
 - **Related**: ADR-0017, ADR-0043, ADR-0048
+
+## September 28 implementation handoff (current plan)
+
+This section supersedes conflicting September 26 proposals below. Those sections
+remain historical source findings, not another executable checklist. Status remains
+Proposed: documentation refresh does not claim this repository implemented Builder.
+Implement only after the owner authorizes this ADR; reconcile explicit local host
+and concurrency restrictions in the same first slice. No publication or application
+programme resumption follows from documentation or harness acceptance.
+
+### Finish criteria and scope discipline
+
+Compose upstream tools with thin project adapters, not a second framework.
+Preserve working acceptance, parallelism and learning. Do not copy Builder's entire
+private runtime, add a scheduler/service, regenerate a working harness, or install
+unused packages. Before changing a seam, show its actual local defect or missing
+contract; reuse the existing implementation when it already satisfies the contract.
+Keep one task/outcome through repair; no new task, calibration, inventory or repin
+for each finding. Focused regression, independent review and impacted build once
+per coherent slice; broader join at acceptance, not between every small repair.
+Propose removal of mandatory worker-only maintenance repair where it causes
+self-hosting loops; amend local instructions with owner approval before using direct
+scoped repair. Application execution still uses the project harness. Direct edits
+never inherit old worker acceptance receipts.
+
+Completion means: configured routes work, deterministic checks and independent
+review pass, failure/repair and source-handoff contracts are proved, and restart
+admission passes without starting the programme. Successful cheap/frontier cascade
+counts as success. Perfect DeepSeek-only execution, model bake-offs, highest harness
+score, a PR system, or new evolution benchmarks are NOT completion gates.
+Preserve/exclude pre-existing managed helper files. Concurrent updates are expected
+only where owner-confirmed; never absorb them into scoped harness commits.
+Unexpected owned source changes still require reconciliation.
+
+### Reuse and remove map
+
+| Responsibility | Required composition / removal |
+| --- | --- |
+| Stage execution | Retain actual `@metaharness/harness` kernel/pool/verifier callback seam and project acceptance. Factory/templates scaffold; they do not prove active execution. |
+| Concurrent ready callbacks | First assess `runBoundedPool` in Ruflo `v3/@claude-flow/cli/src/services/bounded-worker-pool.ts`, as documented in Builder ADR-0054 R8. Wrap existing outcome callbacks, not a new agent platform. |
+| Export compatibility | Pool is exposed through `./dist/*`, not stable dedicated high-level API. Resolve installed export/declarations on Node 24, record package/version/lock and cancellation behavior. Declare any dependency actually used; no reliance on an accidental global install. |
+| Scheduling authority | Pool bounds callbacks; project retains dependency acceptance and same-file/ancestor-path/named-resource exclusion. Do not remove them or claim pool handles them. Root releases children only after integrated predecessor source reaches their input. |
+| Source isolation | Non-Git candidate snapshots/patches, one integrator on the authorized checkout specified below. No new branches/worktrees/PR machinery is required for this repair. Earlier worktree proposal needs separate future authorization. |
+| Planning | Share architecture renderer across native/API wrappers; packet-only mode explicitly has no tools, retains admitted source and requests a plan instance, not schema definition. Native contract stays unchanged. |
+| Review | One existing coordinator for ordinary/recovery paths; one production prompt renderer shared by native/API wrappers and qualification. Remove duplicate active prompts/coordinators only after preserving stronger checks. |
+| Evidence | Reviewer sees current admitted source, patch, task and sanitized deterministic results/file-policy facts; never hidden evaluator, expected verdict or author rationale. Bind qualification to original source/evaluator, not today's checkout. |
+| Progress | Use existing process/progress seams for PID/start, phase, throttled activity, safe tool names and completion. Bound capture; callback errors cannot orphan children. No raw prompts, tool bodies, credentials or reasoning in ordinary logs. |
+| Repair | Invalid completed output retains actual usage/cost and safe diagnostic, not completion-unknown. Infrastructure/stale-source belongs to integrator; evaluator mutation to evaluator owner. Identical failed patch stops, changed repair remains eligible. |
+| Learning | Preserve existing Router/outcome/memory/evolution connections and sole-writer reduction. Keep explicit local promotion/qualification boundaries; packages installed or settings present are not operational-learning proof. No new benchmark programme or removal of learning to simplify delivery. |
+
+Builder inspected pool versions 3.38.20 locally and 3.45.0 on GCP, not this repo.
+Its pre-aborted signal may still start callbacks; timeout can return before a
+noncooperative callback stops. Check cancellation before dispatch and retain resource
+ownership until child termination is observed. Verify on the intended server before
+claiming deployment parity. Existing supported pool may be retained if equivalent.
+Keep remote inference concurrency separate from Cargo/.NET/Node job workers.
+Sample effective CPU, interval utilization, memory and I/O pressure before heavy
+work, every 30 seconds and at refill; account for all jobs on that host. Use supported
+worker controls, isolated targets/DBs/ports; do not invent CPU-based model-session caps.
+
+Inventory factory/kernel, Router, Darwin/GEPA, AVO/Flywheel, AgenticOW and QE only
+where present or required by accepted local decisions: label installed, configured,
+operational and deferred separately. Reuse existing hooks/adapters rather than
+local substitutes. Preserve ordinary outcome capture and learned policy reduction;
+promotion still needs real evaluator and held-out proof. Missing optional promotion
+evidence neither strips learning nor blocks delivery, and does not authorize a
+new evolution campaign.
+
+### Approved target routing; local activation remains an implementation step
+
+- Eligible planner/implementer and separately qualified fresh-context reviewer:
+  `deepseek/deepseek-v4.1-flash` via direct OpenRouter, not 9router API forwarding.
+  Qwen/GLM are not this target. Same-model review uses a separate qualified reviewer identity and fresh API request,
+  without author conversation/rationale; it is not cross-model/developer consensus.
+  Preserve stronger declared review policies.
+- Capability/output failure: configured capable native subscription repair,
+  Builder reference Opus/high `cc/claude-opus-5-5[1m]`. Verify exact client alias
+  locally; no model rename presented as runtime proof.
+- Only proven nonexecuted HTTP402 credit rejection permits lighter Sonnet/Sol
+  subscription fallback. Admit Sol only where Codex is authorized; Claude-only
+  repositories use eligible Sonnet after policy amendment. Never Opus solely for
+  exhausted credits. Authentication, unknown completion and local request-limit
+  failures do not authorize fallback. Native unavailable pauses with exact
+  client/model/error; never switch transport silently.
+- Enforce maximum $1/request before dispatch; no cumulative/task/session ceiling.
+  Preserve actual versus unknown charges, reservation/replay protection and actual
+  fallback author/reviewer identities. Keep API keys out of native/tool/verifier
+  environments. Existing native subscription gateway settings stay intact.
+- Builder defaults: high reasoning, `reasoning.exclude=true` (hide returned thoughts,
+  not disable computation), 131072 max output tokens, 1800000ms API timeout,
+  2000000 response bytes, provider ceilings $0.50 input/$2 output per million.
+  These are configurable defaults, not test-sized budgets or performance promises.
+- New confirmed-output holds bind task digest, policy and packet class, never
+  disable unrelated tasks. Retain same-task exclusions and unknown-charge stops.
+  Old unscoped failures remain effective until explicitly evidence-migrated;
+  never erase receipts or rotate a policy merely to bypass a hold.
+
+### Builder donor evidence and bounded acceptance
+
+Read Builder ADR-0051/0053 updated September 28 and ADR-0054 R8, then inspect donor
+diffs rather than cherry-picking across unrelated runtimes:
+`cf00eb06b` progress/cancellation and maintenance-authoring amendment;
+`3430c6365` shared review/file-policy evidence/unchanged-repair stop;
+`803cff426` production-context reviewer qualification;
+`e759396a6` confirmed-credit Sonnet/Sol fallback;
+`fa82f77fa` shared planner and completed-proposal diagnostics;
+`701ea878b` task-scoped holds and fixed finish criteria.
+Donor path prefix: `src/tools/application-development-harness/src/`;
+inspect `native-worker-contracts-v1.ts`, `control-plane-review-v1.ts`
+(if renamed, follow `ordinaryReviewAgentV1`), `native-model-invocation-v1.ts`,
+`hybrid-worker-implementation-v1.ts`, `hybrid-suspension-v1.ts`,
+`hybrid-credit-fallback-v1.ts`, and qualification/runtime adapters.
+
+Builder live `deepseek-full-cascade-live-20260927-r2` passed in 236410ms:
+DeepSeek plan, rejected implementation, Opus repair, DeepSeek approval; all
+verifiers passed, API cost $0.02369829258. Receipt
+`sha256:9f7324f0d77de7b0622e788a96a2e783f56f4f997c9d8455f34df58a3be8729e`
+verifies; final scoped regression was 181 tests/build/restart audit.
+This proves Builder cascade, not sibling adoption or perfect DeepSeek authorship.
+Upstream ADR-127 (Accepted June 18) uses exact search/replace sentinel blocks;
+Builder uses JSON edits. Keep safe exact matching; neither transport is proof
+of model correctness. Do not blame JSON without captured evidence.
+
+Acceptance in this repository, within one repair outcome:
+1. Reconcile policy/config once, then implement only local gaps mapped below.
+2. Inject transport/process tests for source/review binding, failed and unchanged
+   repair, safe progress, cancellation, task A held/task B eligible, HTTP402 versus
+   auth/unknown failures, credit fallback independence, $1 bound and no total cap.
+3. Exercise two genuinely independent existing outcomes through compatible upstream
+   pool with actual overlap evidence; retain conflict exclusion. Reuse accepted local
+   proof when source-current. Prove one dependent receives accepted parent source.
+   If programme graph is truly serial, report that constraint; do not invent
+   application independence, strip business dependencies or launch filler tasks.
+4. Run one local end-to-end cascade with independent review and authoritative
+   checks, accepting legitimate frontier repair. Preserve failed attempts.
+5. Integrate verified source serially; run read-only restart admission and document
+   active/ready/manual/blocked work separately from harness defects. Record
+   installed versions, exact commands, source/receipt identities, costs and limits.
+   Update this ADR to Implemented only for proven scope; leave programme stopped.
+
+## Oxigraph-specific implementation map (September 28)
+
+Rechecked clean main `4d57ddfe51136bd87b86c16ae90bee23a011c260`.
+This is policy-bearing `sparkling/oxigraph` fork. Ordinary engineering is not
+semantic qualification: preserve RDF/SPARQL/storage oracles, pinned specifications,
+G1.7 state and `tools/metaharness` boundary. No rebaseline or qualification run.
+
+- Keep `tools/engineering-harness/bin/oxigraph-delivery.mjs workflow --spec` and
+  `src/workflow.mjs` kernel/request/root-apply/check/review flow.
+  `src/workflow-host.mjs` existing injected host callback is integration seam;
+  asynchronous callback observation does not prove live model streaming.
+- `src/workflow.mjs` already stops repeated unchanged source plus failure;
+  retain/test it rather than add Builder's second stop implementation.
+- Extend ordinary `src/delivery.mjs` source/route/command contracts for explicit
+  API packets and shared review context; do not relax frozen candidate/runtime/
+  provider policy or two-host qualification merely to add ordinary API delivery.
+- Keep exact source observation, stale host rejection and independent executor
+  review. Bind isolated non-Git candidate roots before concurrent callbacks;
+  sole root applies verified result on main, never candidate workers.
+- Allocate ordinary private Cargo targets and RocksDB stores. Existing generic
+  environment scrubbing removes `CARGO_*`/`RUST_TEST_THREADS`: narrowly admit
+  validated job configuration, not arbitrary inherited environment. Bind artifacts
+  to actual allocated target/compiler result; no shared binary overwritten during
+  crash-test `current_exe()` re-execution.
+- Current AGENTS explicitly caps model processes/harness commands at one and bans
+  OpenRouter/Codex. Only owner can lift; first authorized implementation amends
+  those exact restrictions and ordinary workflow policy. Frozen safety boundaries
+  remain. No concurrency or model transport was enabled by this document.
+- Standardize ordinary Node24 runtime separately from historical Node20 replay
+  obligations. No reinterpretation of old dual-runtime evidence as a current pass.
+
+Future implementer validation uses focused ordinary tests, not broad `npm test`
+(which includes separately governed surfaces):
+```bash
+node tools/engineering-harness/bin/oxigraph-delivery.mjs run --task <existing-task-id> --check "ordinary harness contracts pass" -- node --test --test-reporter=tap tools/engineering-harness/test/delivery.test.mjs tools/engineering-harness/test/workflow-policy.test.mjs tools/engineering-harness/test/workflow.test.mjs
+```
+Verify these paths against checked-out package before invocation; extend the
+ordinary `admitCommand` allowlist narrowly if new contract tests need it.
+Run affected Rust/API/persistence matrix per fork ADRs. Do not run `qualify`,
+`qualify:synthetic` or `g1.7:*` as a harness repair shortcut. Keep deferred
+promotion/learning authority explicit; no new benchmark gates.
+
+## Historical September 26 assessment (superseded instructions)
+
+Source findings below retain their original date and evidence limits. Earlier Qwen,
+worktree/PR prerequisites and heavier orchestration proposals are historical, not
+current implementation direction. Use September 28 handoff above for execution.
 
 ## Purpose and authority
 
