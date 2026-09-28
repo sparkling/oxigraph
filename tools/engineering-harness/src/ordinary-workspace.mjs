@@ -52,6 +52,15 @@ function snapshotEntries(root, prefix = "") {
   });
 }
 
+function retainCandidateFailure(error, root, directory, phase) {
+  Object.assign(error, { candidateRoot: root, evidenceDirectory: directory ?? root });
+  try {
+    writeFileSync(join(error.evidenceDirectory, directory ? "failure.json" : "preparation-failure.json"),
+      JSON.stringify({ phase, error: error.message, candidateRoot: root }), { flag: "wx", mode: 0o600 });
+  } catch (evidenceError) { error.evidenceWriteError = evidenceError.message; }
+  return error;
+}
+
 export function createOrdinaryWorkspace() {
   const base = sourceObservation();
   const submodules = cleanSubmodules();
@@ -67,6 +76,13 @@ export function createOrdinaryWorkspace() {
   paths.push(...base.untracked.map((entry) => entry.path));
   const parent = ensureDirectoryInsideRepository(join(repository, "target", "engineering-delivery", "candidates"));
   const root = mkdtempSync(join(parent, "source-"));
+  try { return prepareWorkspace(root, base, submodules, paths); }
+  catch (error) {
+    throw retainCandidateFailure(error, root, undefined, "snapshot-preparation");
+  }
+}
+
+function prepareWorkspace(root, base, submodules, paths) {
   for (const path of [...new Set(paths)].sort()) {
     if (path.split("/").some((part) => excluded.has(part))) continue;
     if (!inside(repository, resolve(repository, path)) || isSecretSourcePath(path)) {
@@ -112,7 +128,7 @@ export function createOrdinaryWorkspace() {
 export async function runIsolatedWorkflow(rawSpec, host, options = {}) {
   const spec = validateWorkflow(rawSpec);
   const workspace = createOrdinaryWorkspace();
-  const directory = mkdtempSync(join(ensureDirectoryInsideRepository(join(workspace.root, "target", "engineering-delivery")), "workflow-"));
+  let directory;
   let sequence = 0;
   const event = (value) => {
     const path = join(directory, `event-${++sequence}.json`);
@@ -120,6 +136,7 @@ export async function runIsolatedWorkflow(rawSpec, host, options = {}) {
     return jsonReference(path, value, workspace.root);
   };
   try {
+    directory = mkdtempSync(join(ensureDirectoryInsideRepository(join(workspace.root, "target", "engineering-delivery")), "workflow-"));
     const result = await runWorkflow(spec, host, {
       ...options, ...workspace, event,
       verifyReference: (reference, expected) => verifyJsonReference(reference, expected, workspace.root),
@@ -130,8 +147,6 @@ export async function runIsolatedWorkflow(rawSpec, host, options = {}) {
     writeFileSync(join(directory, "result.json"), JSON.stringify(output), { flag: "wx", mode: 0o600 });
     return { directory, ...output };
   } catch (error) {
-    writeFileSync(join(directory, "failure.json"), JSON.stringify({ error: error.message, candidateRoot: workspace.root }), { flag: "wx", mode: 0o600 });
-    Object.assign(error, { candidateRoot: workspace.root, evidenceDirectory: directory });
-    throw error;
+    throw retainCandidateFailure(error, workspace.root, directory, directory ? "workflow" : "workflow-preparation");
   }
 }

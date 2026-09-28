@@ -46,7 +46,7 @@ Source observation, admitted file reads, outside-scope checks, command cwd, logs
 artifact binding and evidence references use that same candidate root. Root-apply
 requests and responses name the exact destination; candidate success remains
 `pending-owner-acceptance`, not canonical integration. Failure output names the
-retained candidate/evidence directory. No new scheduler or frozen G1 mechanism.
+retained candidate/evidence directory, including snapshot copy/drift and workflow-directory setup failures. Regression proved lost custody pointers; original error/cause and root now survive logging failure too. Sole owner integrates/completes; no automatic release or sibling-candidate invalidation.
 Snapshots copy current tracked/untracked source bytes and initialized submodule
 files, including locally present submodules omitted by Git's active-recursion
 listing. Dirty/untracked initialized submodules are rejected before/after copying;
