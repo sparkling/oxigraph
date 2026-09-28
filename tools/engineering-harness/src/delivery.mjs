@@ -74,6 +74,7 @@ const cargoValues = new Set([
   "-p", "--package", "--features", "--test", "--bin", "--example", "--bench",
   "--target", "-j", "--jobs",
 ]);
+const privateTarget = /^target\/engineering-delivery\/builds\/[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const nodeTests = new Set([
   "tools/engineering-harness/test/delivery.test.mjs",
   "tools/engineering-harness/test/workflow-policy.test.mjs",
@@ -128,6 +129,12 @@ export function admitCommand(argv) {
     let filterSeen = false;
     for (let i = 0; i < args.length; i++) {
       const arg = args[i];
+      if (arg === "--target-dir") {
+        if (!privateTarget.test(args[++i] ?? "") || args.indexOf(arg) !== i - 1) {
+          throw new Error("Cargo target must name one private ordinary build directory");
+        }
+        continue;
+      }
       if (cargoFlags.has(arg) || /^-j[1-9][0-9]*$/.test(arg)) continue;
       if (cargoValues.has(arg)) {
         if (!/^[a-zA-Z0-9_.,:/+-]+$/.test(args[++i] ?? "") || args[i].startsWith("-")) {
@@ -248,6 +255,22 @@ export function deliveryStatus(before, after, result, failure) {
   return { sourceStable, status: !failure && sourceStable && result?.passed ? "command-passed" : "failed" };
 }
 
+export function deliveryArtifactPath(command, artifact) {
+  if (artifact === undefined) return null;
+  if (typeof artifact !== "string") throw new Error("Artifact must match a native Cargo build path");
+  const targetIndex = command.args.indexOf("--target-dir");
+  const target = targetIndex < 0 ? "target" : command.args[targetIndex + 1];
+  const profile = command.args.includes("--release") ? "release" : "debug";
+  const name = artifact.split("/").at(-1);
+  const hasPair = (flag, value) => command.args.some((arg, index) => arg === flag && command.args[index + 1] === value);
+  if ((target !== "target" && !privateTarget.test(target ?? "")) || !/^[a-zA-Z0-9_-]+$/.test(name ?? "") ||
+      artifact !== `${target}/${profile}/${name}` || command.kind !== "build" || command.args.includes("--target") ||
+      !(hasPair("--bin", name) || (name === "oxigraph" && (hasPair("-p", "oxigraph-cli") || hasPair("--package", "oxigraph-cli"))))) {
+    throw new Error("Artifact must match this native Cargo build's selected target, binary and profile");
+  }
+  return join(repository, artifact);
+}
+
 export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1800000, artifact, quiet = false }) {
   if (!/^task-[a-zA-Z0-9-]+$/.test(taskId ?? "")) throw new Error("A live Ruflo task ID is required");
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 7200000) {
@@ -255,20 +278,13 @@ export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1
   }
   const command = admitCommand(argv);
   const plan = routeDelivery({ role: command.kind.endsWith("test") ? "test" : "build", taskId, completionCheck });
-  if (artifact !== undefined && !/^target\/(?:release|debug)\/[a-zA-Z0-9_-]+$/.test(artifact)) {
-    throw new Error("Artifact must identify a native target/release or target/debug executable");
-  }
+  const artifactPath = deliveryArtifactPath(command, artifact);
   if (artifact !== undefined) {
-    const name = artifact.split("/").at(-1);
-    const hasPair = (flag, value) => command.args.some((arg, index) => arg === flag && command.args[index + 1] === value);
-    if (command.kind !== "build" || command.args.includes("--target") ||
-        artifact.split("/")[1] !== (command.args.includes("--release") ? "release" : "debug") ||
-        !(hasPair("--bin", name) || (name === "oxigraph" && (hasPair("-p", "oxigraph-cli") || hasPair("--package", "oxigraph-cli"))))) {
-      throw new Error("Artifact must match this native Cargo build's selected binary and profile");
-    }
     command.args.push("--message-format=json-render-diagnostics");
   }
   const before = sourceObservation();
+  const targetIndex = command.args.indexOf("--target-dir");
+  if (targetIndex >= 0) ensureDirectoryInsideRepository(join(repository, command.args[targetIndex + 1]));
   const root = ensureDirectoryInsideRepository(join(repository, "target", "engineering-delivery"));
   const directory = mkdtempSync(join(root, "run-"));
   const startedAt = new Date().toISOString();
@@ -307,7 +323,7 @@ export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1
   try {
     after = sourceObservation();
     if (artifact !== undefined) {
-      const path = join(repository, artifact);
+      const path = artifactPath;
       if (!lstatSync(path).isFile() || realpathSync(path) !== path) throw new Error("Artifact is not a regular in-repository file");
       const bytes = readFileSync(path);
       artifactIdentity = { path: artifact, bytes: bytes.length, sha256: sha256(bytes),

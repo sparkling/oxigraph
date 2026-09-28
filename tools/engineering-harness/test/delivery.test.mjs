@@ -1,11 +1,32 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
-import { admitCommand, bindBuildArtifact, deliveryStatus, evaluateResult, routeDelivery, runDelivery, sourceObservation } from "../src/delivery.mjs";
+import { admitCommand, bindBuildArtifact, deliveryArtifactPath, deliveryStatus, evaluateResult, routeDelivery, runDelivery, sourceObservation } from "../src/delivery.mjs";
 import { execute } from "../../agentic-qe/process-runner.mjs";
 
 const taskId = "task-delivery-test";
 const completionCheck = "focused native assertions pass";
+test("private Cargo targets retain supported worker limits and reject escapes or duplicate allocations", () => {
+  const base = ["cargo", "build", "--locked", "-p", "oxigraph-cli", "-j", "2"];
+  const target = "target/engineering-delivery/builds/owner-12";
+  assert.deepEqual(admitCommand([...base, "--target-dir", target]).args, [...base.slice(1), "--target-dir", target]);
+  for (const path of ["target", "/tmp/build", "target/../outside", "target/engineering-delivery/builds/../shared", "target/engineering-delivery/builds/", "target/engineering-delivery/builds/a/b"]) {
+    assert.throws(() => admitCommand([...base, "--target-dir", path]), /private ordinary build/);
+  }
+  assert.throws(() => admitCommand([...base, "--target-dir", target, "--target-dir", target]), /private ordinary build/);
+});
+test("artifacts bind allocated Cargo target as well as selected binary and profile", () => {
+  const target = "target/engineering-delivery/builds/owner-12";
+  const command = admitCommand(["cargo", "build", "--locked", "--release", "--bin", "oxigraph", "--target-dir", target]);
+  assert.ok(deliveryArtifactPath(command, `${target}/release/oxigraph`).endsWith(`/${target}/release/oxigraph`));
+  for (const artifact of ["target/release/oxigraph", `${target}/debug/oxigraph`, `${target}/release/other`,
+    "target/engineering-delivery/builds/sibling/release/oxigraph", "../oxigraph", null, 2]) {
+    assert.throws(() => deliveryArtifactPath(command, artifact), /Artifact must match/);
+  }
+  assert.equal(deliveryArtifactPath(command, undefined), null);
+  const ordinary = admitCommand(["cargo", "build", "--locked", "-p", "oxigraph-cli"]);
+  assert.ok(deliveryArtifactPath(ordinary, "target/debug/oxigraph").endsWith("/target/debug/oxigraph"));
+});
 test("source drift or missing process observation prevents command success", () => {
   const before = { head: "a", trackedDiffSha256: "b", untracked: [{ path: "new.rs", sha256: "c" }] };
   assert.equal(deliveryStatus(before, before, { passed: true }, null).status, "command-passed");

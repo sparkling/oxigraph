@@ -18,6 +18,16 @@ and capable native repair. Focused adapter/coordination contracts pass 65 tests;
 the initial live repair below passes 66 ordinary tests on Node 24. Pool and
 isolated-resource/source-handoff proof remain open; programme stays paused.
 
+Private ordinary Cargo output now uses its supported `--target-dir` argument,
+restricted to `target/engineering-delivery/builds/<allocation-id>`. Artifact
+identity must match that allocation, native profile, binary and actual Cargo
+compiler event. Existing supported `--jobs`/libtest worker controls remain;
+generic credential/environment scrubbing is unchanged. Caller owns allocation
+exclusivity; this command adapter is not a scheduler or parallel-source proof.
+The 68 focused ordinary Node tests pass, including target escape/duplicate and
+artifact allocation/profile mismatch cases. No heavy Rust build was run for this
+argument-validation change; actual concurrent Cargo execution remains unproved.
+
 Ordinary harness repair may explicitly record unavailable project MCP and known
 owner-review hold state. Local source/check/review references remain mandatory;
 the result reports `mcpReadback: false`, never fabricated coordination success.
