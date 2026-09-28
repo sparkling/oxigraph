@@ -80,6 +80,7 @@ const nodeTests = new Set([
   "tools/engineering-harness/test/workflow-policy.test.mjs",
   "tools/engineering-harness/test/workflow.test.mjs",
   "tools/engineering-harness/test/ordinary-api.test.mjs",
+  "tools/engineering-harness/test/ordinary-pool.test.mjs",
   "tools/engineering-harness/test/astra-routing.test.mjs",
   "tools/engineering-harness/test/cli.test.mjs",
   "tools/engineering-harness/test/task-profile.test.mjs",

@@ -74,6 +74,8 @@ Active harness README now matches current routing, optional direct execution and
 resource-based concurrency. Its oversized historical text is preserved in four
 clearly labelled README-history files; frozen evidence and obligations are not
 rewritten as current ordinary policy. No learning or qualification feature removed.
+Exact pool source/test paths are admitted for later ordinary maintenance and its
+recorded Node self-check; arbitrary siblings remain refused (35 focused tests pass).
 
 Ordinary harness repair may explicitly record unavailable project MCP and known
 owner-review hold state. Local source/check/review references remain mandatory;

@@ -92,11 +92,21 @@ test("harness scope admits only the exact ordinary policy split paths", () => {
   for (const admitted of [
     "tools/engineering-harness/README.md",
     "tools/engineering-harness/test/workflow-policy.test.mjs",
+    "tools/engineering-harness/src/ordinary-pool.mjs",
+    "tools/engineering-harness/test/ordinary-pool.test.mjs",
     "tools/engineering-harness/test/support/ordinary-workflow-fixture.mjs",
   ]) assert.doesNotThrow(() => validateWorkflow({ ...spec, paths: [admitted] }));
   for (const rejected of [
     "tools/engineering-harness/README-copy.md",
     "tools/engineering-harness/test/workflow-policy-copy.test.mjs",
+    "tools/engineering-harness/src/ordinary-pool-copy.mjs",
     "tools/engineering-harness/test/support/ordinary-workflow-fixture-copy.mjs",
   ]) assert.throws(() => validateWorkflow({ ...spec, paths: [rejected] }));
+});
+
+test("ordinary pool checks use the recorded runner without opening arbitrary test paths", () => {
+  const argv = ["node", "--test", "--test-reporter=tap", "tools/engineering-harness/test/ordinary-pool.test.mjs"];
+  assert.doesNotThrow(() => validateWorkflow({ ...spec, checks: [{ completionCheck: "Pool contracts pass", argv }] }));
+  assert.throws(() => validateWorkflow({ ...spec, checks: [{ completionCheck: "Wrong file", argv: [...argv.slice(0, -1),
+    "tools/engineering-harness/test/ordinary-pool-copy.test.mjs"] }] }));
 });
