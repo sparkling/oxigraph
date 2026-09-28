@@ -61,6 +61,24 @@ product work. CLI help lists exact bridge options.
 
 ### Parallel execution
 
+Normal ready-batch entrypoint (always isolated):
+
+```sh
+node tools/engineering-harness/bin/oxigraph-delivery.mjs batch --spec target/engineering-delivery/ready-batch.json
+```
+
+JSON shape is `{"schema":1,"maxConcurrency":2,"entries":[{"id":"first","spec":WORKFLOW_SPEC,"resources":[]}]}`;
+replace `WORKFLOW_SPEC` with a full workflow specification. Concurrency is chosen
+for this ready set, not a standing session cap. Entry and task IDs must be unique.
+Each spec retains existing live task/control authorization; batch creates no new
+authorization. Harness-only unavailable-MCP options also work on `batch`.
+Bridge replies echo both `runId` and `requestId`; replies may arrive out of order.
+SIGINT/SIGTERM stops queued work, aborts API transport and rejects pending bridge
+requests before draining callbacks. Result retains candidate pointers and lists
+`externalActionsUnconfirmed`; ownership remains retained until owner confirms
+external native/root actions stopped. Closing bridge does not kill external work.
+Exit 0 means all candidates await owner review, never canonical acceptance.
+
 `src/ordinary-pool.mjs` exports `runOrdinaryBatch(entries, {maxConcurrency, signal})`.
 Each entry supplies unique ID, validated workflow spec, host callback, optional
 named resources and workflow options. It calls actual upstream Ruflo

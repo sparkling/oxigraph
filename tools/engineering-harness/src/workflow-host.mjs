@@ -2,6 +2,7 @@
 import { createInterface } from "node:readline";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 /**
  * Executes only the mechanical MCP actions. Native work and root application
@@ -93,8 +94,10 @@ export async function relayWorkflowHost(request, callbacks) {
 
 export function stdioHost(directory, input = process.stdin, output = process.stdout, callbacks) {
   const lines = createInterface({ input, crlfDelay: Infinity });
-  let pending;
+  const pending = new Map();
+  const identity = (value) => JSON.stringify([value?.runId, value?.requestId]);
   let closed = false;
+  let unresolved = [];
   const detach = () => {
     input.removeListener("error", onInputError);
     output.removeListener("error", onOutputError);
@@ -105,7 +108,9 @@ export function stdioHost(directory, input = process.stdin, output = process.std
   const fail = (error) => {
     if (closed) return;
     closed = true;
-    if (pending) { clearTimeout(pending.timer); pending.reject(error); pending = undefined; }
+    unresolved = [...pending.values()].map((item) => item.request);
+    for (const item of pending.values()) { clearTimeout(item.timer); item.reject(error); }
+    pending.clear();
     detach();
     lines.close();
   };
@@ -113,13 +118,14 @@ export function stdioHost(directory, input = process.stdin, output = process.std
   const onOutputError = (error) => fail(error);
   const onLinesError = (error) => fail(error);
   const onLine = (line) => {
-    if (!pending) return fail(new Error("Unsolicited host response"));
     try {
       if (Buffer.byteLength(line) > 2 * 1024 * 1024) throw new Error("Host response exceeds structural limit");
       const result = JSON.parse(line);
-      clearTimeout(pending.timer);
-      const { resolve } = pending;
-      pending = undefined;
+      const key = identity(result), item = pending.get(key);
+      if (!item) throw new Error("Unsolicited host response");
+      clearTimeout(item.timer);
+      const { resolve } = item;
+      pending.delete(key);
       resolve(result);
     } catch (error) { fail(error); }
   };
@@ -130,14 +136,17 @@ export function stdioHost(directory, input = process.stdin, output = process.std
   lines.on("line", onLine);
   lines.on("close", onClose);
   const requestThroughStdio = (request) => new Promise((resolve, reject) => {
-    if (closed || pending) return reject(new Error("Host bridge closed or already awaiting a result"));
-    const path = join(directory, `request-${request.requestId}.json`);
+    const key = identity(request);
+    if (closed || pending.has(key)) return reject(new Error("Host bridge closed or already awaiting this request"));
+    const path = join(directory, `request-${randomUUID()}.json`);
     writeFileSync(path, JSON.stringify(request, null, 2) + "\n", { flag: "wx" });
     // Host tool turnaround bound, not a model usage/attempt budget.
     const timer = setTimeout(() => fail(new Error("Host action timed out after 30 minutes")), 1800000);
-    pending = { resolve, reject, timer };
+    pending.set(key, { resolve, reject, timer, request: {
+      runId: request.runId, requestId: request.requestId, taskId: request.taskId, action: request.action,
+    } });
     try {
-      output.write(JSON.stringify({ type: "host-request", action: request.action, requestId: request.requestId, path }) + "\n");
+      output.write(JSON.stringify({ type: "host-request", action: request.action, runId: request.runId, requestId: request.requestId, path }) + "\n");
     } catch (error) { fail(error); }
   });
   return {
@@ -148,6 +157,9 @@ export function stdioHost(directory, input = process.stdin, output = process.std
       }
       return requestThroughStdio(request);
     },
-    close: () => fail(new Error("Host bridge closed")),
+    close: (error = new Error("Host bridge closed")) => {
+      fail(error);
+      return unresolved.map((request) => ({ ...request }));
+    },
   };
 }

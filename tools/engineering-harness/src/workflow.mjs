@@ -24,6 +24,7 @@ const ordinaryHarnessPaths = new Set([
   "tools/engineering-harness/src/ordinary-workspace.mjs",
   "tools/engineering-harness/src/ordinary-pool.mjs",
   "tools/engineering-harness/test/ordinary-pool.test.mjs",
+  "tools/engineering-harness/test/ordinary-batch-cli.test.mjs",
   "tools/engineering-harness/src/workflow-output.mjs",
   "tools/engineering-harness/test/ordinary-api.test.mjs",
   "tools/engineering-harness/test/delivery.test.mjs",

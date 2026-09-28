@@ -5,6 +5,22 @@ import { validateWorkflow } from "./workflow.mjs";
 
 const overlaps = (a, b) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 
+// JSON entrypoint contains ready work only; dependency release stays with the owner.
+export function readyBatchEntries(batch, host, options = {}) {
+  if (!batch || batch.schema !== 1 || Object.keys(batch).some((key) =>
+    !["schema", "maxConcurrency", "entries"].includes(key)) ||
+    !Number.isSafeInteger(batch.maxConcurrency) || batch.maxConcurrency < 1 ||
+    !Array.isArray(batch.entries) || batch.entries.length === 0) {
+    throw new Error("Ready batch needs schema 1, positive maxConcurrency and entries");
+  }
+  return batch.entries.map((entry) => {
+    if (!entry || Object.keys(entry).some((key) => !["id", "spec", "resources"].includes(key))) {
+      throw new Error("Ready batch entries accept only id, spec and resources");
+    }
+    return { ...entry, host, options };
+  });
+}
+
 export async function runOrdinaryBatch(entries, { maxConcurrency, signal } = {}, execute = runIsolatedWorkflow) {
   signal?.throwIfAborted();
   if (!Array.isArray(entries)) throw new Error("Ordinary pool requires ready workflow entries");
@@ -16,6 +32,10 @@ export async function runOrdinaryBatch(entries, { maxConcurrency, signal } = {},
     }
     return { ...entry, spec: validateWorkflow(entry.spec), resources: [...(entry.resources ?? [])] };
   });
+  if (new Set(tasks.map((task) => task.id)).size !== tasks.length ||
+      new Set(tasks.map((task) => task.spec.taskId)).size !== tasks.length) {
+    throw new Error("Ordinary pool requires unique entry and task identities");
+  }
   for (let i = 0; i < tasks.length; i++) {
     for (const other of tasks.slice(i + 1)) {
       const task = tasks[i];
