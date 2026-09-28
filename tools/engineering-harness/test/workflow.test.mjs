@@ -34,6 +34,28 @@ test("source identity is canonical and does not depend on record key insertion o
   assert.equal(digest([{ path, sha256: "a", content: "b" }]), digest([{ content: "b", path, sha256: "a" }]));
   assert.notEqual(digest([{ path, sha256: "a", content: "b" }]), digest([{ content: "c", path, sha256: "a" }]));
 });
+test("unavailable project MCP preserves local proof without claiming readback or releasing product work", async () => {
+  const f = setup();
+  const io = { ...f.io, coordinationUnavailable: "Oxigraph project MCP connection not registered", ownerReviewHold: true };
+  const result = await runWorkflow(spec, f.host, io);
+  assert.equal(result.status, "ready-for-owner-review");
+  assert.equal(result.mcpReadback, false);
+  assert.equal(result.coordinationUnavailable, io.coordinationUnavailable);
+  assert.equal(result.ownerReviewHold, true);
+  assert.equal(result.review.verdict, "ACCEPT");
+  assert.equal(result.checks.length, 1);
+  assert.ok(result.eventReferences.length > 0);
+  assert.equal(result.handoffReference, undefined);
+  assert.deepEqual(f.actions, ["native-worker", "root-apply", "native-worker"]);
+  for (const ownerReviewHold of [undefined, "false"]) {
+    await assert.rejects(runWorkflow(spec, f.host, { ...io, ownerReviewHold }), /explicit owner hold/);
+  }
+  await assert.rejects(runWorkflow({ ...spec, scope: "product", paths: ["lib/oxigraph/src/store.rs"] },
+    f.host, { ...io, ownerReviewHold: false }), /harness scope/);
+  const drift = setup({ checkDrift: true });
+  await assert.rejects(runWorkflow(spec, drift.host, { ...drift.io,
+    coordinationUnavailable: io.coordinationUnavailable, ownerReviewHold: true }), /Source changed/);
+});
 test("failed check reaches repair verbatim, stops later checks/review, and repaired source is checked again", async () => {
   const f = setup({ failChecks: 1 });
   const result = await runWorkflow({ ...spec, checks: [spec.checks[0], spec.checks[0]] }, f.host, f.io);

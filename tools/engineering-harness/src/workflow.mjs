@@ -216,6 +216,11 @@ export async function runWorkflow(rawSpec, host, io = {}) {
   const prepared = io.preflight ?? preflightWorkflow(rawSpec, io);
   const spec = validateWorkflow(rawSpec);
   if (!equal(prepared.spec, spec)) throw new Error("Workflow preflight does not match the specification");
+  const coordinationUnavailable = io.coordinationUnavailable;
+  if (coordinationUnavailable !== undefined && (!text(coordinationUnavailable) ||
+      spec.scope !== "harness" || typeof io.ownerReviewHold !== "boolean")) {
+    throw new Error("Unavailable coordination requires harness scope and an explicit owner hold state");
+  }
   const observe = io.observe ?? sourceObservation;
   const files = () => (io.files ?? readWorkflowFiles)(spec.paths);
   const outside = () => (io.outside ?? outsideObservation)(spec.paths);
@@ -260,6 +265,8 @@ export async function runWorkflow(rawSpec, host, io = {}) {
     return { result: result.result, reference };
   };
   const live = async () => {
+    // Missing optional MCP is not task authorization or permission to resume product work.
+    if (coordinationUnavailable !== undefined) return;
     const { result } = await request("mcp-read", { namespace: "programme-controls", key: "oxigraph-six-hour-delivery-course-correction-v1" });
     if (result?.task?.taskId !== spec.taskId || result.task.status !== "in_progress" ||
         typeof result.control?.ownerReviewHold?.active !== "boolean" ||
@@ -349,6 +356,7 @@ export async function runWorkflow(rawSpec, host, io = {}) {
           client: review.client, workerId: review.workerId, model: review.model, effort: review.effort,
           verdict: review.verdict, summary: review.summary, findings: review.findings,
           ...(review.apiEvidence ? { apiEvidence: review.apiEvidence } : {}),
+          ...(review.failedApi ? { failedApi: review.failedApi } : {}),
           ...(review.contributors !== undefined ? { contributors: review.contributors } : {}),
           resultSha256: digest(review),
         };
@@ -358,6 +366,10 @@ export async function runWorkflow(rawSpec, host, io = {}) {
           eventReferences, checkReferences: allCheckReferences,
           eventsSha256: digest(eventReferences),
           qualification: false, publication: false, attribution: "native-host-supplied; inspected, not independently authenticated" };
+        if (coordinationUnavailable !== undefined) {
+          return { ...evidence, status: "ready-for-owner-review", mcpReadback: false,
+            coordinationUnavailable, ownerReviewHold: io.ownerReviewHold };
+        }
         const handoff = await request("mcp-handoff", { namespace: "programme-task-evidence", key: `workflow-${runId}`, evidence,
           instruction: "Store this exact evidence via Ruflo MCP, retrieve it, and return the actual retrieved value. Keep task in progress until root commits and completes the authorized task." });
         stable(candidate);

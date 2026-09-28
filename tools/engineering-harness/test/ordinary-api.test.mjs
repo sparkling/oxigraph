@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { apiDefaults, createOrdinaryApi, renderOrdinaryPrompt, withOrdinaryApi } from "../src/ordinary-api.mjs";
@@ -49,6 +51,54 @@ test("pre-dispatch bounds and cancellation invoke no transport", async () => {
   await assert.rejects(api(oversized), /request-cost-bound/);
   const controller = new AbortController(); controller.abort();
   await assert.rejects(setupApi(fetchImpl, { signal: controller.signal }).api(request()), /cancelled-before-dispatch/);
+});
+
+test("live requests overlap through independent adapters sharing one ledger", async () => {
+  let release, calls = 0;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const fetchImpl = async () => { const id = ++calls; if (id === 1) await pending; return completion(undefined, `provider-${id}`); };
+  const { api, directory } = setupApi(fetchImpl);
+  const first = api(request("task-a"));
+  const second = createOrdinaryApi({ directory, fetchImpl, apiKey: () => "test-secret" })(request("task-b"));
+  try {
+    assert.equal((await second).evidence.actualUsd, 0.01);
+    assert.equal(calls, 2);
+  } finally { release(); await first; }
+});
+
+test("abandoned or corrupt reservations block new request IDs without transport", async () => {
+  for (const content of ["{", JSON.stringify({ status: "reserved", owner: { pid: process.pid, witness: "stale" } }),
+    JSON.stringify({ status: "reserved", owner: { pid: process.ppid, witness: "reused-pid" } })]) {
+    let calls = 0;
+    const { api, directory } = setupApi(async () => { calls++; return completion(); });
+    writeFileSync(join(directory, `request-${"a".repeat(64)}.json`), content);
+    await assert.rejects(api({ ...request("unrelated"), requestId: 5, runId: "new-run" }), /completion-unknown/);
+    assert.equal(calls, 0);
+  }
+});
+
+test("live cross-process owner permits concurrency, killed owner preserves unknown charge", { timeout: 10000 }, async () => {
+  const directory = mkdtempSync(join(tmpdir(), "ordinary-api-owner-"));
+  const module = new URL("../src/ordinary-api.mjs", import.meta.url).href;
+  const child = spawn(process.execPath, ["--input-type=module", "--eval", `
+    import { createOrdinaryApi } from ${JSON.stringify(module)};
+    setInterval(() => {}, 1000);
+    await createOrdinaryApi({ directory: ${JSON.stringify(directory)}, apiKey: () => 'test',
+      fetchImpl: async () => { process.stdout.write('dispatched\\n'); return new Promise(() => {}); }
+    })(${JSON.stringify(request())});
+  `], { env: { PATH: process.env.PATH }, stdio: ["ignore", "pipe", "pipe"] });
+  const closed = once(child, "close");
+  try {
+    const [chunk] = await once(child.stdout, "data");
+    assert.match(chunk.toString(), /dispatched/);
+    let calls = 0;
+    const api = createOrdinaryApi({ directory, apiKey: () => "test",
+      fetchImpl: async () => { calls++; return completion(); } });
+    assert.equal((await api(request("task-b"))).evidence.actualUsd, 0.01);
+    child.kill("SIGKILL"); await closed;
+    await assert.rejects(api(request("task-c")), /completion-unknown/);
+    assert.equal(calls, 1);
+  } finally { child.kill("SIGKILL"); await closed; }
 });
 
 test("completed invalid output retains cost and holds task A but leaves task B eligible", async () => {
@@ -125,4 +175,6 @@ test("confirmed credit fallback uses lighter independent native sessions, not Op
   const out = await runWorkflow(spec, withOrdinaryApi(host, api), state.io);
   assert.equal(out.status, "ready-for-owner-review");
   assert.deepEqual(models, ["cc/claude-sonnet-5[1m]", "cc/claude-sonnet-5[1m]"]);
+  assert.equal(out.review.failedApi.code, "confirmed-credit-rejection");
+  assert.equal(out.review.failedApi.evidence.actualUsd, 0);
 });

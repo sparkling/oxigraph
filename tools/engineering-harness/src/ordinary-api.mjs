@@ -1,7 +1,7 @@
 // Ordinary engineering transport only; never used by frozen qualification.
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { workerOutput } from "./workflow-output.mjs";
 
 export const apiDefaults = Object.freeze({
@@ -13,6 +13,32 @@ export const apiDefaults = Object.freeze({
 const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 export class OrdinaryApiFailure extends Error {
   constructor(code, evidence) { super(code); this.name = "OrdinaryApiFailure"; this.code = code; this.evidence = evidence; }
+}
+
+const activeReservations = new Set();
+function processWitness(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
+    if (["Z", "X"].includes(fields[0]) || !/^\d+$/.test(fields[19])) return null;
+    return `${readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim()}:${fields[19]}`;
+  } catch { return null; }
+}
+
+function checkOutstanding(directory) {
+  for (const name of readdirSync(directory).filter((name) => /^request-[a-f0-9]{64}\.json$/.test(name))) {
+    const path = resolve(directory, name);
+    let record;
+    try { record = JSON.parse(readFileSync(path, "utf8")); }
+    catch { throw new OrdinaryApiFailure("completion-unknown", { path, reason: "unreadable reservation" }); }
+    if (record.status === "completion-unknown") throw new OrdinaryApiFailure("completion-unknown", record);
+    if (record.status !== "reserved") continue;
+    const ownActive = record.owner?.pid === process.pid && activeReservations.has(path);
+    const otherActive = record.owner?.pid !== process.pid && record.owner?.witness &&
+      processWitness(record.owner.pid) === record.owner.witness;
+    if (!ownActive && !otherActive) throw new OrdinaryApiFailure("completion-unknown", record);
+  }
 }
 
 export function renderOrdinaryPrompt(request) {
@@ -64,6 +90,7 @@ export function createOrdinaryApi({ directory, fetchImpl = fetch, apiKey = () =>
     if (signal?.aborted) throw new OrdinaryApiFailure("cancelled-before-dispatch", {});
     const unknownPath = join(directory, "unknown-charge.json");
     if (existsSync(unknownPath)) throw new OrdinaryApiFailure("completion-unknown", JSON.parse(readFileSync(unknownPath, "utf8")));
+    checkOutstanding(directory);
     const prompt = renderOrdinaryPrompt(request);
     // UTF-8 bytes conservatively bound token count, including JSON framing overhead.
     const inputTokenBound = Buffer.byteLength(prompt) + 4096;
@@ -81,10 +108,19 @@ export function createOrdinaryApi({ directory, fetchImpl = fetch, apiKey = () =>
     const reservation = hash({ taskScope, prompt, runId: request.runId, requestId: request.requestId });
     const path = join(directory, `request-${reservation}.json`);
     const evidence = { schema: 1, requestId: randomUUID(), reservation, taskScope, policyDigest,
-      taskId: request.taskId, model: settings.model, maximumUsd, status: "reserved", actualUsd: null };
-    try { writeFileSync(path, JSON.stringify(evidence), { flag: "wx", mode: 0o600 }); }
+      taskId: request.taskId, model: settings.model, maximumUsd, status: "reserved", actualUsd: null,
+      owner: { pid: process.pid, witness: processWitness(process.pid) } };
+    const pendingPath = `${path}.${randomUUID()}.tmp`;
+    writeFileSync(pendingPath, JSON.stringify(evidence), { flag: "wx", mode: 0o600 });
+    try { linkSync(pendingPath, path); }
     catch (error) { if (error.code === "EEXIST") throw new OrdinaryApiFailure("request-replay-refused", { reservation }); throw error; }
-    const save = () => writeFileSync(path, JSON.stringify(evidence), { mode: 0o600 });
+    finally { unlinkSync(pendingPath); }
+    activeReservations.add(resolve(path));
+    const save = () => {
+      const temporary = `${path}.${randomUUID()}.tmp`;
+      writeFileSync(temporary, JSON.stringify(evidence), { flag: "wx", mode: 0o600 });
+      renameSync(temporary, path);
+    };
     const hold = () => {
       try { writeFileSync(holdPath, JSON.stringify(evidence), { flag: "wx", mode: 0o600 }); }
       catch (error) { if (error.code !== "EEXIST") throw error; }
@@ -156,6 +192,7 @@ export function createOrdinaryApi({ directory, fetchImpl = fetch, apiKey = () =>
       catch (writeError) { if (writeError.code !== "EEXIST") throw writeError; }
       throw new OrdinaryApiFailure("completion-unknown", evidence);
     } finally {
+      activeReservations.delete(resolve(path));
       clearTimeout(timer); signal?.removeEventListener("abort", abort);
       emit("api-settled", evidence.requestId);
     }

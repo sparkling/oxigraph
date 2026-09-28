@@ -12,8 +12,9 @@ const help = `Ordinary Oxigraph delivery (ADR-0043)
   run --task ID --check "observable completion" [--timeout-ms N] [--artifact target/release/oxigraph] -- cargo test --locked -p oxigraph --test store
   run --task ID --check "harness contracts pass" -- node --test --test-reporter=tap tools/engineering-harness/test/delivery.test.mjs
   route --task ID --role implement --check "observable completion" [--model MODEL --effort EFFORT --reason REASON --selection owner|unresolved]
-  workflow --spec FILE.json  (JSON-line bridge to the active native coding host)
-Use live Ruflo MCP before dispatch and after execution. Route is a plan, not a model invocation.
+  workflow --spec FILE.json [--coordination-unavailable REASON --owner-review-hold true|false]
+Use live project Ruflo MCP when available. Explicit unavailable coordination permits harness repair only, never product resumption.
+Route is a plan, not a model invocation. Workflow uses the JSON-line bridge for native work and root application.
 Ordinary API packets use isolated OpenRouter transport. No shell, publication, qualification, or G1.7 commands are admitted.
 `;
 try {
@@ -26,7 +27,7 @@ try {
     const values = {};
     const allowed = action === "run" ? ["--task", "--check", "--timeout-ms", "--artifact"] :
       action === "route" ? ["--task", "--role", "--check", "--model", "--effort", "--reason", "--selection"] :
-      action === "workflow" ? ["--spec"] : [];
+      action === "workflow" ? ["--spec", "--coordination-unavailable", "--owner-review-hold"] : [];
     for (let i = 0; i < options.length; i += 2) {
       if (!allowed.includes(options[i]) || Object.hasOwn(values, options[i]) || !options[i + 1]) {
         throw new Error("Unknown, duplicate or incomplete delivery option");
@@ -47,6 +48,12 @@ try {
         completionCheck: values["--check"], model: values["--model"], effort: values["--effort"],
         reason: values["--reason"], selection: values["--selection"] }), null, 2) + "\n");
     } else if (action === "workflow" && split < 0 && values["--spec"]) {
+      const unavailable = values["--coordination-unavailable"];
+      const hold = values["--owner-review-hold"];
+      if ((unavailable === undefined) !== (hold === undefined) ||
+          (hold !== undefined && !["true", "false"].includes(hold))) {
+        throw new Error("Unavailable coordination needs an exact true/false owner hold state");
+      }
       const spec = JSON.parse(readFileSync(values["--spec"], "utf8"));
       const preflight = preflightWorkflow(spec);
       const directory = mkdtempSync(join(ensureDirectoryInsideRepository(join(repository, "target", "engineering-delivery")), "workflow-"));
@@ -55,8 +62,11 @@ try {
       try {
         const apiDirectory = ensureDirectoryInsideRepository(join(repository, "target", "engineering-delivery", "api-ledger"));
         const result = await runWorkflow(spec, withOrdinaryApi(bridge.request,
-          createOrdinaryApi({ directory: apiDirectory })), {
+          createOrdinaryApi({ directory: apiDirectory, observation: (event) => {
+            process.stderr.write(JSON.stringify({ type: "api-progress", ...event }) + "\n");
+          } })), {
           preflight,
+          ...(unavailable === undefined ? {} : { coordinationUnavailable: unavailable, ownerReviewHold: hold === "true" }),
           event: (event) => {
             const path = join(directory, `event-${++eventId}.json`);
             writeFileSync(path, JSON.stringify(event, null, 2) + "\n", { flag: "wx" });

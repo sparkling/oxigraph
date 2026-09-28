@@ -19,6 +19,19 @@ tests on Node 24 plus JavaScript syntax and whitespace checks. This is injected
 contract evidence, not a live model cascade or completion of this ADR. Pool,
 resource isolation and initial live proof remain unverified; programme stays paused.
 
+Ordinary harness repair may explicitly record unavailable project MCP and known
+owner-review hold state. Local source/check/review references remain mandatory;
+the result reports `mcpReadback: false`, never fabricated coordination success.
+This exception cannot resume product work or bypass reachable MCP refusals.
+The existing workflow CLI exposes this operational declaration; normal connected
+work retains live control reads and exact store/readback. Focused contracts pass.
+Per-request reservation records now bind process PID plus boot/start identity;
+live calls may overlap, while dead/reused/unknown ownership or unreadable records
+blocks new dispatch as unknown charge. Exclusive initial publication and atomic
+terminal writes avoid partial-read races. Concurrent-adapter and live-child/crash
+tests pass; this is no
+global one-model limit. Native fallback review retains failed API accounting.
+
 This section supersedes conflicting September 26 proposals below. Those sections
 remain historical source findings, not another executable checklist. Status remains
 Proposed: documentation refresh does not claim this repository implemented Builder.
