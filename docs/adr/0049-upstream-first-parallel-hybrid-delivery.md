@@ -38,8 +38,7 @@ Final ten-file ordinary join: 94/94; syntax checks pass. Synthetic tests prove c
 not live training, evolution, performance or resumption. Frozen history remains untouched.
 Unlisted tasks use root policy, recording nonapplicability; signed-task drift/tampering rejects. Wider ADR remains Proposed.
 
-Private Cargo `--target-dir target/engineering-delivery/builds/<allocation-id>` binds
-allocation/profile/binary/compiler event; caller owns exclusivity. Concurrency unproved.
+Private Cargo allocation/profile/binary/compiler evidence uses `--target-dir target/engineering-delivery/builds/<allocation-id>`; caller owns exclusivity, concurrency unproved.
 
 Ordinary `workflow --isolated true` now composes the existing workflow callbacks
 with a non-Git candidate snapshot under `target/engineering-delivery/candidates`.
@@ -58,8 +57,7 @@ include them. Two real supported Node command checks pass in independent snapsho
 roots with private logs; canonical source remains unchanged. This deterministic
 isolation proof alone does not prove live model overlap or dependent release;
 the later read-only proof below separately establishes its narrower claims.
-Focused ordinary join: 71/71 tests pass, including real concurrent Node checks,
-wrong-root application refusal and unchanged canonical-source assertions.
+Earlier ordinary join: 71/71, including concurrent Node checks, wrong-root refusal and unchanged canonical source.
 
 `src/ordinary-pool.mjs` imports declared `@claude-flow/cli` 3.47.0
 `dist/src/services/bounded-worker-pool.js` (manifest `latest`, lock exact).
@@ -131,6 +129,8 @@ all local event/check references verified before integration. The result honestl
 records unavailable project MCP, `mcpReadback: false`, and the preserved owner
 hold. This proves one live ordinary workflow, not parallel programme readiness,
 semantic qualification, cross-server deployment, or completion of this ADR.
+
+Latest live proof `e5f6313d-9dfd-41aa-91f0-de36d741bf55` retained invalid DeepSeek plan ($0.00066232452) and successful Opus/high response rejected for ACCEPT with findings. Shared prompt omitted that validator rule for planning/authoring; all-role regression reproduced red, prompt repaired, 44 focused tests pass. No output rewritten; retry remains same task with original API hold. Evidence: `target/engineering-delivery/live-control-proof-db79e990-fe50-4905-a425-551a87fbbf1b`.
 
 This section supersedes conflicting September 26 proposals below. Those sections
 remain historical source findings, not another executable checklist. Status remains

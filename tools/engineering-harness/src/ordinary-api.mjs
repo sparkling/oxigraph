@@ -52,10 +52,10 @@ export function renderOrdinaryPrompt(request) {
     ...(review ? { initialFiles: p.initialFiles, checks: p.checks }
       : { feedback: p.feedback, plan: p.plan }),
     runtimeContext: p.runtimeContext,
-    instructions: review
-      ? "Review current admitted source and deterministic results independently. Return an actual JSON verdict, not a schema. ACCEPT requires findings=[]; REJECT requires actionable findings. changes must be []."
+    instructions: "ACCEPT requires findings=[]; REJECT requires actionable findings. Put explanatory observations in summary, not findings. " + (review
+      ? "Review current admitted source and deterministic results independently. Return an actual JSON verdict, not a schema. changes must be []."
       : plan ? "Return an actual smallest file-level plan in summary. No tools or writes. changes must be []."
-        : "Propose full UTF-8 contents only for admitted files. No tools, file writes or tests are available. Return an actual JSON result, not a schema.",
+        : "Propose full UTF-8 contents only for admitted files. No tools, file writes or tests are available. Return an actual JSON result, not a schema."),
     response: { summary: "string", verdict: "ACCEPT|REJECT|INCONCLUSIVE", findings: ["string"], changes: [{ path: "admitted path", content: "complete UTF-8 source" }] },
   });
 }

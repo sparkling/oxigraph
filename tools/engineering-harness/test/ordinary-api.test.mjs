@@ -172,6 +172,14 @@ test("fresh review renderer excludes author feedback and retains current source/
   assert.deepEqual(JSON.parse(value).checks, []);
 });
 
+test("every role receives the verdict/findings contract enforced by output validation", () => {
+  for (const role of ["plan", "implement", "review"]) {
+    const prompt = JSON.parse(renderOrdinaryPrompt(request("task", role)));
+    assert.match(prompt.instructions, /ACCEPT requires findings=\[\]/);
+    assert.match(prompt.instructions, /REJECT requires actionable findings/);
+  }
+});
+
 test("real production callback seam routes API author and fresh review through existing workflow", async () => {
   const state = setup(); let calls = 0;
   const { api } = setupApi(async (_url, options) => {
