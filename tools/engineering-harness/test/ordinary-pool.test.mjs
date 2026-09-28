@@ -71,3 +71,13 @@ test("failed and cancelled candidates retain custody pointers without changing p
   assert.equal(cancelled.results[0].candidateRoot, "/candidate/cancelled");
   assert.equal(cancelled.results[0].evidenceDirectory, "/candidate/cancelled/evidence");
 });
+
+test("duplicate entry or task identity rejects entire batch before dispatch", async () => {
+  for (const field of ["id", "taskId"]) {
+    const tasks = pair(); let calls = 0;
+    if (field === "id") tasks[1].id = tasks[0].id;
+    else tasks[1].spec.taskId = tasks[0].spec.taskId;
+    await assert.rejects(runOrdinaryBatch(tasks, { maxConcurrency: 2 }, async () => { calls++; }), /unique entry and task identities/);
+    assert.equal(calls, 0);
+  }
+});

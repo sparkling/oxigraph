@@ -75,20 +75,13 @@ as well as files, and use locale-independent ordering. Regression proved red;
 final root-invoked ordinary join passes 91/91, syntax/diff checks pass. A prior
 package-directory invocation failed its root-relative child import; retained as
 invocation error, not hidden or treated as a model defect.
-Run `ad4e06a8-45b7-4d85-ace4-010a5a47cda3` used actual upstream pool with
-two independent read-only DeepSeek reviews in distinct retained candidate roots.
-Both ACCEPT; overlap 134476ms, cost $0.0380043. Result at
-`target/engineering-delivery/parallel-review-ad4e06a8-45b7-4d85-ace4-010a5a47cda3/result.json`
-has SHA256 `6fa7de94063021231bcf6e5cda8edc42fa944e09a6a65c9fec2fdee976392fc2`.
-Source, packet and ledger hashes verify. Both children consume accepted `00de7854`
-`ordinary-pool.mjs` bytes, SHA256 `f45d2a0a4c3cce11baed8bb41dd304a2b08d1f69912321c361baf8fc8ca13ee7`.
-This proves live review overlap and accepted-source consumption, not concurrent
-application authoring, automatic DAG release or heavy Rust/GCP performance.
-Earlier rejected run `c04f0f92-959c-4bb2-ad32-e263dff2fedc` remains negative
-($0.09844025); valid secret-path/sort findings fixed, unsupported requests to relax
-strict nonexecution evidence rejected. No application outcome was promoted.
-Read-only restart: both current routes/local preflights pass; ledger has six completed
-requests, no unknown/task holds. Project MCP/application release remains unclaimed.
+Earlier upstream-pool run `ad4e06a8-45b7-4d85-ace4-010a5a47cda3`: two isolated read-only DeepSeek reviews ACCEPT;
+overlap 134476ms, cost $0.0380043. `target/engineering-delivery/parallel-review-ad4e06a8-45b7-4d85-ace4-010a5a47cda3/result.json`
+SHA256 `6fa7de94063021231bcf6e5cda8edc42fa944e09a6a65c9fec2fdee976392fc2`; source/packet/ledger verified.
+Both consume accepted `00de7854` pool bytes `f45d2a0a4c3cce11baed8bb41dd304a2b08d1f69912321c361baf8fc8ca13ee7`.
+This proves review overlap/source consumption, not parallel authoring, automatic DAG release or Rust/GCP performance.
+Rejected `c04f0f92-959c-4bb2-ad32-e263dff2fedc` ($0.09844025) retained; secret/sort defects fixed, nonexecution safeguards retained.
+Historical restart had six completed requests/no holds. No application outcome, MCP completion or release claimed.
 
 Dependency audit reports 35 findings (24 moderate, 10 high, one critical), not a
 clean tree. Critical legacy `protobufjs` arrives through optional
@@ -130,7 +123,14 @@ records unavailable project MCP, `mcpReadback: false`, and the preserved owner
 hold. This proves one live ordinary workflow, not parallel programme readiness,
 semantic qualification, cross-server deployment, or completion of this ADR.
 
-Latest live proof `e5f6313d-9dfd-41aa-91f0-de36d741bf55` retained invalid DeepSeek plan ($0.00066232452) and successful Opus/high response rejected for ACCEPT with findings. Shared prompt omitted that validator rule for planning/authoring; all-role regression reproduced red, prompt repaired, 44 focused tests pass. No output rewritten; retry remains same task with original API hold. Evidence: `target/engineering-delivery/live-control-proof-db79e990-fe50-4905-a425-551a87fbbf1b`.
+Latest live negative `e5f6313d-9dfd-41aa-91f0-de36d741bf55`: invalid DeepSeek plan ($0.00066232452),
+Opus/high ACCEPT with findings rejected by unchanged validator; raw native output retained. Prompt rule omission fixed in `699bdef6` (44 tests).
+Host `/proc` reply delivery failed separately; operator failure, not model defect. Evidence: `target/engineering-delivery/live-control-proof-db79e990-fe50-4905-a425-551a87fbbf1b`.
+Same-task repaired run `fd20f441-e47a-436b-8b37-432a9af72b67`: Opus/high plan, DeepSeek author/reviewer ACCEPT, 6 real tests.
+Receipt `target/engineering-delivery/workflow-DAbanz/result.json`, SHA256 `e60794ec624cde4a02ea5246ded3107c6f0975a89216d175337b35d91127d836`; five references verified.
+API success cost $0.004240577; prior negative/plan hold retained, no unknown charges. Hybrid native-learning exclusion verified.
+Root accepted exact ten-line duplicate-ID test; final ordinary join 96/96, syntax/diff pass. Read-only restart admission passes.
+Host samples 69-74% idle, memory/I/O PSI zero. No parallel author pair, application resumption, promotion, cloud or publication.
 
 This section supersedes conflicting September 26 proposals below. Those sections
 remain historical source findings, not another executable checklist. Status remains
