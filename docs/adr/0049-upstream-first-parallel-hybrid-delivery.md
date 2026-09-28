@@ -9,14 +9,14 @@
 
 ## September 28 implementation handoff (current plan)
 
-Implementation in progress: ordinary delivery now has an isolated direct API
+Ordinary delivery now has an isolated direct API
 callback at its existing kernel/host seam, explicit native/API routes, shared
 packet rendering and worker-output validation, per-request bounds and replay
 records, exact known model/snapshot admission, task-scoped completed-output holds,
 auth/credit/unknown-completion attribution, actual metering in kernel evidence,
-and capable native repair. Focused adapter/coordination contracts pass 65 tests;
-the initial live repair below passes 66 ordinary tests on Node 24. Pool and
-isolated-resource/source-handoff proof remain open; programme stays paused.
+and capable native repair. Initial live repair passes 66 ordinary tests;
+the final ordinary join passes 91/91 on Node 24 with two test workers.
+Live pool review and accepted-parent byte handoff pass below; programme stays paused.
 
 Private ordinary Cargo output now uses its supported `--target-dir` argument,
 restricted to `target/engineering-delivery/builds/<allocation-id>`. Artifact
@@ -43,8 +43,8 @@ Installed Node dependencies are explicitly shared inputs via symlinks, not a
 hermetic or filesystem-enforced read-only sandbox. API mutation paths cannot
 include them. Two real supported Node command checks pass in independent snapshot
 roots with private logs; canonical source remains unchanged. This deterministic
-isolation proof does not yet prove upstream-pool live overlap or accepted-source
-integration and dependent release. Those completion items remain open.
+isolation proof alone does not prove live model overlap or dependent release;
+the later read-only proof below separately establishes its narrower claims.
 Focused ordinary join: 71/71 tests pass, including real concurrent Node checks,
 wrong-root application refusal and unchanged canonical-source assertions.
 
@@ -59,8 +59,30 @@ Five focused pool contracts pass; the complete ordinary join passes 77/77 on
 Node 24.14.1 with two test workers. A production-composition test runs two
 real isolated workflows through the upstream pool, with overlapping deterministic
 host fixtures, candidate edits, real Node checks and verified local references.
-It preserves canonical bytes and pending-owner status. This is not live parallel
-model execution or accepted-parent source handoff; those claims remain unproved.
+It preserves canonical bytes and pending-owner status. Those model responses are
+fixtures, separate from the live read-only review and handoff below.
+
+**Final repair and live parallel proof (`8264bd42`):** charged HTTP errors with
+known generation/cost now retain accounting and hold only their task, without
+credit fallback or global unknown-charge hold. Snapshots reject `.env/` directories
+as well as files, and use locale-independent ordering. Regression proved red;
+final root-invoked ordinary join passes 91/91, syntax/diff checks pass. A prior
+package-directory invocation failed its root-relative child import; retained as
+invocation error, not hidden or treated as a model defect.
+Run `ad4e06a8-45b7-4d85-ace4-010a5a47cda3` used actual upstream pool with
+two independent read-only DeepSeek reviews in distinct retained candidate roots.
+Both ACCEPT; overlap 134476ms, cost $0.0380043. Result at
+`target/engineering-delivery/parallel-review-ad4e06a8-45b7-4d85-ace4-010a5a47cda3/result.json`
+has SHA256 `6fa7de94063021231bcf6e5cda8edc42fa944e09a6a65c9fec2fdee976392fc2`.
+Source, packet and ledger hashes verify. Both children consume accepted `00de7854`
+`ordinary-pool.mjs` bytes, SHA256 `f45d2a0a4c3cce11baed8bb41dd304a2b08d1f69912321c361baf8fc8ca13ee7`.
+This proves live review overlap and accepted-source consumption, not concurrent
+application authoring, automatic DAG release or heavy Rust/GCP performance.
+Earlier rejected run `c04f0f92-959c-4bb2-ad32-e263dff2fedc` remains negative
+($0.09844025); valid secret-path/sort findings fixed, unsupported requests to relax
+strict nonexecution evidence rejected. No application outcome was promoted.
+Read-only restart: both current routes/local preflights pass; ledger has six completed
+requests, no unknown/task holds. Project MCP/application release remains unclaimed.
 
 Dependency audit reports 35 findings (24 moderate, 10 high, one critical), not a
 clean tree. Critical legacy `protobufjs` arrives through optional
@@ -107,7 +129,7 @@ semantic qualification, cross-server deployment, or completion of this ADR.
 
 This section supersedes conflicting September 26 proposals below. Those sections
 remain historical source findings, not another executable checklist. Status remains
-Proposed: documentation refresh does not claim this repository implemented Builder.
+Proposed for remaining programme-wide claims; ordinary repair/proof above is implemented.
 Owner authorized matching Builder models/limits and removal of stale Claude-only,
 no-API, fixed-session and mandatory harness-only rules on September 28. Policy
 reconciliation is authorized now; runtime activation still requires implementation
@@ -451,7 +473,7 @@ their availability in the installed client is demonstrated.
    An engineering pass is not SPARQL conformance, G1.7 qualification or release.
    Collect separate server evidence before claiming GCP capacity or performance.
 
-Implement through the existing engineering workflow, preserving root acceptance
+Use direct work or the existing engineering workflow, preserving root acceptance
 and incremental verified commits. Required source fixes belong to the same
 bounded outcome; no new task per defect, replacement scheduler, benchmark
 programme or evolution loop is needed. Replay old records without rewriting them
