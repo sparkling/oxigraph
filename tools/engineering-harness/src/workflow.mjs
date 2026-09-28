@@ -21,6 +21,7 @@ const ordinaryHarnessPaths = new Set([
   "tools/engineering-harness/src/workflow-host.mjs",
   "tools/engineering-harness/src/workflow.mjs",
   "tools/engineering-harness/src/ordinary-api.mjs",
+  "tools/engineering-harness/src/ordinary-workspace.mjs",
   "tools/engineering-harness/src/workflow-output.mjs",
   "tools/engineering-harness/test/ordinary-api.test.mjs",
   "tools/engineering-harness/test/delivery.test.mjs",
@@ -296,8 +297,9 @@ export async function runWorkflow(rawSpec, host, io = {}) {
     await live();
     stable(before);
     if (proposal.changes.length) {
-      const { result: applied } = await request("root-apply", { writer: "root", changes: proposal.changes, beforeFiles });
+      const { result: applied } = await request("root-apply", { writer: "root", root: io.root ?? repository, changes: proposal.changes, beforeFiles });
       if (applied?.writer !== "root" || applied.applied !== true) throw new Error("Root application was not confirmed");
+      if (io.root !== undefined && applied.root !== io.root) throw new Error("Root application used a different candidate workspace");
       const expectedFiles = beforeFiles.map((file) => {
         const change = proposal.changes.find((candidate) => candidate.path === file.path);
         return change ? { path: file.path, content: change.content, sha256: bytesDigest(change.content) } : file;

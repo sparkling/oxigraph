@@ -255,7 +255,7 @@ export function deliveryStatus(before, after, result, failure) {
   return { sourceStable, status: !failure && sourceStable && result?.passed ? "command-passed" : "failed" };
 }
 
-export function deliveryArtifactPath(command, artifact) {
+export function deliveryArtifactPath(command, artifact, root = repository) {
   if (artifact === undefined) return null;
   if (typeof artifact !== "string") throw new Error("Artifact must match a native Cargo build path");
   const targetIndex = command.args.indexOf("--target-dir");
@@ -268,24 +268,31 @@ export function deliveryArtifactPath(command, artifact) {
       !(hasPair("--bin", name) || (name === "oxigraph" && (hasPair("-p", "oxigraph-cli") || hasPair("--package", "oxigraph-cli"))))) {
     throw new Error("Artifact must match this native Cargo build's selected target, binary and profile");
   }
-  return join(repository, artifact);
+  return join(root, artifact);
 }
 
-export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1800000, artifact, quiet = false }) {
+export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1800000, artifact, quiet = false }, context = {}) {
+  const workspace = context.root ?? repository;
+  if (workspace !== repository && (typeof workspace !== "string" ||
+      !workspace.startsWith(`${join(repository, "target", "engineering-delivery", "candidates")}/`) ||
+      realpathSync(workspace) !== workspace || typeof context.observe !== "function")) {
+    throw new Error("Ordinary command requires its canonical or isolated candidate workspace");
+  }
+  const observe = context.observe ?? sourceObservation;
   if (!/^task-[a-zA-Z0-9-]+$/.test(taskId ?? "")) throw new Error("A live Ruflo task ID is required");
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 7200000) {
     throw new Error("Timeout must be between 1ms and 2h (local process bound, not a model budget)");
   }
   const command = admitCommand(argv);
   const plan = routeDelivery({ role: command.kind.endsWith("test") ? "test" : "build", taskId, completionCheck });
-  const artifactPath = deliveryArtifactPath(command, artifact);
+  const artifactPath = deliveryArtifactPath(command, artifact, workspace);
   if (artifact !== undefined) {
     command.args.push("--message-format=json-render-diagnostics");
   }
-  const before = sourceObservation();
+  const before = observe();
   const targetIndex = command.args.indexOf("--target-dir");
-  if (targetIndex >= 0) ensureDirectoryInsideRepository(join(repository, command.args[targetIndex + 1]));
-  const root = ensureDirectoryInsideRepository(join(repository, "target", "engineering-delivery"));
+  if (targetIndex >= 0) ensureDirectoryInsideRepository(join(workspace, command.args[targetIndex + 1]));
+  const root = ensureDirectoryInsideRepository(join(workspace, "target", "engineering-delivery"));
   const directory = mkdtempSync(join(root, "run-"));
   const startedAt = new Date().toISOString();
   const input = {
@@ -293,7 +300,7 @@ export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1
     plan, planSha256: sha256(JSON.stringify(plan)), taskAttribution: "unverified-coordinator-supplied",
     startedAt, timeoutMs, node: { version: process.version, executable: process.execPath },
     nativeVersions: command.program === "cargo" ? Object.fromEntries(["cargo", "rustc"].map((program) =>
-      [program, execFileSync(program, ["--version"], { cwd: repository,
+      [program, execFileSync(program, ["--version"], { cwd: workspace,
         env: scrubbedChildEnvironment(), timeout: 30000, encoding: "utf8" }).trim()])) : {},
     modelExecution: false, qualification: false, publication: false,
     mcpSync: "native coordinator must update live MCP task and read back evidence",
@@ -304,7 +311,7 @@ export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1
   let failure = null;
   try {
     result = await execute(command.program, command.args, {
-      cwd: repository, timeoutMs, captureOutputBytes: 16 * 1024 * 1024,
+      cwd: workspace, timeoutMs, captureOutputBytes: 16 * 1024 * 1024,
       quiet, announce: !quiet,
     });
   } catch (error) {
@@ -321,7 +328,7 @@ export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1
   let after = null;
   let artifactIdentity = null;
   try {
-    after = sourceObservation();
+    after = observe();
     if (artifact !== undefined) {
       const path = artifactPath;
       if (!lstatSync(path).isFile() || realpathSync(path) !== path) throw new Error("Artifact is not a regular in-repository file");

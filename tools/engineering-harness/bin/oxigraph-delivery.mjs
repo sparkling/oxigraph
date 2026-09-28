@@ -6,13 +6,14 @@ import { repository } from "../src/delivery.mjs";
 import { jsonReference, preflightWorkflow, runWorkflow } from "../src/workflow.mjs";
 import { stdioHost } from "../src/workflow-host.mjs";
 import { createOrdinaryApi, withOrdinaryApi } from "../src/ordinary-api.mjs";
+import { runIsolatedWorkflow } from "../src/ordinary-workspace.mjs";
 import { ensureDirectoryInsideRepository } from "../../agentic-qe/path-policy.mjs";
 
 const help = `Ordinary Oxigraph delivery (ADR-0043)
   run --task ID --check "observable completion" [--timeout-ms N] [--artifact target/release/oxigraph] -- cargo test --locked -p oxigraph --test store
   run --task ID --check "harness contracts pass" -- node --test --test-reporter=tap tools/engineering-harness/test/delivery.test.mjs
   route --task ID --role implement --check "observable completion" [--model MODEL --effort EFFORT --reason REASON --selection owner|unresolved]
-  workflow --spec FILE.json [--coordination-unavailable REASON --owner-review-hold true|false]
+  workflow --spec FILE.json [--isolated true] [--coordination-unavailable REASON --owner-review-hold true|false]
 Use live project Ruflo MCP when available. Explicit unavailable coordination permits harness repair only, never product resumption.
 Route is a plan, not a model invocation. Workflow uses the JSON-line bridge for native work and root application.
 Ordinary API packets use isolated OpenRouter transport. No shell, publication, qualification, or G1.7 commands are admitted.
@@ -27,7 +28,7 @@ try {
     const values = {};
     const allowed = action === "run" ? ["--task", "--check", "--timeout-ms", "--artifact"] :
       action === "route" ? ["--task", "--role", "--check", "--model", "--effort", "--reason", "--selection"] :
-      action === "workflow" ? ["--spec", "--coordination-unavailable", "--owner-review-hold"] : [];
+      action === "workflow" ? ["--spec", "--isolated", "--coordination-unavailable", "--owner-review-hold"] : [];
     for (let i = 0; i < options.length; i += 2) {
       if (!allowed.includes(options[i]) || Object.hasOwn(values, options[i]) || !options[i + 1]) {
         throw new Error("Unknown, duplicate or incomplete delivery option");
@@ -55,17 +56,19 @@ try {
         throw new Error("Unavailable coordination needs an exact true/false owner hold state");
       }
       const spec = JSON.parse(readFileSync(values["--spec"], "utf8"));
-      const preflight = preflightWorkflow(spec);
+      if (values["--isolated"] !== undefined && values["--isolated"] !== "true") throw new Error("Isolated workflow option must be true");
+      const isolated = values["--isolated"] === "true";
+      const preflight = isolated ? undefined : preflightWorkflow(spec);
       const directory = mkdtempSync(join(ensureDirectoryInsideRepository(join(repository, "target", "engineering-delivery")), "workflow-"));
       const bridge = stdioHost(directory);
       let eventId = 0;
       try {
         const apiDirectory = ensureDirectoryInsideRepository(join(repository, "target", "engineering-delivery", "api-ledger"));
-        const result = await runWorkflow(spec, withOrdinaryApi(bridge.request,
+        const result = await (isolated ? runIsolatedWorkflow : runWorkflow)(spec, withOrdinaryApi(bridge.request,
           createOrdinaryApi({ directory: apiDirectory, observation: (event) => {
             process.stderr.write(JSON.stringify({ type: "api-progress", ...event }) + "\n");
           } })), {
-          preflight,
+          ...(preflight === undefined ? {} : { preflight }),
           ...(unavailable === undefined ? {} : { coordinationUnavailable: unavailable, ownerReviewHold: hold === "true" }),
           event: (event) => {
             const path = join(directory, `event-${++eventId}.json`);
@@ -74,7 +77,8 @@ try {
           },
         });
         writeFileSync(join(directory, "result.json"), JSON.stringify(result, null, 2) + "\n", { flag: "wx" });
-        process.stdout.write(JSON.stringify({ status: result.status, directory, taskId: result.taskId }) + "\n");
+        process.stdout.write(JSON.stringify({ status: result.status, directory, taskId: result.taskId,
+          ...(result.candidateRoot ? { candidateRoot: result.candidateRoot, integration: result.integration } : {}) }) + "\n");
       } catch (error) {
         writeFileSync(join(directory, "failure.json"), JSON.stringify({ status: "incomplete", error: error.message, eventCount: eventId }) + "\n", { flag: "wx" });
         throw error;
@@ -83,5 +87,6 @@ try {
   }
 } catch (error) {
   process.stderr.write(`${error.message}\n`);
+  if (error.candidateRoot) process.stderr.write(JSON.stringify({ candidateRoot: error.candidateRoot, evidenceDirectory: error.evidenceDirectory }) + "\n");
   process.exitCode = 2;
 }

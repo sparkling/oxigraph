@@ -28,6 +28,26 @@ The 68 focused ordinary Node tests pass, including target escape/duplicate and
 artifact allocation/profile mismatch cases. No heavy Rust build was run for this
 argument-validation change; actual concurrent Cargo execution remains unproved.
 
+Ordinary `workflow --isolated true` now composes the existing workflow callbacks
+with a non-Git candidate snapshot under `target/engineering-delivery/candidates`.
+Source observation, admitted file reads, outside-scope checks, command cwd, logs,
+artifact binding and evidence references use that same candidate root. Root-apply
+requests and responses name the exact destination; candidate success remains
+`pending-owner-acceptance`, not canonical integration. Failure output names the
+retained candidate/evidence directory. No new scheduler or frozen G1 mechanism.
+Snapshots copy current tracked/untracked source bytes and initialized submodule
+files, including locally present submodules omitted by Git's active-recursion
+listing. Dirty/untracked initialized submodules are rejected before/after copying;
+parent Git dirty markers alone cannot bind their changing internal bytes.
+Installed Node dependencies are explicitly shared inputs via symlinks, not a
+hermetic or filesystem-enforced read-only sandbox. API mutation paths cannot
+include them. Two real supported Node command checks pass in independent snapshot
+roots with private logs; canonical source remains unchanged. This deterministic
+isolation proof does not yet prove upstream-pool live overlap or accepted-source
+integration and dependent release. Those completion items remain open.
+Focused ordinary join: 71/71 tests pass, including real concurrent Node checks,
+wrong-root application refusal and unchanged canonical-source assertions.
+
 Ordinary harness repair may explicitly record unavailable project MCP and known
 owner-review hold state. Local source/check/review references remain mandatory;
 the result reports `mcpReadback: false`, never fabricated coordination success.
