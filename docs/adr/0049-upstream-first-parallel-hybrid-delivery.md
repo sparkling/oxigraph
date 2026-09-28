@@ -70,6 +70,11 @@ and install scripts are not executed by this integration. No blanket audit fix,
 major override or optional-learning removal was applied. This scoped exposure
 assessment does not certify unused surfaces or authorize public deployment.
 
+Active harness README now matches current routing, optional direct execution and
+resource-based concurrency. Its oversized historical text is preserved in four
+clearly labelled README-history files; frozen evidence and obligations are not
+rewritten as current ordinary policy. No learning or qualification feature removed.
+
 Ordinary harness repair may explicitly record unavailable project MCP and known
 owner-review hold state. Local source/check/review references remain mandatory;
 the result reports `mcpReadback: false`, never fabricated coordination success.
