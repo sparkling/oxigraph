@@ -37,6 +37,7 @@
     "factory:diagnose": "node bin/oxigraph-engineering-harness.mjs factory diagnose"
   },
   "dependencies": {
+    "@claude-flow/cli": "latest",
     "@metaharness/avo": "latest",
     "@metaharness/darwin": "latest",
     "@metaharness/harness": "latest",

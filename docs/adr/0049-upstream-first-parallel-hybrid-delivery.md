@@ -48,6 +48,28 @@ integration and dependent release. Those completion items remain open.
 Focused ordinary join: 71/71 tests pass, including real concurrent Node checks,
 wrong-root application refusal and unchanged canonical-source assertions.
 
+`src/ordinary-pool.mjs` now imports declared `@claude-flow/cli` 3.47.0 through
+`dist/src/services/bounded-worker-pool.js` (manifest `latest`, lock exact).
+Leaf SHA256 is `757824847c1b3a394f78441f84e519a0edcdf6731d39fdfcd7fb2ed37a00fce0`.
+The thin adapter rejects overlapping paths/named resources before launch, checks
+pre-aborted signals, drains started callbacks before releasing ownership, and
+retains failed/cancelled candidate evidence paths without promoting their status.
+Caller supplies dependency-ready entries and remains sole canonical integrator.
+Five focused pool contracts pass; the complete ordinary join passes 77/77 on
+Node 24.14.1 with two test workers. A production-composition test runs two
+real isolated workflows through the upstream pool, with overlapping deterministic
+host fixtures, candidate edits, real Node checks and verified local references.
+It preserves canonical bytes and pending-owner status. This is not live parallel
+model execution or accepted-parent source handoff; those claims remain unproved.
+
+Dependency audit reports 35 findings (24 moderate, 10 high, one critical), not a
+clean tree. Critical legacy `protobufjs` arrives through optional
+`agentic-flow` / `@xenova/transformers` / ONNX dependencies; nonoptional `toml`
+also has a high finding. Imported pool leaf has no imports; CLI/ML/parser surfaces
+and install scripts are not executed by this integration. No blanket audit fix,
+major override or optional-learning removal was applied. This scoped exposure
+assessment does not certify unused surfaces or authorize public deployment.
+
 Ordinary harness repair may explicitly record unavailable project MCP and known
 owner-review hold state. Local source/check/review references remain mandatory;
 the result reports `mcpReadback: false`, never fabricated coordination success.
