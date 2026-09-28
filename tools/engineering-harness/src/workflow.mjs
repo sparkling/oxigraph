@@ -402,7 +402,7 @@ export async function runWorkflow(rawSpec, host, io = {}) {
           resultSha256: digest(review),
         };
         const evidence = { schema: "ordinary-workflow-v2", runId, taskId: spec.taskId, specSha256,
-          ...(runtime ? { policyDigest: runtime.policyDigest, runtimeBinding: runtime.binding } : {}),
+          ...(runtime ? { policyDigest: runtime.policyDigest, policyApplicability: runtime.policyApplicability, runtimeBinding: runtime.binding } : {}),
           status: "verified-local", source: candidate, checks: compactChecks, review: compactReview,
           implementationWorkerIds: [...workerIds],
           eventReferences, checkReferences: allCheckReferences,
@@ -432,7 +432,7 @@ export async function runWorkflow(rawSpec, host, io = {}) {
       if (runtime && failed?.result?.code === 1 && failed.result?.observedNodeTestSummary?.fail > 0 &&
           !failed.result?.timedOut && !failed.result?.cleanupUnconfirmed) {
         error.ordinaryEvaluation = { runId, taskId: spec.taskId, specSha256, policyDigest: runtime.policyDigest,
-          runtimeBinding: runtime.binding, learning: runtime.finish(runId),
+          runtimeBinding: runtime.binding, policyApplicability: runtime.policyApplicability, learning: runtime.finish(runId),
           status: "authoring-rejected", checkReferences: allCheckReferences, eventReferences,
           source: candidate, checks: checks.map((check) => checkFeedback(check)) };
       }

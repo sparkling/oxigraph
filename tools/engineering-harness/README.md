@@ -82,7 +82,9 @@ is `OBSERVED`. `SYNTHETIC` evidence is fixture-only and cannot run product tasks
 `policy-activate --runtime-config FILE --envelope FILE --expected-parent SHA256`
 updates policy under CAS lock; `policy-rollback --runtime-config FILE
 --expected-current SHA256` restores signed predecessor. Next normal workflow reads
-active policy automatically and rejects live source/evaluator/runtime drift.
+active policy automatically and rejects live source/evaluator/runtime drift for
+signed tasks. Unlisted tasks use root policy and record `nonapplicable-task`;
+global envelope trust remains mandatory, so tampering never triggers fallback.
 Only synthetic functional tests exercised this path; no live evolution, activation,
 benchmark or programme resumption occurred. Frozen qualification history is untouched.
 

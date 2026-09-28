@@ -39,16 +39,20 @@ export function createOrdinaryRuntime(config = { schema: 1 }, { policy, learning
   if (!allowed || allowed.startsWith("..") || allowed.startsWith("/")) throw new Error("Ordinary memory must use private delivery output");
   ensureDirectoryInsideRepository(memoryDirectory);
   if (policy && config.policyActivation) throw new Error("Explicit policy conflicts with configured activation");
-  const selected = config.policyActivation ? readOrdinaryPolicy(config.policyActivation)
+  const active = config.policyActivation ? readOrdinaryPolicy(config.policyActivation)
     : { policy: captureOrdinaryPolicy(policy ?? seedOrdinaryPolicy), digest: canonicalSha256(policy ?? seedOrdinaryPolicy) };
   return {
-    policyDigest: selected.digest,
+    policyDigest: active.digest,
     forWorkflow(spec, initialFiles, root = repository) {
       const current = ordinaryRuntimeBinding(spec, initialFiles, root);
-      if (config.policyActivation?.dataSource && config.policyActivation.dataSource !== "OBSERVED" && spec.scope === "product") {
+      const applicable = config.policyActivation && Object.hasOwn(config.policyActivation.bindings?.tasks ?? {}, spec.taskId);
+      const fallback = captureOrdinaryPolicy(config.policyActivation?.rootPolicy ?? seedOrdinaryPolicy);
+      const selected = config.policyActivation && !applicable ? { policy: fallback, digest: canonicalSha256(fallback) } : active;
+      const policyApplicability = config.policyActivation ? applicable ? "applicable-task" : "nonapplicable-task" : "default-policy";
+      if (applicable && config.policyActivation?.dataSource && config.policyActivation.dataSource !== "OBSERVED" && spec.scope === "product") {
         throw new Error("Synthetic policy evidence cannot authorize product execution");
       }
-      if (config.policyActivation && canonicalSha256(config.policyActivation.bindings?.tasks?.[spec.taskId] ?? null) !== canonicalSha256(current)) {
+      if (applicable && canonicalSha256(config.policyActivation.bindings.tasks[spec.taskId]) !== canonicalSha256(current)) {
         throw new Error("Active ordinary policy source/evaluator/runtime binding drifted");
       }
       const binding = canonicalSha256({ runtime: current.harnessSha256, evaluator: current.evaluatorSha256,
@@ -60,8 +64,9 @@ export function createOrdinaryRuntime(config = { schema: 1 }, { policy, learning
       let authorPacket;
       return {
         policyDigest: selected.digest,
+        policyApplicability,
         binding: current,
-        context: (role) => ({ policy: ordinaryPolicyContext(selected.policy, role), policyDigest: selected.digest,
+        context: (role) => ({ policy: ordinaryPolicyContext(selected.policy, role), policyDigest: selected.digest, policyApplicability,
           nativeMemory: memory.summary() }),
         noteRoute: (route) => { if (route.transport === "openrouter-api") hybrid = true; },
         notePacket(request) {

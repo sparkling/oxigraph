@@ -36,7 +36,7 @@ and five disjoint sealed tasks, per-case nonregression and distinct clean reruns
 Signed replay, live bindings, lineage and CAS guard activation/rollback; CLI consumes active policy.
 Final ten-file ordinary join: 94/94; syntax checks pass. Synthetic tests prove contracts,
 not live training, evolution, performance or resumption. Frozen history remains untouched.
-Config/commands: harness README. ADR remains Proposed for wider programme claims.
+Unlisted tasks use root policy, recording nonapplicability; signed-task drift/tampering rejects. Wider ADR remains Proposed.
 
 Private Cargo `--target-dir target/engineering-delivery/builds/<allocation-id>` binds
 allocation/profile/binary/compiler event; caller owns exclusivity. Concurrency unproved.

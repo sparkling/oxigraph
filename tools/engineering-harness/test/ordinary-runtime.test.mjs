@@ -130,6 +130,23 @@ test("real Flywheel producer evaluates ordinary workflows, replays signed eviden
     assert.equal(actualPlanner, envelope.payload.policy.planner);
     assert.equal(result.policyDigest, activated.digest);
     assert.throws(() => runtime.forWorkflow(specs[0], [{ path: "different", content: "changed" }]), /binding drifted/);
+    const unrelatedSpec = nativeSpec("unrelated"), unrelated = setupOrdinaryWorkflowFixture({ spec: unrelatedSpec });
+    let unrelatedPlanner;
+    const unrelatedResult = await runWorkflow(unrelatedSpec, async (request) => {
+      if (request.payload?.route?.role === "plan") unrelatedPlanner = request.payload.runtimeContext.policy.planner;
+      return unrelated.host(request);
+    }, { ...unrelated.io, runtime });
+    assert.equal(unrelatedPlanner, seedOrdinaryPolicy.planner);
+    assert.equal(unrelatedResult.policyDigest, canonicalSha256(seedOrdinaryPolicy));
+    assert.equal(unrelatedResult.policyApplicability, "nonapplicable-task");
+    const envelopePath = join(trust.directory, `envelope-${activated.digest}.json`);
+    const originalEnvelope = readFileSync(envelopePath, "utf8");
+    try {
+      const tampered = JSON.parse(originalEnvelope); tampered.payload.policy.planner = "Tampered active policy must never silently fall back.";
+      writeFileSync(envelopePath, JSON.stringify(tampered));
+      assert.throws(() => createOrdinaryRuntime({ ...config, policyActivation: trust })
+        .forWorkflow(unrelatedSpec, unrelated.io.files()), /Untrusted/);
+    } finally { writeFileSync(envelopePath, originalEnvelope); }
     const changed = structuredClone(envelope.payload); changed.policy.planner = "Unevaluated forged policy bytes.";
     assert.throws(() => activateOrdinaryPolicy({ ...trust, directory: join(directory, "forged") }, signer.sign(changed), changed.parent), /evaluator|evaluations/);
     const other = makeSigner();
