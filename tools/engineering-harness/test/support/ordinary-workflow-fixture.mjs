@@ -87,8 +87,9 @@ function fixture(options = {}) {
     } else if (request.action === "native-worker") {
       const { route } = request.payload;
       const review = route.role === "review";
+      const plan = route.role === "plan";
       if (review) reviews++;
-      else {
+      else if (!plan) {
         implementations++;
         feedback.push(request.payload.feedback);
       }
@@ -103,7 +104,7 @@ function fixture(options = {}) {
         findings: [],
         changes: [],
       };
-      if (!review) result.changes = options.noChanges ? [] : [{
+      if (!review && !plan) result.changes = options.noChanges ? [] : [{
         path,
         content: options.stalled ? "after" : `after-${implementations}`,
       }];

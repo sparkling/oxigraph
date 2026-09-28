@@ -40,6 +40,7 @@
     "@claude-flow/cli": "latest",
     "@metaharness/avo": "latest",
     "@metaharness/darwin": "latest",
+    "@metaharness/flywheel": "latest",
     "@metaharness/harness": "latest",
     "@metaharness/router": "latest",
     "metaharness": "latest"

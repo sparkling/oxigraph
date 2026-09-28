@@ -57,6 +57,35 @@ If unavailable, harness-only repair may explicitly supply
 This records `mcpReadback:false`, never fabricates memory success or resumes
 product work. CLI help lists exact bridge options.
 
+### Ordinary policy and native learning
+
+Normal workflow/batch automatically runs read-only planning, then author/check/review,
+with seven-component policy context and native memory through the upstream kernel.
+Optional `ordinary-runtime.json` in this directory (or `--runtime-config FILE`)
+uses `{"schema":1,"memoryDirectory":"target/engineering-delivery/native-outcomes"}`.
+Native immutable outcomes bind runtime/lockfile, actual evaluator and policy bytes.
+Any attempted API stage excludes the whole hybrid run from native Router training.
+Ordinary observations remain unpaired; only explicit integrator-owned `compare`
+callbacks produce controlled equal-packet evidence. Five common inputs across all
+eligible routes and full predicted quality are required for upstream Router choice.
+Only unpinned confirmed402 Sonnet/Sol fallback adapts; DeepSeek defaults, explicit
+pins and Opus repair stay unchanged. No latency claim or live training is implied.
+
+`ordinary-policy.mjs` composes upstream Flywheel with injected proposer/evaluator
+and signer; `ordinary-policy-evaluator.mjs` executes actual isolated workflows.
+Promotion requires five selection and five disjoint sealed tasks, exact policy,
+source/evaluator/runtime receipts, per-task nonregression and distinct clean sealed
+reruns. Signed upstream replay plus project evidence is verified before activation.
+Optional `policyActivation` config declares absolute private `directory`, pinned
+`trustedPublicKey`, `bindings.tasks` and optional `rootPolicy`; default data source
+is `OBSERVED`. `SYNTHETIC` evidence is fixture-only and cannot run product tasks.
+`policy-activate --runtime-config FILE --envelope FILE --expected-parent SHA256`
+updates policy under CAS lock; `policy-rollback --runtime-config FILE
+--expected-current SHA256` restores signed predecessor. Next normal workflow reads
+active policy automatically and rejects live source/evaluator/runtime drift.
+Only synthetic functional tests exercised this path; no live evolution, activation,
+benchmark or programme resumption occurred. Frozen qualification history is untouched.
+
 <a id="native-serial-execution"></a>
 
 ### Parallel execution

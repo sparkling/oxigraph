@@ -44,15 +44,18 @@ function checkOutstanding(directory) {
 export function renderOrdinaryPrompt(request) {
   const p = request.payload;
   const review = p.route.role === "review";
+  const plan = p.route.role === "plan";
   return JSON.stringify({
-    mode: review ? "independent-review" : "implementation", toolsAvailable: false,
+    mode: review ? "independent-review" : plan ? "planning" : "implementation", toolsAvailable: false,
     taskId: request.taskId, sourceSha256: request.sourceSha256,
     goal: p.goal, completionCheck: p.completionCheck, files: p.files,
     ...(review ? { initialFiles: p.initialFiles, checks: p.checks }
-      : { feedback: p.feedback }),
+      : { feedback: p.feedback, plan: p.plan }),
+    runtimeContext: p.runtimeContext,
     instructions: review
       ? "Review current admitted source and deterministic results independently. Return an actual JSON verdict, not a schema. ACCEPT requires findings=[]; REJECT requires actionable findings. changes must be []."
-      : "Propose full UTF-8 contents only for admitted files. No tools, file writes or tests are available. Return an actual JSON result, not a schema.",
+      : plan ? "Return an actual smallest file-level plan in summary. No tools or writes. changes must be []."
+        : "Propose full UTF-8 contents only for admitted files. No tools, file writes or tests are available. Return an actual JSON result, not a schema.",
     response: { summary: "string", verdict: "ACCEPT|REJECT|INCONCLUSIVE", findings: ["string"], changes: [{ path: "admitted path", content: "complete UTF-8 source" }] },
   });
 }
@@ -182,7 +185,7 @@ export function createOrdinaryApi({ directory, fetchImpl = fetch, apiKey = () =>
             (result.verdict === "ACCEPT" && result.findings.length !== 0) ||
             (result.verdict === "REJECT" && result.findings.length === 0) ||
             !Array.isArray(result.changes) || result.changes.length > 16 ||
-            (request.payload.route.role === "review" && result.changes.length > 0)) throw new Error("Invalid result");
+            (["plan", "review"].includes(request.payload.route.role) && result.changes.length > 0)) throw new Error("Invalid result");
         workerOutput({ ...result, status: "completed", client: "openrouter-direct", workerId: body.id,
           model: settings.model, effort: "high" }, request.payload.route, request.payload.files.map((file) => file.path));
       } catch {

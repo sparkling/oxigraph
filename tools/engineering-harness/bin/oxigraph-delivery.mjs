@@ -8,6 +8,8 @@ import { stdioHost } from "../src/workflow-host.mjs";
 import { createOrdinaryApi, withOrdinaryApi } from "../src/ordinary-api.mjs";
 import { runIsolatedWorkflow } from "../src/ordinary-workspace.mjs";
 import { readyBatchEntries, runOrdinaryBatch } from "../src/ordinary-pool.mjs";
+import { createOrdinaryRuntime, loadOrdinaryRuntimeConfig } from "../src/ordinary-runtime.mjs";
+import { activateOrdinaryPolicy, rollbackOrdinaryPolicy } from "../src/ordinary-policy.mjs";
 import { ensureDirectoryInsideRepository } from "../../agentic-qe/path-policy.mjs";
 
 const help = `Ordinary Oxigraph delivery (ADR-0043)
@@ -16,6 +18,9 @@ const help = `Ordinary Oxigraph delivery (ADR-0043)
   route --task ID --role implement --check "observable completion" [--model MODEL --effort EFFORT --reason REASON --selection owner|unresolved]
   workflow --spec FILE.json [--isolated true] [--coordination-unavailable REASON --owner-review-hold true|false]
   batch --spec FILE.json [--coordination-unavailable REASON --owner-review-hold true|false]
+  policy-activate --runtime-config FILE.json --envelope FILE.json --expected-parent SHA256
+  policy-rollback --runtime-config FILE.json --expected-current SHA256
+Workflow/batch automatically load tools/engineering-harness/ordinary-runtime.json when present; --runtime-config overrides its location.
 Use live project Ruflo MCP when available. Explicit unavailable coordination permits harness repair only, never product resumption.
 Route is a plan, not a model invocation. Workflow uses the JSON-line bridge for native work and root application.
 Ordinary API packets use isolated OpenRouter transport. No shell, publication, qualification, or G1.7 commands are admitted.
@@ -30,8 +35,10 @@ try {
     const values = {};
     const allowed = action === "run" ? ["--task", "--check", "--timeout-ms", "--artifact"] :
       action === "route" ? ["--task", "--role", "--check", "--model", "--effort", "--reason", "--selection"] :
-      action === "workflow" ? ["--spec", "--isolated", "--coordination-unavailable", "--owner-review-hold"] :
-      action === "batch" ? ["--spec", "--coordination-unavailable", "--owner-review-hold"] : [];
+      action === "workflow" ? ["--spec", "--isolated", "--coordination-unavailable", "--owner-review-hold", "--runtime-config"] :
+      action === "batch" ? ["--spec", "--coordination-unavailable", "--owner-review-hold", "--runtime-config"] :
+      action === "policy-activate" ? ["--runtime-config", "--envelope", "--expected-parent"] :
+      action === "policy-rollback" ? ["--runtime-config", "--expected-current"] : [];
     for (let i = 0; i < options.length; i += 2) {
       if (!allowed.includes(options[i]) || Object.hasOwn(values, options[i]) || !options[i + 1]) {
         throw new Error("Unknown, duplicate or incomplete delivery option");
@@ -51,6 +58,15 @@ try {
       process.stdout.write(JSON.stringify(routeDelivery({ taskId: values["--task"], role: values["--role"],
         completionCheck: values["--check"], model: values["--model"], effort: values["--effort"],
         reason: values["--reason"], selection: values["--selection"] }), null, 2) + "\n");
+    } else if (action === "policy-rollback" && split < 0 && values["--runtime-config"] && values["--expected-current"]) {
+      const config = loadOrdinaryRuntimeConfig(values["--runtime-config"]);
+      if (!config.policyActivation) throw new Error("Policy rollback requires explicit configured trust");
+      process.stdout.write(JSON.stringify(rollbackOrdinaryPolicy(config.policyActivation, values["--expected-current"])) + "\n");
+    } else if (action === "policy-activate" && split < 0 && values["--runtime-config"] && values["--envelope"] && values["--expected-parent"]) {
+      const config = loadOrdinaryRuntimeConfig(values["--runtime-config"]);
+      if (!config.policyActivation) throw new Error("Policy activation requires explicit configured trust");
+      process.stdout.write(JSON.stringify(activateOrdinaryPolicy(config.policyActivation,
+        JSON.parse(readFileSync(values["--envelope"], "utf8")), values["--expected-parent"])) + "\n");
     } else if (["workflow", "batch"].includes(action) && split < 0 && values["--spec"]) {
       const batch = action === "batch";
       const unavailable = values["--coordination-unavailable"];
@@ -63,6 +79,7 @@ try {
       if (values["--isolated"] !== undefined && values["--isolated"] !== "true") throw new Error("Isolated workflow option must be true");
       const isolated = batch || values["--isolated"] === "true";
       if (batch) readyBatchEntries(spec, () => {});
+      const runtime = createOrdinaryRuntime(loadOrdinaryRuntimeConfig(values["--runtime-config"]));
       const preflight = isolated ? undefined : preflightWorkflow(spec);
       const directory = mkdtempSync(join(ensureDirectoryInsideRepository(join(repository, "target", "engineering-delivery")), "workflow-"));
       const bridge = stdioHost(directory);
@@ -83,6 +100,7 @@ try {
             process.stderr.write(JSON.stringify({ type: "api-progress", ...event }) + "\n");
           } }));
         const workflowOptions = {
+          runtime,
           ...(preflight === undefined ? {} : { preflight }),
           ...(unavailable === undefined ? {} : { coordinationUnavailable: unavailable, ownerReviewHold: hold === "true" }),
           event: (event) => {

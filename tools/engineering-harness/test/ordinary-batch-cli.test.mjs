@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import test from "node:test";
@@ -64,8 +64,10 @@ test("normal batch CLI overlaps fixture authors and preserves candidate custody 
   const directory = mkdtempSync(join(tmpdir(), "oxigraph-batch-cli-"));
   const specFile = join(directory, "batch.json");
   writeFileSync(specFile, JSON.stringify(batchSpec()));
+  const runtimeFile = join(directory, "runtime.json");
+  writeFileSync(runtimeFile, JSON.stringify({ schema: 1, memoryDirectory: `target/engineering-delivery/fixtures/${basename(directory)}` }));
   const child = spawn(process.execPath, ["tools/engineering-harness/bin/oxigraph-delivery.mjs", "batch",
-    "--spec", specFile, "--coordination-unavailable", "Deterministic local fixture", "--owner-review-hold", "true"],
+    "--spec", specFile, "--runtime-config", runtimeFile, "--coordination-unavailable", "Deterministic local fixture", "--owner-review-hold", "true"],
   { cwd: repository, env: scrubbedChildEnvironment(), stdio: ["pipe", "pipe", "pipe"] });
   t.signal.addEventListener("abort", () => child.kill("SIGKILL"), { once: true });
   let stderr = "", output, failure;
@@ -76,12 +78,13 @@ test("normal batch CLI overlaps fixture authors and preserves candidate custody 
     let result;
     if (action === "native-worker") {
       const review = payload.route.role === "review";
+      const plan = payload.route.role === "plan";
       const path = payload.files[0].path;
       const marker = path.endsWith(".md") ? "\n<!-- CLI batch fixture -->\n" : "\n// CLI batch fixture\n";
       result = { client: "deterministic-fixture", workerId: `${request.taskId}-${review ? "review" : "author"}`,
         model: payload.route.model, effort: payload.route.effort, status: "completed", verdict: "ACCEPT",
         summary: "Fixture, no model call", findings: [],
-        changes: review ? [] : [{ path, content: payload.files[0].content + marker }] };
+        changes: review || plan ? [] : [{ path, content: payload.files[0].content + marker }] };
     } else {
       assert.equal(action, "root-apply");
       assert.notEqual(payload.root, repository);
@@ -121,7 +124,9 @@ test("normal batch CLI overlaps fixture authors and preserves candidate custody 
     assert.deepEqual(sourceObservation(), before);
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    lines.close(); child.stdin.end(); rmSync(directory, { recursive: true });
+    lines.close(); child.stdin.end();
+    rmSync(join(repository, "target/engineering-delivery/fixtures", basename(directory)), { recursive: true, force: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
@@ -130,8 +135,10 @@ for (const stop of ["signal", "malformed", "eof"]) test(`batch ${stop} retains o
   const spec = batchSpec(); spec.entries = spec.entries.slice(0, 1);
   const specFile = join(directory, "batch.json");
   writeFileSync(specFile, JSON.stringify(spec));
+  const runtimeFile = join(directory, "runtime.json");
+  writeFileSync(runtimeFile, JSON.stringify({ schema: 1, memoryDirectory: `target/engineering-delivery/fixtures/${basename(directory)}` }));
   const child = spawn(process.execPath, ["tools/engineering-harness/bin/oxigraph-delivery.mjs", "batch",
-    "--spec", specFile, "--coordination-unavailable", "Local cancellation fixture", "--owner-review-hold", "true"],
+    "--spec", specFile, "--runtime-config", runtimeFile, "--coordination-unavailable", "Local cancellation fixture", "--owner-review-hold", "true"],
   { cwd: repository, env: scrubbedChildEnvironment(), stdio: ["pipe", "pipe", "pipe"] });
   t.signal.addEventListener("abort", () => child.kill("SIGKILL"), { once: true });
   const lines = createInterface({ input: child.stdout });
@@ -162,6 +169,8 @@ for (const stop of ["signal", "malformed", "eof"]) test(`batch ${stop} retains o
     assert.deepEqual(record.externalActionsUnconfirmed, output.externalActionsUnconfirmed);
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    lines.close(); child.stdin.end(); rmSync(directory, { recursive: true });
+    lines.close(); child.stdin.end();
+    rmSync(join(repository, "target/engineering-delivery/fixtures", basename(directory)), { recursive: true, force: true });
+    rmSync(directory, { recursive: true });
   }
 });

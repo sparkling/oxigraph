@@ -19,7 +19,7 @@ export function workerOutput(result, route, paths) {
       !Array.isArray(result.changes) || result.changes.length > 16 ||
       (result.verdict === "ACCEPT" && result.findings.length > 0) ||
       (result.verdict === "REJECT" && result.findings.length === 0)) throw new Error("Incomplete or unbounded native result");
-  if (route.role === "review" && result.changes.length) throw new Error("Reviewer must not propose source changes");
+  if (["plan", "review"].includes(route.role) && result.changes.length) throw new Error("Planner or reviewer must not propose source changes");
   const seen = new Set();
   for (const change of result.changes) {
     if (!change || typeof change !== "object" || Array.isArray(change) ||

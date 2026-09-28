@@ -21,6 +21,11 @@ const ordinaryHarnessPaths = new Set([
   "tools/engineering-harness/src/workflow-host.mjs",
   "tools/engineering-harness/src/workflow.mjs",
   "tools/engineering-harness/src/ordinary-api.mjs",
+  "tools/engineering-harness/src/ordinary-runtime.mjs",
+  "tools/engineering-harness/src/ordinary-memory.mjs",
+  "tools/engineering-harness/src/ordinary-policy.mjs",
+  "tools/engineering-harness/src/ordinary-policy-evaluator.mjs",
+  "tools/engineering-harness/test/ordinary-runtime.test.mjs",
   "tools/engineering-harness/src/ordinary-workspace.mjs",
   "tools/engineering-harness/src/ordinary-pool.mjs",
   "tools/engineering-harness/test/ordinary-pool.test.mjs",
@@ -189,16 +194,17 @@ export function checkFeedback(run) {
 }
 
 /** Native tools remain in the host. The kernel calls this bridge, not a model API. */
-async function nativeStage(route, payload, host) {
+async function nativeStage(route, payload, host, runtime) {
   const kind = route.role;
   let hostError;
   const kernel = new HarnessKernel({
     router: new AlgorithmRouter({ ordinary: { intent: "ordinary", steps: [{ kind }] } }),
-    pool: new AgentPool([{ id: `host-${kind}`, model: route.model, handles: [kind], run: async () => {
+    pool: new AgentPool([{ id: `host-${kind}`, model: route.model, handles: [kind], run: async (input) => {
       const started = performance.now();
       let output;
       try {
-        output = workerOutput((await host("native-worker", { route, ...payload })).result, route,
+        output = workerOutput((await host("native-worker", { route, ...payload,
+          ...(runtime ? { runtimeContext: input.goal.context } : {}) })).result, route,
           payload.files.map(({ path }) => path), payload.sourceSha256);
       } catch (error) { hostError = error; throw error; }
       return { output, quality: 0, confidence: 1, risk: 0,
@@ -207,6 +213,7 @@ async function nativeStage(route, payload, host) {
     verifiers: new VerifierRegistry().register(predicateVerifier("host-result", "custom", (output) => output?.status === "completed", "Missing native completion")),
     // Compatibility fields, not subscription budgets or measured usage/quality.
     budget: { costUsd: Infinity, risk: 0, retries: 0, confidence: 0 }, breakerThreshold: 1,
+    retrieveMemory: () => runtime?.context(kind) ?? {},
   });
   const run = await kernel.run({ text: payload.goal, intent: "ordinary" });
   if (hostError) throw hostError;
@@ -214,17 +221,19 @@ async function nativeStage(route, payload, host) {
   return { ...run.result, kernelReceipts: run.receipts, kernelReceiptsValid: run.receiptsValid };
 }
 
-async function ordinaryStage(route, payload, host) {
-  try { return await nativeStage(route, payload, host); }
+async function ordinaryStage(route, payload, host, runtime) {
+  runtime?.noteRoute(route);
+  try { return { ...await nativeStage(route, payload, host, runtime), executedRoute: route }; }
   catch (error) {
     if (!(error instanceof OrdinaryApiFailure) || route.transport !== "openrouter-api") throw error;
     const credit = error.code === "confirmed-credit-rejection";
     if (!credit && !["completed-invalid-output", "task-output-held"].includes(error.code)) throw error;
-    const fallback = routeDelivery({ role: route.role, taskId: route.taskId, completionCheck: route.completionCheck,
+    let fallback = routeDelivery({ role: route.role, taskId: route.taskId, completionCheck: route.completionCheck,
       model: credit ? "cc/claude-sonnet-5[1m]" : "cc/claude-opus-5-5[1m]",
       effort: credit ? "medium" : "high", reason: error.code });
-    const result = await nativeStage(fallback, { ...payload, transportFailure: { code: error.code, evidence: error.evidence } }, host);
-    return { ...result, failedApi: { code: error.code, evidence: error.evidence } };
+    if (credit && runtime) fallback = runtime.selectCreditFallback(fallback);
+    const result = await nativeStage(fallback, { ...payload, transportFailure: { code: error.code, evidence: error.evidence } }, host, runtime);
+    return { ...result, executedRoute: fallback, failedApi: { code: error.code, evidence: error.evidence } };
   }
 }
 
@@ -247,6 +256,7 @@ export async function runWorkflow(rawSpec, host, io = {}) {
   }
   const initialOutside = prepared.outside;
   const initialFiles = prepared.files;
+  const runtime = io.runtime?.forWorkflow(spec, initialFiles, io.root ?? repository);
   const verifyReference = io.verifyReference ?? verifyJsonReference;
   const checkReference = io.checkReference ?? ((run) => {
     const { directory, ...record } = run;
@@ -269,6 +279,7 @@ export async function runWorkflow(rawSpec, host, io = {}) {
       prompt: renderOrdinaryPrompt({ taskId: spec.taskId, sourceSha256: digest(observe()), payload }) };
     const envelope = { schema: 1, runId, requestId: ++sequence, taskId: spec.taskId, specSha256,
       sourceSha256: digest(observe()), action, payload };
+    if (action === "native-worker") runtime?.notePacket(envelope);
     if (Buffer.byteLength(JSON.stringify(envelope)) > 2 * 1024 * 1024) throw new Error("Host request exceeds structural limit");
     const result = await host(envelope);
     ownKeys(result, ["schema", "runId", "requestId", "taskId", "specSha256", "sourceSha256", "result"], "host response");
@@ -294,6 +305,16 @@ export async function runWorkflow(rawSpec, host, io = {}) {
   };
   const stable = (before) => { if (!equal(before, observe())) throw new Error("Source changed during a read-only stage"); };
   await live();
+  let plan;
+  if (runtime) {
+    const before = observe();
+    const route = routeDelivery({ ...spec.implement, role: "plan", taskId: spec.taskId, completionCheck: spec.completionCheck });
+    const planned = await ordinaryStage(route, { goal: spec.goal, completionCheck: spec.completionCheck,
+      files: files(), sourceSha256: digest(before), instructions: "Read-only planning; changes must be []." }, request, runtime);
+    stable(before);
+    if (planned.verdict !== "ACCEPT") throw new Error("Ordinary planning did not produce an accepted plan");
+    plan = planned.summary;
+  }
   const workerIds = new Set();
   const failures = new Set();
   let feedback = null;
@@ -306,7 +327,7 @@ export async function runWorkflow(rawSpec, host, io = {}) {
     const selection = feedback ? { model: "cc/claude-opus-5-5[1m]", effort: "high", reason: "capability/output repair" } : spec.implement;
     const route = routeDelivery({ ...selection, role: "implement", taskId: spec.taskId, completionCheck: spec.completionCheck });
     const proposal = await ordinaryStage(route, { goal: spec.goal, completionCheck: spec.completionCheck,
-      files: beforeFiles, sourceSha256: digest(before), feedback, instructions: "Read-only packet worker. Propose full UTF-8 file contents as changes [{path, content}] against this exact source. Preserve selected model and transport. Never write files or run builds/tests. Root alone applies changes. No publication." }, request);
+      files: beforeFiles, sourceSha256: digest(before), feedback, plan, instructions: "Read-only packet worker. Propose full UTF-8 file contents as changes [{path, content}] against this exact source. Preserve selected model and transport. Never write files or run builds/tests. Root alone applies changes. No publication." }, request, runtime);
     stable(before);
     for (const workerId of participantIds(proposal)) workerIds.add(workerId);
     if (proposal.verdict !== "ACCEPT") throw new Error(`Implementation ${proposal.verdict}: ${proposal.summary}`);
@@ -347,6 +368,7 @@ export async function runWorkflow(rawSpec, host, io = {}) {
     }
     const failed = checks.find((check) => check.status !== "command-passed");
     if (failed) {
+      runtime?.observe(proposal.executedRoute, checks, checkReferenceIndexes.map((index) => allCheckReferences[index]), 0);
       feedback = checkFeedback(failed);
     } else {
       await live();
@@ -354,10 +376,11 @@ export async function runWorkflow(rawSpec, host, io = {}) {
       const reviewRoute = routeDelivery({ ...spec.review, role: "review", taskId: spec.taskId, completionCheck: spec.completionCheck });
       const review = await ordinaryStage(reviewRoute, { goal: spec.goal, completionCheck: spec.completionCheck,
         files: files(), initialFiles, sourceSha256: digest(candidate), implementationWorkerIds: [...workerIds],
-        checks: checks.map((run) => ({ ...checkFeedback(run), kind: "check-result" })), instructions: "Independent fresh-context read-only review. Check exact source and deterministic results against governing evidence. Reviewer must be independent of all implementationWorkerIds from earlier attempts. Return ACCEPT, REJECT with findings, or INCONCLUSIVE. No edits or build/test commands; changes must be []." }, request);
+        checks: checks.map((run) => ({ ...checkFeedback(run), kind: "check-result" })), instructions: "Independent fresh-context read-only review. Check exact source and deterministic results against governing evidence. Reviewer must be independent of all implementationWorkerIds from earlier attempts. Return ACCEPT, REJECT with findings, or INCONCLUSIVE. No edits or build/test commands; changes must be []." }, request, runtime);
       stable(candidate);
       if (participantIds(review).some((workerId) => workerIds.has(workerId))) throw new Error("Reviewer is not independent of implementation");
       if (review.verdict === "INCONCLUSIVE") throw new Error(`Review inconclusive: ${review.summary}`);
+      runtime?.observe(proposal.executedRoute, checks, checkReferenceIndexes.map((index) => allCheckReferences[index]), review.verdict === "ACCEPT" ? 1 : 0);
       if (review.verdict === "ACCEPT") {
         if (equal(initialFiles, files())) throw new Error("No source change was delivered");
         await live();
@@ -379,13 +402,14 @@ export async function runWorkflow(rawSpec, host, io = {}) {
           resultSha256: digest(review),
         };
         const evidence = { schema: "ordinary-workflow-v2", runId, taskId: spec.taskId, specSha256,
+          ...(runtime ? { policyDigest: runtime.policyDigest, runtimeBinding: runtime.binding } : {}),
           status: "verified-local", source: candidate, checks: compactChecks, review: compactReview,
           implementationWorkerIds: [...workerIds],
           eventReferences, checkReferences: allCheckReferences,
           eventsSha256: digest(eventReferences),
           qualification: false, publication: false, attribution: "native-host-supplied; inspected, not independently authenticated" };
         if (coordinationUnavailable !== undefined) {
-          return { ...evidence, status: "ready-for-owner-review", mcpReadback: false,
+          return { ...evidence, ...(runtime ? { learning: runtime.finish(runId) } : {}), status: "ready-for-owner-review", mcpReadback: false,
             coordinationUnavailable, ownerReviewHold: io.ownerReviewHold };
         }
         const handoff = await request("mcp-handoff", { namespace: "programme-task-evidence", key: `workflow-${runId}`, evidence,
@@ -393,7 +417,7 @@ export async function runWorkflow(rawSpec, host, io = {}) {
         stable(candidate);
         for (const reference of [...eventReferences, ...allCheckReferences, handoff.reference]) verify(reference);
         if (!equal(handoff.result?.value, evidence)) throw new Error("MCP evidence readback is missing or mismatched");
-        return { ...evidence, status: "ready-for-owner-review", mcpReadback: true,
+        return { ...evidence, ...(runtime ? { learning: runtime.finish(runId) } : {}), status: "ready-for-owner-review", mcpReadback: true,
           handoffReference: handoff.reference };
       }
       feedback = { kind: "review-rejected", review, reviewSha256: digest(review) };
@@ -403,7 +427,17 @@ export async function runWorkflow(rawSpec, host, io = {}) {
     const failureKey = digest({ files: files(), kind: feedback.kind,
       command: failed?.command ?? null, code: failed?.result?.code ?? null,
       signal: failed?.result?.signal ?? null });
-    if (failures.has(failureKey)) throw new Error("Repair stalled on unchanged source and failure; integrator decision required");
+    if (failures.has(failureKey)) {
+      const error = new Error("Repair stalled on unchanged source and failure; integrator decision required");
+      if (runtime && failed?.result?.code === 1 && failed.result?.observedNodeTestSummary?.fail > 0 &&
+          !failed.result?.timedOut && !failed.result?.cleanupUnconfirmed) {
+        error.ordinaryEvaluation = { runId, taskId: spec.taskId, specSha256, policyDigest: runtime.policyDigest,
+          runtimeBinding: runtime.binding, learning: runtime.finish(runId),
+          status: "authoring-rejected", checkReferences: allCheckReferences, eventReferences,
+          source: candidate, checks: checks.map((check) => checkFeedback(check)) };
+      }
+      throw error;
+    }
     failures.add(failureKey);
   }
 }

@@ -25,10 +25,18 @@ Connected control accepts owner-set `readyHarnessTaskIds`/`readyDeliveryTaskIds`
 present arrays replace legacy scope IDs, empty revokes all, absent preserves legacy.
 IDs must be unique/valid; task remains `in_progress`, product owner hold still gates.
 Checks refresh before stages; no live control was changed or programme resumed.
-Ordinary evidence is stored locally/MCP, but ordinary learned Router reduction is
-not wired: `workflow.mjs` uses static `AlgorithmRouter` stages; `routing/history.mjs`
-admits frozen native-provider outcomes, not ordinary API outcomes. Installing Router,
-AVO or Darwin does not close that architectural gap. No frozen history was changed.
+**Ordinary control-plane/learning slice:** normal CLI now runs planning, role policy
+and native memory through the upstream kernel. Immutable native-only deltas exclude
+every hybrid run; ordinary rows are not paired training. Explicit same-packet
+comparisons feed upstream Router only with five common inputs and full quality,
+bound to runtime/lockfile, evaluator and policy. Only unpinned confirmed402 native
+Sonnet/Sol selection adapts; DeepSeek defaults, pins and Opus repair remain fixed.
+Upstream Flywheel producer uses actual isolated workflow evaluator, five selection
+and five disjoint sealed tasks, per-case nonregression and distinct clean reruns.
+Signed replay, live bindings, lineage and CAS guard activation/rollback; CLI consumes active policy.
+Final ten-file ordinary join: 94/94; syntax checks pass. Synthetic tests prove contracts,
+not live training, evolution, performance or resumption. Frozen history remains untouched.
+Config/commands: harness README. ADR remains Proposed for wider programme claims.
 
 Private Cargo `--target-dir target/engineering-delivery/builds/<allocation-id>` binds
 allocation/profile/binary/compiler event; caller owns exclusivity. Concurrency unproved.
@@ -53,19 +61,14 @@ the later read-only proof below separately establishes its narrower claims.
 Focused ordinary join: 71/71 tests pass, including real concurrent Node checks,
 wrong-root application refusal and unchanged canonical-source assertions.
 
-`src/ordinary-pool.mjs` now imports declared `@claude-flow/cli` 3.47.0 through
+`src/ordinary-pool.mjs` imports declared `@claude-flow/cli` 3.47.0
 `dist/src/services/bounded-worker-pool.js` (manifest `latest`, lock exact).
-Leaf SHA256 is `757824847c1b3a394f78441f84e519a0edcdf6731d39fdfcd7fb2ed37a00fce0`.
-The thin adapter rejects overlapping paths/named resources before launch, checks
-pre-aborted signals, drains started callbacks before releasing ownership, and
-retains failed/cancelled candidate evidence paths without promoting their status.
-Caller supplies dependency-ready entries and remains sole canonical integrator.
-Five focused pool contracts pass; the complete ordinary join passes 77/77 on
-Node 24.14.1 with two test workers. A production-composition test runs two
-real isolated workflows through the upstream pool, with overlapping deterministic
-host fixtures, candidate edits, real Node checks and verified local references.
-It preserves canonical bytes and pending-owner status. Those model responses are
-fixtures, separate from the live read-only review and handoff below.
+Leaf SHA256: `757824847c1b3a394f78441f84e519a0edcdf6731d39fdfcd7fb2ed37a00fce0`.
+Adapter enforces path/resource exclusions, pre-abort checks, callback drain and
+retained failure custody. Root supplies ready entries and integrates alone.
+Earlier Node 24.14.1 join passed 77/77 with two workers, including overlapping
+isolated fixture workflows, real Node checks and unchanged canonical source.
+Fixture proof is separate from live read-only evidence below.
 
 **Final repair and live parallel proof (`8264bd42`):** charged HTTP errors with
 known generation/cost now retain accounting and hold only their task, without
@@ -97,12 +100,10 @@ and install scripts are not executed by this integration. No blanket audit fix,
 major override or optional-learning removal was applied. This scoped exposure
 assessment does not certify unused surfaces or authorize public deployment.
 
-Active harness README now matches current routing, optional direct execution and
-resource-based concurrency. Its oversized historical text is preserved in four
-clearly labelled README-history files; frozen evidence and obligations are not
-rewritten as current ordinary policy. No learning or qualification feature removed.
-Exact pool source/test paths are admitted for later ordinary maintenance and its
-recorded Node self-check; arbitrary siblings remain refused (35 focused tests pass).
+Active README matches routing, optional direct execution and resource-based concurrency.
+Four README-history files preserve earlier text and frozen obligations; no learning or
+qualification feature removed. Exact pool paths are admitted for ordinary maintenance;
+arbitrary siblings remain refused (35 focused tests pass).
 
 Ordinary harness repair may explicitly record unavailable project MCP and known
 owner-review hold state. Local source/check/review references remain mandatory;
@@ -114,8 +115,7 @@ Per-request reservation records now bind process PID plus boot/start identity;
 live calls may overlap, while dead/reused/unknown ownership or unreadable records
 blocks new dispatch as unknown charge. Exclusive initial publication and atomic
 terminal writes avoid partial-read races. Concurrent-adapter and live-child/crash
-tests pass; this is no
-global one-model limit. Native fallback review retains failed API accounting.
+tests pass; no global model cap. Native fallback review retains failed API accounting.
 
 **Initial live repair accepted September 28:** production `workflow --spec`
 run `4a032663-19f5-4ffc-9235-70cb3f744608`, task

@@ -18,6 +18,7 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const roles = Object.freeze({
   build: [null, null],
   test: [null, null],
+  plan: ["deepseek/deepseek-v4.1-flash", "high"],
   implement: ["deepseek/deepseek-v4.1-flash", "high"],
   documentation: ["cc/claude-sonnet-5[1m]", "medium"],
   review: ["deepseek/deepseek-v4.1-flash", "high"],
@@ -81,6 +82,7 @@ const nodeTests = new Set([
   "tools/engineering-harness/test/workflow-control.test.mjs",
   "tools/engineering-harness/test/workflow.test.mjs",
   "tools/engineering-harness/test/ordinary-api.test.mjs",
+  "tools/engineering-harness/test/ordinary-runtime.test.mjs",
   "tools/engineering-harness/test/ordinary-pool.test.mjs",
   "tools/engineering-harness/test/ordinary-batch-cli.test.mjs",
   "tools/engineering-harness/test/astra-routing.test.mjs",
