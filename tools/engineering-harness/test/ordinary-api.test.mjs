@@ -6,7 +6,7 @@ import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { apiDefaults, createOrdinaryApi, renderOrdinaryPrompt, withOrdinaryApi } from "../src/ordinary-api.mjs";
-import { runWorkflow } from "../src/workflow.mjs";
+import { digest, runWorkflow } from "../src/workflow.mjs";
 import { ordinaryWorkflowSpec as spec, setupOrdinaryWorkflowFixture as setup } from "./support/ordinary-workflow-fixture.mjs";
 
 const request = (task = "task-a", role = "implement") => ({ schema: 1, runId: "run", requestId: 1,
@@ -134,6 +134,25 @@ test("only explicit nonexecuted HTTP402 is credit fallback evidence", async () =
     const candidate = setupApi(async () => new Response(JSON.stringify(body), { status }));
     await assert.rejects(candidate.api(request()), /completion-unknown/);
     await assert.rejects(candidate.api(request("unrelated")), /completion-unknown/);
+  }
+});
+
+test("charged non-2xx completion retains known accounting without credit fallback or global hold", async () => {
+  for (const status of [402, 503]) {
+    let calls = 0;
+    const { api, directory } = setupApi(async () => ++calls === 1
+      ? new Response(JSON.stringify({ id: "charged-error", usage: { cost: 0.01 }, error: { code: status } }), { status })
+      : completion());
+    const state = setup(); let nativeCalls = 0;
+    const host = async (r) => { if (r.action === "native-worker") nativeCalls++; return state.host(r); };
+    await assert.rejects(runWorkflow(spec, withOrdinaryApi(host, api), state.io),
+      (error) => error.code === "completed-http-error" && error.evidence.actualUsd === 0.01
+        && error.evidence.providerRequestId === "charged-error" && error.evidence.httpStatus === status);
+    assert.equal(nativeCalls, 0);
+    await assert.rejects(api({ ...request(spec.taskId), specSha256: digest(spec) }), /completed-http-error/);
+    assert.equal(calls, 1);
+    assert.equal((await api(request("unrelated"))).evidence.actualUsd, 0.01);
+    assert.ok(!readdirSync(directory).includes("unknown-charge.json"));
   }
 });
 

@@ -12,6 +12,7 @@ import { jsonReference, readWorkflowFiles, runWorkflow, validateWorkflow, verify
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const excluded = new Set([".git", "node_modules", "target", ".swarm", ".claude-flow", ".ruvnet-brain", ".agentic-qe"]);
+export const isSecretSourcePath = (path) => /(^|\/)\.env(?:[./]|$)/.test(path);
 const inside = (root, path) => {
   const rel = relative(root, path);
   return rel !== "" && rel !== ".." && !rel.startsWith("../") && !isAbsolute(rel);
@@ -36,7 +37,7 @@ function cleanSubmodules(root = repository) {
 }
 
 function snapshotEntries(root, prefix = "") {
-  return readdirSync(join(root, prefix), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap((entry) => {
+  return readdirSync(join(root, prefix), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0).flatMap((entry) => {
     if (excluded.has(entry.name)) return [];
     const path = prefix ? `${prefix}/${entry.name}` : entry.name;
     const absolute = join(root, path), stat = lstatSync(absolute);
@@ -68,7 +69,7 @@ export function createOrdinaryWorkspace() {
   const root = mkdtempSync(join(parent, "source-"));
   for (const path of [...new Set(paths)].sort()) {
     if (path.split("/").some((part) => excluded.has(part))) continue;
-    if (!inside(repository, resolve(repository, path)) || /(^|\/)\.env(?:\.|$)/.test(path)) {
+    if (!inside(repository, resolve(repository, path)) || isSecretSourcePath(path)) {
       throw new Error(`Unsafe candidate input: ${path}`);
     }
     const from = join(repository, path), to = join(root, path);

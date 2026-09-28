@@ -103,7 +103,9 @@ export function createOrdinaryApi({ directory, fetchImpl = fetch, apiKey = () =>
     const holdPath = join(directory, `hold-${taskScope}.json`);
     try {
       const hold = JSON.parse(readFileSync(holdPath, "utf8"));
-      throw new OrdinaryApiFailure(hold.status === "completed-invalid-output" ? "task-output-held" : "completion-unknown", hold);
+      const code = hold.status === "completed-invalid-output" ? "task-output-held"
+        : hold.status === "completed-http-error" ? "completed-http-error" : "completion-unknown";
+      throw new OrdinaryApiFailure(code, hold);
     } catch (error) { if (error.code !== "ENOENT") throw error; }
     const reservation = hash({ taskScope, prompt, runId: request.runId, requestId: request.requestId });
     const path = join(directory, `request-${reservation}.json`);
@@ -156,6 +158,11 @@ export function createOrdinaryApi({ directory, fetchImpl = fetch, apiKey = () =>
       }
       if (typeof body?.id === "string" && body.id) evidence.providerRequestId = body.id;
       if (Number.isFinite(body?.usage?.cost) && body.usage.cost >= 0) evidence.actualUsd = body.usage.cost;
+      if (!response.ok && evidence.providerRequestId && evidence.actualUsd !== null) {
+        evidence.status = "completed-http-error"; evidence.httpStatus = response.status;
+        save(); hold();
+        throw new OrdinaryApiFailure("completed-http-error", evidence);
+      }
       if (!response.ok || !evidence.providerRequestId || evidence.actualUsd === null) throw new Error("Unconfirmed completion accounting");
       evidence.resolvedModel = body.model;
       evidence.status = "completed"; save();

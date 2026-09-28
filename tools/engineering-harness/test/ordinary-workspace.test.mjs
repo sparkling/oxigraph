@@ -2,10 +2,19 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { createOrdinaryWorkspace } from "../src/ordinary-workspace.mjs";
+import { createOrdinaryWorkspace, isSecretSourcePath } from "../src/ordinary-workspace.mjs";
 import { repository, runDelivery, sourceObservation } from "../src/delivery.mjs";
 import { runWorkflow } from "../src/workflow.mjs";
 import { ordinaryWorkflowSpec, setupOrdinaryWorkflowFixture } from "./support/ordinary-workflow-fixture.mjs";
+
+test("secret source admission covers env files and env directories without prefix false positives", () => {
+  for (const path of [".env", ".env.local", ".env/key", "src/.env/key", "src/.env.local/key"]) {
+    assert.equal(isSecretSourcePath(path), true, path);
+  }
+  for (const path of ["src/environment.mjs", ".environment/key", "src/README.md"]) {
+    assert.equal(isSecretSourcePath(path), false, path);
+  }
+});
 
 test("non-Git candidates isolate source and execute real supported checks with private evidence", async () => {
   const before = sourceObservation();
