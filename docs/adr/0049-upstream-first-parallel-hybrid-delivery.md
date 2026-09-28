@@ -11,8 +11,7 @@
 
 Ordinary delivery has isolated direct API at existing kernel/host seam, explicit
 routes, shared packets/output validation, request bounds/replay, task-scoped holds,
-failure attribution, actual metering and capable repair. Earlier live repair passed
-66 tests; prior ordinary join passed 91/91. Programme stays paused.
+failure attribution, actual metering and capable repair. Programme stays paused.
 
 **September 28 ordinary entrypoint repair:** `oxigraph-delivery.mjs batch --spec`
 now calls the existing upstream pool with isolated workflow specs. Strict JSON
@@ -20,18 +19,19 @@ admission, unique entry/task IDs, source/resource exclusions, run/request bridge
 multiplexing and cancellation drain preserve candidate custody and owner acceptance.
 Cancellation/bridge failure retains unconfirmed external-action ownership.
 Functional CLI fixtures rendezvous two authors, reply out of order and run real
-Node checks in distinct candidate roots; final eight-file join passes 86/86 on
+Node checks in distinct candidate roots; final nine-file join passes 91/91 on
 Node 24.14.1, plus syntax checks. No live models or performance benchmarks.
-Models/request-cost policy remain unchanged. Connected control still names one
-active task; batch grants no multi-task/product authorization or resumption.
+Connected control accepts owner-set `readyHarnessTaskIds`/`readyDeliveryTaskIds`;
+present arrays replace legacy scope IDs, empty revokes all, absent preserves legacy.
+IDs must be unique/valid; task remains `in_progress`, product owner hold still gates.
+Checks refresh before stages; no live control was changed or programme resumed.
 Ordinary evidence is stored locally/MCP, but ordinary learned Router reduction is
 not wired: `workflow.mjs` uses static `AlgorithmRouter` stages; `routing/history.mjs`
 admits frozen native-provider outcomes, not ordinary API outcomes. Installing Router,
 AVO or Darwin does not close that architectural gap. No frozen history was changed.
 
-Private Cargo `--target-dir target/engineering-delivery/builds/<allocation-id>`
-binds allocation/profile/binary/compiler event; existing jobs/libtest controls and
-environment scrubber remain. Caller owns exclusivity; concurrent Cargo unproved.
+Private Cargo `--target-dir target/engineering-delivery/builds/<allocation-id>` binds
+allocation/profile/binary/compiler event; caller owns exclusivity. Concurrency unproved.
 
 Ordinary `workflow --isolated true` now composes the existing workflow callbacks
 with a non-Git candidate snapshot under `target/engineering-delivery/candidates`.

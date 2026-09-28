@@ -78,6 +78,7 @@ const privateTarget = /^target\/engineering-delivery\/builds\/[A-Za-z0-9][A-Za-z
 const nodeTests = new Set([
   "tools/engineering-harness/test/delivery.test.mjs",
   "tools/engineering-harness/test/workflow-policy.test.mjs",
+  "tools/engineering-harness/test/workflow-control.test.mjs",
   "tools/engineering-harness/test/workflow.test.mjs",
   "tools/engineering-harness/test/ordinary-api.test.mjs",
   "tools/engineering-harness/test/ordinary-pool.test.mjs",

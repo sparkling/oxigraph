@@ -30,6 +30,7 @@ const ordinaryHarnessPaths = new Set([
   "tools/engineering-harness/test/delivery.test.mjs",
   "tools/engineering-harness/test/support/ordinary-workflow-fixture.mjs",
   "tools/engineering-harness/test/workflow-policy.test.mjs",
+  "tools/engineering-harness/test/workflow-control.test.mjs",
   "tools/engineering-harness/test/workflow.test.mjs",
 ]);
 const ordinaryHarnessPath = (path) => ordinaryHarnessPaths.has(path);
@@ -51,6 +52,18 @@ const productPath = (path) => path === "oxrocksdb-sys/api/c.cc" || manifestPath(
 function ownKeys(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
       Object.keys(value).some((key) => !keys.includes(key))) throw new Error(`Invalid ${label}`);
+}
+
+function taskAuthorized(control, spec) {
+  const readyKey = spec.scope === "harness" ? "readyHarnessTaskIds" : "readyDeliveryTaskIds";
+  if (!Object.hasOwn(control, readyKey)) {
+    return control[spec.scope === "harness" ? "activeHarnessTaskId" : "activeDeliveryTaskId"] === spec.taskId;
+  }
+  const ready = control[readyKey];
+  if (!Array.isArray(ready) || ready.some((id) => typeof id !== "string" || !/^task-[a-zA-Z0-9-]+$/.test(id)) ||
+      new Set(ready).size !== ready.length) throw new Error(`Invalid owner-authorized ${readyKey}`);
+  // An explicit list supersedes the legacy ID, including an empty revocation list.
+  return ready.includes(spec.taskId);
 }
 
 export function validateWorkflow(spec) {
@@ -274,7 +287,7 @@ export async function runWorkflow(rawSpec, host, io = {}) {
     const { result } = await request("mcp-read", { namespace: "programme-controls", key: "oxigraph-six-hour-delivery-course-correction-v1" });
     if (result?.task?.taskId !== spec.taskId || result.task.status !== "in_progress" ||
         typeof result.control?.ownerReviewHold?.active !== "boolean" ||
-        (spec.scope === "harness" ? result.control.activeHarnessTaskId : result.control.activeDeliveryTaskId) !== spec.taskId) {
+        !taskAuthorized(result.control, spec)) {
       throw new Error("Live task/control does not authorize this workflow");
     }
     if (spec.scope === "product" && result.control.ownerReviewHold.active) throw new Error("Owner review hold blocks product execution");

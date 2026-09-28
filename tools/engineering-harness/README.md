@@ -72,6 +72,15 @@ replace `WORKFLOW_SPEC` with a full workflow specification. Concurrency is chose
 for this ready set, not a standing session cap. Entry and task IDs must be unique.
 Each spec retains existing live task/control authorization; batch creates no new
 authorization. Harness-only unavailable-MCP options also work on `batch`.
+For connected batches, owner-controlled
+`programme-controls/oxigraph-six-hour-delivery-course-correction-v1` may declare
+`readyHarnessTaskIds` or `readyDeliveryTaskIds`: distinct valid task-ID arrays,
+separate by scope. An explicit array replaces that scope's legacy active ID;
+`[]` revokes all admissions. Absent array preserves `activeHarnessTaskId` or
+`activeDeliveryTaskId`. Every refresh still requires task status `in_progress`;
+product work requires `ownerReviewHold.active:false`. Listing tasks does not
+accept dependencies, clear a hold or resume a paused programme. Only owner may
+authorize this ready set; CLI never writes programme controls.
 Bridge replies echo both `runId` and `requestId`; replies may arrive out of order.
 SIGINT/SIGTERM stops queued work, aborts API transport and rejects pending bridge
 requests before draining callbacks. Result retains candidate pointers and lists

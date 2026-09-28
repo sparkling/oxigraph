@@ -20,6 +20,8 @@ export const ordinaryWorkflowSpec = {
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
 function fixture(options = {}) {
+  const spec = options.spec ?? ordinaryWorkflowSpec;
+  const path = spec.paths[0];
   let content = "before";
   let outside = "unchanged";
   let checks = 0;
@@ -38,7 +40,7 @@ function fixture(options = {}) {
   const io = {
     observe,
     outside: () => outside,
-    files: () => [{ path: ordinaryWorkflowPath, sha256: options.sha ? options.sha(content) : null, content }],
+    files: () => [{ path, sha256: options.sha ? options.sha(content) : null, content }],
     event: (event) => options.missingEventEvidence ? undefined :
       putEvidence(`/evidence/event-${++eventId}.json`, event, options.tamperedEventEvidence),
     checkReference: (run) => {
@@ -57,7 +59,7 @@ function fixture(options = {}) {
       const failed = options.failChecks === true || checks <= (options.failChecks ?? 0);
       const run = {
         directory: `/evidence/check-${checks}`,
-        taskId: ordinaryWorkflowSpec.taskId,
+        taskId: spec.taskId,
         source,
         sourceAfter: source,
         sourceStable: true,
@@ -76,9 +78,9 @@ function fixture(options = {}) {
     actions.push(request.action);
     let result;
     if (request.action === "mcp-read") {
-      result = { task: { taskId: ordinaryWorkflowSpec.taskId, status: "in_progress" }, control: {
-        activeHarnessTaskId: ordinaryWorkflowSpec.taskId,
-        activeDeliveryTaskId: ordinaryWorkflowSpec.taskId,
+      result = { task: { taskId: spec.taskId, status: "in_progress" }, control: {
+        activeHarnessTaskId: spec.taskId,
+        activeDeliveryTaskId: spec.taskId,
         ownerReviewHold: { active: options.hold ?? true },
       } };
       if (options.missingTask) result.task = null;
@@ -102,7 +104,7 @@ function fixture(options = {}) {
         changes: [],
       };
       if (!review) result.changes = options.noChanges ? [] : [{
-        path: ordinaryWorkflowPath,
+        path,
         content: options.stalled ? "after" : `after-${implementations}`,
       }];
       if (!review && options.badPath) result.changes[0].path = options.badPath;
