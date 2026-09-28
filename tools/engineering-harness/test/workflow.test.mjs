@@ -290,6 +290,27 @@ test("stdio host services injected MCP callbacks without creating a pending nati
   }
 });
 
+test("relay joins async iterator cleanup when observation fails and preserves the primary failure", async () => {
+  for (const cleanupFails of [false, true]) {
+    const failure = new Error("observation rejected");
+    let cleaned = false;
+    const request = { action: "mcp-read", taskId: spec.taskId, payload: {} };
+    await assert.rejects(relayWorkflowHost(request, {
+      taskStatus: async function* () {
+        try { yield { phase: "pending" }; return { taskId: spec.taskId }; }
+        finally {
+          await new Promise((resolve) => setImmediate(resolve));
+          cleaned = true;
+          if (cleanupFails) throw new Error("secondary cleanup failure");
+        }
+      },
+      memoryRetrieve: async () => ({ found: true, value: {} }),
+      observation: async () => { throw failure; },
+    }), (error) => error === failure);
+    assert.equal(cleaned, true, "relay must await iterator.return() before releasing the action");
+  }
+});
+
 test("mechanical handoff requires a real strict store and exact fresh readback", async () => {
   const mcp = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
   const evidence = { schema: "ordinary-workflow-v2", value: 7 };

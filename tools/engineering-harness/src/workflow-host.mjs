@@ -22,10 +22,21 @@ export async function relayWorkflowHost(request, callbacks) {
     const pending = callback(args);
     if (pending && typeof pending[Symbol.asyncIterator] === "function") {
       const iterator = pending[Symbol.asyncIterator]();
-      while (true) {
-        const step = await iterator.next();
-        if (step.done) return step.value;
-        if (typeof callbacks.observation === "function") await callbacks.observation(step.value);
+      try {
+        while (true) {
+          const step = await iterator.next();
+          if (step.done) return step.value;
+          if (typeof callbacks.observation === "function") await callbacks.observation(step.value);
+        }
+      } catch (error) {
+        if (typeof iterator.return === "function") {
+          try {
+            await iterator.return();
+          } catch {
+            // Cleanup failure must not replace the primary failure.
+          }
+        }
+        throw error;
       }
     }
     return await pending;

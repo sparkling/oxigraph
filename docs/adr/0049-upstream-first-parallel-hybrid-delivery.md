@@ -14,10 +14,9 @@ callback at its existing kernel/host seam, explicit native/API routes, shared
 packet rendering and worker-output validation, per-request bounds and replay
 records, exact known model/snapshot admission, task-scoped completed-output holds,
 auth/credit/unknown-completion attribution, actual metering in kernel evidence,
-and capable native repair. The first focused slice passes 61 ordinary harness
-tests on Node 24 plus JavaScript syntax and whitespace checks. This is injected
-contract evidence, not a live model cascade or completion of this ADR. Pool,
-resource isolation and initial live proof remain unverified; programme stays paused.
+and capable native repair. Focused adapter/coordination contracts pass 65 tests;
+the initial live repair below passes 66 ordinary tests on Node 24. Pool and
+isolated-resource/source-handoff proof remain open; programme stays paused.
 
 Ordinary harness repair may explicitly record unavailable project MCP and known
 owner-review hold state. Local source/check/review references remain mandatory;
@@ -31,6 +30,21 @@ blocks new dispatch as unknown charge. Exclusive initial publication and atomic
 terminal writes avoid partial-read races. Concurrent-adapter and live-child/crash
 tests pass; this is no
 global one-model limit. Native fallback review retains failed API accounting.
+
+**Initial live repair accepted September 28:** production `workflow --spec`
+run `4a032663-19f5-4ffc-9235-70cb3f744608`, task
+`task-harness-parallel-hybrid-repair`, fixed async-iterator cleanup after a relay
+observation failure. The new regression failed before repair. DeepSeek authored
+the exact source patch, 66/66 ordinary tests passed, and a fresh DeepSeek reviewer
+accepted it; no native fallback or separate planning stage was used. Actual cost
+was $0.00851542 across generations `gen-1790555555-eRtXx7MKDFpCIBpf318K`
+and `gen-1790555962-K64MTsuBrNNtofIf9x7Y`. Result
+`target/engineering-delivery/workflow-D0tiaV/result.json` hashes to
+`cc8701fd06174f33b2565e9c98dae1f7f3e47c7bcc38876ae2d0ddde561c028e`;
+all local event/check references verified before integration. The result honestly
+records unavailable project MCP, `mcpReadback: false`, and the preserved owner
+hold. This proves one live ordinary workflow, not parallel programme readiness,
+semantic qualification, cross-server deployment, or completion of this ADR.
 
 This section supersedes conflicting September 26 proposals below. Those sections
 remain historical source findings, not another executable checklist. Status remains
