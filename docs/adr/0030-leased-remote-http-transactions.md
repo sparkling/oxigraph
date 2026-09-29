@@ -307,3 +307,44 @@ This accepts only memory backend ownership. Public owned handle/evaluator,
 RocksDB storage wrapper ownership and lease/protocol gates remain open on
 original G4.5 outcome. No HTTP exposure, qualification or publication. ADR
 remains Proposed.
+
+## Owned RocksDB storage transaction (2026-09-29)
+
+`RocksDbStorageReadableTransaction` now owns a cloned `RocksDbStorage`;
+readable, controlled, keyed and governed start paths return `'static` handles.
+The native transaction retains its covariant lifetime marker. Readers still
+borrow it, and field order releases the native transaction before the storage
+clone. Existing outcomes, receipts, write-only and bulk paths remain unchanged.
+Exact `storage/rocksdb.rs` SHA256:
+`a48be99fbfe215762be3e336e03548b67744ac99ecef6e21d88fc5cd4e730394`.
+
+Sonnet run `462373f3-d6c2-4ac7-9b91-71ffae561dfc` and same-task Opus repair
+`8f302887-75b9-424f-b65a-b69fd5d43dce` returned `INCONCLUSIVE`, no structured
+changes, reporting full-file output failures. Both negative receipts remain:
+`1e2e22056fd53c7950aa79a39e8cd70228909a4660fab05317a7b1cfb6d02af3`
+and `52fd3da80c565c3c04fd7903690c8a4609b3fedce3585deedfa387552d3aba61`.
+These are not successful workflow or acceptance evidence.
+
+Under the direct-work policy, root applied the exact Opus summary edits and
+tests, then formatting, to fresh isolated `source-io8Wvq` from accepted
+`453cff01b`. Only the declared source file changed. Direct candidate checks
+pass 13/13 module tests and 12/12 transaction integration tests; formatter
+passes. Clippy exits 0 with 603 library-test warnings, not a clean-lint claim.
+Observations are recorded as coordinator-observed checks, not runner receipts,
+in `target/engineering-delivery/g45-direct-check-observations.json` and
+`g45-direct-clippy-observation.json` in that same directory.
+
+Fresh independent Sonnet 5.5/high review
+`7f0f1464-d824-4477-b5fe-feccb3664b45`, reviewer
+`c7b0fb1b-33ea-4dca-8d4a-6a2371f18933`, accepts exact source. Review identity,
+15,213 unchanged included source/read inputs and submodule pins were revalidated
+after all native/check actions drained. No failed worker acceptance was inherited.
+The composed canonical source passes default storage 120 tests/1 ignored
+(`run-uC4KFQ`) and RDF 1.2 storage 119 tests/2 ignored (`run-QpmJgR`), using
+top-level counts rather than nested helper summaries. Default/RDF 1.2
+transaction integrations pass 12/12 each (`run-vE6nSz`, `run-yIcRoc`). Exact
+source/sourceAfter bindings verified before this evidence append.
+
+Task `task-1790659791175-01dgrw` closes only this backend prerequisite.
+Public owned-handle/evaluator and lease/protocol work remain on G4.5.
+ADR remains Proposed; no HTTP exposure, qualification, promotion or publication.

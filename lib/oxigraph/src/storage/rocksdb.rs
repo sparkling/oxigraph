@@ -635,11 +635,11 @@ impl RocksDbStorage {
 
     pub fn start_readable_transaction(
         &self,
-    ) -> Result<RocksDbStorageReadableTransaction<'_>, StorageError> {
+    ) -> Result<RocksDbStorageReadableTransaction<'static>, StorageError> {
         Ok(RocksDbStorageReadableTransaction {
             buffer: Vec::new(),
             transaction: self.db.start_readable_transaction()?,
-            storage: self,
+            storage: self.clone(),
         })
     }
 
@@ -647,13 +647,13 @@ impl RocksDbStorage {
         &self,
         control: &TransactionStartControl,
         started_at: Instant,
-    ) -> Result<RocksDbStorageReadableTransaction<'_>, StorageTransactionStartError> {
+    ) -> Result<RocksDbStorageReadableTransaction<'static>, StorageTransactionStartError> {
         Ok(RocksDbStorageReadableTransaction {
             buffer: Vec::new(),
             transaction: self
                 .db
                 .start_readable_transaction_with_control(control, started_at)?,
-            storage: self,
+            storage: self.clone(),
         })
     }
 
@@ -662,7 +662,7 @@ impl RocksDbStorage {
         transaction_key: &[u8; 16],
         control: &TransactionStartControl,
         started_at: Instant,
-    ) -> Result<RocksDbStorageKeyedReadableTransaction<'_>, StorageTransactionStartError> {
+    ) -> Result<RocksDbStorageKeyedReadableTransaction<'static>, StorageTransactionStartError> {
         self.start_outcome_transaction(transaction_key, false, control, started_at)
     }
 
@@ -671,7 +671,7 @@ impl RocksDbStorage {
         transaction_key: &[u8; 16],
         control: &TransactionStartControl,
         started_at: Instant,
-    ) -> Result<RocksDbStorageKeyedReadableTransaction<'_>, StorageTransactionStartError> {
+    ) -> Result<RocksDbStorageKeyedReadableTransaction<'static>, StorageTransactionStartError> {
         self.start_outcome_transaction(transaction_key, true, control, started_at)
     }
 
@@ -681,7 +681,7 @@ impl RocksDbStorage {
         governed: bool,
         control: &TransactionStartControl,
         started_at: Instant,
-    ) -> Result<RocksDbStorageKeyedReadableTransaction<'_>, StorageTransactionStartError> {
+    ) -> Result<RocksDbStorageKeyedReadableTransaction<'static>, StorageTransactionStartError> {
         let legacy_key = transaction_outcome_key(transaction_key);
         let governed_key = governed_outcome_key(transaction_key);
         let (outcome_key, alternative_key, staging, rolled_back) = if governed {
@@ -712,7 +712,7 @@ impl RocksDbStorage {
                     control,
                     started_at,
                 )?,
-                storage: self,
+                storage: self.clone(),
             },
         })
     }
@@ -2309,11 +2309,17 @@ impl RocksDbStorageTransaction<'_> {
     }
 }
 
+/// Readable transaction owning a cloned storage handle.
+///
+/// The lifetime parameter is kept only so borrowing callers compile unchanged. Readers and
+/// iterators still borrow the transaction, so none can outlive it.
 #[must_use]
 pub struct RocksDbStorageReadableTransaction<'a> {
     buffer: Vec<u8>,
+    // Dropped before the storage clone, including any keyed rolled-back marker write.
+    // Both own the database handle, so this order is not required for safety.
     transaction: ReadableTransaction<'a>,
-    storage: &'a RocksDbStorage,
+    storage: RocksDbStorage,
 }
 
 #[must_use]
@@ -4080,6 +4086,7 @@ mod tests {
         is_send_sync::<RocksDbStorage>();
         is_send_sync::<RocksDbStorageReader<'static>>();
         is_send_sync::<RocksDbStorageReadableTransaction<'_>>();
+        is_send_sync::<RocksDbStorageKeyedReadableTransaction<'_>>();
         is_send_sync::<RocksDbStorageBulkLoader<'_>>();
     }
 
@@ -4293,6 +4300,161 @@ mod tests {
                 StorageTransactionOutcome::RolledBack
             );
             after.validate()?;
+        }
+        Ok(())
+    }
+
+    fn assert_static<T: 'static>(_: &T) {}
+
+    #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        clippy::missing_assert_message,
+        reason = "owned readable transaction outlives its original storage handle"
+    )]
+    fn readable_transaction_outlives_original_storage() -> Result<(), Box<dyn std::error::Error>> {
+        let path = TempDir::new()?;
+        let node = |name: &str| NamedNode::new_unchecked(format!("urn:owned:{name}"));
+        let graph = node("graph");
+        let empty = node("empty");
+        let base = Quad::new(node("s"), node("p"), node("base"), GraphName::DefaultGraph);
+        let graph_quad = Quad::new(node("s"), node("p"), node("o"), graph.clone());
+        let staged = Quad::new(
+            node("s"),
+            node("p"),
+            node("staged"),
+            GraphName::DefaultGraph,
+        );
+        let namespace = Namespace::new(NamespacePrefix::new("owned")?, node("ns"));
+        let storage = RocksDbStorage::open(path.path())?;
+        let mut setup = storage.start_transaction()?;
+        setup.insert(base.clone());
+        setup.insert(graph_quad.clone());
+        setup.commit()?;
+
+        let mut transaction = storage.start_readable_transaction()?;
+        assert_static(&transaction);
+        drop(storage);
+        // The transaction alone keeps the database and its lock alive.
+        assert!(RocksDbStorage::open(path.path()).is_err());
+        transaction.insert(staged.clone());
+        transaction.insert_named_graph(empty.clone().into());
+        transaction.set_namespace(namespace.clone());
+        transaction.clear_graph(&graph.clone().into())?;
+        {
+            let reader = transaction.reader();
+            assert!(reader.contains(&EncodedQuad::from(&base))?);
+            assert!(reader.contains(&EncodedQuad::from(&staged))?);
+            assert!(!reader.contains(&EncodedQuad::from(&graph_quad))?);
+            assert!(reader.contains_named_graph(&EncodedTerm::from(&graph))?);
+            assert!(reader.contains_named_graph(&EncodedTerm::from(&empty))?);
+            assert_eq!(reader.namespaces()?, vec![namespace.clone()]);
+        }
+        transaction.commit()?;
+
+        let storage = RocksDbStorage::open(path.path())?;
+        let snapshot = storage.snapshot();
+        assert!(snapshot.contains(&EncodedQuad::from(&staged))?);
+        assert!(!snapshot.contains(&EncodedQuad::from(&graph_quad))?);
+        assert!(snapshot.contains_named_graph(&EncodedTerm::from(&graph))?);
+        assert!(snapshot.contains_named_graph(&EncodedTerm::from(&empty))?);
+        assert_eq!(snapshot.namespaces()?, vec![namespace]);
+        snapshot.validate()?;
+        drop(snapshot);
+
+        let dropped = Quad::new(
+            node("s"),
+            node("p"),
+            node("dropped"),
+            GraphName::DefaultGraph,
+        );
+        let mut transaction = storage.start_readable_transaction()?;
+        drop(storage);
+        transaction.insert(dropped.clone());
+        drop(transaction);
+        // Reopening proves the database and writer permit were released.
+        let storage = RocksDbStorage::open(path.path())?;
+        assert!(!storage.snapshot().contains(&EncodedQuad::from(&dropped))?);
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        clippy::missing_assert_message,
+        reason = "keyed and governed outcomes after the original storage handle is dropped"
+    )]
+    fn keyed_and_governed_transactions_outlive_original_storage()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let path = TempDir::new()?;
+        let control = TransactionStartControl::new();
+        for (mode, key) in [
+            ("commit", [0x61; 16]),
+            ("rollback", [0x62; 16]),
+            ("drop", [0x63; 16]),
+            ("governed", [0x64; 16]),
+        ] {
+            let quad = Quad::new(
+                NamedNode::new_unchecked("urn:owned:keyed"),
+                NamedNode::new_unchecked("urn:owned:mode"),
+                NamedNode::new_unchecked(format!("urn:owned:{mode}")),
+                GraphName::DefaultGraph,
+            );
+            let storage = RocksDbStorage::open(path.path())?;
+            let mut transaction = if mode == "governed" {
+                storage.start_governed_transaction_with_control(&key, &control, Instant::now())
+            } else {
+                storage.start_keyed_readable_transaction_with_control(
+                    &key,
+                    &control,
+                    Instant::now(),
+                )
+            }
+            .map_err(|_| "keyed transaction did not open")?;
+            assert_static(&transaction);
+            drop(storage);
+            transaction.insert(quad.clone());
+            let receipt = match mode {
+                "commit" => {
+                    transaction.commit()?;
+                    None
+                }
+                "rollback" => {
+                    transaction.rollback()?;
+                    None
+                }
+                "drop" => {
+                    drop(transaction);
+                    None
+                }
+                _ => Some(transaction.commit_with_receipt(&SemanticChangeSet::default(), None)?),
+            };
+            let storage = RocksDbStorage::open(path.path())?;
+            let present = storage.snapshot().contains(&EncodedQuad::from(&quad))?;
+            match receipt {
+                Some(receipt) => {
+                    assert_eq!(receipt.sequence(), 1);
+                    assert_eq!(
+                        storage.lookup_commit_receipt(&key)?,
+                        CommitReceiptOutcome::Committed(receipt)
+                    );
+                    assert!(present);
+                }
+                None if mode == "commit" => {
+                    assert_eq!(
+                        storage.lookup_transaction_outcome(&key)?,
+                        StorageTransactionOutcome::Committed
+                    );
+                    assert!(present);
+                }
+                None => {
+                    assert_eq!(
+                        storage.lookup_transaction_outcome(&key)?,
+                        StorageTransactionOutcome::RolledBack
+                    );
+                    assert!(!present);
+                }
+            }
         }
         Ok(())
     }
