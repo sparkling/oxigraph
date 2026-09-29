@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-23 — residual audit recorded; legacy metadata refusals pinned in `918d3566`; one-shot workspace refusal pinned in `3f6d7401`
+- Updated: 2026-09-29 — historical restore process-exit WIP validated and accepted below; broader residual gates remain open
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
@@ -4879,3 +4879,59 @@ With item 1 done, the legacy half of gate 2's metadata comparison is
 discharged: its correct outcome is refusal, and the refusal is now pinned. The
 derived-index item is the one genuinely open gate-2 item, and it depends on the
 profile-admission decision. This ADR stays Proposed.
+
+## Restore process-exit coverage accepted (2026-09-29)
+
+Historical WIP `a33301f335788ed2d095cd35576e360e0151bb20` adds only
+test code in `lib/oxigraph/src/store/restore.rs`. Exact file SHA256 is
+`7818ebdbb674c89bd9d297888d0b6027d994b5caaa9f0e99346eb6fda5e69edf`.
+The resumed owner accepts this bounded slice after the checks and fresh review
+below; the prior WIP and negative evidence remain preserved.
+
+The parent re-executes one exact helper against a nonempty two-quad backup,
+with `process::exit(73)` at existing restore hooks 0 through 7. It checks
+package preservation, phase-specific manifest/marker visibility, refusal of
+incomplete receipts and same-path retries, and final graph equality. A 120-second
+child deadline bounds execution. Exit bypasses Rust destructors but is neither
+SIGKILL nor power loss; phase 7 proves namespace visibility, not media durability.
+
+Recorded checks on clean `fe0868b13facfe1efc43709aa69a033aebe29865`:
+
+| Check | Receipt under `target/engineering-delivery/` | Result |
+| --- | --- | --- |
+| Default restore tests | `run-s0Ng1k/result.json` | 6 passed |
+| RDF12 restore tests | `run-Jh4BcU/result.json` | 6 passed |
+| Default library | `run-TatWXb/result.json` | 270 passed, 0 failed, 1 ignored |
+| Default public backup/restore receipts | `run-DvLFUO/result.json` | 18 passed |
+| RDF12 public backup/restore receipts | `run-5Gh93t/result.json` | 18 passed |
+| Default Clippy, library and tests | `run-nbDzqP/result.json` | exit 0, warnings |
+| RDF12 Clippy, library and tests | `run-AzTRGi/result.json` | exit 0, warnings |
+
+The coordinator verified each receipt hash and both complete `source` and
+`sourceAfter` observations against that clean revision. The library's runner
+aggregate includes nested helper executions; 270 is the top-level test count,
+not the aggregate 293. Clippy is not warning-free: default library-test output
+reports 569 warnings and RDF12 reports 562. Two added
+`tests_outside_test_module` diagnostics follow the existing module style.
+Focused formatting and diff checks pass.
+
+Negative control `candidates/source-s80FkU/target/engineering-delivery/run-aiydDI`
+removes only the production phase-7 hook in an isolated copy. The new parent
+fails at stop 7 (`Some(101)` instead of required `Some(73)`). That deliberately
+invalid source and its failure receipt remain preserved, never integrated.
+
+Fresh native Sonnet 5.5/high reviewer
+`53f78651-410d-4775-a89a-5f010f61d563` accepted this bounded source in
+`resume-native/5a37517a-4e07-4e3a-8f6b-60b3d85e7992-1/response.json`, SHA256
+`d2537741926c90ce23b1b8ca9111a7741d15e4f22441a1519e465abaf32db70c`.
+Its compact input omitted full receipt source fields; the coordinator separately
+verified those fields and exact request/reviewer identity bindings. Earlier
+review/count interpretations remain historical, not final acceptance evidence.
+Project MCP evidence is
+`programme-task-evidence/g43-restore-validation-fe0868b13`; task identity is
+`task-1790642825538-59dos4`.
+
+This closes only the restore process-exit test slice of residual item 3.
+Backup/restore OS writeback-fault coverage, other fsync points, profile admission
+and derived-index policy, and separately authorized qualification remain outside
+this slice. ADR-0028 remains Proposed; no publication or promotion follows.
