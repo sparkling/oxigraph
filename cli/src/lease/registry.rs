@@ -6,9 +6,10 @@
 //! reaper: maintenance is an explicit bounded call. The registry lock is never
 //! held across a native call and no user code runs under it. Native handles are
 //! owned safely and never lent out: a running operation forwards only staged
-//! reads, mutations and prepared queries (whose results borrow the operation),
-//! so no caller can extract, replace or commit the leased handle outside the
-//! registry. Each entry retains a clone of the [`Store`] it
+//! reads, mutations, prepared queries (whose results borrow the operation) and
+//! prepared updates (caller-managed, no automatic rollback), so no caller can
+//! extract, replace or commit the leased handle outside the registry. Each
+//! entry retains a clone of the [`Store`] it
 //! began on, so outcome lookup never consults another store. A leaked guard
 //! keeps its entry charged until the process ends.
 
@@ -18,7 +19,10 @@ use super::{
     OperationHandle, Outcome, Renewal, RestartRecord, RollbackReason,
 };
 use oxigraph::model::{GraphName, NamedNode, NamedOrBlankNode, Quad, Term};
-use oxigraph::sparql::{PreparedSparqlQuery, QueryEvaluationError, QueryResults};
+use oxigraph::sparql::{
+    PreparedSparqlQuery, PreparedSparqlUpdate, QueryEvaluationError, QueryResults,
+    UpdateEvaluationError,
+};
 use oxigraph::store::{
     GraphNameIter, KeyedTransaction, Namespace, NamespaceIter, NamespacePrefix,
     OutcomeAwareTransactionalDataset, QuadIter, StorageError, Store, TransactionCommitError,
@@ -106,6 +110,11 @@ pub enum RegistryError {
     /// A prepared query failed to open. The operation and lease are unchanged;
     /// no rollback or commit is implied.
     Query(QueryEvaluationError),
+    /// A prepared update failed. The operation and lease are unchanged and no
+    /// rollback or commit is implied: every write of earlier operations of the
+    /// same update, and any prefix of the failing operation's own writes, remain
+    /// staged until the lease is rolled back or dropped.
+    Update(UpdateEvaluationError),
     Finished,
     CounterExhausted,
     Internal,
@@ -123,6 +132,7 @@ impl fmt::Display for RegistryError {
             Self::Lookup(error) => write!(f, "outcome lookup failed: {error}"),
             Self::Storage(error) => write!(f, "staged operation failed: {error}"),
             Self::Query(error) => write!(f, "staged query failed: {error}"),
+            Self::Update(error) => write!(f, "staged update failed: {error}"),
             Self::Finished => f.write_str("operation already finished"),
             Self::CounterExhausted => f.write_str("lease id counter exhausted"),
             Self::Internal => f.write_str("registry invariant violated"),
@@ -138,6 +148,7 @@ impl std::error::Error for RegistryError {
             | Self::Storage(error)
             | Self::Start(StartFailure::Backend(error)) => Some(error),
             Self::Query(error) => Some(error),
+            Self::Update(error) => Some(error),
             _ => None,
         }
     }
@@ -792,12 +803,13 @@ impl Registry {
 }
 
 /// The one running operation of a lease. It owns the native handle while it
-/// runs and never lends it out: it forwards only staged reads, mutations and
-/// prepared queries, so the handle cannot be extracted, replaced or committed
-/// outside the registry. Swapping two operations swaps them whole, each still
-/// bound to its own lease. Dropping it without finishing never invents an
-/// acknowledged cancellation: a running operation ends as a dropped rollback,
-/// a cancelling one is left for the model to settle as overdue.
+/// runs and never lends it out: it forwards only staged reads, mutations,
+/// prepared queries and prepared updates, so the handle cannot be extracted,
+/// replaced or committed outside the registry. Swapping two operations swaps
+/// them whole, each still bound to its own lease. Dropping it without
+/// finishing never invents an acknowledged cancellation: a running operation
+/// ends as a dropped rollback, a cancelling one is left for the model to
+/// settle as overdue.
 ///
 /// No accessor exposes the native transaction:
 /// ```compile_fail,E0599
@@ -940,6 +952,119 @@ impl ActiveOperation<'_> {
             .on_writable_dataset(tx)
             .execute()
             .map_err(RegistryError::Query)
+    }
+
+    /// Executes an already prepared SPARQL Update over this operation's staged
+    /// view, so it sees this lease's own writes and later reads see its effects.
+    /// The prepared evaluator keeps its cancellation, resource budgets, `USING`
+    /// datasets, and `SERVICE`/`LOAD` egress policy.
+    ///
+    /// This is caller-managed: a failure leaves the lease `Operating` and the
+    /// operation usable, and neither rolls back nor commits. Every write of
+    /// earlier operations of the same update, and any prefix of the failing
+    /// operation's own writes, remain staged until the lease is rolled back or
+    /// dropped. A cancellation, timeout or budget failure can stop an operation
+    /// between individual mutations, for example after its deletes but before
+    /// its inserts. There is no savepoint, no automatic rollback and no
+    /// per-operation or per-update atomicity. Updates cannot run while query
+    /// results are alive. After `finish` this returns `Finished`. The native
+    /// handle is never lent.
+    ///
+    /// ```
+    /// use oxigraph::sparql::SparqlEvaluator;
+    /// use oxigraph::store::Store;
+    /// use oxigraph_cli::lease::registry::{Registry, RegistryLimits};
+    /// use oxigraph_cli::lease::{CommitKey, LeaseBinding, LeaseLimits, LimitsSpec, LogicalTime};
+    /// use std::time::Duration;
+    ///
+    /// let spec = LimitsSpec {
+    ///     idle: 10,
+    ///     absolute: 100,
+    ///     max_extension: 20,
+    ///     cancel_grace: 5,
+    ///     commit_wait: 7,
+    ///     retention: 50,
+    /// };
+    /// let limits = RegistryLimits {
+    ///     lease: LeaseLimits::new(spec)?,
+    ///     max_entries: 4,
+    ///     max_global: 4,
+    ///     max_per_repository: 4,
+    ///     max_per_principal: 4,
+    ///     max_operations_per_lease: 4,
+    ///     max_start_timeout: Duration::from_secs(1),
+    ///     max_maintenance_work: 4,
+    /// };
+    /// let store = Store::new()?;
+    /// let registry = Registry::new(limits)?;
+    /// let binding = LeaseBinding::new("alice", "acme", "repo")?;
+    /// let id = registry.begin(
+    ///     &store,
+    ///     &binding,
+    ///     CommitKey::new([1; 16]),
+    ///     LogicalTime(0),
+    ///     Duration::from_secs(1),
+    /// )?;
+    /// let mut operation = registry.begin_operation(&binding, id, LogicalTime(1))?;
+    /// let prepared = SparqlEvaluator::new().with_deny_all_egress_policy().parse_update(
+    ///     "INSERT DATA { <http://example.com> <http://example.com> <http://example.com> }",
+    /// )?;
+    /// operation.update(prepared)?;
+    /// assert_eq!(operation.len()?, 1);
+    /// assert!(store.is_empty()?);
+    /// operation.finish(LogicalTime(2))?;
+    /// # Ok::<_, Box<dyn std::error::Error>>(())
+    /// ```
+    ///
+    /// Query results borrow the operation, so an update cannot run meanwhile:
+    /// ```compile_fail,E0502
+    /// use oxigraph::sparql::SparqlEvaluator;
+    /// use oxigraph::store::Store;
+    /// use oxigraph_cli::lease::registry::{Registry, RegistryLimits};
+    /// use oxigraph_cli::lease::{CommitKey, LeaseBinding, LeaseLimits, LimitsSpec, LogicalTime};
+    /// use std::time::Duration;
+    ///
+    /// let spec = LimitsSpec {
+    ///     idle: 10,
+    ///     absolute: 100,
+    ///     max_extension: 20,
+    ///     cancel_grace: 5,
+    ///     commit_wait: 7,
+    ///     retention: 50,
+    /// };
+    /// let limits = RegistryLimits {
+    ///     lease: LeaseLimits::new(spec)?,
+    ///     max_entries: 4,
+    ///     max_global: 4,
+    ///     max_per_repository: 4,
+    ///     max_per_principal: 4,
+    ///     max_operations_per_lease: 4,
+    ///     max_start_timeout: Duration::from_secs(1),
+    ///     max_maintenance_work: 4,
+    /// };
+    /// let store = Store::new()?;
+    /// let registry = Registry::new(limits)?;
+    /// let binding = LeaseBinding::new("alice", "acme", "repo")?;
+    /// let id = registry.begin(
+    ///     &store,
+    ///     &binding,
+    ///     CommitKey::new([1; 16]),
+    ///     LogicalTime(0),
+    ///     Duration::from_secs(1),
+    /// )?;
+    /// let mut operation = registry.begin_operation(&binding, id, LogicalTime(1))?;
+    /// let query = SparqlEvaluator::new().parse_query("SELECT * WHERE { ?s ?p ?o }")?;
+    /// let update = SparqlEvaluator::new().parse_update("CREATE GRAPH <urn:g>")?;
+    /// let results = operation.query(query)?;
+    /// operation.update(update)?;
+    /// drop(results);
+    /// # Ok::<_, Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn update(&mut self, prepared: PreparedSparqlUpdate) -> Result<(), RegistryError> {
+        let tx = self.staged_mut()?;
+        prepared
+            .execute_on_writable_dataset(tx)
+            .map_err(RegistryError::Update)
     }
 
     /// Staged quads matching a pattern, including this lease's own writes.

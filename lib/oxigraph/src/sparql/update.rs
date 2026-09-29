@@ -335,6 +335,73 @@ impl PreparedSparqlUpdate {
             observation: None,
         }
     }
+
+    /// Executes this update on a caller-owned [`WritableDataset`] without
+    /// taking ownership of it, committing it or rolling it back.
+    ///
+    /// Version, cancellation, budget and egress preflight run first. Every
+    /// operation then reads the dataset's own staged view, so later operations
+    /// see earlier writes. `USING` datasets, `SERVICE`/`LOAD` egress policy,
+    /// cancellation and the evaluator's resource budgets are honoured, and the
+    /// cancellation and budgets are checked once more at the end.
+    ///
+    /// This is caller-managed like [`Self::on_transaction`]: a failure leaves
+    /// staged every write of earlier operations and any prefix of the failing
+    /// operation's own writes. `INSERT DATA` and `DELETE DATA` check cancellation
+    /// per quad, the `DELETE`/`INSERT` apply loop checks cancellation and budgets
+    /// per mutation, and `LOAD` checks per graph and per quad, so a failing
+    /// operation can be half applied (for example deletes staged without their
+    /// inserts). These writes stay staged until the caller rolls back or drops
+    /// the dataset. There is no savepoint, no automatic rollback and no
+    /// per-operation or per-update atomicity. Like `on_transaction`, it installs
+    /// neither Store observation nor a Store-bound `SERVICE` catalog.
+    ///
+    /// ```
+    /// use oxigraph::sparql::SparqlEvaluator;
+    /// use oxigraph::store::{Store, TransactionKey, TransactionRequest};
+    ///
+    /// let store = Store::new()?;
+    /// let mut keyed = store
+    ///     .start_owned_transaction_with_key(
+    ///         TransactionRequest::default(),
+    ///         TransactionKey::new([3; 16]),
+    ///     )?
+    ///     .into_transaction();
+    /// SparqlEvaluator::new()
+    ///     .with_deny_all_egress_policy()
+    ///     .parse_update(
+    ///         "INSERT DATA { <http://example.com> <http://example.com> <http://example.com> }",
+    ///     )?
+    ///     .execute_on_writable_dataset(&mut keyed)?;
+    /// assert_eq!(keyed.len()?, 1);
+    /// assert!(store.is_empty()?);
+    /// keyed.rollback()?;
+    /// # Ok::<_, Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn execute_on_writable_dataset<D: WritableDataset>(
+        self,
+        dataset: &mut D,
+    ) -> Result<(), UpdateEvaluationError> {
+        ensure_update_start_alive(
+            &self.update,
+            &self.evaluator,
+            self.cancellation_token.as_ref(),
+            #[cfg(feature = "http-client")]
+            &self.client,
+        )?;
+        let budgets = UpdateBudgets::capture(&self.evaluator);
+        ReadableUpdateEvaluator {
+            transaction: dataset,
+            base_iri: self.update.base_iri.clone(),
+            query_evaluator: self.evaluator,
+            cancellation_token: self.cancellation_token.clone(),
+            #[cfg(feature = "http-client")]
+            client: self.client,
+        }
+        .eval_all(&self.update.operations, &self.using_datasets)?;
+        ensure_update_alive(self.cancellation_token.as_ref())?;
+        budgets.check()
+    }
 }
 
 /// A prepared SPARQL update bound to a backend-neutral transactional dataset.

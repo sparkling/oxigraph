@@ -6,9 +6,9 @@
 - Deciders: Oxigraph parity programme
 - Implementation status: native owned storage and additive public owned Store
   handle, deterministic lease model, bounded in-process registry and borrowed
-  prepared-query binding implemented within the evidence below. The server has
-  no remote transaction route or enabled leased HTTP profile; prepared updates
-  and protocol integration remain open
+  prepared-query/update bindings implemented within the evidence below. The server
+  has no remote transaction route or enabled leased HTTP profile; protocol
+  integration remains open
 - Programme task: `task-1787670632421-dkucm8` (G4.5)
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
@@ -448,3 +448,40 @@ Exact source SHA256: `sparql/update.rs` `13b10aa368e65aebe2532e1032c6b72765b32d9
 `0fc1d24890301fabd913907e03adb2e1cb7a3288c6679f43195a3b6599a675e0`; `cli/src/lease/registry.rs` `dd95b4ac472e00d5484f8d85b87b032667a79805d0f5607433fe448e0f710bd5`;
 `cli/tests/lease_sparql_query.rs` `8edcf00863c6937edf158954ac6fc74f852a59915d4b6488378c222107dc937e`. G4.5 alias `task-1790657013522-cscfy2` stays open. ADR remains Proposed; no
 qualification, promotion, server activation or publication follows.
+
+## Prepared updates over staged lease state (2026-09-29)
+
+`PreparedSparqlUpdate::execute_on_writable_dataset` and `ActiveOperation::update`
+reuse the caller-managed evaluator without lending terminal authority. Prepared
+datasets, egress, cancellation and resource controls survive. Errors retain earlier
+writes and a possible prefix of the failing operation until explicit rollback/drop;
+there is no savepoint or per-operation atomicity. Evaluator cancellation is not
+automatic forwarding of a lease cancellation request. HTTP integration remains open.
+
+Original workflow `073dee50-a650-4143-b114-69e052ed9564` rejected; formatting,
+contract/test review and stalled repair receipts remain negative evidence. Root
+applied validated same-task Opus test repair, corrected three documentation
+paragraphs and formatted only declared paths. Fresh Sonnet 5.5/high reviewer
+`4faac297-6bd3-4b43-a0d5-14e9066ca4b2`, run
+`f767ba3d-03ee-4c4b-a254-83703920c09d`, accepted exact repaired source. Response
+SHA256: `0444d3330a0740044cb2fdfbf6f2865c93da05d095462a747c4abe9c701b0479`.
+Owner revalidated 15,235 unchanged source inputs and 32 reads, plus the exact
+accepted catalog delta `f1be40c0b` outside this packet's reads/mutations. Native
+custody was released and sibling ownership checked before serial integration.
+
+Canonical joined checks pass 36 no-default library (`run-lraezE`), 68 HTTP/RDF12
+library (`run-1TDmoV`), 117 no-default CLI (`run-pZX9Cu`), 237 default CLI including
+catalog/quiesce (`run-qynn3V`), and CLI build (`run-yjUYWg`). All source/sourceAfter
+bindings match before this append. Candidate checks include 27 HTTP/RDF12 and 13
+no-default keyed-update tests, both CLI matrices, one library and five CLI doctests.
+Stable rustdoc does not enforce diagnostic-code annotations. Formatter passes;
+Clippy exits 0 with warnings. Direct observations are not runner-owned receipts.
+Tests include deterministic mid-write cancellation, typed LOAD/SERVICE denial,
+bounded allowed loopback control, USING/NAMED, replacement backend and rollback.
+
+Exact source SHA256: `sparql/update.rs` `511a6c2b8b3ecba6399b9b2f8480eb9dcb2d4feebd48720824a957eb5377ece0`;
+`tests/keyed_update_view.rs` `f7c1b1da82872a0613b77b709d6755609c3d7598427e1459b69f542db0fed74b`;
+`cli/src/lease/registry.rs` `d370655100f74dff7b133f3a63eb97cc1243ad3bbef71784e60e94f07f4632d6`;
+`cli/tests/lease_sparql_update.rs` `1718fe9e8448a192e396136720f2c72a4101a6ae974ed378d4391392eb5410dc`.
+G4.5 migration alias remains open for protocol and evaluator gates. ADR stays
+Proposed; no HTTP activation, qualification, promotion or publication follows.
