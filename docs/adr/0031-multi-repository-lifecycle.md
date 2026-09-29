@@ -4,9 +4,9 @@
 - **Date**: 2026-08-25
 - Updated: 2026-09-29
 - Deciders: Oxigraph parity programme
-- Implementation status: bounded pure lifecycle model and public trace tests
-  implemented below. Each current server process still owns one `Store` and
-  has no durable repository catalog or administrative lifecycle
+- Implementation status: bounded pure lifecycle model and opt-in Linux
+  create/reconcile/open catalog implemented below. Each current server process
+  still owns one `Store`; no administrative lifecycle is activated
 - Programme task: `task-1787728710646-enu8i1` (G4.6)
 - **Depends on**:
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),
@@ -203,9 +203,9 @@ The current singleton server setup is visible in
 [`main.rs`](../../cli/src/main.rs): `serve` receives
 one `Store`, and the request router forwards every data route to it. Current
 store backup, validation, and open boundaries are in
-[`store.rs`](../../lib/oxigraph/src/store.rs). No repository manager,
-catalog or frozen lifecycle qualification receipt exists yet; G4.6 owns the
-staged product work. Ordinary model evidence follows.
+[`store.rs`](../../lib/oxigraph/src/store.rs). The separate opt-in embedded
+catalog below does not activate server routing or establish a frozen lifecycle
+qualification receipt; G4.6 owns the remaining staged product work.
 
 ## Deterministic lifecycle model (2026-09-29)
 
@@ -260,3 +260,85 @@ outcome identity. Only this ordinary model slice is accepted, not frozen
 qualification gate 1 or the full manager. Filesystem recovery, isolation,
 protocol, upgrade and resource gates remain open. ADR stays Proposed; no
 server activation, protected-data change, qualification or publication.
+
+## Bounded Linux create/reconcile/open catalog (2026-09-29)
+
+`cli/src/catalog.rs`, `catalog/fs.rs` and `catalog/codec.rs` implement the
+opt-in embedded manager, consumed by `cli/tests/repository_catalog.rs` with real
+RocksDB stores. The only dependency change connects existing workspace `libc`;
+no package or version is added. The server still uses its singleton Store.
+
+One private, canonical, same-device root has an exclusive lifetime `flock`.
+External IDs never become paths; internal UUIDv4 directories hold stores.
+Bounded checksummed canonical JSON records catalog generations and per-entry
+`Reserved`, `Validated`, `Closed` or `Failed` phases as the outstanding-operation
+journal. Creation reserves identity, initializes and flushes staging, verifies
+read-only materialization, persists validation, publishes the directory and
+records Closed with directory/catalog sync boundaries. Restart never initializes
+missing stores or adopts orphans. Handle lifetime retains the manager lock and
+counted slot; no cloneable raw Store escapes. Runtime readiness is not persisted.
+
+Directory device/inode plus an explicit versioned format fingerprint bind manager
+materialization, not a governed StoreIdentity, physical DB UUID, backup or restore
+receipt. The format fingerprint uses stable accessors and length-prefixed bytes,
+with a golden vector, not Rust Debug formatting. Catalog generations are distinct
+from process-local lifecycle-model generations. The root trusts its OS owner;
+arbitrary concurrent same-uid filesystem mutation is outside this profile.
+
+Explicit positive limits bound repositories, catalog bytes, root scans, open
+handles, store-file verification scans and model retention/generation. Staging
+and pending-catalog capacity are reserved before mutation. Transient I/O and
+resource/compatibility refusals do not turn Closed into durable Failed; uncertain
+post-mutation errors poison the manager until reopen. Definite identity or
+corruption failures remain nonready with bytes preserved. Initial-write pending
+debris is distinguishable from unknown catalog history and retained in inventory.
+
+Actual repeated-open testing reached 131 native files against the test's explicit
+128-file ceiling at cycle 29. The ceiling was not increased and no logs deleted.
+`store_files` is an admission scan bound, not a physical disk-growth reservation:
+writes/compaction/native metadata may grow the directory. Post-open admission
+checks the bound again before returning a ready handle. Subsequent Limit refusals
+retain Closed and bytes. Limits must match the persisted catalog; no automatic
+reconfiguration or maintenance is provided. Retained crash debris can also exhaust
+scan capacity and require separate operator intervention. Full Store validation
+on open is proportional to dataset size and has no cancellation seam. Device/inode
+changes on copying or restoring a root fail identity checks. These are explicit
+limitations of this slice, not production resource or recovery qualification.
+
+Fresh Sonnet 5.5/high review `a64fa774-a165-4b01-aeb2-6032673bbf19`, worker
+`c71b5142-028d-4a6d-977a-972a56a03cc4`, accepted exact repaired source.
+Response SHA256:
+`63de3bcd20ece871e853451b7f631eecc9b4e229781624cb1a1e9a285b82d550`.
+Owner verified 15,231 unchanged source inputs, 27 supplemental reads, exact
+candidate/check hashes and stopped external actions before serial integration.
+
+Canonical ordinary receipts bind stable source before this evidence append:
+
+- `run-w2ZxH9`: 163 no-default library/catalog/lifecycle/lease-model tests.
+- `run-0Mkx0e`: 211 default tests, additionally including lease registry.
+- `run-U3Gg1r`: affected `oxigraph` CLI binary build.
+
+Candidate matrices pass the same counts. Scoped formatter passes; Clippy exits
+0 with warnings, not clean lint. Sixteen public catalog tests cover exact
+process-exit phase outcomes, explicit in-process poisoning, real RDF isolation,
+kill/reap lock release, root/path/catalog corruption, missing materialization,
+truncated SST refusal, initial-write recovery, transient/resource attribution,
+capacity reservation and repeated open/flush/restart. Process-spawn fixtures
+exclude other manager lifetimes to avoid inherited flock descriptors before exec;
+ordinary tests may run concurrently. Crash-phase exits are not all SIGKILL tests.
+
+Original native author stall, rejected reviews `8159887c`/`ec41b38a`, failed
+compiles/tests and prior ACCEPT `562a5a57` remain historical evidence, not inherited
+acceptance. Canonical `run-58GxaL` rejected that earlier candidate: syscall tracing
+reproduced post-open `openat` ENOENT for an SST removed during live compaction.
+The scoped repair tolerates disappeared/unlinked entries only in the live scan,
+counts every enumerated entry and retains other guards; offline verification
+remains strict. Evidence resides under `target/engineering-delivery/`, including
+`catalog-reopen-syscall-6.log`, `catalog-review-repair-*-7.log` and
+`catalog-integration-a64fa774-a165-4b01-aeb2-6032673bbf19.json`.
+
+Original G4.6 outcome remains `task-1787728710646-enu8i1`, registry migration alias
+`task-1790681494161-as3snp`. No HTTP/admin/delete/restore/purge profile, frozen
+evaluator, benchmark, service claim, qualification or publication is accepted.
+Full lifecycle, authorization/isolation, upgrades and resource gates remain open;
+ADR remains Proposed.
