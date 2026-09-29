@@ -6,6 +6,7 @@ import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { createHash } from "node:crypto";
 import { repository, sourceObservation } from "../src/delivery.mjs";
 import { stdioHost } from "../src/workflow-host.mjs";
 import { readyBatchEntries, runOrdinaryBatch } from "../src/ordinary-pool.mjs";
@@ -72,7 +73,7 @@ test("normal batch CLI overlaps fixture authors and preserves candidate custody 
   t.signal.addEventListener("abort", () => child.kill("SIGKILL"), { once: true });
   let stderr = "", output, failure;
   child.stderr.on("data", (chunk) => { stderr += chunk; });
-  const authors = [], roots = new Set();
+  const authors = [], roots = new Set(), settled = [];
   const respond = (request) => {
     const { action, payload, ...identity } = request;
     let result;
@@ -98,6 +99,16 @@ test("normal batch CLI overlaps fixture authors and preserves candidate custody 
   lines.on("line", (line) => {
     try {
       const message = JSON.parse(line);
+      if (message.type === "lane-settled") {
+        assert.equal(output, undefined);
+        const bytes = readFileSync(message.path);
+        assert.equal(createHash("sha256").update(bytes).digest("hex"), message.sha256);
+        const lane = JSON.parse(bytes);
+        assert.equal(lane.id, message.id);
+        assert.equal(lane.integration, "pending-owner-acceptance");
+        assert.ok(readFileSync(join(lane.evidenceDirectory, "result.json")));
+        settled.push(message); return;
+      }
       if (message.type !== "host-request") { output = message; return; }
       const request = JSON.parse(readFileSync(message.path, "utf8"));
       if (request.action === "native-worker" && request.payload.route.role === "implement") {
@@ -112,6 +123,8 @@ test("normal batch CLI overlaps fixture authors and preserves candidate custody 
     assert.equal(code, 0, stderr);
     assert.equal(authors.length, 2);
     assert.equal(roots.size, 2);
+    assert.equal(settled.length, 2);
+    assert.deepEqual(output.notificationErrors, []);
     assert.equal(output.integration, "pending-owner-acceptance");
     for (const item of output.results) {
       assert.equal(item.status, "fulfilled");

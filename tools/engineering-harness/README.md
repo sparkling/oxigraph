@@ -9,7 +9,9 @@ mandatory-harness, Claude-only and one-process instructions.
 Direct application/harness implementation, repair, tests and builds are allowed.
 Harness dispatch is optional. Keep orchestration and learning available; preserve
 scoped checks, independent review, source/data isolation and one canonical
-integrator. Owner authorized GCP application programme resumption September 29.
+integrator. Current September 29 instruction pauses the goal with GCP VM terminated:
+local harness-only refactor, no programme/cloud restart. Earlier resumption is
+superseded; `a33301f33` G4.3 WIP remains preserved, not accepted.
 
 ## Configured subscription transport
 
@@ -92,6 +94,35 @@ benchmark or programme resumption occurred. Frozen qualification history is unto
 <a id="native-serial-execution"></a>
 
 ### Parallel execution
+
+Outer coordinator launch preview (never starts a model):
+
+```sh
+node tools/engineering-harness/bin/oxigraph-delivery.mjs coordinator --session EXISTING_UUID
+```
+
+Append `--start true` only when authorized to resume that existing session and no
+other writer owns it. Launch uses native Codex `gpt-6-astra` / medium with `--yolo`,
+inherits configured subscription transport and guards canonical main. Preview does
+not verify UUID existence, exclusive ownership or native availability. It does not
+resume paused goals or authorize programme work merely by existing.
+
+The native coordinator plans dependency-ready independent lanes, services the
+existing batch bridge, reviews completed evidence, drains each batch, revalidates
+candidate source/read/evaluator inputs, then integrates serially with canonical
+checks/build and commits. Only accepted main source releases dependants. Refill
+the next ready set after acceptance/failure; keep conflicts and unconfirmed
+external-action custody across batches. No new scheduler or automatic acceptance.
+
+Batch stdout now emits `lane-settled` records before the final batch result. Each
+names a durable `lane-ID.json` receipt and SHA-256, task, status and unchanged
+`pending-owner-acceptance` classification. This permits early inspection, not
+concurrent main integration. Started cancelled/rejected lanes retain custody;
+queued cancellations remain in final output. Library `onSettled` gets a detached
+copy and must do only bounded local reporting; it is awaited before slot refill.
+CLI reporter only writes local receipt/stdout. Observer failure is reported as
+`lane-notification-failed` without changing actual workflow result or leaking the
+observer error text; final batch output still retains all results and custody.
 
 Normal ready-batch entrypoint (always isolated):
 

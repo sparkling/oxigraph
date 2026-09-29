@@ -25,6 +25,56 @@ test("actual upstream pool bounds overlapping callbacks and preserves input orde
   assert.ok(result.results.every((item) => item.status === "fulfilled"));
   assert.equal(result.integration, "pending-owner-acceptance");
 });
+test("settled lanes surface before slow siblings and upstream refills queued ready work", async () => {
+  let release, notified;
+  const slow = new Promise(resolve => { release = resolve; });
+  const ready = new Promise(resolve => { notified = resolve; });
+  const events = [], starts = [];
+  const tasks = [...pair(), entry("third", "tools/engineering-harness/src/workflow-host.mjs")];
+  const pending = runOrdinaryBatch(tasks, { maxConcurrency: 2, onSettled: lane => {
+    events.push(lane); if (lane.id === "third") notified();
+  } }, async spec => {
+    starts.push(spec.taskId);
+    if (spec.taskId === "task-first") await slow;
+    return { candidateRoot: `/candidate/${spec.taskId}`, directory: `/evidence/${spec.taskId}` };
+  });
+  try {
+    await ready;
+    assert.deepEqual(events.map(e => e.id), ["second", "third"]);
+    assert.deepEqual(starts, ["task-first", "task-second", "task-third"]);
+    assert.ok(events.every(e => e.integration === "pending-owner-acceptance" && e.status === "fulfilled"));
+    assert.equal(events[0].candidateRoot, "/candidate/task-second");
+  } finally { release(); }
+  assert.deepEqual((await pending).results.map(e => e.id), ["first", "second", "third"]);
+});
+test("notification failures preserve rejected and cancelled evidence and final custody", async () => {
+  const failure = Object.assign(new Error("workflow failed"), { candidateRoot: "/failed", evidenceDirectory: "/evidence" });
+  const result = await runOrdinaryBatch([pair()[0]], { maxConcurrency: 1,
+    onSettled: lane => { assert.equal(lane.status, "rejected"); throw new Error("observer failed"); } }, async () => { throw failure; });
+  assert.equal(result.results[0].error, "workflow failed");
+  assert.equal(result.results[0].candidateRoot, "/failed");
+  assert.deepEqual(result.notificationErrors, [{ id: "first", error: "lane-notification-failed" }]);
+  const controller = new AbortController(), events = [];
+  const cancelled = await runOrdinaryBatch([pair()[0]], { maxConcurrency: 1, signal: controller.signal,
+    onSettled: lane => events.push(lane) }, async () => {
+    controller.abort(); await delay(5); return { candidateRoot: "/cancelled", directory: "/evidence" };
+  });
+  assert.equal(events[0].status, "cancelled");
+  assert.equal(events[0].candidateRoot, "/cancelled");
+  assert.equal(cancelled.results[0].status, "cancelled");
+});
+test("observer mutation cannot rewrite workflow result or candidate custody", async () => {
+  const output = { candidateRoot: "/original", directory: "/evidence", integration: "pending-owner-acceptance",
+    checks: [{ passed: true }] };
+  const result = await runOrdinaryBatch([pair()[0]], { maxConcurrency: 1, onSettled: lane => {
+    lane.value.candidateRoot = "/other"; lane.value.checks[0].passed = false;
+    lane.value.integration = "accepted"; lane.candidateRoot = "/forged";
+  } }, async () => output);
+  assert.equal(result.results[0].value.candidateRoot, "/original");
+  assert.equal(result.results[0].candidateRoot, "/original");
+  assert.equal(result.results[0].value.checks[0].passed, true);
+  assert.equal(result.results[0].value.integration, "pending-owner-acceptance");
+});
 test("same source or named resource conflict rejects entire batch before dispatch", async () => {
   for (const kind of ["source", "resource"]) {
     const tasks = pair(); let calls = 0;

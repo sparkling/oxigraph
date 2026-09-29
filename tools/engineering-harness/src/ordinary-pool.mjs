@@ -21,8 +21,9 @@ export function readyBatchEntries(batch, host, options = {}) {
   });
 }
 
-export async function runOrdinaryBatch(entries, { maxConcurrency, signal } = {}, execute = runIsolatedWorkflow) {
+export async function runOrdinaryBatch(entries, { maxConcurrency, signal, onSettled } = {}, execute = runIsolatedWorkflow) {
   signal?.throwIfAborted();
+  if (onSettled !== undefined && typeof onSettled !== "function") throw new Error("onSettled must be a callback");
   if (!Array.isArray(entries)) throw new Error("Ordinary pool requires ready workflow entries");
   const tasks = entries.map((entry) => {
     if (!entry || typeof entry.id !== "string" || !/^[A-Za-z0-9_-]+$/.test(entry.id)
@@ -48,6 +49,20 @@ export async function runOrdinaryBatch(entries, { maxConcurrency, signal } = {},
   const started = performance.now();
   const active = [];
   const retained = new Map();
+  const notificationErrors = [];
+  const notify = async (task, workerSignal, status, value, error) => {
+    if (!onSettled) return;
+    try {
+      // Observers write local metadata only; never await integration or model work here.
+      await onSettled(structuredClone({ id: task.id, taskId: task.spec.taskId,
+        status: workerSignal.aborted ? "cancelled" : status,
+        ...(status === "fulfilled" ? { value } : { error: error instanceof Error ? error.message : String(error) }),
+        ...retained.get(task.id), integration: "pending-owner-acceptance" }));
+    } catch {
+      // Reporting failure cannot hide workflow outcome or lose candidate custody.
+      notificationErrors.push({ id: task.id, error: "lane-notification-failed" });
+    }
+  };
   let result;
   try {
     result = await runBoundedPool(tasks.map((task) => ({ id: task.id, run: (workerSignal) => {
@@ -58,15 +73,17 @@ export async function runOrdinaryBatch(entries, { maxConcurrency, signal } = {},
           workerSignal.throwIfAborted();
           return task.host(request, workerSignal);
         }, task.options);
-      }).then((value) => {
+      }).then(async (value) => {
         if (value?.candidateRoot) retained.set(task.id, {
           candidateRoot: value.candidateRoot, evidenceDirectory: value.directory,
         });
+        await notify(task, workerSignal, "fulfilled", value);
         return value;
-      }, (error) => {
+      }, async (error) => {
         if (error?.candidateRoot) retained.set(task.id, {
           candidateRoot: error.candidateRoot, evidenceDirectory: error.evidenceDirectory,
         });
+        await notify(task, workerSignal, "rejected", undefined, error);
         throw error;
       });
       active.push(job);
@@ -79,5 +96,5 @@ export async function runOrdinaryBatch(entries, { maxConcurrency, signal } = {},
   }
   return { ...result, results: result.results.map((item) => ({ ...item, ...retained.get(item.id) })),
     poolDurationMs: result.durationMs, durationMs: performance.now() - started,
-    integration: "pending-owner-acceptance" };
+    notificationErrors, integration: "pending-owner-acceptance" };
 }

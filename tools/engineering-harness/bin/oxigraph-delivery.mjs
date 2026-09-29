@@ -10,6 +10,7 @@ import { runIsolatedWorkflow } from "../src/ordinary-workspace.mjs";
 import { readyBatchEntries, runOrdinaryBatch } from "../src/ordinary-pool.mjs";
 import { createOrdinaryRuntime, loadOrdinaryRuntimeConfig } from "../src/ordinary-runtime.mjs";
 import { activateOrdinaryPolicy, rollbackOrdinaryPolicy } from "../src/ordinary-policy.mjs";
+import { coordinatorLaunch, startCoordinator } from "../src/ordinary-coordinator.mjs";
 import { ensureDirectoryInsideRepository } from "../../agentic-qe/path-policy.mjs";
 
 const help = `Ordinary Oxigraph delivery (ADR-0043)
@@ -18,6 +19,7 @@ const help = `Ordinary Oxigraph delivery (ADR-0043)
   route --task ID --role implement --check "observable completion" [--model MODEL --effort EFFORT --reason REASON --selection owner|unresolved]
   workflow --spec FILE.json [--isolated true] [--coordination-unavailable REASON --owner-review-hold true|false]
   batch --spec FILE.json [--coordination-unavailable REASON --owner-review-hold true|false]
+  coordinator --session EXISTING_UUID [--start true]
   policy-activate --runtime-config FILE.json --envelope FILE.json --expected-parent SHA256
   policy-rollback --runtime-config FILE.json --expected-current SHA256
 Workflow/batch automatically load tools/engineering-harness/ordinary-runtime.json when present; --runtime-config overrides its location.
@@ -37,6 +39,7 @@ try {
       action === "route" ? ["--task", "--role", "--check", "--model", "--effort", "--reason", "--selection"] :
       action === "workflow" ? ["--spec", "--isolated", "--coordination-unavailable", "--owner-review-hold", "--runtime-config"] :
       action === "batch" ? ["--spec", "--coordination-unavailable", "--owner-review-hold", "--runtime-config"] :
+      action === "coordinator" ? ["--session", "--start"] :
       action === "policy-activate" ? ["--runtime-config", "--envelope", "--expected-parent"] :
       action === "policy-rollback" ? ["--runtime-config", "--expected-current"] : [];
     for (let i = 0; i < options.length; i += 2) {
@@ -45,7 +48,12 @@ try {
       }
       values[options[i]] = options[i + 1];
     }
-    if (action === "run" && split >= 0) {
+    if (action === "coordinator" && split < 0) {
+      if (values["--start"] !== undefined && values["--start"] !== "true") throw new Error("Coordinator start must be explicit true");
+      const launch = coordinatorLaunch(values["--session"]);
+      if (values["--start"] === "true") process.exitCode = startCoordinator(values["--session"]);
+      else process.stdout.write(JSON.stringify(launch, null, 2) + "\n");
+    } else if (action === "run" && split >= 0) {
       const run = await runDelivery({
         taskId: values["--task"], completionCheck: values["--check"], argv: args.slice(split + 1),
         timeoutMs: values["--timeout-ms"] === undefined ? undefined : Number(values["--timeout-ms"]),
@@ -112,6 +120,12 @@ try {
         const result = batch
           ? await runOrdinaryBatch(readyBatchEntries(spec, host, workflowOptions), {
             maxConcurrency: spec.maxConcurrency, signal: controller.signal,
+            onSettled: (lane) => {
+              const path = join(directory, `lane-${lane.id}.json`);
+              writeFileSync(path, JSON.stringify(lane), { flag: "wx", mode: 0o600 });
+              process.stdout.write(JSON.stringify({ type: "lane-settled", id: lane.id, taskId: lane.taskId,
+                status: lane.status, integration: lane.integration, ...jsonReference(path, lane) }) + "\n");
+            },
           })
           : await (isolated ? runIsolatedWorkflow : runWorkflow)(spec, host, workflowOptions);
         if (batch) externalActionsUnconfirmed = bridge.close();
@@ -125,6 +139,7 @@ try {
           process.exitCode = passed ? 0 : 1;
           process.stdout.write(JSON.stringify({ status: passed ? "ready-for-owner-review" : "incomplete",
             directory, integration: result.integration, results: result.results,
+            notificationErrors: result.notificationErrors,
             ownership: result.ownership, externalActionsUnconfirmed: result.externalActionsUnconfirmed }) + "\n");
         } else process.stdout.write(JSON.stringify({ status: result.status, directory, taskId: result.taskId,
           ...(result.candidateRoot ? { candidateRoot: result.candidateRoot, integration: result.integration } : {}) }) + "\n");

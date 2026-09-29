@@ -8,10 +8,10 @@
 
 ## September 29 ordinary routing and resumption amendment
 
-Owner resumes GCP programme: ordinary planner/author/fresh review use native `cc/claude-sonnet-5-5[1m]` / high via 9router; explicit pins, Opus repair, Codex coordinator, isolation and learning remain.
+Current authority supersedes the earlier September 29 resumption: GCP VM TERMINATED, goal paused; local harness-only coordinator refactor, no programme/cloud restart. Cloud `a33301f33` G4.3 WIP is preserved, not accepted. Ordinary planner/author/fresh review remain native `cc/claude-sonnet-5-5[1m]` / high via 9router; explicit pins, Opus repair, Codex coordinator, isolation and learning remain.
 Three routing regressions failed on old defaults; final ten-file ordinary join passes 98/98, including default-stage/native-learning proof; Node syntax and diff checks pass. API fixtures now explicitly pin API transport.
 GCP native smoke session `99dbee2f-07ec-4795-98ba-49d04f895988` returned `OXIGRAPH_SONNET_55_READY`, canonical model `claude-sonnet-5-5`; harmless alias warning and failing obsolete session-end hook remain diagnostics.
-This supersedes old defaults/application pauses below, not frozen qualification or publication boundaries. Historical receipts remain unchanged; wider ADR stays Proposed. Following September 28 evidence is historical.
+New defaults supersede historical routing, never the current pause or qualification/publication boundaries. Historical receipts remain unchanged; wider ADR stays Proposed. Coordinator preview/explicit resume wires Astra/medium to existing ready batch/isolated workflow: inspect detached durable lane-settled receipts early, drain batch, serially revalidate/integrate, release accepted-source dependants and refill. Node24: 39/39 focused plus 54/54 impacted tests across nine files, syntax/diff checks and independent root review pass; early-result/refill, observer isolation/failure, CLI hashes and custody proved. No automatic scheduler/acceptance or programme execution proof. Following September 28 evidence is historical.
 
 **September 28 ordinary entrypoint repair:** `oxigraph-delivery.mjs batch --spec`
 now calls the existing upstream pool with isolated workflow specs. Strict JSON
