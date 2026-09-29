@@ -348,3 +348,52 @@ source/sourceAfter bindings verified before this evidence append.
 Task `task-1790659791175-01dgrw` closes only this backend prerequisite.
 Public owned-handle/evaluator and lease/protocol work remain on G4.5.
 ADR remains Proposed; no HTTP exposure, qualification, promotion or publication.
+
+## Owned backend-neutral storage dispatch (2026-09-29)
+
+The four readable, controlled, keyed and governed starts in `storage/mod.rs`
+now return existing `'static` wrappers over the accepted owned backends.
+Bodies, readers borrowing transactions, public borrowed `Store` API, write-only
+and bulk paths, admission and terminal observation semantics are unchanged.
+New `storage/owned_transaction_tests.rs` covers both backends: lifetime bounds,
+original-storage drop, staged RDF/topology/namespaces, commit/rollback/drop,
+keyed and governed outcomes, receipt lookup, admission, metrics ownership and
+cross-thread use. No public owned API or HTTP capability is claimed yet.
+
+Exact file SHA256 values:
+
+- `storage/mod.rs`:
+  `7f945693d71681dab77b26e54bf405401d84f9d71dd59f17f0a02faba5790dea`.
+- `storage/owned_transaction_tests.rs`:
+  `2d31f75f2a6867e9e41ee78cdf262a650cec4307d3fb389791ca5c7b14e2ac16`.
+
+Ordinary batch `workflow-Icm5j7`, run
+`d92839d2-614d-471d-b97f-88609c14af84`, used Sonnet 5.5/high ordinary roles
+and Opus/high whitespace-only repair. Fresh reviewer
+`9c264765-563f-425d-89cf-03826e613adb` accepted the repaired source. Candidate
+no-default/default module checks pass 7/7 each (`run-NTp2HS`, `run-rMNnuH`);
+transaction contracts pass 12/12 (`run-by50VZ`). Focused formatter passes.
+Pre-format candidate Clippy exits 0 with 603 library-test warnings, including
+38 duplicates, not a clean-lint claim. Direct observation is recorded in
+`target/engineering-delivery/g45-dispatch-clippy-observation.json`, not a
+runner-owned receipt. Original formatting rejection and checks remain intact.
+
+Lane receipt SHA256:
+`a3e7ba1832f7d230bb8d18521aad46c36d4d5771d6baec960751d4e764955a61`.
+All 28 event/check/handoff references, nine submodule pins, fresh reviewer
+identity and 15,213 unchanged included source/read inputs verified before
+integration. Structured MCP readback and native learning retained. Batch and
+external actions drained; canonical default/RDF 1.2 checks used separate
+targets and shared host capacity:
+
+- Storage default: 127 passed, 1 ignored (`run-LeR0Fu`).
+- Storage RDF 1.2: 126 passed, 2 ignored (`run-rCgv6D`).
+- Transaction contracts default/RDF 1.2: 12 passed each
+  (`run-QQ2Cl7`, `run-PXV7Cl`).
+
+Counts are top-level, not nested helper aggregates. Exact canonical
+source/sourceAfter bindings and candidate file equality verified before this
+evidence append. Reader borrowing remains enforced by unchanged signatures;
+this slice adds no compile-fail reader test. Original G4.5 registry alias
+`task-1790657013522-cscfy2` stays open for public owned handle/evaluator and
+lease/protocol gates. ADR remains Proposed; no qualification or publication.

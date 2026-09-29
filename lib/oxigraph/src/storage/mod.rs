@@ -32,6 +32,8 @@ mod binary_encoder;
 mod error;
 mod memory;
 pub mod numeric_encoder;
+#[cfg(test)]
+mod owned_transaction_tests;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod rocksdb;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -427,7 +429,7 @@ impl Storage {
     )]
     pub fn start_readable_transaction(
         &self,
-    ) -> Result<StorageReadableTransaction<'_>, StorageError> {
+    ) -> Result<StorageReadableTransaction<'static>, StorageError> {
         Ok(StorageReadableTransaction {
             kind: match &self.kind {
                 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -446,7 +448,7 @@ impl Storage {
         &self,
         control: &TransactionStartControl,
         started_at: Instant,
-    ) -> Result<StorageReadableTransaction<'_>, StorageTransactionStartError> {
+    ) -> Result<StorageReadableTransaction<'static>, StorageTransactionStartError> {
         Ok(StorageReadableTransaction {
             kind: match &self.kind {
                 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -474,7 +476,7 @@ impl Storage {
         transaction_key: &[u8; 16],
         control: &TransactionStartControl,
         started_at: Instant,
-    ) -> Result<StorageKeyedReadableTransaction<'_>, StorageTransactionStartError> {
+    ) -> Result<StorageKeyedReadableTransaction<'static>, StorageTransactionStartError> {
         Ok(StorageKeyedReadableTransaction {
             kind: match &self.kind {
                 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -513,7 +515,7 @@ impl Storage {
         transaction_key: &[u8; 16],
         control: &TransactionStartControl,
         started_at: Instant,
-    ) -> Result<StorageKeyedReadableTransaction<'_>, StorageTransactionStartError> {
+    ) -> Result<StorageKeyedReadableTransaction<'static>, StorageTransactionStartError> {
         Ok(StorageKeyedReadableTransaction {
             kind: match &self.kind {
                 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
