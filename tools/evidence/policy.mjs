@@ -427,9 +427,9 @@ export const expectedCandidateClauseAudit = freezeCandidateContract({
   "schema": "oxigraph.shacl-candidate-clause-audit/v1",
   "hashes": {
     "mappingRevision": "a83a2b9e511ea7c63934acb1e30d55f4967d50cf0b921c88b2317c391348639d",
-    "groupedRequirements": "c440145383354ad5b3b6a1655ae1fe423ac755b3f3d6fd79c43415eca62c8829",
-    "reviewedObligations": "20b00a0d637257d16a13e0cb480ed79b86933fb3f30e2caa32f074abef8ca521",
-    "residualClaims": "46f21e8957852eb7ba03e9611a28477d6f6933bc3d6fe5f31dc4f4828cfe7b92"
+    "groupedRequirements": "d85272282836af76efab13919bf6685b2d6c4cc40d49ce28679f6c6579c421ff",
+    "reviewedObligations": "c78249547bddbfcc08d97cd58451120220c07d7420390fa83206fc36adfb280a",
+    "residualClaims": "dabe4dd5a5f8da3a560fd24dff6191e22aa777818b3e65e72be7ab3770e25c1a"
   },
   "counts": {
     "mappings": 25,
@@ -1794,7 +1794,7 @@ export const expectedCandidateClauseAudit = freezeCandidateContract({
     "The candidate SPARQL-RL grammar has 153 productions and is a distinct identity from the historical 156-production inventory and receipts.",
     "RDF sh:runOnce, sh:tempTriple, sh:TripleRule, and sh:SPARQLRuleTemplate execution remain exact predeclared unsupported surfaces; the programmatic Datalog API is not an RDF compiler.",
     "sh:expectedPredicate has bounded ordinary implementation evidence for layer-start derivation and cleanup, but supporting it does not close the inference-rules family or optional sh:sourceRule provenance.",
-    "Accepted local base-plus-inline DATA interpretation; differs from literal G0 call sites; upstream intent unresolved. This prevents an unqualified literal candidate-algorithm equivalence claim and does not authorize changing accepted DATA semantics.",
+    "Accepted ADR-0047 base-only frozen DATA interpretation; it follows the literal G0 call sites while the computed GD of base plus inline DATA stays unused; upstream intent unresolved in w3c/data-shapes#1276. This prevents an unqualified literal candidate-algorithm equivalence claim and does not authorize changing accepted DATA semantics.",
     "Complete-ground-DATA slice D and SRL BNODE slice N are bound to exact accepted commits, acceptance artifacts, review hashes, workflow runs, and programme evidence keys before E3 adoption.",
     "The candidate public abstract Query operation exists, but no concrete Query grammar is supplied and the local single-triple goal restriction is not a specification MUST.",
     "Candidate Node Expressions retain 35 syntax-rule IDs but include reviewed semantic text changes for InstancesOfExpression, NodesMatchingExpression, and CustomListParameterFunction.",

@@ -2591,15 +2591,15 @@ test("E3 freezes sources and historical separation", async () => {
   );
   assert.equal(
     oracleSha256(Buffer.from(JSON.stringify(requirements.candidateShaclRequirementMappings))),
-    "c440145383354ad5b3b6a1655ae1fe423ac755b3f3d6fd79c43415eca62c8829",
+    "d85272282836af76efab13919bf6685b2d6c4cc40d49ce28679f6c6579c421ff",
   );
   assert.equal(
     oracleSha256(Buffer.from(JSON.stringify(reviews.candidateReviewedObligations))),
-    "20b00a0d637257d16a13e0cb480ed79b86933fb3f30e2caa32f074abef8ca521",
+    "c78249547bddbfcc08d97cd58451120220c07d7420390fa83206fc36adfb280a",
   );
   assert.equal(
     oracleSha256(Buffer.from(JSON.stringify(reviews.candidateResidualClaims))),
-    "46f21e8957852eb7ba03e9611a28477d6f6933bc3d6fe5f31dc4f4828cfe7b92",
+    "dabe4dd5a5f8da3a560fd24dff6191e22aa777818b3e65e72be7ab3770e25c1a",
   );
   assert.equal(
     oracleSha256(Buffer.from(JSON.stringify(revision.documents))),
@@ -2658,7 +2658,9 @@ test("E3 retains ambiguity and unsupported surfaces", async () => {
     ambiguity.sourceStatus,
     "source-reviewed-with-explicit-ambiguity",
   );
-  assert.match(ambiguity.residual, /base-plus-inline DATA/u);
+  assert.match(ambiguity.residual, /ADR-0047 base-only frozen DATA/u);
+  assert.match(ambiguity.residual, /GD of base plus inline DATA stays unused/u);
+  assert.match(ambiguity.residual, /w3c\/data-shapes#1276/u);
   assert.match(ambiguity.residual, /literal G0/u);
   assert.match(ambiguity.residual, /upstream intent unresolved/u);
   const unsupported = reviews.candidateReviewedObligations.find(

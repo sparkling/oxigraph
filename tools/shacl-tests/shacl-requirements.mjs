@@ -728,7 +728,7 @@ export const candidateShaclRequirementMappings = [
       "programme-task-evidence/workflow-384d7494-7e95-49a0-8f71-442839b63a2c",
       "target/engineering-delivery/adr0046-srl-bnode/accepted-8tVvxP.json#962baef59d23bc12cfa28421a437daa4d7ffa6fd1077cee5b08b72064b06ae9c",
     ],
-    "Accepted local base-plus-inline DATA interpretation; differs from literal G0 call sites; upstream intent unresolved. The component-notation flag inversion does not resolve that call-site discrepancy. Complete-ground-DATA and SRL BNODE slices are bound to their exact accepted commits and workflow evidence. Candidate evaluation obligations remain unexecuted, and a later pass cannot close this prose ambiguity.",
+    "Accepted ADR-0047 base-only frozen DATA interpretation; it follows the literal G0 call sites while the computed GD of base plus inline DATA stays unused; upstream intent unresolved in w3c/data-shapes#1276. The component-notation flag inversion does not resolve that unused-GD discrepancy. Complete-ground-DATA and SRL BNODE slices are bound to their exact accepted commits and workflow evidence. Candidate evaluation obligations remain unexecuted, and a later pass cannot close this prose ambiguity.",
   ),
   candidateMapping(
     "SHACL12-RULES-CONFORMANCE",
