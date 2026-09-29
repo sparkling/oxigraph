@@ -7,14 +7,14 @@
   G3.5 telemetry slice delivered (`75b3cc80`,
   opt-in HTTP SERVICE execution observations) and accepted by independent review
   `690ae0dc`; the stale "no loopback fixtures" statement corrected. Still
-  Proposed; no planner or catalog. SERVICE failure-disposition baseline added
+  Proposed; bounded catalog attribution implemented below, no planner. SERVICE failure-disposition baseline added
   in `8e53c556`.
 - Deciders: Oxigraph parity programme
 - Implementation status: partially implemented. Opt-in HTTP SERVICE execution
   observations are delivered by `75b3cc80`. G1.6 has satisfied the
   runtime-derived service-claim prerequisite for later advertisement, but no
-  federation planner, endpoint catalog, source selection or bound batching has
-  been implemented
+  federation planner, source selection or bound batching has been implemented.
+  Immutable endpoint catalog attribution is implemented in the F1 slice below
 - **Depends on**:
   [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md),
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)
@@ -26,9 +26,46 @@
 
 ## Context
 
-The evaluator supports explicit SPARQL `SERVICE` through registered and default
-handlers. It does not maintain an endpoint catalog, select sources, plan bound
-joins across endpoints, or expose federated request/row estimates. Adding
+### F1 catalog-attributed observations (2026-09-29)
+
+`HttpServiceCatalog` declares up to 64 exact endpoint IRIs with declaration-order
+`u16` ordinals, optional declared rows/decoded bytes and an opaque caller epoch.
+Duplicates and userinfo are rejected with redacted diagnostics. The new
+`HttpServiceObservation::with_catalog` constructor attributes actual counters
+through the existing handler before dispatch. A fixed uncataloged aggregate
+prevents cardinality growth from query data. Retention zero/overflow still counts
+every invocation, with unchanged exactly-once terminals and saturation flags.
+Snapshots/debug output contain no endpoint IRI or payload. Declarations are not
+freshness, health, capability, authorization, source selection or planning claims.
+The original constructor and handler result/error/egress behavior remain unchanged.
+Total-attempt and endpoint-attempt increments use separate lock acquisitions;
+a concurrent snapshot can temporarily differ during handler-entry attribution.
+Completed-invocation reconciliation is tested, not cross-counter atomicity.
+
+Original workflow `3c7abf96-e5c4-4e2f-91eb-d340c39ece4c` retained its failed
+compiler check and declared Opus repair inactivity failure. Root repaired two
+borrowed test IRIs with owned strings and scoped formatting in `source-VqIyD6`;
+no assertion changed and no failed-workflow acceptance was inherited. Fresh
+Sonnet 5.5/high review `a86ffc89-303b-48fa-8c1b-32d9f1e29cff`, worker
+`45cfcbac-c554-43a0-8469-0cd6328c5b01`, ACCEPT; response SHA256
+`f02ad8a67ed42796d8a64b7986622dfa459eaf9046adae8cb2d3999ef50e8838`.
+Owner verified 15,229 unchanged source inputs, 24 supplemental reads, exact
+reviewed source/check hashes and retained sibling custody before main integration.
+
+Canonical ordinary runs: `run-D8Mm7i` (no-default, 57), `run-RrXCM5` (default,
+57), and `run-ok6C9A` (federation units, 11), all passed with stable source.
+Candidate feature-disabled and statistics/text/spatial-handler rebinding checks
+passed. Focused Clippy exits zero with existing warnings plus non-blocking
+pass-by-value/test-style suggestions; this is not a warning-free claim.
+Public differential fixtures cover observed/unobserved results and requests,
+fixed and variable endpoints, multiplicity, blank-node scope, denial, cancellation,
+timeouts, malformed streams, SILENT, omitted records and evaluator reuse.
+These are ordinary embedded-consumer checks, not frozen qualification, a speed
+claim, server exposure or the remaining F2 planner/batching outcome.
+
+At programme entry the evaluator supported explicit SPARQL `SERVICE` through
+registered and default handlers, without an endpoint catalog, source selection,
+bound joins across endpoints, or federated request/row estimates. Adding
 those behaviors before egress policy and statistics would make remote work
 unbounded and its failures difficult to interpret.
 

@@ -1,15 +1,30 @@
 //! Bounded, opt-in observations of the built-in HTTP `SERVICE` consumer.
 use crate::http::{EgressBody, EgressErrorKind};
+use crate::model::NamedNode;
 use spareval::{QueryEvaluationError, QuerySolution};
 use std::error::Error;
 use std::fmt;
 use std::io::{self, Read};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
+mod catalog;
+
+use self::catalog::{CatalogCounters, EndpointSlot};
+pub use self::catalog::{
+    HttpServiceActualCounters, HttpServiceCatalog, HttpServiceCatalogError,
+    HttpServiceCatalogSnapshot, HttpServiceEndpointDeclaration, HttpServiceEndpointObservation,
+};
+
 /// The largest number of invocation records one report may retain.
 const MAXIMUM_RETAINED_ATTEMPTS: usize = 1024;
+
+/// The invocation has not yet been attributed to a catalog view.
+const TARGET_UNATTRIBUTED: u32 = u32::MAX;
+
+/// The invocation targets an endpoint the catalog does not list.
+const TARGET_UNCATALOGED: u32 = u32::MAX - 1;
 
 /// The fixed execution profile of the built-in `SERVICE` consumer.
 ///
@@ -202,6 +217,7 @@ pub struct HttpServiceObservationSnapshot {
     abandoned: Counter,
     omitted_records: Counter,
     records: Vec<HttpServiceInvocationRecord>,
+    catalog: Option<HttpServiceCatalogSnapshot>,
 }
 
 impl HttpServiceObservationSnapshot {
@@ -320,6 +336,13 @@ impl HttpServiceObservationSnapshot {
     pub fn records(&self) -> &[HttpServiceInvocationRecord] {
         &self.records
     }
+
+    /// The per-endpoint catalog view, present only for a handle created with
+    /// [`HttpServiceObservation::with_catalog`].
+    #[inline]
+    pub const fn catalog(&self) -> Option<&HttpServiceCatalogSnapshot> {
+        self.catalog.as_ref()
+    }
 }
 
 /// A redacted error returned for an unsupported observation configuration.
@@ -370,12 +393,20 @@ impl Error for HttpServiceObservationConfigurationError {}
 /// query is never failed or changed. Totals saturate at `u64::MAX` with an
 /// accompanying overflow flag.
 ///
+/// A handle created with [`with_catalog`](Self::with_catalog) additionally
+/// attributes every invocation to one declared endpoint, or to one fixed
+/// uncataloged aggregate, by exact IRI match. Attribution happens at handler
+/// entry, before any request is built, and never affects egress, admission,
+/// target, query, error or `SERVICE SILENT` behavior. Per-endpoint counters are
+/// allocated once from the catalog and count every dispatch, byte, row and
+/// terminal outcome even when the retention cap omits the record.
+///
 /// Observation performs no callback, network request, file write, or logging.
 /// It never drains, retries, or polls results beyond what the caller consumes,
 /// and never changes headers, blank-node labels, results, or error disposition.
 /// No endpoint IRI, endpoint hash, query text, variable, RDF term, credential,
-/// HTTP or error text, or user identifier is retained. Per-endpoint reporting
-/// is a later contract; invocation IDs exist only for local reconciliation.
+/// HTTP or error text, or user identifier is retained or shown by `Debug`.
+/// Invocation IDs exist only for local reconciliation.
 #[derive(Clone)]
 pub struct HttpServiceObservation {
     state: Arc<ObservationState>,
@@ -383,6 +414,7 @@ pub struct HttpServiceObservation {
 
 struct ObservationState {
     retained_attempt_limit: usize,
+    catalog: Option<HttpServiceCatalog>,
     data: Mutex<ObservationData>,
 }
 
@@ -398,6 +430,13 @@ struct ObservationData {
     omitted_records: Counter,
     records: Vec<RetainedInvocation>,
     next_id: u64,
+    endpoints: Option<CatalogCounters>,
+}
+
+impl ObservationData {
+    fn actual(&mut self, endpoint: EndpointSlot) -> Option<&mut HttpServiceActualCounters> {
+        self.endpoints.as_mut()?.counters_mut(endpoint)
+    }
 }
 
 struct RetainedInvocation {
@@ -423,15 +462,42 @@ impl HttpServiceObservation {
     pub fn new(
         retained_attempt_limit: usize,
     ) -> Result<Self, HttpServiceObservationConfigurationError> {
+        Self::build(retained_attempt_limit, None)
+    }
+
+    /// Creates an empty report that also attributes invocations to the
+    /// endpoints of `catalog`.
+    ///
+    /// The record cap has the same range as [`new`](Self::new). The catalog is
+    /// immutable and only attributes observations: it neither authorizes
+    /// egress, selects an endpoint, nor changes any request.
+    pub fn with_catalog(
+        retained_attempt_limit: usize,
+        catalog: HttpServiceCatalog,
+    ) -> Result<Self, HttpServiceObservationConfigurationError> {
+        Self::build(retained_attempt_limit, Some(catalog))
+    }
+
+    fn build(
+        retained_attempt_limit: usize,
+        catalog: Option<HttpServiceCatalog>,
+    ) -> Result<Self, HttpServiceObservationConfigurationError> {
         if retained_attempt_limit > MAXIMUM_RETAINED_ATTEMPTS {
             return Err(HttpServiceObservationConfigurationError::new(
                 "at most 1024 invocation records may be retained",
             ));
         }
+        let endpoints = catalog
+            .as_ref()
+            .map(|catalog| CatalogCounters::new(catalog.endpoint_count()));
         Ok(Self {
             state: Arc::new(ObservationState {
                 retained_attempt_limit,
-                data: Mutex::new(ObservationData::default()),
+                catalog,
+                data: Mutex::new(ObservationData {
+                    endpoints,
+                    ..ObservationData::default()
+                }),
             }),
         })
     }
@@ -444,6 +510,12 @@ impl HttpServiceObservation {
     /// the dispatches, bytes, and rows already observed.
     pub fn snapshot(&self) -> HttpServiceObservationSnapshot {
         let data = self.data();
+        let catalog = self
+            .state
+            .catalog
+            .as_ref()
+            .zip(data.endpoints.as_ref())
+            .map(|(catalog, counters)| catalog.snapshot(counters));
         HttpServiceObservationSnapshot {
             profile: HttpServiceExecutionProfile::UnplannedHttpV1,
             retained_attempt_limit: self.state.retained_attempt_limit,
@@ -460,6 +532,7 @@ impl HttpServiceObservation {
                 .iter()
                 .map(RetainedInvocation::snapshot)
                 .collect(),
+            catalog,
         }
     }
 
@@ -494,29 +567,46 @@ impl HttpServiceObservation {
         Arc::new(HttpServiceInvocation {
             report: self.clone(),
             slot,
+            target: AtomicU32::new(TARGET_UNATTRIBUTED),
             finished: AtomicBool::new(false),
         })
     }
 
-    fn count_dispatch(&self, slot: Option<usize>) {
+    fn count_attempt(&self, endpoint: EndpointSlot) {
+        let mut data = self.data();
+        if let Some(actual) = data.actual(endpoint) {
+            actual.record_attempt();
+        }
+    }
+
+    fn count_dispatch(&self, slot: Option<usize>, endpoint: EndpointSlot) {
         let mut data = self.data();
         data.dispatches.add(1);
+        if let Some(actual) = data.actual(endpoint) {
+            actual.record_dispatch();
+        }
         if let Some(retained) = slot.and_then(|slot| data.records.get_mut(slot)) {
             retained.record.dispatches = retained.record.dispatches.saturating_add(1);
         }
     }
 
-    fn count_decoded(&self, slot: Option<usize>, bytes: u64) {
+    fn count_decoded(&self, slot: Option<usize>, endpoint: EndpointSlot, bytes: u64) {
         let mut data = self.data();
         data.decoded_bytes.add(bytes);
+        if let Some(actual) = data.actual(endpoint) {
+            actual.record_decoded(bytes);
+        }
         if let Some(retained) = slot.and_then(|slot| data.records.get_mut(slot)) {
             retained.record.decoded_bytes = retained.record.decoded_bytes.saturating_add(bytes);
         }
     }
 
-    fn count_row(&self, slot: Option<usize>) {
+    fn count_row(&self, slot: Option<usize>, endpoint: EndpointSlot) {
         let mut data = self.data();
         data.rows.add(1);
+        if let Some(actual) = data.actual(endpoint) {
+            actual.record_row();
+        }
         if let Some(retained) = slot.and_then(|slot| data.records.get_mut(slot)) {
             retained.record.rows = retained.record.rows.saturating_add(1);
         }
@@ -525,6 +615,7 @@ impl HttpServiceObservation {
     fn count_finish(
         &self,
         slot: Option<usize>,
+        endpoint: EndpointSlot,
         state: HttpServiceInvocationState,
         failure: Option<HttpServiceFailure>,
     ) {
@@ -535,6 +626,9 @@ impl HttpServiceObservation {
             HttpServiceInvocationState::Abandoned => data.abandoned.add(1),
             // Only a terminal outcome finishes an invocation.
             HttpServiceInvocationState::InProgress => return,
+        }
+        if let Some(actual) = data.actual(endpoint) {
+            actual.record_terminal(state);
         }
         if let Some(retained) = slot.and_then(|slot| data.records.get_mut(slot)) {
             retained.record.state = state;
@@ -555,6 +649,14 @@ impl fmt::Debug for HttpServiceObservation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HttpServiceObservation")
             .field("retained_attempt_limit", &self.state.retained_attempt_limit)
+            .field(
+                "catalog_endpoints",
+                &self
+                    .state
+                    .catalog
+                    .as_ref()
+                    .map(HttpServiceCatalog::endpoint_count),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -567,13 +669,45 @@ impl fmt::Debug for HttpServiceObservation {
 pub(crate) struct HttpServiceInvocation {
     report: HttpServiceObservation,
     slot: Option<usize>,
+    target: AtomicU32,
     finished: AtomicBool,
 }
 
 impl HttpServiceInvocation {
+    /// Attributes this invocation to a catalog endpoint, or to the uncataloged
+    /// aggregate, exactly once. It is a no-op without a catalog and never
+    /// affects the request.
+    pub(crate) fn attribute(&self, endpoint: &NamedNode) {
+        let Some(catalog) = &self.report.state.catalog else {
+            return;
+        };
+        let target = catalog
+            .ordinal_of(endpoint.as_str())
+            .map_or(TARGET_UNCATALOGED, u32::from);
+        if self
+            .target
+            .compare_exchange(
+                TARGET_UNATTRIBUTED,
+                target,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+        {
+            self.report.count_attempt(self.endpoint_slot());
+        }
+    }
+
+    fn endpoint_slot(&self) -> EndpointSlot {
+        match self.target.load(Ordering::Acquire) {
+            TARGET_UNATTRIBUTED | TARGET_UNCATALOGED => EndpointSlot::Uncataloged,
+            ordinal => EndpointSlot::Endpoint(usize::try_from(ordinal).unwrap_or(usize::MAX)),
+        }
+    }
+
     /// Counts one HTTP-client dispatch made after policy admission.
     pub(crate) fn dispatch(&self) {
-        self.report.count_dispatch(self.slot);
+        self.report.count_dispatch(self.slot, self.endpoint_slot());
     }
 
     /// Counts bytes the governed body delivered to the results parser.
@@ -581,13 +715,16 @@ impl HttpServiceInvocation {
         if bytes == 0 {
             return;
         }
-        self.report
-            .count_decoded(self.slot, u64::try_from(bytes).unwrap_or(u64::MAX));
+        self.report.count_decoded(
+            self.slot,
+            self.endpoint_slot(),
+            u64::try_from(bytes).unwrap_or(u64::MAX),
+        );
     }
 
     /// Counts one solution produced by the remote results parser.
     pub(crate) fn row(&self) {
-        self.report.count_row(self.slot);
+        self.report.count_row(self.slot, self.endpoint_slot());
     }
 
     /// Records the remote result iterator reaching EOF without a failure.
@@ -609,7 +746,8 @@ impl HttpServiceInvocation {
         if self.finished.swap(true, Ordering::AcqRel) {
             return; // A terminal outcome is recorded exactly once.
         }
-        self.report.count_finish(self.slot, state, failure);
+        self.report
+            .count_finish(self.slot, self.endpoint_slot(), state, failure);
     }
 }
 
@@ -698,6 +836,16 @@ mod tests {
 
     fn report(retained_attempt_limit: usize) -> HttpServiceObservation {
         HttpServiceObservation::new(retained_attempt_limit).unwrap()
+    }
+
+    fn catalog_report(retained_attempt_limit: usize) -> HttpServiceObservation {
+        let catalog = HttpServiceCatalog::new(vec![
+            HttpServiceEndpointDeclaration::new(NamedNode::new_unchecked("http://a.test/sparql"))
+                .with_expected_rows(5),
+            HttpServiceEndpointDeclaration::new(NamedNode::new_unchecked("http://b.test/sparql")),
+        ])
+        .unwrap();
+        HttpServiceObservation::with_catalog(retained_attempt_limit, catalog).unwrap()
     }
 
     #[test]
@@ -834,8 +982,8 @@ mod tests {
     fn totals_saturate_with_an_overflow_flag() {
         let report = report(1);
         let invocation = report.begin_invocation();
-        report.count_decoded(invocation.slot, u64::MAX);
-        report.count_decoded(invocation.slot, u64::MAX);
+        report.count_decoded(invocation.slot, EndpointSlot::Uncataloged, u64::MAX);
+        report.count_decoded(invocation.slot, EndpointSlot::Uncataloged, u64::MAX);
         invocation.complete();
         let snapshot = report.snapshot();
         assert_eq!(snapshot.decoded_bytes(), u64::MAX);
@@ -865,5 +1013,68 @@ mod tests {
             HttpServiceExecutionProfile::UnplannedHttpV1.as_str(),
             "unplanned-http-v1"
         );
+    }
+
+    #[test]
+    fn per_endpoint_counters_ignore_the_retention_slot() {
+        let report = catalog_report(0);
+        let invocation = report.begin_invocation();
+        invocation.attribute(&NamedNode::new_unchecked("http://b.test/sparql"));
+        invocation.dispatch();
+        invocation.decoded(7);
+        invocation.row();
+        invocation.complete();
+        invocation.fail(HttpServiceFailure::ResultStream);
+        invocation.abandon();
+        drop(invocation);
+        let snapshot = report.snapshot();
+        assert_eq!(snapshot.omitted_records(), 1);
+        assert!(snapshot.records().is_empty());
+        let catalog = snapshot.catalog().unwrap();
+        assert_eq!(catalog.schema_version(), 1);
+        assert_eq!(catalog.endpoints().len(), 2);
+        let first = &catalog.endpoints()[0];
+        assert_eq!(first.ordinal(), 0);
+        assert_eq!(first.declared_expected_rows(), Some(5));
+        assert_eq!(first.actual().attempts(), 0);
+        let second = &catalog.endpoints()[1];
+        assert_eq!(second.ordinal(), 1);
+        assert_eq!(second.declared_expected_rows(), None);
+        let actual = second.actual();
+        assert_eq!(actual.attempts(), 1);
+        assert_eq!(actual.dispatches(), 1);
+        assert_eq!(actual.decoded_bytes(), 7);
+        assert_eq!(actual.rows(), 1);
+        assert_eq!(actual.completed(), 1);
+        assert_eq!(actual.failed(), 0);
+        assert_eq!(actual.abandoned(), 0);
+        assert_eq!(actual.in_progress(), 0);
+        assert_eq!(catalog.uncataloged().attempts(), 0);
+    }
+
+    #[test]
+    fn unlisted_endpoints_share_one_aggregate_and_attribution_is_once() {
+        let report = catalog_report(4);
+        let invocation = report.begin_invocation();
+        invocation.attribute(&NamedNode::new_unchecked("http://c.test/sparql"));
+        invocation.attribute(&NamedNode::new_unchecked("http://a.test/sparql"));
+        invocation.dispatch();
+        drop(invocation);
+        let snapshot = report.snapshot();
+        let catalog = snapshot.catalog().unwrap();
+        assert_eq!(catalog.endpoints()[0].actual().attempts(), 0);
+        assert_eq!(catalog.uncataloged().attempts(), 1);
+        assert_eq!(catalog.uncataloged().dispatches(), 1);
+        assert_eq!(catalog.uncataloged().abandoned(), 1);
+    }
+
+    #[test]
+    fn without_a_catalog_no_endpoint_view_exists() {
+        let report = report(4);
+        let invocation = report.begin_invocation();
+        invocation.attribute(&NamedNode::new_unchecked("http://a.test/sparql"));
+        invocation.complete();
+        assert!(report.snapshot().catalog().is_none());
+        assert_eq!(report.snapshot().attempts(), 1);
     }
 }

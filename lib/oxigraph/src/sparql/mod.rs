@@ -44,6 +44,8 @@ pub use crate::sparql::entailment::{
 pub use crate::sparql::error::UpdateEvaluationError;
 #[cfg(feature = "http-client")]
 pub use crate::sparql::federation::{
+    HttpServiceActualCounters, HttpServiceCatalog, HttpServiceCatalogError,
+    HttpServiceCatalogSnapshot, HttpServiceEndpointDeclaration, HttpServiceEndpointObservation,
     HttpServiceExecutionProfile, HttpServiceFailure, HttpServiceInvocationRecord,
     HttpServiceInvocationState, HttpServiceObservation, HttpServiceObservationConfigurationError,
     HttpServiceObservationSnapshot,

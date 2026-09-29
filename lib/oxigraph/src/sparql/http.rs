@@ -52,6 +52,11 @@ impl DefaultServiceHandler for HttpServiceHandler {
         // authorization so that a denial before any dispatch is still reported.
         let client = self.client.for_operation();
         let invocation = client.service_invocation();
+        // Catalog attribution only labels the observation; it never reads or
+        // changes the request, the target, admission or any error.
+        if let Some(invocation) = &invocation {
+            invocation.attribute(service_name);
+        }
         let (content_type, body) = client
             .post(
                 service_name.as_str(),
