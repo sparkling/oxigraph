@@ -131,3 +131,12 @@ test("duplicate entry or task identity rejects entire batch before dispatch", as
     assert.equal(calls, 0);
   }
 });
+
+test("nonfunction onSettled rejects before any executor callback", async () => {
+  let calls = 0;
+  await assert.rejects(
+    async () => runOrdinaryBatch(pair(), { maxConcurrency: 2, onSettled: true }, async () => { calls++; }),
+    /onSettled must be a callback/,
+  );
+  assert.equal(calls, 0);
+});

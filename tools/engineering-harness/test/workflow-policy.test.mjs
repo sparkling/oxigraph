@@ -110,3 +110,13 @@ test("ordinary pool checks use the recorded runner without opening arbitrary tes
   assert.throws(() => validateWorkflow({ ...spec, checks: [{ completionCheck: "Wrong file", argv: [...argv.slice(0, -1),
     "tools/engineering-harness/test/ordinary-pool-copy.test.mjs"] }] }));
 });
+
+test("native implementation route/result model mismatch fails before root application", async () => {
+  const fixtureState = setup();
+  const host = updateNativeResults(fixtureState, (result, request) => {
+    if (request.payload.route.role === "implement") result.model = "cc/claude-mismatched-model";
+  });
+  await assert.rejects(runWorkflow(spec, host, fixtureState.io), /Native route\/result mismatch/);
+  assert.ok(!fixtureState.actions.includes("root-apply"));
+  assert.deepEqual(fixtureState.counters(), { checks: 0, implementations: 1, reviews: 0 });
+});
