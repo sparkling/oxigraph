@@ -1,8 +1,9 @@
 use super::{
-    NegotiatedTransaction, NegotiatedTransactionalDataset, TransactionRequest,
-    TransactionStartControl, TransactionStartError,
+    KeyedTransaction, NegotiatedTransaction, NegotiatedTransactionalDataset, StorageError, Store,
+    TransactionKey, TransactionRequest, TransactionStartControl, TransactionStartError,
 };
 use crate::model::{NamedNode, NamedOrBlankNode, Quad, Term};
+use crate::storage::StorageTransactionStartError;
 use std::error::Error;
 
 /// A transaction-scoped RDF dataset that supports reads and writes.
@@ -147,5 +148,73 @@ pub trait OwnedTransactionalDataset: NegotiatedTransactionalDataset {
     ) -> Result<NegotiatedTransaction<Self::OwnedTransaction>, TransactionStartError<Self::Error>>
     {
         self.start_owned_transaction_with_control(request, TransactionStartControl::new())
+    }
+}
+
+impl Store {
+    /// Opens a caller-keyed transaction that owns its storage lifetime, with
+    /// unbounded admission.
+    ///
+    /// See [`Store::start_owned_transaction_with_key_and_control`].
+    pub fn start_owned_transaction_with_key(
+        &self,
+        request: TransactionRequest,
+        transaction_key: TransactionKey,
+    ) -> Result<NegotiatedTransaction<KeyedTransaction<'static>>, TransactionStartError<StorageError>>
+    {
+        self.start_owned_transaction_with_key_and_control(
+            request,
+            transaction_key,
+            TransactionStartControl::new(),
+        )
+    }
+
+    /// Negotiates and opens a caller-keyed transaction that owns its storage
+    /// lifetime, with bounded, cancellable admission.
+    ///
+    /// The handle is `'static`, not clonable, and may outlive this [`Store`].
+    /// Unmet requirements are rejected before writer admission and before the
+    /// key is reserved. Use the inherent `commit` and `rollback` of
+    /// [`KeyedTransaction`] for typed outcomes, and resolve the key on a clone
+    /// or reopened store with
+    /// [`OutcomeAwareTransactionalDataset::lookup_transaction_outcome`](super::OutcomeAwareTransactionalDataset::lookup_transaction_outcome).
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "owned request/control matches the existing keyed admission API"
+    )]
+    pub fn start_owned_transaction_with_key_and_control(
+        &self,
+        request: TransactionRequest,
+        transaction_key: TransactionKey,
+        control: TransactionStartControl,
+    ) -> Result<NegotiatedTransaction<KeyedTransaction<'static>>, TransactionStartError<StorageError>>
+    {
+        let started_at = std::time::Instant::now();
+        let effective = self.transaction_capabilities();
+        let unmet = effective.unmet_requirements(request.requirements());
+        if !unmet.is_empty() {
+            return Err(TransactionStartError::RequirementsNotMet { unmet, effective });
+        }
+        let inner = self
+            .storage
+            .start_keyed_readable_transaction_with_control(
+                transaction_key.as_bytes(),
+                &control,
+                started_at,
+            )
+            .map_err(|error| match error {
+                StorageTransactionStartError::Cancelled => TransactionStartError::Cancelled,
+                StorageTransactionStartError::TimedOut => TransactionStartError::TimedOut,
+                StorageTransactionStartError::Backend(error) => {
+                    TransactionStartError::Backend(error)
+                }
+            })?;
+        Ok(NegotiatedTransaction::new(
+            KeyedTransaction {
+                inner,
+                transaction_key,
+            },
+            effective,
+        ))
     }
 }

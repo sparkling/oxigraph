@@ -458,3 +458,57 @@ type requires `'static`, not `Send`; a generic server must impose its own
 thread-safety bound. Owned keyed/governed openers, frozen evaluator and
 lease/protocol stages remain on G4.5. ADR remains Proposed. No qualification,
 promotion, HTTP exposure or publication follows.
+
+## Owned keyed and governed public openers (2026-09-29)
+
+Additive inherent Store constructors now return the existing
+`KeyedTransaction<'static>` and `GovernedTransaction<'static>` through
+`NegotiatedTransaction`. Controlled counterparts preserve rejection before
+admission/key reservation, cancellation, effective capabilities and typed
+terminal outcomes. Borrowed signatures and persistence traits stay unchanged.
+Governed admission shares a private helper; effect capture, receipt/outbox
+publication and rollback semantics remain the existing implementation.
+
+Exact source SHA256 values:
+
+- `store/transactional.rs`:
+  `db9052e06687844e699cdca16ae217436c53e3abf16412cd71cf9d4bf994b0d1`.
+- `store/receipt.rs`:
+  `97ab2993d450003d79e825d9cd6d3136b91787c737125897552ccfe02a6c77f7`.
+- `tests/owned_keyed_transaction.rs`:
+  `2d17d4ff9f901d7b08afc745ace7627d9893d4cbc0b2659ce1a7b7bfaba7cab2`.
+- `tests/owned_governed_transaction.rs`:
+  `d1fcf2afab8a8f52e6a1e557c7a4c083b3d5dc22ee994c01b631570d7ba95e70`.
+
+Ordinary batch `workflow-AFbaz5` ran independent keyed/governed lanes
+`9f075e67-783c-486d-859e-e01e033e856d` and
+`3bd18d56-f53e-4ed7-b0a3-ccd0db685906`, with Sonnet 5.5/high ordinary roles
+and Opus/high formatting-only repairs. Both fresh reviews accepted. Each
+lane's 27 event/check references and structured MCP handoff were verified.
+Negative formatting reviews and earlier output-limit receipts remain intact.
+Both lanes and all external actions drained before canonical integration.
+
+After harness deployment merge `1c065610c`, a fresh composed candidate
+`source-sa7HPT` received independent Sonnet 5.5/high review
+`30f605c1-7f66-4944-8927-9486c425483e`, reviewer
+`6e37de31-483a-4157-a9d1-f12caba9a9cb` (ACCEPT). Response SHA256:
+`dc132031a24a115b560c1dbdcf26c5f70c1a54e42334e4f36dab67da1ce3b839`.
+Revalidation checked 15,214 unchanged included source inputs, 17 review
+dependencies, request/response identity and all four candidate hashes.
+Composed candidate checks pass 114 default, 20 no-default, 39 RDF 1.2
+integration tests and five receipt unit tests. Focused formatter passes.
+Clippy exits 0 with 67 governed-test and 59 keyed-test warnings plus existing
+library warnings; this is not warning-free evidence.
+
+Exact canonical source/sourceAfter bindings were verified before this append:
+default nine-target integration suite passes 114 (`run-QnWaqI`), RDF 1.2
+passes 116 (`run-UvjZsW`), and RDF 1.2 receipt unit tests pass five
+(`run-MaD7E2`). Counts are top-level, not nested helper aggregates. New
+governed fault coverage proves typed-key retention around both final batch
+fault boundaries after original Store drop, with orderly reopen lookup.
+It does not claim power-loss qualification.
+
+This accepts bounded native API slices only. Governed support task
+`task-1790669488928-73stxw` closes; original G4.5 alias remains open for
+independent evaluator, lease model, protocol and later applicable gates.
+ADR remains Proposed. No HTTP activation, qualification or publication.

@@ -649,6 +649,53 @@ impl Store {
         control: TransactionStartControl,
     ) -> Result<NegotiatedTransaction<GovernedTransaction<'_>>, TransactionStartError<StorageError>>
     {
+        self.start_governed_inner(&request, transaction_key, &control)
+    }
+
+    /// Opens a governed transaction that owns its storage lifetime and does not borrow this store.
+    pub fn start_owned_governed_transaction(
+        &self,
+        request: TransactionRequest,
+        transaction_key: TransactionKey,
+    ) -> Result<
+        NegotiatedTransaction<GovernedTransaction<'static>>,
+        TransactionStartError<StorageError>,
+    > {
+        self.start_owned_governed_transaction_with_control(
+            request,
+            transaction_key,
+            TransactionStartControl::new(),
+        )
+    }
+
+    /// Owned counterpart of [`Self::start_governed_transaction_with_control`].
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "owned request/control matches the existing keyed admission API"
+    )]
+    pub fn start_owned_governed_transaction_with_control(
+        &self,
+        request: TransactionRequest,
+        transaction_key: TransactionKey,
+        control: TransactionStartControl,
+    ) -> Result<
+        NegotiatedTransaction<GovernedTransaction<'static>>,
+        TransactionStartError<StorageError>,
+    > {
+        self.start_governed_inner(&request, transaction_key, &control)
+    }
+
+    /// Rejects unmet requirements before any storage call or key reservation,
+    /// then performs bounded, cancellable governed admission.
+    fn start_governed_inner(
+        &self,
+        request: &TransactionRequest,
+        transaction_key: TransactionKey,
+        control: &TransactionStartControl,
+    ) -> Result<
+        NegotiatedTransaction<GovernedTransaction<'static>>,
+        TransactionStartError<StorageError>,
+    > {
         let started_at = std::time::Instant::now();
         let effective = self.transaction_capabilities();
         let unmet = effective.unmet_requirements(request.requirements());
@@ -659,7 +706,7 @@ impl Store {
             .storage
             .start_governed_transaction_with_control(
                 transaction_key.as_bytes(),
-                &control,
+                control,
                 started_at,
             )
             .map_err(|error| match error {
@@ -924,6 +971,58 @@ mod tests {
             let next_page = store.read_outbox(page.high_water(), std::num::NonZeroUsize::MIN)?;
             assert_eq!(next_page.records().len(), 1);
             assert_eq!(next_page.high_water(), next.outbox_end_cursor().as_ref());
+        }
+        Ok(())
+    }
+
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    #[test]
+    fn owned_governed_commit_faults_keep_typed_key_after_original_store_drop()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use crate::model::GraphName;
+        use crate::storage::TransactionOutcomeFaultPoint as Fault;
+        for point in [Fault::FinalBatchBefore, Fault::FinalBatchAfter] {
+            let directory = tempfile::tempdir()?;
+            let key = TransactionKey::new([1; 16]);
+            let node = NamedNode::new_unchecked("urn:owned-receipt");
+            let quad = Quad::new(node.clone(), node.clone(), node, GraphName::DefaultGraph);
+            let changes;
+            {
+                let store = Store::open(directory.path())?;
+                let probe = store.clone();
+                let mut tx = store
+                    .start_owned_governed_transaction(TransactionRequest::default(), key.clone())?
+                    .into_transaction();
+                tx.insert(quad.clone())?;
+                changes = tx.changes()?;
+                store.storage.arm_transaction_outcome_fault(point)?;
+                drop(store);
+                assert!(
+                    matches!(tx.commit(), Err(TransactionCommitError::Indeterminate { transaction_key, .. }) if transaction_key == key)
+                );
+                assert!(
+                    probe
+                        .storage
+                        .transaction_outcome_fault_events()?
+                        .contains(&point)
+                );
+            }
+            let store = Store::open(directory.path())?;
+            let committed = point == Fault::FinalBatchAfter;
+            assert_eq!(store.contains(&quad)?, committed);
+            match store.lookup_commit_receipt(&key)? {
+                CommitReceiptOutcome::Committed(receipt) => {
+                    assert!(committed);
+                    assert!(receipt.verifies_changes(&changes));
+                }
+                CommitReceiptOutcome::Indeterminate => assert!(!committed),
+                other => panic!("unexpected outcome: {other:?}"),
+            }
+            let page = store.read_outbox(None, std::num::NonZeroUsize::new(100).unwrap())?;
+            assert_eq!(
+                page.records().len(),
+                if committed { changes.len() + 1 } else { 0 }
+            );
         }
         Ok(())
     }
