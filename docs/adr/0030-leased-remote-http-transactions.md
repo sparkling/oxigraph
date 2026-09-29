@@ -273,3 +273,37 @@ verified before this evidence append. Registry task
 backend-storage ownership, public owned handle, evaluator and lease/protocol
 gates stay on original G4.5 outcome. ADR remains Proposed; no HTTP exposure,
 qualification, promotion or publication.
+
+## Owned memory storage transaction (2026-09-29)
+
+`MemoryStorageTransaction` now owns its cloned `MemoryStorage`, preserving a
+covariant lifetime marker for existing callers. All native start paths return
+`'static` transactions; readers still borrow the transaction. Receipt commit
+retains a storage clone while consuming the transaction. Existing rollback,
+MVCC, keyed/governed outcomes and permit-last drop order remain unchanged.
+Exact `storage/memory.rs` SHA256:
+`ba3b3f1b0bdf97451917483c3c87cc8f46a4d1d6d4ca14fe3b01be89a6d0c5b2`.
+
+Batch `workflow-z3f6kV`, run `609acc3b-7d00-4e38-a753-79e8771ff913`, used
+Sonnet 5.5/high ordinary roles and Opus/high formatting-only repair. Fresh
+reviewer `cac607e0-7044-4d3e-8403-c0d0011620d4` accepted exact repaired source.
+Candidate no-default module tests pass 24/24 (`run-wYxoQB`); integration tests
+pass 7/7 (`run-N7oKfA`). The concurrency file is feature-excluded there.
+Formatter passes. Pre-format-repair candidate Clippy exits 0 with warnings;
+no warning-free claim. The rejected formatting review remains preserved.
+
+Lane receipt SHA256:
+`624471f4582ff820d360334a4b7ce6bbe2a82beade798bef245d8eec0079a6bc`.
+All 24 event/check/handoff references verified, with structured MCP readback
+and native learning retained. Both original and RocksDB repair batches drained
+before integration; their failed RocksDB output receipts remain negative evidence.
+The 15,213 unchanged included source/read inputs and submodule pins matched
+clean canonical base `8b6b83503`. Canonical exact-source default/RDF 1.2 module
+checks pass 24/24 each (`run-eMFmLj`, `run-cvuAUv`); transaction integration
+checks pass 12/12 each (`run-05dnM9`, `run-YV1FF1`). Source/sourceAfter bindings
+verified before this evidence append.
+
+This accepts only memory backend ownership. Public owned handle/evaluator,
+RocksDB storage wrapper ownership and lease/protocol gates remain open on
+original G4.5 outcome. No HTTP exposure, qualification or publication. ADR
+remains Proposed.

@@ -102,7 +102,7 @@ impl MemoryStorage {
         }
     }
 
-    pub fn start_transaction(&self) -> MemoryStorageTransaction<'_> {
+    pub fn start_transaction(&self) -> MemoryStorageTransaction<'static> {
         // We ensure there is only one transaction running
         let transaction_guard = self.transaction_lock.lock();
         self.start_transaction_with_guard(transaction_guard)
@@ -112,7 +112,7 @@ impl MemoryStorage {
         &self,
         control: &TransactionStartControl,
         started_at: Instant,
-    ) -> Result<MemoryStorageTransaction<'_>, TransactionStartControlError> {
+    ) -> Result<MemoryStorageTransaction<'static>, TransactionStartControlError> {
         let transaction_guard = self
             .transaction_lock
             .lock_with_control(control, started_at)?;
@@ -124,7 +124,7 @@ impl MemoryStorage {
         transaction_key: &[u8; 16],
         control: &TransactionStartControl,
         started_at: Instant,
-    ) -> Result<MemoryStorageTransaction<'_>, StorageTransactionStartError> {
+    ) -> Result<MemoryStorageTransaction<'static>, StorageTransactionStartError> {
         // Reserve only after admission succeeds. This keeps a rejected or timed-out request from
         // consuming a key that never owned the writer gate.
         let transaction_guard = self
@@ -172,7 +172,7 @@ impl MemoryStorage {
         transaction_key: &[u8; 16],
         control: &TransactionStartControl,
         started_at: Instant,
-    ) -> Result<MemoryStorageTransaction<'_>, StorageTransactionStartError> {
+    ) -> Result<MemoryStorageTransaction<'static>, StorageTransactionStartError> {
         let mut transaction = self.start_keyed_readable_transaction_with_control(
             transaction_key,
             control,
@@ -375,7 +375,7 @@ impl MemoryStorage {
     fn start_transaction_with_guard(
         &self,
         transaction_guard: LockGuard,
-    ) -> MemoryStorageTransaction<'_> {
+    ) -> MemoryStorageTransaction<'static> {
         self.start_transaction_with_guard_and_key(transaction_guard, None)
     }
 
@@ -383,18 +383,19 @@ impl MemoryStorage {
         &self,
         transaction_guard: LockGuard,
         transaction_key: Option<[u8; 16]>,
-    ) -> MemoryStorageTransaction<'_> {
+    ) -> MemoryStorageTransaction<'static> {
         let transaction_id = self.transaction_counter.fetch_add(1, Ordering::Acquire);
         let snapshot_id = self.version_counter.load(Ordering::Relaxed);
         MemoryStorageTransaction {
-            storage: self,
+            storage: self.clone(),
             log: Vec::new(),
             transaction_id,
             snapshot_id,
             transaction_key,
             governed: false,
-            _transaction_guard: transaction_guard,
             completed: false,
+            _lifetime: PhantomData,
+            _transaction_guard: transaction_guard,
         }
     }
 
@@ -772,13 +773,14 @@ impl StrLookup for MemoryStorageReader<'_> {
 
 #[must_use]
 pub struct MemoryStorageTransaction<'a> {
-    storage: &'a MemoryStorage,
+    storage: MemoryStorage,
     log: Vec<LogEntry>,
     transaction_id: usize,
     snapshot_id: usize,
     transaction_key: Option<[u8; 16]>,
     governed: bool,
     completed: bool,
+    _lifetime: PhantomData<&'a ()>,
     // Must stay last: the permit is released only after Drop::drop finishes rollback.
     _transaction_guard: LockGuard,
 }
@@ -1222,7 +1224,7 @@ impl MemoryStorageTransaction<'_> {
                 "receipt capture was not enabled at admission".into(),
             )));
         }
-        let storage = self.storage;
+        let storage = self.storage.clone();
         let mut governance = storage.governance.write().map_err(|_| {
             TransactionCommitError::Rejected(
                 CorruptionError::msg("poisoned memory governance state").into(),
@@ -1695,9 +1697,138 @@ mod tests {
         .is_ok()
     }
 
+    fn bounded() -> TransactionStartControl {
+        TransactionStartControl::new().with_timeout(BOUND)
+    }
+
     fn example_quad(label: &str) -> Quad {
         let node = NamedNode::new_unchecked(format!("urn:permit:{label}"));
         Quad::new(node.clone(), node.clone(), node, GraphName::DefaultGraph)
+    }
+
+    fn visible(storage: &MemoryStorage, quad: &Quad) -> bool {
+        storage.snapshot().contains(&EncodedQuad::from(quad))
+    }
+
+    fn seeded(quad: &Quad) -> MemoryStorage {
+        let storage = MemoryStorage::new();
+        let mut transaction = storage.start_transaction();
+        transaction.insert(quad.clone());
+        transaction.commit();
+        storage
+    }
+
+    // Starts a transaction, drops the given handle, then derives an observer from the transaction.
+    fn orphan(
+        storage: MemoryStorage,
+        start: impl FnOnce(&MemoryStorage) -> MemoryStorageTransaction<'static>,
+    ) -> (MemoryStorageTransaction<'static>, MemoryStorage) {
+        let transaction = start(&storage);
+        drop(storage);
+        let observer = transaction.storage.clone();
+        (transaction, observer)
+    }
+
+    fn keyed_orphan(key: [u8; 16]) -> (MemoryStorageTransaction<'static>, MemoryStorage) {
+        orphan(MemoryStorage::new(), |storage| {
+            storage
+                .start_keyed_readable_transaction_with_control(&key, &bounded(), Instant::now())
+                .ok()
+                .unwrap()
+        })
+    }
+
+    fn governed_orphan(key: [u8; 16]) -> (MemoryStorageTransaction<'static>, MemoryStorage) {
+        orphan(MemoryStorage::new(), |storage| {
+            storage
+                .start_governed_transaction_with_control(&key, &bounded(), Instant::now())
+                .ok()
+                .unwrap()
+        })
+    }
+
+    fn assert_terminal(
+        observer: &MemoryStorage,
+        key: &[u8; 16],
+        expected: StorageTransactionOutcome,
+    ) {
+        assert_eq!(
+            observer.lookup_transaction_outcome(key).unwrap(),
+            expected,
+            "terminal outcome must be resolved through the observer"
+        );
+        let reuse =
+            observer.start_keyed_readable_transaction_with_control(key, &bounded(), Instant::now());
+        assert!(
+            matches!(reuse, Err(StorageTransactionStartError::Backend(_))),
+            "a terminal key must not be reserved again"
+        );
+        assert_eq!(
+            observer.lookup_transaction_outcome(key).unwrap(),
+            expected,
+            "rejected reuse must not change the outcome"
+        );
+        assert!(
+            acquirable(&observer.transaction_lock),
+            "terminal transaction must release the permit"
+        );
+    }
+
+    fn rollback_case(finish: impl FnOnce(MemoryStorageTransaction<'static>)) {
+        let baseline = example_quad("baseline");
+        let staged = example_quad("staged");
+        let graph = NamedOrBlankNode::from(NamedNode::new_unchecked("urn:permit:staged-graph"));
+        let encoded_graph = EncodedTerm::from(&graph);
+        let (mut transaction, observer) =
+            orphan(seeded(&baseline), |storage| storage.start_transaction());
+        transaction.insert(staged.clone());
+        transaction.insert_named_graph(graph.clone());
+        transaction.remove(&baseline);
+        {
+            let reader = transaction.reader();
+            assert!(
+                reader.contains(&EncodedQuad::from(&staged)),
+                "transaction must read its staged quad"
+            );
+            assert!(
+                reader.contains_named_graph(&encoded_graph),
+                "transaction must read its staged graph"
+            );
+            assert!(
+                !reader.contains(&EncodedQuad::from(&baseline)),
+                "transaction must read its staged removal"
+            );
+        }
+        assert!(
+            visible(&observer, &baseline),
+            "staged removal must be isolated from other readers"
+        );
+        assert!(
+            !visible(&observer, &staged),
+            "staged quad must be isolated from other readers"
+        );
+        assert!(
+            timed_out(&observer.transaction_lock),
+            "orphaned transaction must hold the permit"
+        );
+        finish(transaction);
+        assert!(
+            acquirable(&observer.transaction_lock),
+            "rollback must release the permit"
+        );
+        assert!(
+            visible(&observer, &baseline),
+            "rollback must restore the removed quad"
+        );
+        assert!(
+            !visible(&observer, &staged),
+            "rollback must discard the staged quad"
+        );
+        assert!(
+            !observer.snapshot().contains_named_graph(&encoded_graph),
+            "rollback must discard the staged graph"
+        );
+        observer.snapshot().validate().unwrap();
     }
 
     #[test]
@@ -1928,6 +2059,272 @@ mod tests {
             "rolled back quad must be invisible"
         );
         storage.snapshot().validate().unwrap();
+    }
+
+    #[test]
+    fn transaction_owns_storage_after_every_original_handle_drops() {
+        assert_send_static::<MemoryStorageTransaction<'static>>();
+        let storage = MemoryStorage::new();
+        let content = Arc::downgrade(&storage.content);
+        let lock = Arc::downgrade(&storage.transaction_lock);
+        let transaction = storage.start_transaction();
+        drop(storage);
+        assert_eq!(
+            content.strong_count(),
+            1,
+            "transaction must be the only owner of the content"
+        );
+        assert_eq!(
+            lock.strong_count(),
+            2,
+            "transaction storage and its permit must own the lock"
+        );
+        drop(transaction);
+        assert!(
+            content.upgrade().is_none(),
+            "content must be freed with the transaction"
+        );
+        assert!(
+            lock.upgrade().is_none(),
+            "lock must be freed with the transaction"
+        );
+    }
+
+    #[test]
+    fn orphaned_transaction_reads_its_writes_isolates_and_commits() {
+        let baseline = example_quad("baseline");
+        let staged = example_quad("staged");
+        let graph = NamedOrBlankNode::from(NamedNode::new_unchecked("urn:permit:staged-graph"));
+        let encoded_graph = EncodedTerm::from(&graph);
+        let (mut transaction, observer) =
+            orphan(seeded(&baseline), |storage| storage.start_transaction());
+        let before = observer.snapshot();
+        transaction.insert(staged.clone());
+        transaction.insert_named_graph(graph.clone());
+        transaction.remove(&baseline);
+        {
+            let reader = transaction.reader();
+            assert!(
+                reader.contains(&EncodedQuad::from(&staged)),
+                "transaction must read its staged quad"
+            );
+            assert!(
+                reader.contains_named_graph(&encoded_graph),
+                "transaction must read its staged graph"
+            );
+            assert!(
+                !reader.contains(&EncodedQuad::from(&baseline)),
+                "transaction must read its staged removal"
+            );
+            assert_eq!(
+                reader.len(),
+                1,
+                "transaction must see exactly its staged quad"
+            );
+        }
+        assert!(
+            visible(&observer, &baseline) && !visible(&observer, &staged),
+            "staged changes must be isolated before commit"
+        );
+        assert!(
+            timed_out(&observer.transaction_lock),
+            "orphaned transaction must hold the permit"
+        );
+        transaction.commit();
+        assert!(
+            acquirable(&observer.transaction_lock),
+            "commit must release the permit"
+        );
+        assert!(
+            visible(&observer, &staged) && !visible(&observer, &baseline),
+            "commit must publish the staged changes"
+        );
+        assert!(
+            observer.snapshot().contains_named_graph(&encoded_graph),
+            "commit must publish the staged graph"
+        );
+        assert!(
+            before.contains(&EncodedQuad::from(&baseline))
+                && !before.contains(&EncodedQuad::from(&staged)),
+            "a snapshot taken before commit must not change"
+        );
+        observer.snapshot().validate().unwrap();
+    }
+
+    #[test]
+    fn orphaned_transaction_drop_rolls_back() {
+        rollback_case(drop);
+    }
+
+    #[test]
+    fn orphaned_transaction_explicit_rollback_discards_changes() {
+        rollback_case(|transaction| transaction.rollback_with_outcome().unwrap());
+    }
+
+    #[test]
+    fn orphaned_transaction_keeps_admission_control_semantics() {
+        let (transaction, observer) =
+            orphan(MemoryStorage::new(), |storage| storage.start_transaction());
+        let started_at = Instant::now();
+        let timed = observer.start_transaction_with_control(
+            &TransactionStartControl::new().with_timeout(SHORT),
+            started_at,
+        );
+        assert!(
+            matches!(timed, Err(TransactionStartControlError::TimedOut)),
+            "admission must time out while the orphan holds the permit"
+        );
+        assert!(started_at.elapsed() >= SHORT, "timeout must not fire early");
+        let control = bounded();
+        control.cancel();
+        let cancelled = observer.start_transaction_with_control(&control, Instant::now());
+        assert!(
+            matches!(cancelled, Err(TransactionStartControlError::Cancelled)),
+            "cancelled admission must report cancellation"
+        );
+        drop(transaction);
+        let next = observer
+            .start_transaction_with_control(&bounded(), Instant::now())
+            .ok()
+            .unwrap();
+        next.commit();
+        assert!(
+            acquirable(&observer.transaction_lock),
+            "permit must be free after release"
+        );
+    }
+
+    #[test]
+    fn orphaned_keyed_commit_reaches_committed_outcome() {
+        let key = [0x41; 16];
+        let quad = example_quad("keyed-commit");
+        let (mut transaction, observer) = keyed_orphan(key);
+        assert_eq!(
+            observer.lookup_transaction_outcome(&key).unwrap(),
+            StorageTransactionOutcome::Indeterminate,
+            "a staging key must be indeterminate"
+        );
+        transaction.insert(quad.clone());
+        transaction.commit_with_outcome().unwrap();
+        assert!(
+            visible(&observer, &quad),
+            "keyed commit must publish the quad"
+        );
+        assert_terminal(&observer, &key, StorageTransactionOutcome::Committed);
+        assert!(
+            matches!(
+                observer.lookup_commit_receipt(&key),
+                Ok(CommitReceiptOutcome::CommittedWithoutReceipt)
+            ),
+            "an ungoverned commit has no receipt"
+        );
+    }
+
+    #[test]
+    fn orphaned_keyed_explicit_rollback_reaches_rolled_back_outcome() {
+        let key = [0x42; 16];
+        let quad = example_quad("keyed-rollback");
+        let (mut transaction, observer) = keyed_orphan(key);
+        transaction.insert(quad.clone());
+        transaction.rollback_with_outcome().unwrap();
+        assert!(
+            !visible(&observer, &quad),
+            "keyed rollback must discard the quad"
+        );
+        assert_terminal(&observer, &key, StorageTransactionOutcome::RolledBack);
+        assert!(
+            matches!(
+                observer.lookup_commit_receipt(&key),
+                Ok(CommitReceiptOutcome::ProvenAbsent(
+                    TransactionNonCommitReason::RolledBack
+                ))
+            ),
+            "a rolled back key must be proven absent"
+        );
+    }
+
+    #[test]
+    fn orphaned_keyed_drop_reaches_rolled_back_outcome() {
+        let key = [0x43; 16];
+        let quad = example_quad("keyed-drop");
+        let (mut transaction, observer) = keyed_orphan(key);
+        transaction.insert(quad.clone());
+        drop(transaction);
+        assert!(
+            !visible(&observer, &quad),
+            "keyed drop must discard the quad"
+        );
+        assert_terminal(&observer, &key, StorageTransactionOutcome::RolledBack);
+    }
+
+    #[test]
+    fn orphaned_governed_plain_commit_is_rejected_and_drop_rolls_back() {
+        let key = [0x51; 16];
+        let quad = example_quad("governed-rejected");
+        let (mut transaction, observer) = governed_orphan(key);
+        transaction.insert(quad.clone());
+        let result = transaction.commit_with_outcome();
+        assert!(
+            matches!(result, Err(StorageError::Other(_))),
+            "a governed transaction must refuse a plain commit"
+        );
+        assert!(
+            !visible(&observer, &quad),
+            "a refused commit must not publish"
+        );
+        assert_terminal(&observer, &key, StorageTransactionOutcome::RolledBack);
+        assert!(
+            matches!(
+                observer.lookup_commit_receipt(&key),
+                Ok(CommitReceiptOutcome::ProvenAbsent(
+                    TransactionNonCommitReason::RolledBack
+                ))
+            ),
+            "a refused governed commit must be proven absent"
+        );
+    }
+
+    #[test]
+    fn orphaned_governed_receipt_commit_publishes_receipt_and_outbox() {
+        let key = [0x52; 16];
+        let quad = example_quad("governed-committed");
+        let (mut transaction, observer) = governed_orphan(key);
+        assert_eq!(
+            observer.lookup_transaction_outcome(&key).unwrap(),
+            StorageTransactionOutcome::Indeterminate,
+            "a staging governed key must be indeterminate"
+        );
+        transaction.insert(quad.clone());
+        let result = transaction.commit_with_receipt(&SemanticChangeSet::default(), None);
+        assert!(result.is_ok(), "governed receipt commit must succeed");
+        assert!(
+            visible(&observer, &quad),
+            "governed commit must publish the quad"
+        );
+        assert_terminal(&observer, &key, StorageTransactionOutcome::Committed);
+        assert!(
+            matches!(
+                observer.lookup_commit_receipt(&key),
+                Ok(CommitReceiptOutcome::Committed(_))
+            ),
+            "governed commit must expose its receipt"
+        );
+        assert!(
+            observer
+                .governance
+                .read()
+                .unwrap()
+                .receipts
+                .contains_key(&key),
+            "governed commit must retain its terminal receipt"
+        );
+        assert!(
+            observer
+                .read_outbox(None, std::num::NonZeroUsize::MIN)
+                .is_ok(),
+            "the outbox must stay readable after governed commit"
+        );
+        observer.snapshot().validate().unwrap();
     }
 
     #[test]
