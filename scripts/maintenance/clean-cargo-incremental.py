@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pressure-triggered incremental-cache cleanup; never removes Cargo lockfiles."""
+"""Pressure-triggered incremental-cache or archived RocksDB object cleanup; never removes Cargo lockfiles."""
 import argparse
 import fcntl
 import json
@@ -11,6 +11,11 @@ import shutil
 import stat
 import subprocess
 import time
+
+# Only the inspected oxrocksdb-sys cc producer; other build scripts own unknown OUT_DIR contracts.
+ROCKSDB_OUT = re.compile(r"oxrocksdb-sys-[0-9a-f]{16}")
+ROCKSDB_ARCHIVES = ("liblz4.a", "liboxrocksdb_api.a", "librocksdb.a")
+ROCKSDB_KEPT = {"bindings.rs", "flag_check", "flag_check.cpp", *ROCKSDB_ARCHIVES}
 
 
 def mount_table():
@@ -62,7 +67,7 @@ def inventory(path):
     return size, newest
 
 
-def discover(repository):
+def discover(repository, objects=False):
     regular_path(repository)
     delivery = repository / "target/engineering-delivery"
     if not delivery.exists():
@@ -85,18 +90,93 @@ def discover(repository):
             regular_path(allocation)
             for profile in ("debug", "release"):
                 cache = allocation / profile / "incremental"
-                if cache.exists():
+                if objects and (cache.parent / "build").exists():
+                    regular_path(cache.parent)
+                    found.append(cache)
+                elif not objects and cache.exists():
                     regular_path(cache.parent)
                     regular_path(cache)
                     found.append(cache)
     return found
 
 
-def clean_one(cache, minimum_age, apply=False, now=None, expected_mount=None):
+def archive_listing(archive):
+    """Member names from GNU ar; thin, unreadable or duplicate-member archives refuse."""
+    with open(archive, "rb") as handle:
+        if handle.read(8) != b"!<arch>\n":
+            raise ValueError(f"Not a regular ar archive: {archive}")
+    try:
+        names = subprocess.run(["ar", "t", str(archive)], check=True, capture_output=True,
+                               text=True, timeout=600).stdout.splitlines()
+    except subprocess.SubprocessError as error:
+        raise ValueError(f"Unreadable archive: {archive}") from error
+    if len(set(names)) != len(names):
+        raise ValueError(f"Duplicate archive members: {archive}")
+    return names
+
+
+def same_member(archive, name, path):
+    """Stream `ar p` against the object in 1MiB chunks; truncation or any byte difference fails."""
+    with open(path, "rb") as handle, subprocess.Popen(
+            ["ar", "p", str(archive), name], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as process:
+        while (expected := handle.read(1 << 20)) == process.stdout.read(len(expected) or 1):
+            if not expected:
+                break
+        else:
+            process.kill()
+            return False
+    return process.returncode == 0
+
+
+def archived_objects(out, minimum_age, now, expected_mount):
+    """oxrocksdb-sys cc objects byte-identical to their unique member of that build's static archives."""
+    regular_path(out)
+    script = out.parent
+    if not ROCKSDB_OUT.fullmatch(script.name):
+        return None, "unsupported-producer"
+    output, root = script / "output", script / "root-output"
+    if not (output.is_file() and root.is_file()):
+        return None, "incomplete-build-script"
+    directives = output.read_text(errors="replace")
+    # The inspected build script links exactly these archives and never an object directly.
+    static = set(re.findall(r"^cargo:rustc-link-lib=static=(\S+)$", directives, re.M))
+    if (root.read_text() != str(out) or static != {"lz4", "oxrocksdb_api", "rocksdb"}
+            or re.search(r"\.o\b|^cargo:rustc-link-arg", directives, re.M)):
+        return None, "unsupported-contract"
+    entries = {path.name: path for path in out.iterdir()}
+    objects = sorted(path for name, path in entries.items() if name.endswith(".o"))
+    if not objects:
+        return [], "no-objects"
+    if set(entries) - {path.name for path in objects} != ROCKSDB_KEPT:
+        return None, "unsupported-contract"
+    mounts, device = mount_table(), out.lstat().st_dev
+    infos = {path: regular_path(path, directory=False) for path in entries.values()}
+    for path, info in infos.items():
+        if (info.st_nlink != 1 or info.st_dev != device or str(path) in mounts
+                or mount_id(path, mounts) != expected_mount):
+            raise ValueError(f"Linked or mounted build output: {path}")
+    # Any recent write in the build-script directory means possible current use.
+    if now - max(path.lstat().st_mtime for path in [out, *entries.values(), *script.iterdir()]) < minimum_age:
+        return None, "recent"
+    owner = {}
+    for archive in ROCKSDB_ARCHIVES:
+        for name in archive_listing(entries[archive]):
+            if name in owner:
+                raise ValueError(f"Ambiguous archive member {name}: {out}")
+            owner[name] = entries[archive]
+    # Every archive member must have its object and vice versa; partial states stay untouched.
+    if set(owner) != {path.name for path in objects}:
+        return None, "unarchived"
+    if not all(same_member(owner[path.name], path.name, path) for path in objects):
+        return None, "content-differs"
+    return [(path, infos[path]) for path in objects], "eligible"
+
+
+def clean_one(cache, minimum_age, apply=False, now=None, expected_mount=None, objects=False):
     cache = Path(cache)
     if not math.isfinite(minimum_age) or minimum_age < 3600:
         raise ValueError("Minimum age must be finite and at least one hour")
-    regular_path(cache)
+    regular_path(cache.parent if objects else cache)
     lock = cache.parent / ".cargo-lock"
     mounts = mount_table()
     expected_mount = expected_mount or mount_id(cache, mounts)
@@ -117,6 +197,9 @@ def clean_one(cache, minimum_age, apply=False, now=None, expected_mount=None):
         current = lock.lstat()
         if (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
             raise ValueError("Cargo lock replaced")
+        if objects:
+            return remove_archived_objects(cache.parent, minimum_age, apply,
+                                           time.time() if now is None else now, expected_mount)
         size, newest = inventory(cache)
         if (time.time() if now is None else now) - newest < minimum_age:
             return {"path": str(cache), "status": "recent", "bytes": 0}
@@ -134,6 +217,30 @@ def clean_one(cache, minimum_age, apply=False, now=None, expected_mount=None):
         os.close(fd)
 
 
+def remove_archived_objects(profile, minimum_age, apply, now, expected_mount):
+    build = profile / "build"
+    results = {"path": str(profile), "status": "cleaned" if apply else "eligible", "bytes": 0, "objects": 0}
+    if not build.exists():
+        return {**results, "status": "no-build-outputs"}
+    regular_path(build)
+    for out in sorted(build.glob("oxrocksdb-sys-*/out")):
+        if mount_id(out, mount_table()) != expected_mount:
+            raise ValueError(f"Build output differs from pressure filesystem mount: {out}")
+        objects, status = archived_objects(out, minimum_age, now, expected_mount)
+        if objects is None:
+            print(json.dumps({"path": str(out), "status": status, "bytes": 0}), flush=True)
+            continue
+        for path, verified in objects:
+            current = path.lstat()
+            if (current.st_ino, current.st_size, current.st_mtime_ns) != (
+                    verified.st_ino, verified.st_size, verified.st_mtime_ns):
+                raise ValueError(f"Object changed after comparison: {path}")
+            results["bytes"] += current.st_blocks * 512
+            results["objects"] += 1
+            if apply:
+                path.unlink()
+    return results
+
 def used_percent(path):
     usage = shutil.disk_usage(path)
     return 100 * (usage.total - usage.free) / usage.total
@@ -146,6 +253,8 @@ def main():
     parser.add_argument("--minimum-age-hours", type=float, default=6)
     parser.add_argument("--trigger-percent", type=float, default=85)
     parser.add_argument("--stop-percent", type=float, default=80)
+    parser.add_argument("--archived-build-objects", action="store_true",
+                        help="Instead remove oxrocksdb-sys cc *.o byte-identical to its static archive member")
     args = parser.parse_args()
     if not (0 < args.stop_percent < args.trigger_percent < 100) or not math.isfinite(args.minimum_age_hours) or args.minimum_age_hours < 1:
         parser.error("Require 0 < stop < trigger < 100 and minimum age >= 1 hour")
@@ -161,11 +270,11 @@ def main():
         return
     eligible = []
     skipped = []
-    for cache in discover(args.repository):
+    for cache in discover(args.repository, args.archived_build_objects):
         try:
             if mount_id(cache, mount_table()) != pressure_mount:
                 raise ValueError("Cache differs from pressure filesystem mount")
-            _, newest = inventory(cache)
+            newest = cache.parent.stat().st_mtime if args.archived_build_objects else inventory(cache)[1]
             eligible.append((newest, str(cache)))
         except (OSError, ValueError) as error:
             skipped.append({"path": str(cache), "status": "unsafe", "error": str(error)})
@@ -176,7 +285,8 @@ def main():
         if args.apply and used_percent(args.repository) <= args.stop_percent:
             break
         try:
-            result = clean_one(cache, args.minimum_age_hours * 3600, args.apply, expected_mount=pressure_mount)
+            result = clean_one(cache, args.minimum_age_hours * 3600, args.apply, expected_mount=pressure_mount,
+                               objects=args.archived_build_objects)
         except (OSError, ValueError) as error:
             result = {"path": cache, "status": "skipped", "error": str(error), "bytes": 0}
         reclaimed += result["bytes"]

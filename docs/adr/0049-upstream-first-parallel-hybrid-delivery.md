@@ -116,6 +116,7 @@ Private Cargo allocation/profile/binary/compiler evidence uses `--target-dir tar
 owns exclusivity, concurrency unproved.
 September29 automatic maintenance narrows eviction to cold incremental compiler caches under Cargo's existing nonblocking profile lock;
 retains lock inode, binaries and all evidence. Pressure85%/stop80%, minimum age6h, hourly systemd timer. No per-outcome retirement queue.
+Sept29 root-reviewed: hourly second pressure-only pass removes cold oxrocksdb-sys `out/*.o` only when `ar p` bytes match; archives stay. Rollout pending.
 Research, path limits and tests: [Cargo incremental maintenance](../research/cargo-incremental-maintenance.md). This is not a disk quota.
 
 Ordinary `workflow --isolated true` now composes the existing workflow callbacks with a non-Git candidate snapshot under
