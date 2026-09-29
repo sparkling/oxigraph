@@ -2,7 +2,9 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-09-23 — first G3.5 telemetry slice delivered (`75b3cc80`,
+- Updated: 2026-09-29 — Boolean-response endpoint diagnostic repaired with
+  a controlled-loopback regression; scoped evidence below. Earlier first
+  G3.5 telemetry slice delivered (`75b3cc80`,
   opt-in HTTP SERVICE execution observations) and accepted by independent review
   `690ae0dc`; the stale "no loopback fixtures" statement corrected. Still
   Proposed; no planner or catalog. SERVICE failure-disposition baseline added
@@ -285,3 +287,43 @@ This ADR stays **Proposed**. The federation planner, endpoint catalog, source
 selection, bound batching, and per-endpoint reports remain undelivered G3.5
 work. Each needs its own semantic proof against this baseline. Nothing here
 grants server, advertisement, qualification or default-promotion authority.
+
+## Delivered: Boolean-response endpoint diagnostic (2026-09-29)
+
+The built-in HTTP handler now interpolates the actual endpoint in the error
+for a Boolean response to its SELECT request. This repairs the literal
+`{service_name}` noted above without changing the typed SERVICE error or
+`ResultStream` failure category. The new controlled-loopback test verifies
+the endpoint diagnostic, one HTTP request, atomic `SERVICE SILENT` fallback
+with the incoming binding preserved, and payload-free observation counters.
+
+Ordinary workflow `389ce33e-d174-40bf-a6df-78b317c560f3` used task registry
+alias `task-1790682713170-d5wthj` for original G3.5 task
+`task-1787851235446-7vlbgt`. Final candidate checks passed 43/43
+(`run-M89Q9y`: 16 observation, 13 egress, 14 HTTP tests). Fresh native
+Sonnet 5.5/high reviewer `d57fd7ad-7b79-4367-8314-923fa02eee62` accepted
+the exact source; structured Ruflo MCP handoff was stored and read back.
+The settled candidate receipt is
+`target/engineering-delivery/workflow-oOCzV7/lane-service-f0.json`, SHA256
+`a7efd203d01347ec5ea29c38945a5229dfb63a8407993baa4436946875e0694a`.
+Earlier formatting rejection, measured formatter pass and unchanged repair
+remain preserved, not rewritten as successful original attempts.
+
+Canonical acceptance checks on parent `5fc8b3d71`:
+
+- `run-2zyz7K`: new test with original handler failed specifically because
+  the diagnostic lacked the actual endpoint; source stayed stable.
+- `run-GyVuYk`: exact reviewed fix passed all 43 impacted tests with
+  `http-client,rdf-12`; source stayed stable.
+- Focused new-test formatter and `git diff --check` passed. Existing handler
+  stable-formatter differences predate this slice and were not changed.
+
+The reviewed handler SHA256 is
+`00e1c9cbc25c37df32c36a93dca732d9b1a0e8cbbf15bc73ae54d9b8f2e31051`;
+the HTTP test SHA256 is
+`86be238bad665fd7282d031d60e12e2e258945cabba2070321192f37de63c0e2`.
+Owner revalidated candidate files, supplemental reads, evaluator references
+and retained sibling custody before serial integration. This accepts only
+the diagnostic/regression slice. G3.5 and this ADR remain open/Proposed;
+no federation planner, catalog, source selection, batching, server exposure,
+qualification or promotion is claimed.

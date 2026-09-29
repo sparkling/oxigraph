@@ -85,7 +85,7 @@ impl DefaultServiceHandler for HttpServiceHandler {
         else {
             record(invocation.as_ref(), HttpServiceFailure::ResultStream);
             return Err(QueryEvaluationError::Service(
-                "No valid SPARQL solutions returned by {service_name}".into(),
+                format!("No valid SPARQL solutions returned by {service_name}").into(),
             ));
         };
         let stream_invocation = invocation.clone();
