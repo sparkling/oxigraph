@@ -1890,3 +1890,7 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "backup_os_fault_tests.rs"]
+mod os_fault_tests;

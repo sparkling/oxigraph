@@ -1592,6 +1592,50 @@ step, and every fault phase on both paths not exercised by one of these
 four tests, remain proven only under synthetic in-process injection.
 ADR-0028 remains Proposed.
 
+### Backup publication OS faults accepted (2026-09-29)
+
+`backup_os_fault_tests.rs` covers three child-only, exact-path OS faults:
+pending-manifest write ENOSPC, pending-file fsync EIO, and final directory
+fsync EIO after MANIFEST becomes visible. Earlier directory syncs must pass
+and log their disposition. Assertions require exact injection logs, typed
+errno/error outcomes, source preservation, receipt visibility/verification,
+same-path retry refusal and successful fresh-path retry. Helpers are bounded
+and killed/reaped on timeout; a separate timeout regression verifies cleanup.
+Only test module wiring is added to `backup.rs`; existing production and
+process-exit tests remain unchanged. This is not power-loss or full-matrix proof.
+
+Reviewed hashes: `backup.rs`
+`4d597bede42a9e6cf458e5a5b9723e59ac202b43aabc1c8ac53a1961237c1b82`;
+`backup_os_fault_tests.rs`
+`71c31300a6f8d5a9e4fc94c258662a0b6c2cf30b1ae83aa5b890f4b248e8b878`.
+Initial fresh review rejected formatting. Same-task Opus/high repair fixed
+only those differences. Fresh Sonnet 5.5/high reviewer
+`e74072ed-1df0-448e-874a-e9a20ef130d2` accepted the repaired source:
+`target/engineering-delivery/resume-native/0b4b3289-df3e-43c7-80f7-441ee10e54f6-18/response.json`,
+SHA256 `250c8c101209e8fe39c5584d117856a98e67009c9afff24e3a9a975b629e0fde`.
+Workflow `0b4b3289-df3e-43c7-80f7-441ee10e54f6` retains failed review,
+native learning, exact event/check references and verified MCP handoff.
+
+After batch drain, full snapshot comparison against accepted `cafeaa1ab`
+identified only this candidate's declared files plus the accepted schema-test
+and ADR changes. Production dependencies and evaluator inputs are unchanged;
+the schema sibling uses separate child-only fault variables and shim outputs.
+Root reapplied exact reviewed bytes and checked their composition on main:
+
+| Canonical check | Receipt under `target/engineering-delivery/` | Result |
+| --- | --- | --- |
+| Default backup module | `run-t4tZ5Q/result.json` | 16 passed |
+| RDF12 backup module | `run-ZphQhC/result.json` | 16 passed |
+| Default public backup/restore receipts | `run-WXJAGW/result.json` | 18 passed |
+| RDF12 public backup/restore receipts | `run-rpp85a/result.json` | 18 passed |
+
+Complete source/sourceAfter bindings match the canonical code diff, including
+the new file. Focused rustfmt and diff checks pass. Builds declare vendored
+RocksDB and `cc` is present; no missing-compiler skip is claimed as fault
+coverage. No new Clippy result is claimed for this slice. Task
+`task-1790653018987-oe4e02` owns only these three publication points; broader
+G4.3 and ADR-0028 remain open/Proposed.
+
 ## Real OS-level process-kill coverage for the legacy upgrade start step (2026-09-16)
 
 This completes real-process-kill coverage for all three of the legacy
