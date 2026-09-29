@@ -2,10 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-08-25
+- Updated: 2026-09-29
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; entailment currently uses full
-  snapshot evaluation or explicit one-shot materialization
+- Implementation status: bounded outbox/full-closure reference evaluator
+  implemented; production entailment still uses full snapshot evaluation or
+  explicit one-shot materialization. No incremental projection or durable cursor
 - Programme task: `task-1787670632864-10hfsk` (G4.7)
 - **Depends on**:
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),
@@ -208,4 +209,44 @@ materialization is in
 with profile engines in [`lib/oxrdfs`](../../lib/oxrdfs),
 [`lib/oxowl`](../../lib/oxowl), and
 [`lib/oxdatalog`](../../lib/oxdatalog). No incremental projection, durable
-cursor, evaluator, or benchmark receipt exists yet; G4.7 owns that work.
+cursor, frozen evaluator receipt, or benchmark receipt exists yet; G4.7 owns that work.
+
+## Ordinary reference evaluator (2026-09-29)
+
+`lib/oxigraph/tests/entailment_projection_reference.rs` adds a test-only
+governed outbox replay model compared with the existing full RDFS closure after
+bounded mutation traces. It checks source quads and empty graph topology,
+alternate support/deletion, rollback, duplicates, receipt/witness and cursor
+identity, truncation and corruption. A mid-apply fault proves rollback and
+positive recovery. The shrinker preserves failure category. An ungoverned-write
+negative control proves that an outbox cursor alone cannot establish Strict
+freshness. No production implementation or semantic baseline changes.
+
+Exact test SHA256:
+`55854377bea0ac3d0bc6c62ba8397a6efb8b3b1e9a3acae3240594c9f0c0ddbb`.
+Original batch `workflow-4JdfeU` failed; E0521 and rejected missing-control
+reviews remain negative evidence. Direct same-task repair used the recorded
+Opus proposal, followed by fresh Sonnet 5.5/high review
+`1e24d232-d27c-4890-849b-11d008490088`, reviewer
+`49e4ad3c-a5ce-46ec-8bf4-eaae75a11f54` (ACCEPT).
+Response SHA256:
+`d6191d036861c1cecd6173b63d866bb56e63a656c7f888c2ee370e771ebc9a75`.
+
+Candidate `source-rQmWBY` from accepted `6649e7e1d` passed six tests each
+with default/RDFS and no-default/RDFS (`run-GfVIg1`, `run-EzhnSi`). Formatter
+passes. Clippy exits 0 with warnings, not a clean-lint claim. Request/response
+identity, author independence, 15 read dependencies and 15,220 unchanged source
+files were verified. Subsequent lease and custody-harness commits changed no
+projection application evaluator or review inputs; all 15 read hashes were
+rechecked before serial integration. All prior external actions had stopped.
+
+On canonical source based on `93a944d57`, default/RDFS reference tests pass six,
+query-entailment tests pass 17 and outbox tests pass eight (`run-uwyZO8`);
+no-default/RDFS reference tests pass six (`run-5zGXoi`). Counts are top-level,
+not nested crash-helper summaries. Both source/sourceAfter bindings matched
+exact current source before this evidence append.
+
+This accepts ordinary test development only, not an incremental algorithm,
+durable cursor, Strict query provider or frozen qualification gate. Original
+G4.7 uses migration alias `task-1790674619203-1j3qcu`; umbrella remains open.
+ADR remains Proposed. No default/server activation or qualification follows.
