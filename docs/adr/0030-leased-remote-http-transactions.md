@@ -5,9 +5,9 @@
 - Updated: 2026-09-29
 - Deciders: Oxigraph parity programme
 - Implementation status: native owned storage and additive public owned Store
-  handle plus deterministic lease model implemented within the bounded evidence
-  below. The server has no
-  remote transaction route, lease registry, or owned server transaction handle
+  handle, deterministic lease model and bounded in-process registry implemented
+  within the evidence below. The server has no remote transaction route or
+  enabled leased HTTP profile; the registry has no SPARQL text adapter
 - Programme task: `task-1787670632421-dkucm8` (G4.5)
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
@@ -555,3 +555,64 @@ This accepts bounded ordinary implementation and tests, not a frozen independent
 qualification gate. G4.5 alias `task-1790657013522-cscfy2` remains open for
 the server lifecycle, protocol and later applicable evaluators. No token,
 HTTP route, persistence, promotion or publication is enabled. ADR remains Proposed.
+
+## Bounded in-process owned lease registry (2026-09-29)
+
+`cli/src/lease/registry.rs` consumes the accepted model and owned keyed Store
+transactions. It reserves finite global/repository/principal capacity before
+bounded writer acquisition, admits one operation per lease, and releases native
+writers before capacity. It preserves staged RDF/topology/namespaces, explicit
+rollback/drop, single commit attempt, response-loss ambiguity and bounded
+maintenance/terminal retention. Caller bindings are already-authorized assertions,
+not authentication; process-local IDs are not remote credentials.
+
+`ActiveOperation` forwards staged reads/mutations but never lends an extractable
+native handle. Entries retain their original Store clone for outcome lookup,
+preventing a same-key outcome in another store from resolving a lease. Dropping
+an operation while cancelling cannot manufacture cancellation acknowledgement
+or proven rollback. Restart never reconstructs staged state. No SPARQL text
+binding, token, HTTP route, background worker or new dependency is added.
+
+Original batch `workflow-zJd0Ew` expired with
+`Host action timed out after 30 minutes`; original run
+`14b3dccf-87b4-413a-9fd6-f0cfa810721c` and its rejected encapsulation/store
+identity review remain negative evidence. Original Opus repair
+`df9bf8ed-d99b-4826-9d3c-2ffcad3bedaa` finished later. Root validated exact
+request/response/read hashes before applying it to retained `source-VtXPrU`,
+then corrected one measured formatter layout. No expired workflow acceptance
+was inherited and no watchdog changed.
+
+Fresh independent Sonnet 5.5/high review
+`a0c84a3c-8257-4704-88e0-a9708e7771b3`, reviewer
+`485fe96b-f6e9-4405-9896-f131aa110a37`, accepted exact repaired source.
+Response SHA256:
+`6443f173caf513a676f7eacb5ec46446d94f1968eb8395b4a43b4d141314c877`.
+Candidate default/no-default checks each pass 48 registry plus 37 model tests;
+the compile-fail doctest passes. Direct logs are
+`target/engineering-delivery/registry-final-{default,no-default,doctests}.log`,
+coordinator observations rather than manufactured runner receipts. Formatter
+passes. Stable rustdoc does not independently enforce the annotated error code.
+
+Owner revalidated 15,223 unchanged included source inputs, nine submodule pins,
+17 supplemental reads, reviewer independence and exact file hashes against
+accepted main `300199af5`. Accepted F0/lifecycle changes are disjoint from
+this packet's reads and mutation paths; canonical combined checks cover coexistence.
+Retained sibling custody passed owner independence checks before integration.
+Canonical source-bound checks before this evidence append:
+
+- `run-Cyu9M9`: no-default registry/model/lifecycle join, 116 passed.
+- `run-rYVAOy`: default join including CLI library, 193 passed.
+- Direct canonical compile-fail doctest: one passed; log
+  `target/engineering-delivery/registry-canonical-doctests.log`.
+
+Exact source SHA256:
+
+- `cli/src/lease.rs`: `d5f6c1947c9d6b51ed12acb710df30c161475ed86dfe5b09718c32d915c088ca`.
+- `cli/src/lease/registry.rs`: `708ddb38b0976a3d62563e73daa92477aee5bd03f1a51d7917d1b1ed6613895a`.
+- `cli/tests/lease_registry.rs`: `7dd69ba5782078bfa5b0627ade3f7db427b820d01e96335b7b4822d4a44341bb`.
+
+Original G4.5 outcome and migration alias `task-1790657013522-cscfy2` remain
+open. This accepts only the bounded in-process registry, not the full
+owned query/update contract, frozen evaluator, leased HTTP profile or promotion
+gates. Leaked guards retain capacity until process exit. ADR stays Proposed;
+no server activation, qualification, protected-data change or publication.

@@ -12,6 +12,8 @@ use std::fmt;
 use std::num::NonZeroU64;
 use std::sync::Arc;
 
+pub mod registry;
+
 /// Injected monotonic logical time. The model never reads a clock.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LogicalTime(pub u64);
