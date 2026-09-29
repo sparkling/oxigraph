@@ -425,6 +425,10 @@ pub struct MemoryStorageReader<'a> {
 }
 
 impl<'a> MemoryStorageReader<'a> {
+    pub fn str_len(&self, key: &StrHash) -> Option<usize> {
+        self.storage.id2str.view(key, |_, value| value.len())
+    }
+
     pub fn len(&self) -> usize {
         self.storage
             .content

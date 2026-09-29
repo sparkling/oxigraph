@@ -4,9 +4,9 @@
 - **Date**: 2026-08-25
 - Updated: 2026-09-29
 - Deciders: Oxigraph parity programme
-- Implementation status: bounded opt-in eligibility reporting implemented as
-  evidenced below; the existing `sparopt` and `spareval` paths remain the only
-  production SPARQL planner and executor
+- Implementation status: bounded eligibility reporting and explicit local
+  analytical execution implemented below; ordinary `sparopt`/`spareval`
+  execution remains the default, with no Auto mode or server exposure
 - Programme task: `task-1787728711087-ibcg53` (G4.8)
 - **Depends on**:
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)
@@ -208,10 +208,9 @@ The current optimizer is in
 dataset access live in [`lib/spareval`](../../lib/spareval) and
 [`sparql/dataset.rs`](../../lib/oxigraph/src/sparql/dataset.rs). The built-in
 storage index orders are implemented under
-[`storage`](../../lib/oxigraph/src/storage). No analytical cursor, WCOJ
-operator, frozen evaluator, or benchmark receipt exists yet; G4.8 owns the
-research task. This ADR is an authorization boundary, not an implementation or
-performance claim.
+[`storage`](../../lib/oxigraph/src/storage). The bounded explicit operator
+below is ordinary implementation evidence, not a frozen evaluator or benchmark
+receipt. G4.8 retains ownership of remaining research and promotion gates.
 
 ## Bounded eligibility report (2026-09-29)
 
@@ -253,3 +252,57 @@ This bounded G4.8 slice uses migration registry alias
 `task-1790674619597-vimwfm`; original outcome `task-1787728711087-ibcg53` remains
 open. No qualification, promotion, publication or performance claim follows.
 ADR remains Proposed for the outstanding analytical execution programme.
+
+## Explicit local analytical execution (2026-09-29)
+
+`SparqlEvaluator` options and `PreparedSparqlQuery` analytical bindings now
+consume the accepted eligibility oracle on one retained built-in snapshot.
+Default Disabled/`on_store` behavior is unchanged. The first profile handles
+whole-query SELECT projection over eligible local connected BGPs in one fixed
+graph. RocksDB uses descriptors and actual ordered prefix seeks on existing
+quad indexes; memory uses bounded sorted transient relations. Deterministic
+index-aware variable-order search rejects incompatible index orders. Leapfrog
+intersection emits bindings without collapsing projection multiplicity.
+No persistent index, public replacement-backend trait or package version added;
+the existing workspace `sparopt` dependency is now consumed by `oxigraph`.
+
+Explicit positive pattern/variable, row, requested-allocation, work, output and
+wall-time limits remain reducible by policy. Capability declines may use the
+declared standard fallback on the same snapshot before any row; resource,
+deadline, cancellation and storage failures never trigger unbounded fallback.
+After streaming starts, failures surface once and fuse the stream without
+replay. Native seeks encountering a stored triple term after a row return a
+typed unsupported error; memory can decline before the first row. Empty streams
+still check control at first poll. Existing evaluation metrics observe one
+terminal disposition; reports retain no terms. No Auto, server or promotion.
+
+Fresh Sonnet 5.5/high review `7f6caebc-5527-4851-a1ce-9c8181e8b1d3`, reviewer
+`cd3bb733-a79c-4ff5-b951-2269ace7fa9d`, accepted the exact final formatted bytes.
+Response SHA256:
+`9cf1615d0e661d66f0b2c2f2f99793f78b18694e1912e5fc58963652b4710754`.
+Owner reconciled 15,218 unchanged inputs, 26 intervening accepted paths, nine
+submodule pins and 28 supplemental reads at accepted main `3dce19d8e`.
+The changed query-update dependency was supplied exactly to the reviewer.
+Snapshot-bound independent native lanes continued under explicit custody checks.
+
+Canonical stable-source receipts before this evidence append:
+
+- `run-lxz70W`: default 72 (32 analytical, 15 keyed-query, 25 keyed-update).
+- `run-7P8ZCF`: no-default 53 (32 analytical, 8 keyed-query, 13 keyed-update).
+- `run-AchZel`: RDF12/http public analytical 35.
+- `run-6IP0vy`: RDF12/http private analytical 19 (8 control, 11 storage).
+- `run-L4R3vR`: noncopying value-length regression 1.
+- `run-SB1Mz5`: affected library build.
+
+Candidate public matrices pass 32/32/35, private controls 19 and value-length 1.
+Scoped nine-file formatter passes; candidate no-default all-targets Clippy exits
+zero with warnings, not clean lint. wasm is unvalidated. Private phase deadline
+tests switch to an expired closure; they do not prove physical clock crossing.
+Requested allocation accounting is not process RSS or native snapshot memory.
+Negative/rejected/expired workflows and earlier repairs remain preserved; no
+failed workflow acceptance is inherited. Evidence lives under
+`target/engineering-delivery/analytical-canonical-final-checks.json` and
+`analytical-current-integration-7f6caebc-5527-4851-a1ce-9c8181e8b1d3.json`.
+This accepts the bounded ordinary execution slice, not the full semantic,
+resource, benchmark or promotion gates. Same original G4.8 outcome and migration
+alias remain open; ADR stays Proposed. No qualification or publication follows.

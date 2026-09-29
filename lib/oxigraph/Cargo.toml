@@ -75,6 +75,7 @@ spareval = { workspace = true, features = [
   "sep-0006",
   "calendar-ext",
 ] }
+sparopt.workspace = true
 thiserror.workspace = true
 url.workspace = true
 
