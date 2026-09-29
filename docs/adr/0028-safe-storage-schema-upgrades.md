@@ -1636,6 +1636,52 @@ coverage. No new Clippy result is claimed for this slice. Task
 `task-1790653018987-oe4e02` owns only these three publication points; broader
 G4.3 and ADR-0028 remain open/Proposed.
 
+### Restore publication OS faults accepted (2026-09-29)
+
+`restore_os_fault_tests.rs` adds child-only exact-path ENOSPC on the completion
+pending-record write, EIO on its fsync, and EIO on the final target-directory
+fsync after COMPLETE is visible. The last case requires two earlier directory
+syncs to pass and an exact final injection log; it must return typed
+`CompletionIndeterminate`, not an earlier generic error. Assertions verify
+pending/complete record state, receipt binding, source/package bytes and quads,
+and unchanged same-target retry refusal. Child execution is bounded and
+killed/reaped on timeout, with a separate timeout regression. `restore.rs`
+changes only by test-module wiring; production and accepted process-exit
+tests remain unchanged. No power-loss or full crash-matrix claim follows.
+
+Reviewed hashes: `restore.rs`
+`582a3c9949c99aba6151bef6ec8fb27372923a59d41662f29dd9922eff698d1f`;
+`restore_os_fault_tests.rs`
+`5ea852144b91122ba5bbdc0f6393ba972e5867739599289a45068639df1579af`.
+Initial candidate `run-NPFznA` failed three privacy assertions before injection
+(2 passed, 3 failed). Same-task Opus/high repair explicitly sets both private
+directories to mode 0700 before writing. The failed receipt remains retained.
+Fresh Sonnet 5.5/high reviewer `f3a5ccd5-3367-4cb1-869e-cc5e6a293821` accepted:
+`target/engineering-delivery/resume-native/ddd6e0df-4272-40fa-ad16-0221bee8aad8-15/response.json`,
+SHA256 `cf5783032cf86759053eff13dc7eb92cf25aef5ac0cfdfff58f71eb40d115897`.
+Workflow `ddd6e0df-4272-40fa-ad16-0221bee8aad8` retains exact local references,
+native learning and verified MCP handoff.
+
+After batch drain, root revalidated candidate inputs against `aa10eb266`.
+Accepted sibling differences are the separate schema/backup tests and this ADR;
+production and evaluator inputs remain unchanged. Child-only injection
+environments and private shim paths do not mutate another lane's inputs.
+Exact reviewed bytes were checked with those accepted siblings on main:
+
+| Canonical check | Receipt under `target/engineering-delivery/` | Result |
+| --- | --- | --- |
+| Default restore module | `run-UL5neD/result.json` | 11 passed |
+| RDF12 restore module | `run-S2MvXU/result.json` | 11 passed |
+| Default public backup/restore receipts | `run-8v4BEn/result.json` | 18 passed |
+| RDF12 public backup/restore receipts | `run-ov4jj4/result.json` | 18 passed |
+
+Complete source/sourceAfter bindings match the canonical code diff and new file.
+Focused rustfmt and diff checks pass; both builds use vendored RocksDB with
+the host C compiler available. No new Clippy result is claimed. Task
+`task-1790653019285-p8393p` closes only these publication-fault points, not
+other fsync boundaries, profile admission, derived-index policy or separately
+authorized qualification. ADR-0028 remains Proposed.
+
 ## Real OS-level process-kill coverage for the legacy upgrade start step (2026-09-16)
 
 This completes real-process-kill coverage for all three of the legacy

@@ -972,3 +972,7 @@ mod tests {
         Err("the child returned instead of exiting at its crash point".into())
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "restore_os_fault_tests.rs"]
+mod os_fault_tests;
