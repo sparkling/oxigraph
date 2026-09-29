@@ -7,6 +7,7 @@
 - **Related**: ADR-0017, ADR-0043, ADR-0048
 
 ## September 29 ordinary routing and resumption amendment
+September29 credit-route audit: future confirmed nonexecuted HTTP402 fallback uses Sonnet5.5/medium in both direct workflow default and learned candidate selection. Sol/medium, Opus capability repair, explicit pins and historical evidence stay unchanged. API/runtime join18/18 and syntax checks pass locally; cloud adoption remains separate.
 
 ### Ordinary native host stream repair (September 29)
 

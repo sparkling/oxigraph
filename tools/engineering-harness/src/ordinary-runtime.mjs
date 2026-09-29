@@ -75,7 +75,7 @@ export function createOrdinaryRuntime(config = { schema: 1 }, { policy, learning
           if (["implement", "repair"].includes(packet.role)) authorPacket = packet;
         },
         selectCreditFallback(route) {
-          const candidates = ["cc/claude-sonnet-5[1m]", "gpt-5.6-sol"].map((model) => routeDelivery({
+          const candidates = ["cc/claude-sonnet-5-5[1m]", "gpt-5.6-sol"].map((model) => routeDelivery({
             role: route.role, taskId: spec.taskId, completionCheck: spec.completionCheck, model, effort: "medium",
             reason: "confirmed-credit-rejection",
           }));

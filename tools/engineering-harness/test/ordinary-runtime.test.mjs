@@ -63,6 +63,11 @@ test("ordinary native driver plans, consumes policy/memory and records only chec
     const next = setupOrdinaryWorkflowFixture({ spec });
     const fresh = createOrdinaryRuntime(config).forWorkflow(spec, next.io.files());
     assert.equal(fresh.context("implement").nativeMemory.observations, 1);
+    fresh.notePacket({ sourceSha256: "b".repeat(64), payload: { prompt: "credit fallback", route: { role: "implement" } } });
+    const credit = fresh.selectCreditFallback(routeDelivery({ role: "implement", taskId: spec.taskId,
+      completionCheck: spec.completionCheck, model: "cc/claude-sonnet-5-5[1m]", effort: "medium", reason: "confirmed-credit-rejection" }));
+    assert.equal(credit.model, "cc/claude-sonnet-5-5[1m]");
+    assert.equal(credit.effort, "medium");
     const newPolicy = { ...seedOrdinaryPolicy, planner: "Different policy must not share learned ranking." };
     assert.equal(createOrdinaryRuntime(config, { policy: newPolicy }).forWorkflow(spec, next.io.files())
       .context("implement").nativeMemory.observations, 0);

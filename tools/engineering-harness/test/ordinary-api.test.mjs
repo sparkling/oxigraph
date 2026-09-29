@@ -205,7 +205,7 @@ test("confirmed credit fallback uses lighter independent native sessions, not Op
   const host = async (r) => { if (r.action === "native-worker") models.push(r.payload.route.model); return state.host(r); };
   const out = await runWorkflow(spec, withOrdinaryApi(host, api), state.io);
   assert.equal(out.status, "ready-for-owner-review");
-  assert.deepEqual(models, ["cc/claude-sonnet-5[1m]", "cc/claude-sonnet-5[1m]"]);
+  assert.deepEqual(models, ["cc/claude-sonnet-5-5[1m]", "cc/claude-sonnet-5-5[1m]"]);
   assert.equal(out.review.failedApi.code, "confirmed-credit-rejection");
   assert.equal(out.review.failedApi.evidence.actualUsd, 0);
 });
