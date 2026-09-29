@@ -1,0 +1,11 @@
+[Unit]
+Description=Reclaim cold Oxigraph Cargo incremental compiler caches under disk pressure
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/.local/lib/oxigraph-maintenance/clean-cargo-incremental.py --repository /srv/home/claude/src/hm/oxigraph --apply
+Nice=19
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+StandardOutput=journal
+StandardError=journal

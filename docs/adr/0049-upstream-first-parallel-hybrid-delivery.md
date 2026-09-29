@@ -114,6 +114,9 @@ untouched. Unlisted tasks use root policy, recording nonapplicability; signed-ta
 
 Private Cargo allocation/profile/binary/compiler evidence uses `--target-dir target/engineering-delivery/builds/<allocation-id>`; caller
 owns exclusivity, concurrency unproved.
+September29 automatic maintenance narrows eviction to cold incremental compiler caches under Cargo's existing nonblocking profile lock;
+retains lock inode, binaries and all evidence. Pressure85%/stop80%, minimum age6h, hourly systemd timer. No per-outcome retirement queue.
+Research, path limits and tests: [Cargo incremental maintenance](../research/cargo-incremental-maintenance.md). This is not a disk quota.
 
 Ordinary `workflow --isolated true` now composes the existing workflow callbacks with a non-Git candidate snapshot under
 `target/engineering-delivery/candidates`. Source observation, admitted file reads, outside-scope checks, command cwd, logs, artifact binding
