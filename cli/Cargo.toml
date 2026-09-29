@@ -32,6 +32,7 @@ geosparql = ["oxigraph/geosparql"]
 anyhow.workspace = true
 clap = { workspace = true, features = ["derive"] }
 flate2.workspace = true
+libc.workspace = true
 memchr.workspace = true
 oxhttp = { workspace = true, features = ["flate2"] }
 oxigraph = { workspace = true, default-features = true }

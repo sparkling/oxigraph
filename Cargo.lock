@@ -2010,6 +2010,7 @@ dependencies = [
  "clap_complete",
  "clap_mangen",
  "flate2",
+ "libc",
  "memchr",
  "oxhttp",
  "oxigraph",
