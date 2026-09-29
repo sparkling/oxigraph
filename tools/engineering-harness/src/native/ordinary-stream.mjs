@@ -49,8 +49,16 @@ export function forwardOrdinaryStreamSignals(execution) {
 // Content and matched tool lifecycle events count, never heartbeat/tool-progress traffic.
 function substantive(event, tools) {
   const part = event?.type === "stream_event" ? event.event : undefined;
+  if (part?.type === "message_start" || part?.type === "message_stop") tools.thinking.clear();
+  if (part?.type === "content_block_stop") tools.thinking.delete(part.index);
+  if (part?.type === "content_block_start" && Number.isSafeInteger(part.index) && part.index >= 0) {
+    tools.thinking.delete(part.index);
+    if (part.content_block?.type === "thinking" && tools.thinking.size < 1024) tools.thinking.add(part.index);
+  }
   if (part?.type === "content_block_delta") {
     const delta = part.delta;
+    if (delta?.type === "thinking_delta" && tools.thinking.has(part.index) &&
+        Number.isSafeInteger(delta.estimated_tokens) && delta.estimated_tokens > 0) return true;
     const field = { text_delta: "text", thinking_delta: "thinking", input_json_delta: "partial_json" }[delta?.type];
     return field !== undefined && typeof delta[field] === "string" && delta[field].length > 0;
   }
@@ -108,7 +116,7 @@ export function startOrdinaryClaudeStream({
   let journalFailed = false;
   const stderrHash = createHash("sha256");
   const terminationErrors = [];
-  const toolState = { active: new Set(), completed: new Set() };
+  const toolState = { active: new Set(), completed: new Set(), thinking: new Set() };
   let resolve;
   const completion = new Promise(done => { resolve = done; });
   const groupGone = () => {

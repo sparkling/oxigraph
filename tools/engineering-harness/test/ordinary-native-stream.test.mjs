@@ -88,6 +88,58 @@ test("pings, stderr, empty deltas and unknown bytes cannot prevent warned stall"
   assertSafe(records);
 });
 
+test("redacted thinking estimates sustain only an active thinking block", async t => {
+  const run = fixture(t, `
+    const send = event => emit({type:'stream_event', event});
+    send({type:'content_block_start',index:0,content_block:{type:'thinking'}});
+    let n=0;
+    const timer=setInterval(() => {
+      send({type:'content_block_delta',index:0,delta:{type:'thinking_delta',thinking:'',estimated_tokens:32}});
+      if (++n===12) {clearInterval(timer); finish();}
+    },100);
+  `);
+  const result = await run.completion;
+  assert.equal(result.disposition, "completed");
+  assert.equal(result.activityCount, 12);
+  assertSafe(run.records());
+});
+
+test("invalid and unframed reasoning estimates cannot prevent stall", async t => {
+  const run = fixture(t, `
+    const send = event => emit({type:'stream_event',event});
+    send({type:'content_block_start',index:0,content_block:{type:'thinking'}});
+    setInterval(() => {
+      for (const estimated_tokens of [0,-1,0.5,'32',null,9007199254740992]) {
+        send({type:'content_block_delta',index:0,delta:{type:'thinking_delta',thinking:'',estimated_tokens}});
+      }
+      send({type:'content_block_delta',index:1,delta:{type:'thinking_delta',thinking:'',estimated_tokens:32}});
+      emit({type:'system',estimated_tokens:32});
+    },50);
+  `);
+  const result = await run.completion;
+  assert.equal(result.disposition, "stalled");
+  assert.equal(result.activityCount, 0);
+  assert.equal(result.custodyReleased, true);
+  assertSafe(run.records());
+});
+
+for (const boundary of [{type:"content_block_stop",index:0}, {type:"message_stop"},
+  {type:"message_start"}, {type:"content_block_start",index:0,content_block:{type:"text"}}]) {
+  test(`reasoning estimates after ${JSON.stringify(boundary)} cannot prevent stall`, async t => {
+    const run = fixture(t, `
+      const send = event => emit({type:'stream_event',event});
+      send({type:'content_block_start',index:0,content_block:{type:'thinking'}});
+      send(${JSON.stringify(boundary)});
+      setInterval(() => send({type:'content_block_delta',index:0,
+        delta:{type:'thinking_delta',thinking:'',estimated_tokens:32}}),50);
+    `);
+    const result = await run.completion;
+    assert.equal(result.disposition, "stalled");
+    assert.equal(result.activityCount, 0);
+    assert.equal(result.custodyReleased, true);
+  });
+}
+
 test("warning clears only after substantive activity and idle clock restarts", async t => {
   const run = fixture(t, `setTimeout(() => delta('thinking_delta','thinking','${secret}'), 450); setInterval(() => emit({type:'ping'}), 30);`);
   const result = await run.completion;
