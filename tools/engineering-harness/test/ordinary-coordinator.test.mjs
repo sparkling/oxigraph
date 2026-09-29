@@ -32,9 +32,15 @@ test("explicit start reuses canonical guard and exact native launch with inherit
 });
 test("native coordinator contract retains ready-only batching, acceptance gating and refill", () => {
   for (const phrase of ["batch --spec", "complete read dependencies", "pending-owner-acceptance",
-    "drain current batch", "Revalidate every candidate", "accepted parent source reaches main",
+    "Do not wait for unrelated snapshot-bound siblings", "Revalidate every candidate", "accepted parent source reaches main",
     "refill through the same batch", "unconfirmed external actions keep ownership", "historical WIP",
     'nativeChildEnvironment("claude")', "CLAUDE_CODE_MAX_OUTPUT_TOKENS", "128000", "client/model clamp applies"]) {
+    assert.ok(coordinatorPrompt.includes(phrase), phrase);
+  }
+  assert.ok(!coordinatorPrompt.includes("drain current batch"));
+  for (const phrase of ["assertOwnerActionIndependent", "Unknown reads/actions retain the hold",
+    "Never integrate inside awaited onSettled", "whole authorized frontier", "Explicit user pause wins",
+    "Status or handoff answers do not pause", "never label an unserviced or stopped loop active"]) {
     assert.ok(coordinatorPrompt.includes(phrase), phrase);
   }
 });

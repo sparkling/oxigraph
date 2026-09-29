@@ -109,16 +109,30 @@ not verify UUID existence, exclusive ownership or native availability. It does n
 resume paused goals or authorize programme work merely by existing.
 
 The native coordinator plans dependency-ready independent lanes, services the
-existing batch bridge, reviews completed evidence, drains each batch, revalidates
+existing batch bridge, reviews completed evidence, revalidates
 candidate source/read/evaluator inputs, then integrates serially with canonical
 checks/build and commits. Only accepted main source releases dependants. Refill
 the next ready set after acceptance/failure; keep conflicts and unconfirmed
 external-action custody across batches. No new scheduler or automatic acceptance.
+Unrelated snapshot-bound siblings need not finish before serial owner acceptance.
+Owner invokes `assertOwnerActionIndependent(action, held)` from
+`src/ordinary-coordinator.mjs` before integration and cross-batch refill. `action`
+contains exact `paths` and `resources`; every retained lane supplies `paths`,
+`resources`, complete `canonicalReads`, `custodyComplete: true`, and
+`externalActions: "snapshot-bound" | "stopped"`. Frozen snapshot reads are not
+canonical reads; supplemental live reads and shared inputs must be included.
+Unknown custody, path/read ancestry or named-resource conflicts block action.
+This is an owner-invoked assertion, not automatic discovery, acceptance or a
+filesystem sandbox. Confirm the accepted lane's external actions stopped, verify
+checks/review/receipts and current source before applying; commit only after the
+canonical checks/build. Then children snapshot accepted main. Status replies do
+not pause authorized bridge service/refill; explicit pause wins. Reassess the
+whole authorized frontier, not an arbitrary previous batch-size ceiling.
 
 Batch stdout now emits `lane-settled` records before the final batch result. Each
 names a durable `lane-ID.json` receipt and SHA-256, task, status and unchanged
-`pending-owner-acceptance` classification. This permits early inspection, not
-concurrent main integration. Started cancelled/rejected lanes retain custody;
+`pending-owner-acceptance` classification. This permits early owner acceptance
+under the custody checks above, never concurrent main writers. Cancelled/rejected lanes retain custody;
 queued cancellations remain in final output. Library `onSettled` gets a detached
 copy and must do only bounded local reporting; it is awaited before slot refill.
 CLI reporter only writes local receipt/stdout. Observer failure is reported as

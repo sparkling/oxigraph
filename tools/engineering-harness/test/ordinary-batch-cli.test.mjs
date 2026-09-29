@@ -59,7 +59,8 @@ test("bridge binds out-of-order responses to run plus request identity and rejec
   } finally { bridge.close(); input.destroy(); output.destroy(); rmSync(directory, { recursive: true }); }
 });
 
-test("normal batch CLI overlaps fixture authors and preserves candidate custody with real checks", { timeout: 60000 }, async (t) => {
+// This fixture completed in 64.2s on GCP; production watchdogs are unchanged.
+test("normal batch CLI overlaps fixture authors and preserves candidate custody with real checks", { timeout: 180000 }, async (t) => {
   const before = sourceObservation();
   const canonical = paths.map((path) => readFileSync(join(repository, path), "utf8"));
   const directory = mkdtempSync(join(tmpdir(), "oxigraph-batch-cli-"));
