@@ -37,7 +37,12 @@ the disk, the cleaner reports the remaining usage; it never broadens deletion.
 
 ## Archived build-script objects
 
-Root-reviewed September29; deployment must verify installed hashes and service.
+Root-reviewed and deployed September29 at20:22UTC;18 tests and systemd verification pass.
+Installed script SHA256 `ebe34e64526dbd9d2969bb63fc45635036d37506b86982de4697bf3b955b3f20`;
+service SHA256 `106684d74cb78db6b1b9804cad53141092951b8c57f2d726bebebaceb8de5cb6`.
+Timer active; explicit service run succeeded, both passes below-pressure no-ops.
+Previous installed files retained in `/tmp/oxigraph-maintenance-rollout-GMkX9a`.
+512GiB disk retained;123GiB free, no expansion or further deletion at rollout.
 The same hourly oneshot runs incremental cleanup first, then `--archived-build-objects`
 only if pressure still exceeds85%. Both use the six-hour floor and80% stop threshold.
 The second invocation selects a category under the same allocation roots and profile
