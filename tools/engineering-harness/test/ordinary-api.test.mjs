@@ -7,7 +7,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { apiDefaults, createOrdinaryApi, renderOrdinaryPrompt, withOrdinaryApi } from "../src/ordinary-api.mjs";
 import { digest, runWorkflow } from "../src/workflow.mjs";
-import { ordinaryWorkflowSpec as spec, setupOrdinaryWorkflowFixture as setup } from "./support/ordinary-workflow-fixture.mjs";
+import { ordinaryWorkflowSpec, setupOrdinaryWorkflowFixture } from "./support/ordinary-workflow-fixture.mjs";
+
+const apiPin = { model: "deepseek/deepseek-v4.1-flash", effort: "high", reason: "explicit API transport fixture" };
+const spec = { ...ordinaryWorkflowSpec, implement: apiPin, review: apiPin };
+const setup = () => setupOrdinaryWorkflowFixture({ spec });
 
 const request = (task = "task-a", role = "implement") => ({ schema: 1, runId: "run", requestId: 1,
   taskId: task, specSha256: task, sourceSha256: "a".repeat(64), action: "native-worker",

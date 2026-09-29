@@ -18,10 +18,10 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const roles = Object.freeze({
   build: [null, null],
   test: [null, null],
-  plan: ["deepseek/deepseek-v4.1-flash", "high"],
-  implement: ["deepseek/deepseek-v4.1-flash", "high"],
-  documentation: ["cc/claude-sonnet-5[1m]", "medium"],
-  review: ["deepseek/deepseek-v4.1-flash", "high"],
+  plan: ["cc/claude-sonnet-5-5[1m]", "high"],
+  implement: ["cc/claude-sonnet-5-5[1m]", "high"],
+  documentation: ["cc/claude-sonnet-5-5[1m]", "medium"],
+  review: ["cc/claude-sonnet-5-5[1m]", "high"],
   difficult: ["cc/claude-opus-5-5[1m]", "high"],
   decision: ["cc/claude-opus-5-5[1m]", "high"],
 });
@@ -29,6 +29,7 @@ const efforts = {
   "cc/claude-opus-5": ["low", "medium", "high", "xhigh", "max"],
   "cc/claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
   "cc/claude-opus-5-5[1m]": ["low", "medium", "high", "xhigh", "max"],
+  "cc/claude-sonnet-5-5[1m]": ["low", "medium", "high", "xhigh", "max"],
   "cc/claude-sonnet-5[1m]": ["low", "medium", "high", "xhigh", "max"],
   "gpt-5.6-sol": ["low", "medium", "high", "xhigh"],
   "gpt-5.6-terra": ["low", "medium", "high", "xhigh"],

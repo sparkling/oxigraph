@@ -1,17 +1,17 @@
 # ADR-0049: Upstream-first parallel hybrid delivery
-
 - **Status**: Proposed
 - **Date**: 2026-09-26
-- **Updated**: 2026-09-28
+- **Updated**: 2026-09-29
 - **Deciders**:
 - **Tags**: engineering, ruflo, metaharness, parallel-delivery, openrouter
 - **Related**: ADR-0017, ADR-0043, ADR-0048
 
-## September 28 implementation handoff (current plan)
+## September 29 ordinary routing and resumption amendment
 
-Ordinary delivery has isolated direct API at existing kernel/host seam, explicit
-routes, shared packets/output validation, request bounds/replay, task-scoped holds,
-failure attribution, actual metering and capable repair. Programme stays paused.
+Owner resumes GCP programme: ordinary planner/author/fresh review use native `cc/claude-sonnet-5-5[1m]` / high via 9router; explicit pins, Opus repair, Codex coordinator, isolation and learning remain.
+Three routing regressions failed on old defaults; final ten-file ordinary join passes 98/98, including default-stage/native-learning proof; Node syntax and diff checks pass. API fixtures now explicitly pin API transport.
+GCP native smoke session `99dbee2f-07ec-4795-98ba-49d04f895988` returned `OXIGRAPH_SONNET_55_READY`, canonical model `claude-sonnet-5-5`; harmless alias warning and failing obsolete session-end hook remain diagnostics.
+This supersedes old defaults/application pauses below, not frozen qualification or publication boundaries. Historical receipts remain unchanged; wider ADR stays Proposed. Following September 28 evidence is historical.
 
 **September 28 ordinary entrypoint repair:** `oxigraph-delivery.mjs batch --spec`
 now calls the existing upstream pool with isolated workflow specs. Strict JSON

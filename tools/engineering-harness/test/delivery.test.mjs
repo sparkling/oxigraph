@@ -36,10 +36,11 @@ test("source drift or missing process observation prevents command success", () 
   assert.equal(deliveryStatus(before, before, null, null).status, "failed");
   assert.equal(deliveryStatus(before, before, { passed: true }, "cannot read artifact").status, "failed");
 });
-test("ordinary role defaults distinguish API and native transports", () => {
+test("ordinary role defaults use exact Sonnet 5.5 native routes and retain Opus escalation", () => {
   for (const [role, model, effort] of [
-    ["implement", "deepseek/deepseek-v4.1-flash", "high"], ["documentation", "cc/claude-sonnet-5[1m]", "medium"],
-    ["review", "deepseek/deepseek-v4.1-flash", "high"], ["difficult", "cc/claude-opus-5-5[1m]", "high"],
+    ["plan", "cc/claude-sonnet-5-5[1m]", "high"],
+    ["implement", "cc/claude-sonnet-5-5[1m]", "high"], ["documentation", "cc/claude-sonnet-5-5[1m]", "medium"],
+    ["review", "cc/claude-sonnet-5-5[1m]", "high"], ["difficult", "cc/claude-opus-5-5[1m]", "high"],
     ["decision", "cc/claude-opus-5-5[1m]", "high"],
   ]) {
     const route = routeDelivery({ role, taskId, completionCheck });
@@ -50,6 +51,14 @@ test("ordinary role defaults distinguish API and native transports", () => {
     assert.equal(route.selection, "role-policy");
     assert.equal(route.status, "planned-not-dispatched");
     assert.equal(route.ownerConversationChanged, false);
+  }
+});
+test("explicit API pins remain admitted independently of native role defaults", () => {
+  for (const role of ["plan", "implement", "review"]) {
+    const route = routeDelivery({ role, taskId, completionCheck, model: "deepseek/deepseek-v4.1-flash",
+      effort: "high", reason: "explicit API task pin" });
+    assert.equal(route.transport, "openrouter-api");
+    assert.equal(route.nativeDispatch, null);
   }
 });
 test("unqualified aliases and unsupported models remain refused", () => {
@@ -223,8 +232,8 @@ test("CLI route is inspectable without any model execution; invalid run rejects 
   const cli = "tools/engineering-harness/bin/oxigraph-delivery.mjs";
   const route = JSON.parse(execFileSync(process.execPath, [cli, "route", "--task", taskId,
     "--role", "implement", "--check", completionCheck], { encoding: "utf8" }));
-  assert.equal(route.nativeDispatch, null);
-  assert.deepEqual(route.apiDispatch, { provider: "openrouter", model: "deepseek/deepseek-v4.1-flash", effort: "high" });
+  assert.deepEqual(route.nativeDispatch, { provider: "claude", model: "cc/claude-sonnet-5-5[1m]", effort: "high" });
+  assert.equal(route.apiDispatch, null);
   assert.throws(() => execFileSync(process.execPath, [cli, "run", "--task", taskId, "--", "cargo", "publish", "--locked"], { stdio: "pipe" }));
 });
 

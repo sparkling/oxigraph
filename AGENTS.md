@@ -1,5 +1,18 @@
 # Oxigraph fork instructions
 
+## Sonnet ordinary delivery and GCP resumption (2026-09-29 owner amendment)
+
+Ordinary planning, implementation and fresh independent review now default to
+native `cc/claude-sonnet-5-5[1m]` / high through the configured 9router subscription.
+Retain explicit task/model pins, stronger review policies, Opus/high capability
+repair, Codex coordination, isolated parallel candidates and native learning.
+Direct API remains explicitly selectable under the existing per-request policy;
+it is no longer the ordinary default. Historical receipts are not rewritten.
+The owner authorizes main programme resumption on the Oxigraph GCP host, with
+a persistent accepted-delivery goal and dependency/resource-aware parallel work.
+This supersedes the historical application pause below, not frozen qualification,
+protected data, evidence integrity or publication boundaries. One canonical writer.
+
 ## Models, parallelism and direct work (2026-09-28 owner amendment)
 
 Match Builder's approved ordinary engineering policy. This supersedes the

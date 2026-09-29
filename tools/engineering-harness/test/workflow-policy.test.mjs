@@ -76,15 +76,15 @@ test("spec role overrides reject unqualified models before any host request", as
   }));
 });
 
-test("ordinary stages retain explicit direct API role defaults", async () => {
+test("ordinary stages use Sonnet 5.5 native role defaults", async () => {
   const fixtureState = setup();
   const routes = [];
   const host = updateNativeResults(fixtureState, (_result, request) => routes.push(request.payload.route));
   const result = await runWorkflow(spec, host, fixtureState.io);
   assert.equal(result.status, "ready-for-owner-review");
   assert.deepEqual(routes.map(({ role, model, effort }) => [role, model, effort]), [
-    ["implement", "deepseek/deepseek-v4.1-flash", "high"],
-    ["review", "deepseek/deepseek-v4.1-flash", "high"],
+    ["implement", "cc/claude-sonnet-5-5[1m]", "high"],
+    ["review", "cc/claude-sonnet-5-5[1m]", "high"],
   ]);
 });
 

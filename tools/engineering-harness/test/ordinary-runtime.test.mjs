@@ -19,6 +19,25 @@ const nativeSpec = (id = "native") => ({ ...ordinaryWorkflowSpec, taskId: `task-
 });
 const configFor = (directory) => ({ schema: 1, memoryDirectory: `target/engineering-delivery/fixtures/${basename(directory)}` });
 
+test("unpinned ordinary planning, author and fresh review use Sonnet 5.5 and retain native learning", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "oxigraph-sonnet-")), config = configFor(directory);
+  const fixture = setupOrdinaryWorkflowFixture(), routes = [], workers = [];
+  try {
+    const result = await runWorkflow(ordinaryWorkflowSpec, async (request) => {
+      const response = await fixture.host(request);
+      if (request.action === "native-worker") {
+        routes.push(request.payload.route); workers.push(response.result.workerId);
+      }
+      return response;
+    }, { ...fixture.io, runtime: createOrdinaryRuntime(config) });
+    assert.deepEqual(routes.map(({ role, model, effort, transport }) => [role, model, effort, transport]),
+      ["plan", "implement", "review"].map(role => [role, "cc/claude-sonnet-5-5[1m]", "high", "native-subscription"]));
+    assert.notEqual(workers[1], workers[2]);
+    assert.equal(result.learning.recorded, true);
+    assert.equal(JSON.parse(readFileSync(result.learning.path, "utf8")).transport, "native-only");
+  } finally { rmSync(join(repository, config.memoryDirectory), { recursive: true, force: true }); rmSync(directory, { recursive: true }); }
+});
+
 test("ordinary native driver plans, consumes policy/memory and records only checked native outcomes", async () => {
   const directory = mkdtempSync(join(tmpdir(), "oxigraph-runtime-"));
   const config = configFor(directory), spec = nativeSpec();
@@ -53,8 +72,10 @@ test("ordinary native driver plans, consumes policy/memory and records only chec
     }
     assert.notEqual(ordinaryRuntimeBinding(spec, next.io.files(), directory).evaluatorSha256,
       ordinaryRuntimeBinding(spec, next.io.files()).evaluatorSha256);
-    const hybrid = setupOrdinaryWorkflowFixture();
-    const skipped = await runWorkflow(ordinaryWorkflowSpec, hybrid.host, { ...hybrid.io, runtime: createOrdinaryRuntime(config) });
+    const apiPin = { model: "deepseek/deepseek-v4.1-flash", effort: "high", reason: "explicit API fixture" };
+    const hybridSpec = { ...ordinaryWorkflowSpec, implement: apiPin, review: apiPin };
+    const hybrid = setupOrdinaryWorkflowFixture({ spec: hybridSpec });
+    const skipped = await runWorkflow(hybridSpec, hybrid.host, { ...hybrid.io, runtime: createOrdinaryRuntime(config) });
     assert.deepEqual(skipped.learning, { recorded: false, reason: "hybrid-excluded" });
   } finally { rmSync(join(repository, config.memoryDirectory), { recursive: true, force: true }); rmSync(directory, { recursive: true }); }
 });

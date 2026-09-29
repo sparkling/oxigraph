@@ -1,6 +1,6 @@
 # Oxigraph engineering harness
 
-Current ordinary-development guide, updated 2026-09-28.
+Current ordinary-development guide, updated 2026-09-29.
 [AGENTS.md](../../AGENTS.md) and
 [ADR-0049](../../docs/adr/0049-upstream-first-parallel-hybrid-delivery.md)
 govern current models, ownership and proof status. This guide supersedes old
@@ -9,12 +9,13 @@ mandatory-harness, Claude-only and one-process instructions.
 Direct application/harness implementation, repair, tests and builds are allowed.
 Harness dispatch is optional. Keep orchestration and learning available; preserve
 scoped checks, independent review, source/data isolation and one canonical
-integrator. Application programme remains paused until separately resumed.
+integrator. Owner authorized GCP application programme resumption September 29.
 
 ## Configured subscription transport
 
-Ordinary implementation and fresh independent review default to direct OpenRouter
-`deepseek/deepseek-v4.1-flash`, high reasoning. Capability/output repair uses
+Ordinary planning, implementation and fresh independent review default to native
+`cc/claude-sonnet-5-5[1m]` / high through configured 9router. Explicit API task pins
+remain supported, but are not defaults. Capability/output repair uses
 native `cc/claude-opus-5-5[1m]` / high. Only confirmed nonexecuted HTTP402 credit
 rejection permits lighter native Sonnet/Sol fallback, medium first.
 Auth errors, unknown completion and local request-cost refusal are not fallback.
@@ -68,7 +69,7 @@ Any attempted API stage excludes the whole hybrid run from native Router trainin
 Ordinary observations remain unpaired; only explicit integrator-owned `compare`
 callbacks produce controlled equal-packet evidence. Five common inputs across all
 eligible routes and full predicted quality are required for upstream Router choice.
-Only unpinned confirmed402 Sonnet/Sol fallback adapts; DeepSeek defaults, explicit
+Only unpinned confirmed402 Sonnet/Sol fallback adapts; Sonnet 5.5 defaults, explicit
 pins and Opus repair stay unchanged. No latency claim or live training is implied.
 
 `ordinary-policy.mjs` composes upstream Flywheel with injected proposer/evaluator
