@@ -2,10 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-08-26
+- Updated: 2026-09-29
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; each current server process owns one
-  `Store` and has no durable repository catalog or administrative lifecycle
+- Implementation status: bounded pure lifecycle model and public trace tests
+  implemented below. Each current server process still owns one `Store` and
+  has no durable repository catalog or administrative lifecycle
 - Programme task: `task-1787728710646-enu8i1` (G4.6)
 - **Depends on**:
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),
@@ -203,5 +204,59 @@ The current singleton server setup is visible in
 one `Store`, and the request router forwards every data route to it. Current
 store backup, validation, and open boundaries are in
 [`store.rs`](../../lib/oxigraph/src/store.rs). No repository manager,
-catalog, lifecycle evaluator, or acceptance receipt exists yet; G4.6 owns the
-staged product work.
+catalog or frozen lifecycle qualification receipt exists yet; G4.6 owns the
+staged product work. Ordinary model evidence follows.
+
+## Deterministic lifecycle model (2026-09-29)
+
+`cli/src/repository.rs` implements the nine-state, single-repository pure model
+with exact case-sensitive ID grammar, injected logical time, generation CAS,
+checked exhaustion/retention arithmetic and atomic rejection. Private instance
+identity and generation bind non-cloneable transition handles; rejected calls
+leave them usable, successful completion prevents replay. Creation/opening
+require explicit validation, quiescing rejects new work, and closing/tombstoning
+require explicit work/lease drain assertions. Restore/purge prerequisites are
+typed caller assertions, not authenticated backup or deletion evidence.
+
+The public trace consumer covers 256 deterministic seeds, bounded shrinking,
+independent transition/oracle arithmetic, all state/operation rejection pairs,
+identity/replay boundaries and injected-fault negative controls. No filesystem
+manager, journal, catalog, HTTP route or storage operation is introduced.
+
+Original ordinary workflow `3153eaf5-32f6-41b8-96ff-6669eb9f1311` expired
+with `Host action timed out after 30 minutes`; its compiler failure and timeout
+remain negative evidence. Original Opus repair
+`8870fde0-c2d7-41bb-a500-2f0a83f192da` completed later. Root validated exact
+request/response/read hashes before applying it only to `source-95A4DO`, then
+removed a test-only unused-result warning. No failed workflow acceptance was
+inherited and no watchdog changed.
+
+Fresh Sonnet 5.5/high review `a2752bfe-ac08-499b-b54b-9f687feb2cb7`, reviewer
+`4a35ffe5-9c1d-4de5-a3dc-db2a25235ee2`, accepted exact repaired source.
+Response SHA256:
+`20c292bbee031fa4f2de6dbe55ab12758a1b22555f3817809042b106fe6cfe1f`.
+Candidate default/no-default checks each pass 31. Their direct logs are
+`target/engineering-delivery/lifecycle-final-default.log` and
+`target/engineering-delivery/lifecycle-final-no-default.log`; these are
+coordinator-observed checks, not manufactured runner receipts. Formatter passes.
+
+Owner revalidated 15,223 unchanged included source inputs, nine submodule pins,
+14 supplemental reads and exact reviewed file hashes against accepted main
+`3ab852fd7`. The intervening F0 changes are disjoint from this packet's reads
+and mutations. Retained sibling custody passed owner independence checks before
+serial integration. Canonical checks bind stable source before this append:
+
+- `run-tT6041`: no-default lifecycle 31 plus existing lease model 37 passed.
+- `run-8jGZoF`: default lifecycle 31, lease model 37 and CLI library 77 passed.
+
+Exact source SHA256:
+
+- `cli/src/lib.rs`: `40dbee293df3dc41475602de59375a9e0337066634c9d31630c4a17d2784bc05`.
+- `cli/src/repository.rs`: `5ed0d962b73fccdf4d02c022863ca779339addc31b991d05766604e440c78c05`.
+- `cli/tests/repository_lifecycle.rs`: `cd0008de8f9716a6c1f4576a23dc80cf69e32e62897b9942da28445af5207a25`.
+
+Migration registry alias `task-1790681494161-as3snp` retains original G4.6
+outcome identity. Only this ordinary model slice is accepted, not frozen
+qualification gate 1 or the full manager. Filesystem recovery, isolation,
+protocol, upgrade and resource gates remain open. ADR stays Proposed; no
+server activation, protected-data change, qualification or publication.
