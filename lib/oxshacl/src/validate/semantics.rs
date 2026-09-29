@@ -232,6 +232,11 @@ impl ExpressionContext for ValidationContext<'_> {
     fn all_nodes(&mut self, budget: &mut Budget<'_>) -> Result<Vec<Term>, ValidationError> {
         all_graph_nodes(self.graph, budget)
     }
+
+    #[cfg(feature = "sparql")]
+    fn shapes(&self) -> Option<&crate::ShapesGraph> {
+        Some(self.shapes)
+    }
 }
 
 #[cfg(test)]

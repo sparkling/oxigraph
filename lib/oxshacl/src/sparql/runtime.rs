@@ -1,9 +1,11 @@
 #[cfg(test)]
 use super::SparqlConstraint;
+use super::functions;
+use crate::ShapesGraph;
 use crate::control::{Budget, LimitKind, ValidationError};
 use crate::model::GraphSnapshot;
 use oxrdf::{Term, Variable};
-use spareval::{QueryEvaluator, QueryResults};
+use spareval::{QueryEvaluationError, QueryEvaluator, QueryResults};
 use spargebra::algebra::{Expression, QueryExpression};
 use spargebra::{Query, SparqlParser};
 #[cfg(not(target_family = "wasm"))]
@@ -12,6 +14,16 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(target_family = "wasm"))]
 use std::time::Instant;
+
+/// Declared SHACL functions a node-expression query may call.
+///
+/// `remaining_depth` is the recursion budget left for function bodies; `None`
+/// means it is spent, so any call fails before a body runs.
+#[derive(Clone, Copy)]
+struct FunctionAccess<'a> {
+    shapes: Option<&'a ShapesGraph>,
+    remaining_depth: Option<usize>,
+}
 
 /// Evaluates a `sh:select` body with the enclosing custom-function scope pre-bound.
 ///
@@ -23,6 +35,8 @@ pub(crate) fn evaluate_node_expression_in_scope(
     graph: &GraphSnapshot,
     focus: Option<&Term>,
     environment: &crate::ExpressionEnvironment,
+    shapes: Option<&ShapesGraph>,
+    remaining_depth: Option<usize>,
     budget: &mut Budget<'_>,
 ) -> Result<Vec<Term>, ValidationError> {
     for variable in environment.scope_variables() {
@@ -35,7 +49,11 @@ pub(crate) fn evaluate_node_expression_in_scope(
     // A scope argument that produced no term contributes no substitution, so the
     // body sees the variable as unbound.
     let substitutions = environment.scope_substitutions();
-    evaluate_node_expression_with_substitutions(query, graph, focus, &substitutions, budget)
+    let access = FunctionAccess {
+        shapes,
+        remaining_depth,
+    };
+    evaluate_node_expression_with_substitutions(query, graph, focus, &substitutions, access, budget)
 }
 
 fn evaluate_node_expression_with_substitutions(
@@ -43,6 +61,7 @@ fn evaluate_node_expression_with_substitutions(
     graph: &GraphSnapshot,
     focus: Option<&Term>,
     substitutions: &[(Variable, Term)],
+    access: FunctionAccess<'_>,
     budget: &mut Budget<'_>,
 ) -> Result<Vec<Term>, ValidationError> {
     if query.len() > budget.limits().max_query_bytes {
@@ -81,53 +100,161 @@ fn evaluate_node_expression_with_substitutions(
             "node-expression sh:select must be SELECT".to_owned(),
         ));
     }
+    execute_query(
+        &parsed,
+        substitutions,
+        graph,
+        access,
+        budget,
+        |results, budget| {
+            let QueryResults::Solutions(solutions) = results else {
+                return Err(ValidationError::Sparql(
+                    "node expression did not return solutions".to_owned(),
+                ));
+            };
+            let mut output = Vec::new();
+            for solution in solutions {
+                budget.query_solution()?;
+                let solution = solution.map_err(|error| evaluation_error(error, budget))?;
+                let values = solution
+                    .iter()
+                    .filter(|(variable, _)| {
+                        variable.as_str() != "this"
+                            && !substitutions
+                                .iter()
+                                .any(|(substitution, _)| substitution == *variable)
+                    })
+                    .map(|(_, value)| value.clone())
+                    .collect::<Vec<_>>();
+                let [value] = values.as_slice() else {
+                    return Err(ValidationError::IllFormed(
+                        "node-expression SELECT must bind exactly one variable per row".to_owned(),
+                    ));
+                };
+                output.push(value.clone());
+            }
+            Ok(output)
+        },
+    )
+}
+
+/// Runs a `sh:sparql` constraint or custom-validator query.
+///
+/// A body can reach such a query again through a shape, for example with
+/// `shnex:conformsToShape`, so its registration consumes one unit of
+/// `budget`'s recursion bound. Every cycle through a constraint then shrinks
+/// the bound instead of restarting it.
+pub(super) fn execute_constraint_query<T>(
+    parsed: &Query,
+    substitutions: &[(Variable, Term)],
+    graph: &GraphSnapshot,
+    shapes: &ShapesGraph,
+    budget: &mut Budget<'_>,
+    consume: impl FnOnce(QueryResults<'_>, &mut Budget<'_>) -> Result<T, ValidationError>,
+) -> Result<T, ValidationError> {
+    let access = FunctionAccess {
+        shapes: Some(shapes),
+        remaining_depth: budget.limits().max_recursion_depth.checked_sub(1),
+    };
+    execute_query(parsed, substitutions, graph, access, budget, consume)
+}
+
+/// Runs one prepared query with declared functions registered.
+///
+/// The isolated dataset and any copies a registration makes are reserved
+/// against the memory ceiling before they are allocated. Once the query has
+/// started, the watchdog and the function scope are finished on every path,
+/// and a limit or cancellation parked by a function call wins over whatever
+/// the evaluator reported, because the evaluator only ever saw an unbound
+/// value.
+fn execute_query<T>(
+    parsed: &Query,
+    substitutions: &[(Variable, Term)],
+    graph: &GraphSnapshot,
+    access: FunctionAccess<'_>,
+    budget: &mut Budget<'_>,
+    consume: impl FnOnce(QueryResults<'_>, &mut Budget<'_>) -> Result<T, ValidationError>,
+) -> Result<T, ValidationError> {
     let cancellation = spareval::CancellationToken::new();
+    // Dropping the watchdog on an early return also stops and joins it.
     let watchdog = Watchdog::start(cancellation.clone(), budget)?;
     let evaluator = QueryEvaluator::new()
         .without_optimizations()
         .with_cancellation_token(cancellation);
+    // The isolated dataset is another copy of the data graph that lives as
+    // long as this query.
+    let dataset_bytes = functions::isolated_dataset_bytes(graph);
+    let (evaluator, scope) = match access.shapes {
+        Some(shapes) => {
+            let (evaluator, scope) = functions::register_nested(
+                evaluator,
+                shapes,
+                graph,
+                budget,
+                access.remaining_depth,
+                dataset_bytes,
+            )?;
+            (evaluator, Some(scope))
+        }
+        None => {
+            functions::reserve(budget, dataset_bytes)?;
+            (evaluator, None)
+        }
+    };
     let dataset = graph.isolated_default_dataset();
-    let mut prepared = evaluator.prepare(&parsed);
+    let mut prepared = evaluator.prepare(parsed);
     for (variable, term) in substitutions {
         prepared = prepared.substitute_variable(variable.clone(), term.clone());
     }
-    let QueryResults::Solutions(solutions) = prepared
-        .execute(&dataset)
-        .map_err(|error| ValidationError::Sparql(error.to_string()))?
-    else {
-        return Err(ValidationError::Sparql(
-            "node expression did not return solutions".to_owned(),
-        ));
+    let outcome = match prepared.execute(&dataset) {
+        Ok(results) => consume(results, budget),
+        Err(error) => Err(evaluation_error(error, budget)),
     };
-    let mut output = Vec::new();
-    for solution in solutions {
-        budget.query_solution()?;
-        let solution = solution.map_err(|error| ValidationError::Sparql(error.to_string()))?;
-        let values = solution
-            .iter()
-            .filter(|(variable, _)| {
-                variable.as_str() != "this"
-                    && !substitutions
-                        .iter()
-                        .any(|(substitution, _)| substitution == *variable)
-            })
-            .map(|(_, value)| value.clone())
-            .collect::<Vec<_>>();
-        let [value] = values.as_slice() else {
-            return Err(ValidationError::IllFormed(
-                "node-expression SELECT must bind exactly one variable per row".to_owned(),
-            ));
-        };
-        output.push(value.clone());
-    }
     watchdog.finish();
-    Ok(output)
+    if let Some(scope) = scope {
+        scope.finish(budget)?;
+    }
+    // The evaluator reports cancellation and timeout as its own errors; the
+    // budget names them.
+    budget.check()?;
+    outcome
+}
+
+/// Maps a SPARQL evaluation error onto a validation error.
+///
+/// Only the watchdog cancels the evaluator, and it does so only after the
+/// caller's token was cancelled or the budget's deadline passed, so a
+/// cancellation or timeout is reported as the typed stop the budget names.
+pub(super) fn evaluation_error(
+    error: QueryEvaluationError,
+    budget: &Budget<'_>,
+) -> ValidationError {
+    let timed_out = match error {
+        QueryEvaluationError::Cancelled => false,
+        QueryEvaluationError::TimedOut => true,
+        other => return ValidationError::Sparql(other.to_string()),
+    };
+    if let Err(stop) = budget.check() {
+        return stop;
+    }
+    if timed_out {
+        ValidationError::LimitExceeded {
+            kind: LimitKind::Time,
+            limit: budget.limits().timeout.map_or(usize::MAX, |timeout| {
+                usize::try_from(timeout.as_millis()).unwrap_or(usize::MAX)
+            }),
+        }
+    } else {
+        ValidationError::Cancelled
+    }
 }
 
 pub(crate) fn evaluate_node_function(
     expression: &str,
     arguments: &[Option<Term>],
     graph: &GraphSnapshot,
+    shapes: Option<&ShapesGraph>,
+    remaining_depth: Option<usize>,
     budget: &mut Budget<'_>,
 ) -> Result<Vec<Term>, ValidationError> {
     let query = format!("SELECT ({expression} AS ?value) WHERE {{ }}");
@@ -143,7 +270,12 @@ pub(crate) fn evaluate_node_function(
             })
         })
         .collect::<Vec<_>>();
-    let output = evaluate_scalar_expression(&query, arguments, graph, &substitutions, budget)?;
+    let access = FunctionAccess {
+        shapes,
+        remaining_depth,
+    };
+    let output =
+        evaluate_scalar_expression(&query, arguments, graph, &substitutions, access, budget)?;
     if output.len() > 1 {
         return Err(ValidationError::IllFormed(
             "SPARQL list-parameter function produced more than one output node".to_owned(),
@@ -157,6 +289,7 @@ fn evaluate_scalar_expression(
     arguments: &[Option<Term>],
     graph: &GraphSnapshot,
     substitutions: &[(Variable, Term)],
+    access: FunctionAccess<'_>,
     budget: &mut Budget<'_>,
 ) -> Result<Vec<Term>, ValidationError> {
     if query.len() > budget.limits().max_query_bytes {
@@ -183,47 +316,42 @@ fn evaluate_scalar_expression(
         .map(|(variable, _)| variable.clone())
         .collect::<Vec<_>>();
     super::expose_prebound_variables(&mut parsed, &substitution_variables);
-    let cancellation = spareval::CancellationToken::new();
-    let watchdog = Watchdog::start(cancellation.clone(), budget)?;
-    let evaluator = QueryEvaluator::new()
-        .without_optimizations()
-        .with_cancellation_token(cancellation);
-    let dataset = graph.isolated_default_dataset();
-    let mut prepared = evaluator.prepare(&parsed);
-    for (variable, term) in substitutions {
-        prepared = prepared.substitute_variable(variable.clone(), term.clone());
-    }
-    let QueryResults::Solutions(solutions) = prepared
-        .execute(&dataset)
-        .map_err(|error| ValidationError::Sparql(error.to_string()))?
-    else {
-        return Err(ValidationError::Sparql(
-            "SPARQL scalar expression did not return solutions".to_owned(),
-        ));
-    };
-    let mut output = None;
-    for solution in solutions {
-        budget.query_solution()?;
-        let solution = solution.map_err(|error| ValidationError::Sparql(error.to_string()))?;
-        if output.is_some() {
-            return Err(ValidationError::IllFormed(
-                "SPARQL list-parameter function produced more than one output node".to_owned(),
-            ));
-        }
-        let value = solution.get(&result_variable).ok_or_else(|| {
-            ValidationError::Sparql("SPARQL scalar expression evaluation failed".to_owned())
-        })?;
-        output = Some(value.clone());
-    }
-    watchdog.finish();
-    budget.check()?;
-    output.map_or_else(
-        || {
-            Err(ValidationError::Sparql(
-                "SPARQL scalar expression produced no solution".to_owned(),
-            ))
+    execute_query(
+        &parsed,
+        substitutions,
+        graph,
+        access,
+        budget,
+        |results, budget| {
+            let QueryResults::Solutions(solutions) = results else {
+                return Err(ValidationError::Sparql(
+                    "SPARQL scalar expression did not return solutions".to_owned(),
+                ));
+            };
+            let mut output = None;
+            for solution in solutions {
+                budget.query_solution()?;
+                let solution = solution.map_err(|error| evaluation_error(error, budget))?;
+                if output.is_some() {
+                    return Err(ValidationError::IllFormed(
+                        "SPARQL list-parameter function produced more than one output node"
+                            .to_owned(),
+                    ));
+                }
+                let value = solution.get(&result_variable).ok_or_else(|| {
+                    ValidationError::Sparql("SPARQL scalar expression evaluation failed".to_owned())
+                })?;
+                output = Some(value.clone());
+            }
+            output.map_or_else(
+                || {
+                    Err(ValidationError::Sparql(
+                        "SPARQL scalar expression produced no solution".to_owned(),
+                    ))
+                },
+                |value| Ok(vec![value]),
+            )
         },
-        |value| Ok(vec![value]),
     )
 }
 
@@ -264,10 +392,7 @@ fn scalar_projection_expression<'a>(
     Ok(expression)
 }
 
-fn strict_call_has_missing_operand(
-    expression: &Expression,
-    arguments: &[Option<Term>],
-) -> bool {
+fn strict_call_has_missing_operand(expression: &Expression, arguments: &[Option<Term>]) -> bool {
     if !strict_invocation_is_fully_supported(expression) {
         return false;
     }
@@ -362,40 +487,11 @@ fn known_strict_sparql_arity(function: &str, arity: usize) -> Option<bool> {
         | "strafter"
         | "strlang"
         | "strdt" => arity == 2,
-        "unary-minus"
-        | "unary-plus"
-        | "logical-not"
-        | "isIRI"
-        | "isURI"
-        | "isBlank"
-        | "isLiteral"
-        | "isNumeric"
-        | "str"
-        | "lang"
-        | "datatype"
-        | "iri"
-        | "uri"
-        | "strlen"
-        | "ucase"
-        | "lcase"
-        | "encodeForUri"
-        | "abs"
-        | "round"
-        | "ceil"
-        | "floor"
-        | "year"
-        | "month"
-        | "day"
-        | "hours"
-        | "minutes"
-        | "seconds"
-        | "timezone"
-        | "tz"
-        | "md5"
-        | "sha1"
-        | "sha256"
-        | "sha384"
-        | "sha512" => arity == 1,
+        "unary-minus" | "unary-plus" | "logical-not" | "isIRI" | "isURI" | "isBlank"
+        | "isLiteral" | "isNumeric" | "str" | "lang" | "datatype" | "iri" | "uri" | "strlen"
+        | "ucase" | "lcase" | "encodeForUri" | "abs" | "round" | "ceil" | "floor" | "year"
+        | "month" | "day" | "hours" | "minutes" | "seconds" | "timezone" | "tz" | "md5"
+        | "sha1" | "sha256" | "sha384" | "sha512" => arity == 1,
         "bnode" => arity <= 1,
         "rand" | "now" | "uuid" | "struuid" => arity == 0,
         "substr" | "regex" => (2..=3).contains(&arity),
@@ -404,8 +500,9 @@ fn known_strict_sparql_arity(function: &str, arity: usize) -> Option<bool> {
         #[cfg(feature = "rdf-12")]
         "triple" | "strlangdir" => arity == 3,
         #[cfg(feature = "rdf-12")]
-        "langdir" | "hasLang" | "hasLangdir" | "subject" | "predicate" | "object"
-        | "isTriple" => arity == 1,
+        "langdir" | "hasLang" | "hasLangdir" | "subject" | "predicate" | "object" | "isTriple" => {
+            arity == 1
+        }
         _ => return None,
     })
 }

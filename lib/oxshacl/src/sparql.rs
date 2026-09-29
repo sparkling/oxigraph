@@ -4,7 +4,7 @@ use crate::model::GraphSnapshot;
 use crate::path::PropertyPath;
 use crate::validate::evaluate::Violation;
 use oxrdf::{Literal, NamedNode, Term, Variable};
-use spareval::{QueryEvaluator, QueryResults};
+use spareval::QueryResults;
 use spargebra::{Query, SparqlParser};
 
 mod annotations;
@@ -22,7 +22,10 @@ pub(crate) use self::functions::DeclaredFunction;
 pub(crate) use self::policy::substitute_path;
 use self::policy::{ExpectedQuery, validate_query_policy};
 pub(crate) use self::prebinding::expose_prebound_variables;
-pub(crate) use self::runtime::{Watchdog, evaluate_node_expression_in_scope, evaluate_node_function};
+pub(crate) use self::runtime::{
+    Watchdog, evaluate_node_expression_in_scope, evaluate_node_function,
+};
+use self::runtime::{evaluation_error, execute_constraint_query};
 
 /// A validated SHACL-SPARQL `SELECT` constraint.
 #[derive(Clone, Debug)]
@@ -125,6 +128,13 @@ impl SparqlConstraint {
         self
     }
 
+    /// Evaluates the constraint for one focus node.
+    ///
+    /// Every query runs through [`execute_constraint_query`], which finishes
+    /// the watchdog and the declared-function scope on every path once the
+    /// query has started. A limit or cancellation parked by a function call
+    /// therefore wins over a failing row or query, which only saw an unbound
+    /// value.
     pub(crate) fn evaluate(
         &self,
         shapes: &crate::ShapesGraph,
@@ -152,35 +162,22 @@ impl SparqlConstraint {
             ));
         }
         expose_prebound_variables(&mut query, &[Variable::new_unchecked("this")]);
-        let cancellation = spareval::CancellationToken::new();
-        let watchdog = Watchdog::start(cancellation.clone(), budget)?;
-        let evaluator = QueryEvaluator::new()
-            .without_optimizations()
-            .with_cancellation_token(cancellation);
-        let (evaluator, scope) = functions::register(evaluator, shapes, graph, budget);
-        let dataset = graph.isolated_default_dataset();
-        let results = evaluator
-            .prepare(&query)
-            .substitute_variable(Variable::new_unchecked("this"), focus.clone())
-            .execute(&dataset)
-            .map_err(|error| ValidationError::Sparql(error.to_string()))?;
-        let QueryResults::Solutions(solutions) = results else {
-            return Err(ValidationError::Sparql(
-                "SELECT query did not produce solutions".to_owned(),
-            ));
-        };
-        let mut violations = Vec::new();
-        for solution in solutions {
-            budget.query_solution()?;
-            let solution = solution.map_err(|error| ValidationError::Sparql(error.to_string()))?;
-            violations.push(self.map_solution(&solution, focus, values, None)?);
-        }
-        watchdog.finish();
-        // A failure inside a registered function only reached the evaluator as
-        // an unbound value, so it is re-raised before the solutions are used.
-        scope.finish(budget)?;
-        budget.check()?;
-        Ok(violations)
+        let substitutions = [(Variable::new_unchecked("this"), focus.clone())];
+        execute_constraint_query(
+            &query,
+            &substitutions,
+            graph,
+            shapes,
+            budget,
+            |results, budget| {
+                let QueryResults::Solutions(solutions) = results else {
+                    return Err(ValidationError::Sparql(
+                        "SELECT query did not produce solutions".to_owned(),
+                    ));
+                };
+                self.collect_violations(solutions, focus, values, None, budget)
+            },
+        )
     }
 
     fn evaluate_custom(
@@ -192,79 +189,15 @@ impl SparqlConstraint {
         values: &[Term],
         budget: &mut Budget<'_>,
     ) -> Result<Vec<Violation>, ValidationError> {
-        if custom.ask {
-            let mut parsed = SparqlParser::new()
-                .parse_query(&self.select)
-                .map_err(|error| ValidationError::Sparql(error.to_string()))?;
-            let mut variables = vec![
-                Variable::new_unchecked("this"),
-                Variable::new_unchecked("value"),
-            ];
-            variables.extend(
-                custom
-                    .bindings
-                    .iter()
-                    .map(|(name, _)| Variable::new_unchecked(name.clone())),
-            );
-            expose_prebound_variables(&mut parsed, &variables);
-            let mut violations = Vec::new();
-            for value in values {
-                let cancellation = spareval::CancellationToken::new();
-                let watchdog = Watchdog::start(cancellation.clone(), budget)?;
-                let evaluator = QueryEvaluator::new()
-                    .without_optimizations()
-                    .with_cancellation_token(cancellation);
-                let (evaluator, scope) = functions::register(evaluator, shapes, graph, budget);
-                let dataset = graph.isolated_default_dataset();
-                let mut prepared = evaluator
-                    .prepare(&parsed)
-                    .substitute_variable(Variable::new_unchecked("this"), focus.clone())
-                    .substitute_variable(Variable::new_unchecked("value"), value.clone());
-                for (name, binding) in &custom.bindings {
-                    if let Some(binding) = binding {
-                        prepared = prepared.substitute_variable(
-                            Variable::new_unchecked(name.clone()),
-                            binding.clone(),
-                        );
-                    }
-                }
-                let results = prepared
-                    .execute(&dataset)
-                    .map_err(|error| ValidationError::Sparql(error.to_string()))?;
-                watchdog.finish();
-                scope.finish(budget)?;
-                budget.check()?;
-                match results {
-                    QueryResults::Boolean(true) => {}
-                    QueryResults::Boolean(false) => {
-                        let mut violation = Violation::value(value.clone());
-                        let mut bindings = vec![
-                            ("this".to_owned(), Some(focus.clone())),
-                            ("value".to_owned(), Some(value.clone())),
-                        ];
-                        bindings.extend(custom.bindings.iter().cloned());
-                        violation.messages = self
-                            .messages
-                            .iter()
-                            .map(|message| interpolate_message(message, &bindings))
-                            .collect();
-                        violation.severity.clone_from(&self.severity);
-                        self.apply_result_annotations(None, &mut violation.annotations);
-                        violations.push(violation);
-                    }
-                    _ => {
-                        return Err(ValidationError::Sparql(
-                            "custom ASK validator did not produce a boolean".to_owned(),
-                        ));
-                    }
-                }
-            }
-            return Ok(violations);
-        }
         let mut parsed = SparqlParser::new()
             .parse_query(&self.select)
             .map_err(|error| ValidationError::Sparql(error.to_string()))?;
-        let mut variables = vec![Variable::new_unchecked("this")];
+        let this = Variable::new_unchecked("this");
+        let value_variable = Variable::new_unchecked("value");
+        let mut variables = vec![this.clone()];
+        if custom.ask {
+            variables.push(value_variable.clone());
+        }
         variables.extend(
             custom
                 .bindings
@@ -272,39 +205,91 @@ impl SparqlConstraint {
                 .map(|(name, _)| Variable::new_unchecked(name.clone())),
         );
         expose_prebound_variables(&mut parsed, &variables);
-        let cancellation = spareval::CancellationToken::new();
-        let watchdog = Watchdog::start(cancellation.clone(), budget)?;
-        let evaluator = QueryEvaluator::new()
-            .without_optimizations()
-            .with_cancellation_token(cancellation);
-        let (evaluator, scope) = functions::register(evaluator, shapes, graph, budget);
-        let dataset = graph.isolated_default_dataset();
-        let mut prepared = evaluator
-            .prepare(&parsed)
-            .substitute_variable(Variable::new_unchecked("this"), focus.clone());
-        for (name, binding) in &custom.bindings {
-            if let Some(binding) = binding {
-                prepared = prepared
-                    .substitute_variable(Variable::new_unchecked(name.clone()), binding.clone());
+        let parameters = custom
+            .bindings
+            .iter()
+            .filter_map(|(name, binding)| {
+                binding
+                    .as_ref()
+                    .map(|binding| (Variable::new_unchecked(name.clone()), binding.clone()))
+            })
+            .collect::<Vec<_>>();
+        if custom.ask {
+            let mut violations = Vec::new();
+            for value in values {
+                let mut substitutions = vec![
+                    (this.clone(), focus.clone()),
+                    (value_variable.clone(), value.clone()),
+                ];
+                substitutions.extend(parameters.iter().cloned());
+                let holds = execute_constraint_query(
+                    &parsed,
+                    &substitutions,
+                    graph,
+                    shapes,
+                    budget,
+                    |results, _| match results {
+                        QueryResults::Boolean(holds) => Ok(holds),
+                        _ => Err(ValidationError::Sparql(
+                            "custom ASK validator did not produce a boolean".to_owned(),
+                        )),
+                    },
+                )?;
+                if holds {
+                    continue;
+                }
+                let mut violation = Violation::value(value.clone());
+                let mut bindings = vec![
+                    ("this".to_owned(), Some(focus.clone())),
+                    ("value".to_owned(), Some(value.clone())),
+                ];
+                bindings.extend(custom.bindings.iter().cloned());
+                violation.messages = self
+                    .messages
+                    .iter()
+                    .map(|message| interpolate_message(message, &bindings))
+                    .collect();
+                violation.severity.clone_from(&self.severity);
+                self.apply_result_annotations(None, &mut violation.annotations);
+                violations.push(violation);
             }
+            return Ok(violations);
         }
-        let QueryResults::Solutions(solutions) = prepared
-            .execute(&dataset)
-            .map_err(|error| ValidationError::Sparql(error.to_string()))?
-        else {
-            return Err(ValidationError::Sparql(
-                "custom SELECT validator did not produce solutions".to_owned(),
-            ));
-        };
+        let mut substitutions = vec![(this, focus.clone())];
+        substitutions.extend(parameters);
+        execute_constraint_query(
+            &parsed,
+            &substitutions,
+            graph,
+            shapes,
+            budget,
+            |results, budget| {
+                let QueryResults::Solutions(solutions) = results else {
+                    return Err(ValidationError::Sparql(
+                        "custom SELECT validator did not produce solutions".to_owned(),
+                    ));
+                };
+                self.collect_violations(solutions, focus, values, Some(custom), budget)
+            },
+        )
+    }
+
+    fn collect_violations(
+        &self,
+        solutions: impl IntoIterator<
+            Item = Result<spareval::QuerySolution, spareval::QueryEvaluationError>,
+        >,
+        focus: &Term,
+        values: &[Term],
+        custom: Option<&CustomConstraint>,
+        budget: &mut Budget<'_>,
+    ) -> Result<Vec<Violation>, ValidationError> {
         let mut violations = Vec::new();
         for solution in solutions {
             budget.query_solution()?;
-            let solution = solution.map_err(|error| ValidationError::Sparql(error.to_string()))?;
-            violations.push(self.map_solution(&solution, focus, values, Some(custom))?);
+            let solution = solution.map_err(|error| evaluation_error(error, budget))?;
+            violations.push(self.map_solution(&solution, focus, values, custom)?);
         }
-        watchdog.finish();
-        scope.finish(budget)?;
-        budget.check()?;
         Ok(violations)
     }
 

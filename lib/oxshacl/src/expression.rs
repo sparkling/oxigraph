@@ -169,6 +169,13 @@ pub(crate) trait ExpressionContext {
     ) -> Result<Vec<Term>, ValidationError>;
 
     fn all_nodes(&mut self, budget: &mut Budget<'_>) -> Result<Vec<Term>, ValidationError>;
+
+    /// The shapes graph whose declared SPARQL functions SPARQL-backed node
+    /// expressions may call, when this context has one.
+    #[cfg(feature = "sparql")]
+    fn shapes(&self) -> Option<&crate::ShapesGraph> {
+        None
+    }
 }
 
 impl NodeExpression {
@@ -515,6 +522,8 @@ impl NodeExpression {
                 graph,
                 Some(focus),
                 environment,
+                context.shapes(),
+                max_depth.checked_sub(next),
                 budget,
             )?,
             #[cfg(feature = "sparql")]
@@ -541,7 +550,14 @@ impl NodeExpression {
                     }
                     values.push(output.into_iter().next());
                 }
-                crate::sparql::evaluate_node_function(expression, &values, graph, budget)?
+                crate::sparql::evaluate_node_function(
+                    expression,
+                    &values,
+                    graph,
+                    context.shapes(),
+                    max_depth.checked_sub(next),
+                    budget,
+                )?
             }
         };
         budget.charge_memory(output.iter().map(term_estimate).sum())?;
