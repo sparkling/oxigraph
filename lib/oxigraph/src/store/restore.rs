@@ -661,6 +661,7 @@ mod tests {
     use super::*;
     use crate::model::{GraphName, NamedNode, Quad};
     use crate::store::BackupOptions;
+    use std::collections::HashSet;
     type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
     #[test]
@@ -787,5 +788,187 @@ mod tests {
             .err()
             .ok_or("corrupt receipt accepted")?;
         Ok(())
+    }
+
+    /// The libtest filter of one helper `#[test]`, which never names the crate.
+    fn helper(name: &str) -> String {
+        let module = module_path!();
+        let path = module.split_once("::").map_or(module, |(_, rest)| rest);
+        format!("{path}::{name}")
+    }
+
+    fn top_level(directory: &Path) -> Result<Vec<String>, io::Error> {
+        let mut names = Vec::new();
+        for entry in fs::read_dir(directory)? {
+            names.push(entry?.file_name().to_string_lossy().into_owned());
+        }
+        names.sort();
+        Ok(names)
+    }
+
+    fn quads(directory: &Path) -> Result<HashSet<Quad>, StorageError> {
+        let store = Store::open_read_only(directory)?;
+        store.iter().collect()
+    }
+
+    const CHILD_LIMIT: Duration = Duration::from_secs(120);
+
+    /// Bounded real child: killed and reported if it outlives `CHILD_LIMIT`.
+    fn run_child(
+        package: &Path,
+        destination: &Path,
+        stop: u8,
+    ) -> Result<Option<i32>, Box<dyn std::error::Error + Send + Sync>> {
+        let mut child = std::process::Command::new(std::env::current_exe()?)
+            .arg("--exact")
+            .arg(helper("restore_process_helper"))
+            .arg("--nocapture")
+            .env("OXIGRAPH_RESTORE_EXIT_TEST_SOURCE", package)
+            .env("OXIGRAPH_RESTORE_EXIT_TEST_DESTINATION", destination)
+            .env("OXIGRAPH_RESTORE_EXIT_TEST_STOP", stop.to_string())
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .spawn()?;
+        let deadline = Instant::now() + CHILD_LIMIT;
+        loop {
+            if let Some(status) = child.try_wait()? {
+                return Ok(status.code());
+            }
+            if Instant::now() >= deadline {
+                child.kill()?;
+                child.wait()?;
+                let message = format!("restore child exceeded {CHILD_LIMIT:?} at stop {stop}");
+                return Err(message.into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Real `process::exit(73)` at each `restore_inner` hook 0..=7 over a nonempty
+    /// backup. Exit runs no Rust destructors (open handles, buffers) but is NOT
+    /// SIGKILL and NOT power loss: kernel-buffered writes survive, so stop 7
+    /// proves namespace visibility of the completion marker only. Stop 3 exits
+    /// while the read-only primary store is open. Hooks 1..=6 leave an incomplete
+    /// destination that `RestoreReceipt::read` and a same-path retry both refuse.
+    /// The package must verify unchanged after every stop.
+    #[test]
+    fn restore_child_exits_at_every_phase() -> TestResult {
+        let directory = tempfile::tempdir()?;
+        let node = NamedNode::new_unchecked("urn:restore:exit");
+        let graph = NamedNode::new_unchecked("urn:restore:exit:graph");
+        let source = Store::open(directory.path().join("source"))?;
+        source.insert(Quad::new(
+            node.clone(),
+            node.clone(),
+            node.clone(),
+            GraphName::DefaultGraph,
+        ))?;
+        source.insert(Quad::new(node.clone(), node, graph.clone(), graph))?;
+        let expected = source
+            .iter()
+            .collect::<Result<HashSet<_>, StorageError>>()?;
+        assert_eq!(expected.len(), 2, "fixture must be nonempty");
+        let package = directory.path().join("backup");
+        let backup = source.backup_with_receipt(&package, &BackupOptions::default())?;
+        let control = TransactionStartControl::new();
+        for stop in 0_u8..=7 {
+            let target = directory.path().join(format!("phase{stop}"));
+            assert_eq!(
+                run_child(&package, &target, stop)?,
+                Some(73),
+                "stop {stop}: child did not exit at its hook"
+            );
+            assert_eq!(
+                BackupReceipt::verify(&package, &control)?,
+                backup,
+                "stop {stop}: backup changed"
+            );
+            if stop == 0 {
+                assert!(
+                    fs::symlink_metadata(&target).is_err(),
+                    "stop 0: destination exists"
+                );
+                RestoreReceipt::read(&target)
+                    .err()
+                    .ok_or("stop 0: receipt accepted")?;
+                let receipt = Store::restore_backup(&package, &target, &RestoreOptions::default())?;
+                assert_eq!(receipt.backup(), &backup);
+                assert_eq!(RestoreReceipt::read(&target)?, receipt);
+                assert_eq!(quads(&target.join("store"))?, expected);
+            } else {
+                let exists = |name: &str| fs::symlink_metadata(target.join(name)).is_ok();
+                let staged = exists(BackupReceipt::manifest_name());
+                assert_eq!(
+                    staged,
+                    (2..=4).contains(&stop),
+                    "stop {stop}: staged manifest"
+                );
+                assert_eq!(exists(SOURCE), stop >= 5, "stop {stop}: source marker");
+                assert_eq!(exists(PENDING), stop == 6, "stop {stop}: pending marker");
+                assert_eq!(exists(COMPLETE), stop == 7, "stop {stop}: complete marker");
+                let complete = if stop == 7 {
+                    let receipt = RestoreReceipt::read(&target)?;
+                    assert_eq!(receipt.backup(), &backup);
+                    assert_eq!(quads(&target.join("store"))?, expected);
+                    Some(receipt)
+                } else {
+                    assert!(
+                        RestoreReceipt::read(&target).is_err(),
+                        "stop {stop}: incomplete restore accepted"
+                    );
+                    None
+                };
+                let before = top_level(&target)?;
+                let retry = Store::restore_backup(&package, &target, &RestoreOptions::default());
+                assert!(
+                    matches!(retry, Err(RestoreError::Backup(BackupError::InvalidPath))),
+                    "stop {stop}: retry into the same destination was not refused"
+                );
+                assert_eq!(
+                    top_level(&target)?,
+                    before,
+                    "stop {stop}: retry mutated destination"
+                );
+                if let Some(receipt) = complete {
+                    assert_eq!(RestoreReceipt::read(&target)?, receipt);
+                }
+            }
+            assert_eq!(
+                BackupReceipt::verify(&package, &control)?,
+                backup,
+                "stop {stop}: backup changed by retry"
+            );
+        }
+        let after = source
+            .iter()
+            .collect::<Result<HashSet<_>, StorageError>>()?;
+        assert_eq!(after, expected, "source changed");
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::exit,
+        reason = "bounded child models an exact restore crash point"
+    )]
+    fn restore_process_helper() -> TestResult {
+        let Some(package) = std::env::var_os("OXIGRAPH_RESTORE_EXIT_TEST_SOURCE") else {
+            return Ok(()); // An ordinary run: only the parent test re-invokes this.
+        };
+        let destination = std::env::var_os("OXIGRAPH_RESTORE_EXIT_TEST_DESTINATION")
+            .ok_or("the parent test passed no destination")?;
+        let stop = std::env::var("OXIGRAPH_RESTORE_EXIT_TEST_STOP")?.parse::<u8>()?;
+        restore_inner(
+            Path::new(&package),
+            Path::new(&destination),
+            &RestoreOptions::default(),
+            |phase| {
+                if phase == stop {
+                    std::process::exit(73);
+                }
+                Ok(())
+            },
+        )?;
+        Err("the child returned instead of exiting at its crash point".into())
     }
 }
