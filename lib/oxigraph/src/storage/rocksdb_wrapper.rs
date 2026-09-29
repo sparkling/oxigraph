@@ -37,6 +37,7 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::{CStr, CString};
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
@@ -1447,7 +1448,7 @@ impl Db {
         })
     }
 
-    pub fn start_readable_transaction(&self) -> Result<ReadableTransaction<'_>, StorageError> {
+    pub fn start_readable_transaction(&self) -> Result<ReadableTransaction<'static>, StorageError> {
         let DbKind::ReadWrite(db) = &self.inner else {
             return Err(StorageError::Other(
                 "Transaction are only possible on read-write instances".into(),
@@ -1463,12 +1464,13 @@ impl Db {
         };
         assert!(!batch.is_null(), "rocksdb_writebatch_create returned null");
         Ok(ReadableTransaction {
-            db,
+            db: Arc::clone(db),
             batch,
             snapshot,
             read_options,
             keyed_outcome: None,
             _writer_permit: writer_permit,
+            _borrow: PhantomData,
         })
     }
 
@@ -1476,7 +1478,7 @@ impl Db {
         &self,
         control: &TransactionStartControl,
         started_at: Instant,
-    ) -> Result<ReadableTransaction<'_>, StorageTransactionStartError> {
+    ) -> Result<ReadableTransaction<'static>, StorageTransactionStartError> {
         let DbKind::ReadWrite(db) = &self.inner else {
             return Err(StorageError::Other(
                 "Transaction are only possible on read-write instances".into(),
@@ -1493,12 +1495,13 @@ impl Db {
         };
         assert!(!batch.is_null(), "rocksdb_writebatch_create returned null");
         Ok(ReadableTransaction {
-            db,
+            db: Arc::clone(db),
             batch,
             snapshot,
             read_options,
             keyed_outcome: None,
             _writer_permit: writer_permit,
+            _borrow: PhantomData,
         })
     }
 
@@ -1510,7 +1513,7 @@ impl Db {
         rolled_back_value: &[u8],
         control: &TransactionStartControl,
         started_at: Instant,
-    ) -> Result<ReadableTransaction<'_>, StorageTransactionStartError> {
+    ) -> Result<ReadableTransaction<'static>, StorageTransactionStartError> {
         let [outcome_key, alternative_outcome_key] = outcome_keys;
         let DbKind::ReadWrite(db) = &self.inner else {
             return Err(StorageError::Other(
@@ -1545,7 +1548,7 @@ impl Db {
         };
         assert!(!batch.is_null(), "rocksdb_writebatch_create returned null");
         Ok(ReadableTransaction {
-            db,
+            db: Arc::clone(db),
             batch,
             snapshot,
             read_options,
@@ -1556,6 +1559,7 @@ impl Db {
                 phase: KeyedTransactionOutcomePhase::Staging,
             }),
             _writer_permit: writer_permit,
+            _borrow: PhantomData,
         })
     }
 
@@ -1756,8 +1760,8 @@ impl Db {
     }
 }
 
-// It is fine to not keep a lifetime: there is no way to use this type without the database being still in scope.
-// So, no use after free possible.
+// The handle is owned by the database handler (RwDbHandler or RoDbHandler) and stays valid while
+// any owner lives. Every use is a method of an owner (Db, Reader, Transaction, ReadableTransaction).
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct ColumnFamily(*mut rocksdb_column_family_handle_t);
 
@@ -2066,13 +2070,20 @@ impl Transaction {
     }
 }
 
+/// Readable transaction owning its database handle.
+///
+/// The lifetime parameter is kept only so borrowing callers compile unchanged. Readers and
+/// iterators still borrow the transaction, so none can outlive it.
 pub struct ReadableTransaction<'a> {
-    db: &'a RwDbHandler,
+    // Field drop order: the database handle is released after the Drop body destroyed the
+    // batch, options and snapshot, and before the writer permit (which owns its own gate).
+    db: Arc<RwDbHandler>,
     batch: *mut rocksdb_writebatch_wi_t,
     snapshot: *const rocksdb_snapshot_t,
     read_options: *mut rocksdb_readoptions_t,
     keyed_outcome: Option<KeyedTransactionOutcome>,
     _writer_permit: WriterPermit,
+    _borrow: PhantomData<&'a ()>,
 }
 
 struct KeyedTransactionOutcome {
@@ -2089,6 +2100,8 @@ enum KeyedTransactionOutcomePhase {
     Terminal,
 }
 
+// The raw batch, snapshot and options pointers are exclusively owned and mutated only through
+// &mut self; shared use is thread-safe RocksDB reads. The Arc keeps the Send + Sync database alive.
 unsafe impl Send for ReadableTransaction<'_> {}
 unsafe impl Sync for ReadableTransaction<'_> {}
 
@@ -2097,7 +2110,7 @@ impl Drop for ReadableTransaction<'_> {
         if let Some(outcome) = &mut self.keyed_outcome {
             if outcome.phase == KeyedTransactionOutcomePhase::Staging
                 && put_sync(
-                    self.db,
+                    &self.db,
                     &outcome.column_family,
                     &outcome.key,
                     &outcome.rolled_back_value,
@@ -2129,7 +2142,7 @@ impl ReadableTransaction<'_> {
     pub fn reader(&self) -> Reader<'_> {
         Reader {
             inner: InnerReader::Transaction(TransactionReader {
-                db: self.db,
+                db: &self.db,
                 batch: self.batch,
             }),
             options: unsafe { oxrocksdb_readoptions_create_copy(self.read_options) },
@@ -2222,7 +2235,7 @@ impl ReadableTransaction<'_> {
         };
         self.keyed_outcome_mut()?.phase = KeyedTransactionOutcomePhase::CommitAttempted;
         put_sync(
-            self.db,
+            &self.db,
             &column_family,
             &key,
             commit_attempted_value,
@@ -2260,7 +2273,7 @@ impl ReadableTransaction<'_> {
             ));
         }
         put_sync(
-            self.db,
+            &self.db,
             &outcome.column_family,
             &outcome.key,
             &outcome.rolled_back_value,
@@ -2577,6 +2590,9 @@ fn available_file_descriptors() -> io::Result<Option<u64>> {
 mod tests {
     use super::*;
     use std::io::ErrorKind;
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
     use tempfile::TempDir;
 
     fn prefix_scan_keys(
@@ -2843,6 +2859,276 @@ mod tests {
         assert!(OpenLease::acquire_existing(directory.path()).is_err());
         drop(lease);
         OpenLease::acquire_existing(directory.path())?;
+        Ok(())
+    }
+
+    const WORKER_TIMEOUT: Duration = Duration::from_secs(10);
+    const BLOCKED_WINDOW: Duration = Duration::from_millis(200);
+    const START_TIMEOUT: Duration = Duration::from_millis(50);
+
+    fn assert_static<T: 'static>(_: &T) {}
+
+    fn open_db(path: &Path) -> Result<Db, StorageError> {
+        Db::open_read_write(path, vec![], DbOptions::default())
+    }
+
+    fn start_with_timeout(
+        db: &Db,
+    ) -> Result<ReadableTransaction<'static>, StorageTransactionStartError> {
+        db.start_readable_transaction_with_control(
+            &TransactionStartControl::new().with_timeout(START_TIMEOUT),
+            Instant::now(),
+        )
+    }
+
+    fn start_keyed(
+        db: &Db,
+        column_family: &ColumnFamily,
+    ) -> Result<ReadableTransaction<'static>, StorageError> {
+        db.start_keyed_readable_transaction_with_control(
+            column_family,
+            [b"key", b"alternative"],
+            b"staging",
+            b"rolled-back",
+            &TransactionStartControl::new(),
+            Instant::now(),
+        )
+        .map_err(|_| StorageError::Other("keyed transaction failed to start".into()))
+    }
+
+    fn read_value(path: &Path, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
+        let db = open_db(path)?;
+        let column_family = db.column_family("default")?;
+        Ok(db.get(&column_family, key)?.map(|value| value.to_vec()))
+    }
+
+    #[test]
+    fn readable_transaction_outlives_original_db_handle() -> Result<(), StorageError> {
+        let dir = TempDir::new()?;
+        let db = open_db(dir.path())?;
+        let cf = db.column_family("default")?;
+        db.insert(&cf, b"st-removed", b"old")?;
+        db.insert(&cf, b"other", b"old")?;
+
+        let mut transaction = db.start_readable_transaction()?;
+        assert_static(&transaction);
+        drop(db);
+
+        transaction.insert(&cf, b"st-new", b"new");
+        transaction.remove(&cf, b"st-removed");
+        {
+            let reader = transaction.reader();
+            assert_eq!(reader.get(&cf, b"st-new")?.as_deref(), Some(&b"new"[..]));
+            assert!(reader.get(&cf, b"st-removed")?.is_none());
+            assert!(reader.contains_key(&cf, b"other")?);
+            assert_eq!(
+                prefix_scan_keys(&reader, &cf, b"st-")?,
+                vec![b"st-new".to_vec()]
+            );
+        }
+        // The transaction alone keeps the database and its lock alive.
+        assert!(open_db(dir.path()).is_err());
+
+        transaction.commit()?;
+
+        let reopened = open_db(dir.path())?;
+        let cf = reopened.column_family("default")?;
+        assert_eq!(reopened.get(&cf, b"st-new")?.as_deref(), Some(&b"new"[..]));
+        assert!(reopened.get(&cf, b"st-removed")?.is_none());
+        assert!(reopened.get(&cf, b"other")?.is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn dropping_an_owned_readable_transaction_rolls_back_and_releases_the_database()
+    -> Result<(), StorageError> {
+        let dir = TempDir::new()?;
+        let db = open_db(dir.path())?;
+        let cf = db.column_family("default")?;
+        db.insert(&cf, b"base", b"1")?;
+        let mut transaction = db.start_readable_transaction()?;
+        drop(db);
+        transaction.insert(&cf, b"staged", b"2");
+        transaction.remove(&cf, b"base");
+        drop(transaction);
+
+        let reopened = open_db(dir.path())?;
+        let cf = reopened.column_family("default")?;
+        assert!(reopened.get(&cf, b"staged")?.is_none());
+        assert_eq!(reopened.get(&cf, b"base")?.as_deref(), Some(&b"1"[..]));
+        Ok(())
+    }
+
+    #[test]
+    fn owned_readable_transaction_keeps_snapshot_isolation() -> Result<(), StorageError> {
+        let dir = TempDir::new()?;
+        let db = open_db(dir.path())?;
+        let cf = db.column_family("default")?;
+        db.insert(&cf, b"base", b"1")?;
+        let probe = db.clone();
+        let mut transaction = db.start_readable_transaction()?;
+        drop(db);
+
+        transaction.insert(&cf, b"staged", b"2");
+        assert!(probe.get(&cf, b"staged")?.is_none());
+        probe.insert(&cf, b"external", b"3")?;
+        {
+            let reader = transaction.reader();
+            assert!(reader.get(&cf, b"external")?.is_none());
+            assert_eq!(reader.get(&cf, b"base")?.as_deref(), Some(&b"1"[..]));
+            assert_eq!(reader.get(&cf, b"staged")?.as_deref(), Some(&b"2"[..]));
+        }
+        transaction.commit()?;
+
+        assert_eq!(probe.get(&cf, b"staged")?.as_deref(), Some(&b"2"[..]));
+        assert_eq!(probe.get(&cf, b"external")?.as_deref(), Some(&b"3"[..]));
+        Ok(())
+    }
+
+    #[test]
+    fn owned_readable_transaction_holds_and_releases_the_writer_permit() -> Result<(), StorageError>
+    {
+        let dir = TempDir::new()?;
+        let db = open_db(dir.path())?;
+        let probe = db.clone();
+        let transaction = db.start_readable_transaction()?;
+        drop(db);
+
+        let blocked = start_with_timeout(&probe);
+        assert!(matches!(
+            blocked,
+            Err(StorageTransactionStartError::TimedOut)
+        ));
+        drop(blocked);
+
+        transaction.commit()?;
+        let after_commit = start_with_timeout(&probe);
+        assert!(after_commit.is_ok());
+        drop(after_commit);
+
+        let transaction = probe.start_readable_transaction()?;
+        let blocked = start_with_timeout(&probe);
+        assert!(matches!(
+            blocked,
+            Err(StorageTransactionStartError::TimedOut)
+        ));
+        drop(blocked);
+        drop(transaction);
+        let after_drop = start_with_timeout(&probe);
+        assert!(after_drop.is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn blocked_transaction_start_proceeds_after_owned_transaction_release()
+    -> Result<(), StorageError> {
+        let dir = TempDir::new()?;
+        let db = open_db(dir.path())?;
+        let worker_db = db.clone();
+        let transaction = db.start_readable_transaction()?;
+        drop(db);
+
+        let (sender, receiver) = mpsc::channel();
+        let worker = thread::spawn(move || -> Result<(), StorageError> {
+            let started = worker_db.start_readable_transaction()?;
+            sender
+                .send(())
+                .map_err(|_| StorageError::Other("main thread went away".into()))?;
+            drop(started);
+            Ok(())
+        });
+        assert!(matches!(
+            receiver.recv_timeout(BLOCKED_WINDOW),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        drop(transaction);
+        assert!(receiver.recv_timeout(WORKER_TIMEOUT).is_ok());
+        worker
+            .join()
+            .map_err(|_| StorageError::Other("worker panicked".into()))??;
+        Ok(())
+    }
+
+    #[test]
+    fn keyed_drop_after_original_handle_release_records_rolled_back() -> Result<(), StorageError> {
+        let dir = TempDir::new()?;
+        let db = open_db(dir.path())?;
+        let cf = db.column_family("default")?;
+        let mut transaction = start_keyed(&db, &cf)?;
+        drop(db);
+        transaction.insert(&cf, b"data", b"staged");
+        drop(transaction);
+
+        assert_eq!(
+            read_value(dir.path(), b"key")?.as_deref(),
+            Some(&b"rolled-back"[..])
+        );
+        assert!(read_value(dir.path(), b"data")?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn keyed_commit_after_original_handle_release_publishes_and_marks_committed()
+    -> Result<(), StorageError> {
+        let dir = TempDir::new()?;
+        let db = open_db(dir.path())?;
+        let cf = db.column_family("default")?;
+        let mut transaction = start_keyed(&db, &cf)?;
+        drop(db);
+        transaction.insert(&cf, b"data", b"staged");
+        transaction.commit_keyed(b"attempted", b"committed")?;
+
+        assert_eq!(
+            read_value(dir.path(), b"key")?.as_deref(),
+            Some(&b"committed"[..])
+        );
+        assert_eq!(
+            read_value(dir.path(), b"data")?.as_deref(),
+            Some(&b"staged"[..])
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn keyed_rollback_after_original_handle_release_records_rolled_back() -> Result<(), StorageError>
+    {
+        let dir = TempDir::new()?;
+        let db = open_db(dir.path())?;
+        let cf = db.column_family("default")?;
+        let mut transaction = start_keyed(&db, &cf)?;
+        drop(db);
+        transaction.insert(&cf, b"data", b"staged");
+        transaction.rollback_keyed()?;
+
+        assert_eq!(
+            read_value(dir.path(), b"key")?.as_deref(),
+            Some(&b"rolled-back"[..])
+        );
+        assert!(read_value(dir.path(), b"data")?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn keyed_commit_failure_stays_commit_attempted_and_drop_does_not_roll_back()
+    -> Result<(), StorageError> {
+        let dir = TempDir::new()?;
+        let db = open_db(dir.path())?;
+        let cf = db.column_family("default")?;
+        db.arm_transaction_outcome_fault(TransactionOutcomeFaultPoint::FinalBatchBefore)?;
+        let mut transaction = start_keyed(&db, &cf)?;
+        drop(db);
+        transaction.insert(&cf, b"data", b"staged");
+        assert!(
+            transaction
+                .commit_keyed(b"attempted", b"committed")
+                .is_err()
+        );
+
+        assert_eq!(
+            read_value(dir.path(), b"key")?.as_deref(),
+            Some(&b"attempted"[..])
+        );
+        assert!(read_value(dir.path(), b"data")?.is_none());
         Ok(())
     }
 }

@@ -232,3 +232,44 @@ integration. Prior rejected formatting review and original receipts remain.
 Original outcome `task-1787670632421-dkucm8` uses migration registry alias
 `task-1790657013522-cscfy2`; the umbrella remains open. No HTTP exposure,
 qualification, promotion or publication follows. ADR remains Proposed.
+
+## Owned native RocksDB transaction (2026-09-29)
+
+`storage/rocksdb_wrapper.rs` now retains `Arc<RwDbHandler>` in all three
+readable transaction start paths, returning a native `'static` transaction.
+The covariant lifetime marker preserves existing caller compatibility;
+readers still borrow the transaction. Native batch, options and snapshot are
+destroyed before the database owner is released. Keyed outcome transitions
+and writer-permit semantics remain unchanged. No new unsafe lifetime extension
+or public owned `Store` transaction is introduced. Exact file SHA256:
+`3151b51d5591c13cf373de66106288b977fe37d4c3c61008e7437cc63a985156`.
+
+Independent lane in `workflow-klmGGY`, run
+`cd8f7900-02a1-494a-a8e2-1d9892402b97`, used Sonnet 5.5/high ordinary roles,
+Opus/high formatting-only repair and fresh reviewer
+`e076c4cc-4721-465a-9d70-be9060149df9` (ACCEPT). Repaired candidate wrapper
+tests pass 15/15 (`run-sYeHvO`); transaction integration tests pass 12/12
+(`run-nqL2s4`). Formatter passes. Candidate default library/test Clippy exits
+0 with warnings, not a clean-lint claim. Negative review and earlier checks
+remain preserved.
+
+Lane receipt SHA256:
+`0f73a316a26f68ffa22272aa6509b757066df4592139b3fb6553187b54bd98c0`.
+All 24 event/check/handoff hashes verified; structured MCP readback and native
+learning retained. After cohort drain, source/read/evaluator inputs were
+revalidated against accepted memory prerequisite `14fd64909`. Its private
+memory change and this ADR's evidence append do not alter the RocksDB packet's
+caller contract. The combined canonical source was rebuilt and tested:
+
+- Default storage suite: 108 passed, 1 ignored (`run-ds3LEK`).
+- RDF 1.2 storage suite: 107 passed, 2 ignored (`run-DV3gSO`).
+- Default and RDF 1.2 transaction contracts: 12 passed each
+  (`run-3foZAS`, `run-RZVlRN`).
+
+Storage-suite counts are top-level; nested helper summaries make generic
+runner aggregates larger. Exact canonical source/sourceAfter bindings were
+verified before this evidence append. Registry task
+`task-1790657013821-0hn394` closes only this native prerequisite. Remaining
+backend-storage ownership, public owned handle, evaluator and lease/protocol
+gates stay on original G4.5 outcome. ADR remains Proposed; no HTTP exposure,
+qualification, promotion or publication.
