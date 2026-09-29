@@ -9,6 +9,24 @@
 ## September 29 ordinary routing and resumption amendment
 September29 credit-route audit: future confirmed nonexecuted HTTP402 fallback uses Sonnet5.5/medium in both direct workflow default and learned candidate selection. Sol/medium, Opus capability repair, explicit pins and historical evidence stay unchanged. API/runtime join18/18 and syntax checks pass locally; cloud adoption remains separate.
 
+GCP adoption (September 29, 16:12 UTC): sole owner fast-forwarded clean main from
+accepted application `154551eaf` to `5dbe4537d`, including `bfb4817ae`. Exact
+seven-path custody check preceded integration; active isolated Cargo commands
+and historical candidate pins stayed unchanged. Node 24.14.1 stream/host/API/runtime
+join passes 59/59, plus syntax checks. Log
+`target/engineering-delivery/redacted-progress-cloud-deploy-tests.log` SHA256
+`3b557e0861559d055b3307195258f2494a2bf31058c4d861100d9afd3d4a2b38`.
+Actual overlapping native calls use stream helper SHA256
+`f3bbc5277cdfb39e23ac6ba9e240151009d372f9f34629ccc8afe71ba7fb20b1`:
+Opus repair `8bc64dff-c552-4306-96a3-80b9b94f976b` (PID 3531813) and Sonnet
+fresh review `78804faf-8d9d-4580-8a55-79c32835156f`, request 17 (PID 3531967).
+Both record advancing substantive activity and reset inactivity counters.
+This is invocation/progress evidence, not completed application acceptance or
+live API-fallback proof. Earlier stalls and negative receipts remain unchanged;
+their uncaptured stream framing is not retrospectively inferred. Candidates
+still require current-source/read/evaluator revalidation before integration.
+No push, qualification, new scheduler or transport substitution. ADR remains Proposed.
+
 ### Ordinary native host stream repair (September 29)
 
 Owner authorizes this bounded repair separately from the closed fixture-timeout rollout. The ignored GCP host driver
