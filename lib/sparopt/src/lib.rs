@@ -4,12 +4,18 @@
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/oxigraph/oxigraph/main/logo.svg")]
 #![doc(html_logo_url = "https://raw.githubusercontent.com/oxigraph/oxigraph/main/logo.svg")]
 
+pub use crate::analytical::{
+    AnalyticalBudgetKind, AnalyticalEligibility, AnalyticalEligibilityLimits,
+    AnalyticalEligibilityLimitsError, AnalyticalEligibilityOutcome, AnalyticalEligibilityReport,
+    AnalyticalGraphScope, AnalyticalUnsupportedReason,
+};
 pub use crate::cardinality::CardinalityEstimator;
 pub use crate::optimizer::{
     BoundedJoinCostModel, BoundedJoinPlanning, JoinPlanningReport, Optimizer,
 };
 
 pub mod algebra;
+mod analytical;
 mod cardinality;
 mod optimizer;
 mod type_inference;

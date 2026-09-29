@@ -2,10 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-08-26
+- Updated: 2026-09-29
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; the existing `sparopt` and
-  `spareval` paths remain the only production SPARQL planner and executor
+- Implementation status: bounded opt-in eligibility reporting implemented as
+  evidenced below; the existing `sparopt` and `spareval` paths remain the only
+  production SPARQL planner and executor
 - Programme task: `task-1787728711087-ibcg53` (G4.8)
 - **Depends on**:
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)
@@ -211,3 +212,44 @@ storage index orders are implemented under
 operator, frozen evaluator, or benchmark receipt exists yet; G4.8 owns the
 research task. This ADR is an authorization boundary, not an implementation or
 performance claim.
+
+## Bounded eligibility report (2026-09-29)
+
+`sparopt::AnalyticalEligibility` examines one complete borrowed algebra component
+without rewriting it or selecting execution. The conservative profile admits
+only variable-connected inner joins of at least two quad patterns in one fixed
+graph. Explicit positive pattern, variable, node and depth limits bound an
+iterative walk. Typed unsupported and budget outcomes are advisory, never
+permission for an empty answer or fallback. Reports exclude terms and graph IRIs.
+Default optimization and evaluation remain unchanged. No cursor, WCOJ operator,
+server surface, Auto policy or frozen evaluator is implemented by this slice.
+
+Ordinary workflow `25e5d38a-ae63-4df0-9529-1fd922874c98` used native Sonnet
+5.5/high planning, authoring and fresh review, with Opus/high formatting repair.
+Fresh reviewer `de21ab9b-80b4-4f8a-863f-ca4e9afbe4c1` accepted exact source.
+Candidate checks pass 11 default integration, 13 all-feature integration and
+26 all-feature library tests. Canonical checks repeat 11 (`run-ZXsWXx`) and
+39 (`run-h1UQZZ`), with stable source observations. Scoped formatter passes;
+candidate all-feature/all-target Clippy exits 0 with warnings, not clean lint.
+
+Exact source SHA256:
+
+- `lib/sparopt/src/lib.rs`:
+  `244c5b1463b802ca3fc7a63964200fe9e4177c4fc17a389593017783f29e7cd6`
+- `lib/sparopt/src/analytical.rs`:
+  `b608a82b20e6ff599cb8de83bad5873dd4d7745188b93c5e6bc594dd47502e6a`
+- `lib/sparopt/tests/analytical_eligibility.rs`:
+  `ccf61f13f1d4456b92b8b292b2eb6457065cf859b48e62db9fe168c586e722b6`
+
+Lane receipt SHA256:
+`5ff526c14ff1e05f2bf8f4b76b07dc91efa68edeebb4527c47f22d3c50a8c7b5`.
+All 28 event/check/handoff references verified; structured MCP handoff readback
+and native learning retained. Batch ended incomplete due to separate rejected
+lanes. Its timed-out external lease worker subsequently terminated; no batch or
+native action remained live before this canonical integration. Negative sibling
+receipts remain unchanged. Accepted base was `c47df083f`; 15,217 unchanged
+candidate files and 11 reviewer read dependencies matched canonical source.
+This bounded G4.8 slice uses migration registry alias
+`task-1790674619597-vimwfm`; original outcome `task-1787728711087-ibcg53` remains
+open. No qualification, promotion, publication or performance claim follows.
+ADR remains Proposed for the outstanding analytical execution programme.
