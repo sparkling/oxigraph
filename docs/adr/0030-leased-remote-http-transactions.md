@@ -4,8 +4,9 @@
 - **Date**: 2026-08-25
 - Updated: 2026-09-29
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; the server has no remote transaction
-  route, lease registry, or owned server transaction handle
+- Implementation status: native owned storage and additive public owned Store
+  handle implemented within the bounded evidence below. The server has no
+  remote transaction route, lease registry, or owned server transaction handle
 - Programme task: `task-1787670632421-dkucm8` (G4.5)
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
@@ -201,8 +202,9 @@ Current request-owned transaction paths are in
 is in
 [`store.rs`](../../lib/oxigraph/src/store.rs), with negotiated persistence
 traits in [`transactional.rs`](../../lib/oxigraph/src/store/transactional.rs).
-G4.5 owns implementation. The bounded prerequisite below is accepted; the
-owned public handle, evaluator and leased HTTP profile remain unimplemented.
+G4.5 owns implementation. The bounded native ownership and public handle slices
+below are accepted; the frozen independent evaluator and leased HTTP profile
+remain open.
 
 ## Owned memory writer permit (2026-09-29)
 
@@ -397,3 +399,62 @@ evidence append. Reader borrowing remains enforced by unchanged signatures;
 this slice adds no compile-fail reader test. Original G4.5 registry alias
 `task-1790657013522-cscfy2` stays open for public owned handle/evaluator and
 lease/protocol gates. ADR remains Proposed; no qualification or publication.
+
+## Additive public owned Store handle (2026-09-29)
+
+`OwnedTransaction` wraps the existing `Transaction<'static>` and reuses its
+query/update bindings, namespace operations and consuming terminals. The
+separate `OwnedTransactionalDataset` extension preserves the minimal traits
+and borrowed APIs. Owned and borrowed negotiation share unchanged requirement
+and admission behavior. No unsafe lifetime extension, clone, savepoint,
+per-update atomicity or HTTP capability is introduced. Failed caller-managed
+updates can retain staged state until explicit rollback or drop.
+
+Exact source SHA256 values:
+
+- `store.rs`: `7c4411d585b8361b0ae5063989db5525b88f5e0a03ae67c652a2dddc21f505e6`.
+- `store/transactional.rs`: `71b8c5db75dc50303d181aeb1e47bf53bb31129b03321762763fb23520452334`.
+- `tests/owned_transaction.rs`: `31a8adbc87ecb78711b328350dafd42a571837e489b1278763f5431aac67c350`.
+
+Original ordinary batch `workflow-pJ0IgW`, run
+`da6c018f-7bd5-403a-b93c-b314670671f7`, failed with an inconclusive partial
+Sonnet proposal after full-file output overflow. Negative lane SHA256
+`83a7c54d059f7ab761a6479595b8b26a00ec3051f3a29c47aa99618806e35915`
+remains unchanged; it is not successful workflow or acceptance evidence.
+Root applied exact Opus repair instructions in isolated `source-xnYgHD`,
+then bounded test fixes and formatting. Initial E0521 fixture failure and
+fresh review rejection for test gaps remain preserved. Same-task Opus repair
+added negotiated metrics, an external owned-extension backend and paired
+positive/compile-fail borrow examples, without changing production behavior.
+
+Fresh independent Sonnet 5.5/high review run
+`001620e9-adc3-4748-bd7b-e59a01411bba`, reviewer
+`06fad798-4ee9-498d-aff9-6da5fbd99028`, accepts exact repaired source.
+Response SHA256:
+`55932facc7ab264722044df485a1ac9d4cecacf03b20589e28dc7eaeb5f3926e`.
+All native/check actions drained before integration. Revalidation covered
+15,213 unchanged included source inputs, nine submodule pins, 16 review
+dependencies and exact request/response identities and file hashes.
+
+Candidate default/RDF 1.2 impacted transaction suites pass 61 each;
+no-default checks pass 19; Store doctests pass 42, including two compile-fail
+cases and a passing positive control. Stable rustdoc does not enforce the
+error-code annotation. Formatter passes. Current-source Clippy exits 0 with
+79 owned-test warnings plus existing warnings, not warning-free evidence.
+Direct observations are in
+`target/engineering-delivery/g45-public-direct-repaired-observations.json`,
+not manufactured runner receipts.
+
+Canonical default/RDF 1.2 impacted suites pass 61 each (`run-TecY2W`,
+`run-kRBvxu`); Store unit tests pass 183 (`run-a97Zi8`, 1482.22 seconds).
+These are top-level counts, not nested process-helper totals. Source and
+sourceAfter bindings verified before this evidence append. Canonical RDF 1.2
+Store doctests pass 42 via direct Cargo, session 37012: the recorded runner
+rejects `--doc`, so no runner receipt is claimed for that command.
+
+This accepts the bounded public API and ordinary regression tests, not the
+frozen independent public evaluator gate. The extension's associated owned
+type requires `'static`, not `Send`; a generic server must impose its own
+thread-safety bound. Owned keyed/governed openers, frozen evaluator and
+lease/protocol stages remain on G4.5. ADR remains Proposed. No qualification,
+promotion, HTTP exposure or publication follows.

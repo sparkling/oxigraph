@@ -155,7 +155,7 @@ pub use text_index::{
 pub use transaction_metrics::{
     TransactionDurationHistogram, TransactionMetrics, TransactionObservation,
 };
-pub use transactional::{TransactionalDataset, WritableDataset};
+pub use transactional::{OwnedTransactionalDataset, TransactionalDataset, WritableDataset};
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 pub use upgrade::{
     PreparedUpgrade, SchemaUpgradeActivation, SchemaUpgradeOptions, SchemaUpgradeReceipt,
@@ -1161,6 +1161,70 @@ impl Store {
     pub fn start_transaction(&self) -> Result<Transaction<'_>, StorageError> {
         Ok(Transaction {
             inner: self.storage.start_readable_transaction()?,
+        })
+    }
+
+    /// Starts a transaction that owns its storage lifetime.
+    ///
+    /// The returned [`OwnedTransaction`] provides the same staged RDF,
+    /// named-graph topology, namespace, query, update, commit and rollback
+    /// behavior as [`Store::start_transaction`], but does not borrow this
+    /// store. Admission is unbounded; use
+    /// [`OwnedTransactionalDataset::start_owned_transaction_with_control`]
+    /// for negotiated, bounded or cancellable admission.
+    ///
+    /// Usage example:
+    /// ```
+    /// use oxigraph::model::*;
+    /// use oxigraph::store::Store;
+    ///
+    /// let store = Store::new()?;
+    /// let ex = NamedNode::new("http://example.com")?;
+    /// let quad = Quad::new(ex.clone(), ex.clone(), ex, GraphName::DefaultGraph);
+    ///
+    /// let mut transaction = store.start_owned_transaction()?;
+    /// transaction.as_transaction_mut().insert(quad.clone());
+    /// assert!(transaction.as_transaction().contains(&quad)?);
+    /// assert!(!store.contains(&quad)?);
+    /// transaction.commit()?;
+    /// assert!(store.contains(&quad)?);
+    /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
+    /// ```
+    pub fn start_owned_transaction(&self) -> Result<OwnedTransaction, StorageError> {
+        Ok(OwnedTransaction {
+            inner: Transaction {
+                inner: self.storage.start_readable_transaction()?,
+            },
+        })
+    }
+
+    /// Rejects unmet requirements before any storage call, then performs
+    /// bounded, cancellable writer admission.
+    fn start_negotiated_inner(
+        &self,
+        request: &TransactionRequest,
+        control: &TransactionStartControl,
+    ) -> Result<NegotiatedTransaction<Transaction<'static>>, TransactionStartError<StorageError>>
+    {
+        let started_at = std::time::Instant::now();
+        let effective = self.transaction_capabilities();
+        let unmet = effective.unmet_requirements(request.requirements());
+        if !unmet.is_empty() {
+            return Err(TransactionStartError::RequirementsNotMet { unmet, effective });
+        }
+        let inner = self
+            .storage
+            .start_readable_transaction_with_control(control, started_at)
+            .map_err(|error| match error {
+                StorageTransactionStartError::Cancelled => TransactionStartError::Cancelled,
+                StorageTransactionStartError::TimedOut => TransactionStartError::TimedOut,
+                StorageTransactionStartError::Backend(error) => {
+                    TransactionStartError::Backend(error)
+                }
+            })?;
+        Ok(NegotiatedTransaction {
+            transaction: Transaction { inner },
+            effective,
         })
     }
 
@@ -2307,6 +2371,202 @@ impl KeyedTransaction<'_> {
     }
 }
 
+/// A write transaction that owns its storage lifetime.
+///
+/// Returned by [`Store::start_owned_transaction`] and
+/// [`OwnedTransactionalDataset`]. Unlike [`Transaction`], it does not borrow
+/// the [`Store`] that opened it and may outlive that handle or move across
+/// threads. It is not clonable: [`commit`](Self::commit) and
+/// [`rollback`](Self::rollback) consume it, and dropping it before commit
+/// rolls back. Readers and SPARQL bindings borrow it through
+/// [`as_transaction`](Self::as_transaction) and
+/// [`as_transaction_mut`](Self::as_transaction_mut), so they cannot outlive a
+/// terminal call.
+///
+/// A failed SPARQL Update bound with `on_transaction` may leave staged state
+/// behind; the caller must roll back or drop the transaction to discard it.
+///
+/// Readers and query results must end before a terminal call:
+/// ```
+/// use oxigraph::sparql::SparqlEvaluator;
+/// use oxigraph::store::Store;
+///
+/// let store = Store::new()?;
+/// let transaction = store.start_owned_transaction()?;
+/// let quads = transaction.as_transaction().quads_for_pattern(None, None, None, None);
+/// drop(quads);
+/// transaction.commit()?;
+///
+/// let transaction = store.start_owned_transaction()?;
+/// let results = SparqlEvaluator::new()
+///     .parse_query("SELECT * WHERE { ?s ?p ?o }")?
+///     .on_transaction(transaction.as_transaction())
+///     .execute()?;
+/// drop(results);
+/// transaction.rollback()?;
+/// # Result::<_, Box<dyn std::error::Error>>::Ok(())
+/// ```
+///
+/// Holding a reader across [`commit`](Self::commit) is a borrow error:
+/// ```compile_fail,E0505
+/// use oxigraph::store::Store;
+///
+/// let store = Store::new()?;
+/// let transaction = store.start_owned_transaction()?;
+/// let quads = transaction.as_transaction().quads_for_pattern(None, None, None, None);
+/// transaction.commit()?;
+/// drop(quads);
+/// # Result::<_, Box<dyn std::error::Error>>::Ok(())
+/// ```
+///
+/// Holding a query result across [`rollback`](Self::rollback) is a borrow
+/// error:
+/// ```compile_fail,E0505
+/// use oxigraph::sparql::SparqlEvaluator;
+/// use oxigraph::store::Store;
+///
+/// let store = Store::new()?;
+/// let transaction = store.start_owned_transaction()?;
+/// let results = SparqlEvaluator::new()
+///     .parse_query("SELECT * WHERE { ?s ?p ?o }")?
+///     .on_transaction(transaction.as_transaction())
+///     .execute()?;
+/// transaction.rollback()?;
+/// drop(results);
+/// # Result::<_, Box<dyn std::error::Error>>::Ok(())
+/// ```
+#[must_use]
+pub struct OwnedTransaction {
+    inner: Transaction<'static>,
+}
+
+#[expect(
+    clippy::same_name_method,
+    reason = "the owned terminal calls deliberately mirror the WritableDataset API"
+)]
+impl OwnedTransaction {
+    /// Returns the staged transaction view for reads and query bindings.
+    pub const fn as_transaction(&self) -> &Transaction<'static> {
+        &self.inner
+    }
+
+    /// Returns the staged transaction for mutations and update bindings.
+    pub fn as_transaction_mut(&mut self) -> &mut Transaction<'static> {
+        &mut self.inner
+    }
+
+    /// Commits the transaction, atomically publishing its staged changes.
+    pub fn commit(self) -> Result<(), StorageError> {
+        self.inner.commit()
+    }
+
+    /// Discards every staged change and releases the writer.
+    pub fn rollback(self) -> Result<(), StorageError> {
+        WritableDataset::rollback(self.inner)
+    }
+}
+
+impl WritableDataset for OwnedTransaction {
+    type Error = StorageError;
+    type Quads<'a>
+        = Box<dyn Iterator<Item = Result<Quad, StorageError>> + 'a>
+    where
+        Self: 'a;
+    type NamedGraphs<'a>
+        = GraphNameIter<'a>
+    where
+        Self: 'a;
+
+    fn quads_for_pattern<'a>(
+        &'a self,
+        subject: Option<&NamedOrBlankNode>,
+        predicate: Option<&NamedNode>,
+        object: Option<&Term>,
+        graph_name: Option<Option<&NamedOrBlankNode>>,
+    ) -> Self::Quads<'a> {
+        WritableDataset::quads_for_pattern(&self.inner, subject, predicate, object, graph_name)
+    }
+
+    fn named_graphs(&self) -> Self::NamedGraphs<'_> {
+        WritableDataset::named_graphs(&self.inner)
+    }
+
+    fn contains_named_graph(&self, graph_name: &NamedOrBlankNode) -> Result<bool, Self::Error> {
+        WritableDataset::contains_named_graph(&self.inner, graph_name)
+    }
+
+    fn insert(&mut self, quad: Quad) -> Result<(), Self::Error> {
+        WritableDataset::insert(&mut self.inner, quad)
+    }
+
+    fn remove(&mut self, quad: &Quad) -> Result<(), Self::Error> {
+        WritableDataset::remove(&mut self.inner, quad)
+    }
+
+    fn insert_named_graph(&mut self, graph_name: NamedOrBlankNode) -> Result<(), Self::Error> {
+        WritableDataset::insert_named_graph(&mut self.inner, graph_name)
+    }
+
+    fn clear_graph(&mut self, graph_name: Option<&NamedOrBlankNode>) -> Result<(), Self::Error> {
+        WritableDataset::clear_graph(&mut self.inner, graph_name)
+    }
+
+    fn clear_all_named_graphs(&mut self) -> Result<(), Self::Error> {
+        WritableDataset::clear_all_named_graphs(&mut self.inner)
+    }
+
+    fn clear_all_graphs(&mut self) -> Result<(), Self::Error> {
+        WritableDataset::clear_all_graphs(&mut self.inner)
+    }
+
+    fn remove_named_graph(&mut self, graph_name: &NamedOrBlankNode) -> Result<(), Self::Error> {
+        WritableDataset::remove_named_graph(&mut self.inner, graph_name)
+    }
+
+    fn remove_all_named_graphs(&mut self) -> Result<(), Self::Error> {
+        WritableDataset::remove_all_named_graphs(&mut self.inner)
+    }
+
+    fn clear(&mut self) -> Result<(), Self::Error> {
+        WritableDataset::clear(&mut self.inner)
+    }
+
+    fn commit(self) -> Result<(), Self::Error> {
+        WritableDataset::commit(self.inner)
+    }
+
+    fn rollback(self) -> Result<(), Self::Error> {
+        WritableDataset::rollback(self.inner)
+    }
+}
+
+impl WritableNamespaceRegistry for OwnedTransaction {
+    type Namespaces<'a>
+        = NamespaceIter
+    where
+        Self: 'a;
+
+    fn namespaces(&self) -> Self::Namespaces<'_> {
+        WritableNamespaceRegistry::namespaces(&self.inner)
+    }
+
+    fn namespace(&self, prefix: &NamespacePrefix) -> Result<Option<Namespace>, Self::Error> {
+        WritableNamespaceRegistry::namespace(&self.inner, prefix)
+    }
+
+    fn set_namespace(&mut self, namespace: Namespace) -> Result<(), Self::Error> {
+        WritableNamespaceRegistry::set_namespace(&mut self.inner, namespace)
+    }
+
+    fn remove_namespace(&mut self, prefix: &NamespacePrefix) -> Result<(), Self::Error> {
+        WritableNamespaceRegistry::remove_namespace(&mut self.inner, prefix)
+    }
+
+    fn clear_namespaces(&mut self) -> Result<(), Self::Error> {
+        WritableNamespaceRegistry::clear_namespaces(&mut self.inner)
+    }
+}
+
 impl TransactionalDataset for Store {
     type Error = StorageError;
     type Transaction<'a> = Transaction<'a>;
@@ -2327,25 +2587,25 @@ impl NegotiatedTransactionalDataset for Store {
         control: TransactionStartControl,
     ) -> Result<NegotiatedTransaction<Self::Transaction<'_>>, TransactionStartError<Self::Error>>
     {
-        let started_at = std::time::Instant::now();
-        let effective = self.transaction_capabilities();
-        let unmet = effective.unmet_requirements(request.requirements());
-        if !unmet.is_empty() {
-            return Err(TransactionStartError::RequirementsNotMet { unmet, effective });
-        }
-        let inner = self
-            .storage
-            .start_readable_transaction_with_control(&control, started_at)
-            .map_err(|error| match error {
-                StorageTransactionStartError::Cancelled => TransactionStartError::Cancelled,
-                StorageTransactionStartError::TimedOut => TransactionStartError::TimedOut,
-                StorageTransactionStartError::Backend(error) => {
-                    TransactionStartError::Backend(error)
-                }
-            })?;
+        self.start_negotiated_inner(&request, &control)
+    }
+}
+
+impl OwnedTransactionalDataset for Store {
+    type OwnedTransaction = OwnedTransaction;
+
+    fn start_owned_transaction_with_control(
+        &self,
+        request: TransactionRequest,
+        control: TransactionStartControl,
+    ) -> Result<NegotiatedTransaction<Self::OwnedTransaction>, TransactionStartError<Self::Error>>
+    {
+        let started = self.start_negotiated_inner(&request, &control)?;
         Ok(NegotiatedTransaction {
-            transaction: Transaction { inner },
-            effective,
+            transaction: OwnedTransaction {
+                inner: started.transaction,
+            },
+            effective: started.effective,
         })
     }
 }

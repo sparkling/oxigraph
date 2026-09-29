@@ -1,3 +1,7 @@
+use super::{
+    NegotiatedTransaction, NegotiatedTransactionalDataset, TransactionRequest,
+    TransactionStartControl, TransactionStartError,
+};
 use crate::model::{NamedNode, NamedOrBlankNode, Quad, Term};
 use std::error::Error;
 
@@ -105,4 +109,43 @@ pub trait TransactionalDataset {
 
     /// Opens a new read/write transaction.
     fn start_transaction(&self) -> Result<Self::Transaction<'_>, Self::Error>;
+}
+
+/// Opt-in extension for datasets that can hand out a transaction owning its
+/// storage lifetime.
+///
+/// The owned transaction does not borrow the dataset that opened it and may
+/// outlive it. It is not clonable, and `commit` and `rollback` consume it.
+/// Dropping it before commit rolls back. Readers borrow the transaction, so
+/// a reader cannot outlive a terminal call. Unmet requirements are rejected
+/// before writer admission, admission observes the supplied bounded and
+/// cancellable control, and the exact effective capabilities are returned.
+///
+/// Errors during a caller-managed evaluation, such as a failed SPARQL Update
+/// bound to the owned transaction, may leave staged state behind. The caller
+/// must roll back or drop the transaction to discard it; no savepoint or
+/// per-update atomicity is implied.
+///
+/// [`TransactionalDataset`] and [`WritableDataset`] are unchanged, so existing
+/// implementations remain source compatible without implementing this trait.
+pub trait OwnedTransactionalDataset: NegotiatedTransactionalDataset {
+    /// A write transaction that owns its storage lifetime.
+    type OwnedTransaction: WritableDataset<Error = Self::Error> + 'static;
+
+    /// Negotiates and opens an owned transaction with bounded, cancellable
+    /// admission.
+    fn start_owned_transaction_with_control(
+        &self,
+        request: TransactionRequest,
+        control: TransactionStartControl,
+    ) -> Result<NegotiatedTransaction<Self::OwnedTransaction>, TransactionStartError<Self::Error>>;
+
+    /// Negotiates and opens an owned transaction with unbounded admission.
+    fn start_owned_transaction_with(
+        &self,
+        request: TransactionRequest,
+    ) -> Result<NegotiatedTransaction<Self::OwnedTransaction>, TransactionStartError<Self::Error>>
+    {
+        self.start_owned_transaction_with_control(request, TransactionStartControl::new())
+    }
 }
