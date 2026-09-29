@@ -7,6 +7,75 @@
 - **Related**: ADR-0017, ADR-0043, ADR-0048
 
 ## September 29 ordinary routing and resumption amendment
+
+### Ordinary native host stream repair (September 29)
+
+Owner authorizes this bounded repair separately from the closed fixture-timeout
+rollout. The ignored GCP host driver
+`target/engineering-delivery/native-request-20260929.mjs` previously accumulated
+buffered JSON/stdout/stderr without limits or inactivity detection and forwarded
+signals only to its direct child. Frozen invocations and historical receipts stay
+unchanged. Snapshot/hash attribution for the earlier 64.2s fixture remains unproven.
+
+`src/native/ordinary-stream.mjs` supplies reusable ordinary-host streaming and
+process-group cancellation, without changing frozen native workers, runtime
+watchdogs, routing, model pins, scheduler, learning or acceptance contracts.
+Tracked `src/native/ordinary-host.mjs` reproduces the driver invocation, native
+environment, exact response validation, private receipts and redacted console
+progress. The ignored driver delegates this seam rather than carrying its own
+spawn/capture/cancellation implementation. Claude uses `stream-json`, `--verbose`
+and `--include-partial-messages` with the unchanged native child environment.
+Parsed nonempty text, thinking and structured input deltas, genuine tool starts
+and matching tool results refresh activity; duplicate starts, unmatched results,
+tool-progress heartbeats, pings, stderr and unrecognized bytes do not.
+Warn after 120s inactivity and cancel after 300s. TERM targets the dedicated
+process group; KILL follows after 1s, with a bounded 5s drain. Dead leader alone
+does not release custody; unconfirmed descendants remain retained.
+
+Each NDJSON record is bounded to 2 MiB. Only the terminal result is retained as
+stdout; stderr capture is limited to 64 KiB with full-stream hash/count metadata.
+Tool correlation retains at most 4096 active IDs and 4096 recent completed IDs;
+overflow fails structurally, never authorizes an accepted result. Private failed
+receipts/candidates stay available. Exclusive mode-0600 progress
+journals contain only task/run/request/PID, timestamps, fixed event labels and
+counters, never prompts, reasoning, tool bodies or environment values. Body-free
+progress is throttled to 5s and flushed durably; warnings/stalls also reach the
+existing driver console. SIGINT/SIGTERM/SIGHUP cancel and drain. A host-exit guard
+best-effort kills an unsettled group without claiming reap or releasing custody.
+Stalls are local execution
+failures, not subscription outages or completed proposals. No automatic retry.
+Only explicit native authentication/model/provider outage diagnostics produce
+`unavailable`. Generic client errors, local signal exits, malformed/invalid
+results, structural output ceilings and inactivity stalls retain separate local
+failure evidence. Native output-token errors retain the existing inconclusive
+capability result only with a real native worker identity; no identity is invented.
+
+The GCP driver switches only between invocations and records driver/helper hashes.
+Fake-process tests cover healthy text/reasoning/structured deltas, heartbeat-only
+stall, warning reset, output bounds, UTF-8 chunks, duplicate terminal rejection,
+TERM-resistant descendants, escaped-pipe retained custody, cancellation, host
+exit/SIGHUP, journal failure, private/console progress and spawn failure.
+This slice does not implement remaining application outcomes or complete this ADR.
+
+Validated on Node24.14.1: seven-file focused/impacted join84/84, syntax/import and
+diff checks pass. Actual fresh Sonnet5.5/high review
+`fe9b6311-b8fb-4a1b-99d0-52913bd633cd` / worker
+`e7ae2708-ba2c-4521-b8cc-9fcc3b300dae` ACCEPT, response SHA256
+`f7339a03279da0ddd8ef8dbcca6fcd0f32051c33b86eed5bc5908c91f5589673`.
+The tracked host adapter executed PID2686000 with outputLimit128000, observed
+360 substantive events and confirmed child/pipe/group completion. Driver SHA256
+`0dd1e8ce8b83a95f68ae9711efcfc723aae5e7e99cb998f65cc90d8076b354df`;
+host helper `3c2e9d70705d9b4d913931c02fdf3d56a096552388bc0f9f3c566fdeed7fbf01`;
+stream helper `3c517fd41504ca5321f350134b3a9e92bcb3b36352398afdb86b59552d01bace`.
+Evidence: `target/engineering-delivery/resume-native/fe9b6311-b8fb-4a1b-99d0-52913bd633cd-1/`
+and `target/engineering-delivery/native-stream-attribution-join.log`.
+Prior rejected review and failed fixture-cleanup test remain negative evidence.
+Live proof covers healthy stream/driver wiring; timeout, cancellation, tool events
+and outage distinctions have fake-process proof, not forced live subscription
+failure. Container tests depend on orphan reaping; no cross-host parity claimed.
+
+### Earlier September 29 implementation evidence
+
 September29 early owner handoff implemented locally: coordinator no longer requires whole-batch drain before canonical integration. Owner-invoked `assertOwnerActionIndependent` checks complete retained cross-batch paths, canonical reads, resources and external-action custody; it is not automatic discovery, acceptance or a scheduler. Frozen snapshot reads survive unrelated canonical changes, while unknown/live overlapping reads, shared dependencies and unconfirmed actions retain holds. Normal receipt/source/check/review validation, serial canonical checks/build/commit and sole writer remain mandatory. Deterministic `ordinary-owner-handoff.test.mjs` uses actual upstream pool and production snapshots in a disposable main fixture: parent settles, owner commits, child snapshots accepted source while sibling remains running and its source observation stays unchanged. This is fixture proof, not native/GCP acceptance or hermetic isolation. Status replies do not pause authorized service/refill; explicit pause wins, host blockers are reported, and whole authorized frontier replaces any prior batch-size ceiling. Historical batch-drain proof below remains unchanged.
 Latest September 29 goal continuation authorizes root-owned GCP programme restart after local validation; this local proof performs no cloud or Rust programme actions. VM remains TERMINATED until root restarts it. Cloud `a33301f33` G4.3 WIP is preserved, not accepted. Ordinary planner/author/fresh review remain native `cc/claude-sonnet-5-5[1m]` / high via 9router; explicit pins, Opus repair, Codex coordinator, isolation and learning remain.
 September29 output-ceiling slice implemented: native Claude environment requests `CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000` unless a positive safe-integer operator override is present. Actual Claude invocation validation and coordinator bridge contract use this helper; Codex/API/effort/thinking unchanged. This is a requested output ceiling, not a generation target or usage cap; native client/model clamping still applies. Sources: https://platform.claude.com/docs/en/about-claude/models/overview and https://code.claude.com/docs/en/env-vars . Three earlier routing regressions failed on old defaults; final ten-file ordinary join passed98/98 with native-learning proof; API fixtures explicitly pin transport.

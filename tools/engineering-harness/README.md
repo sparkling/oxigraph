@@ -24,6 +24,38 @@ rejection permits lighter native Sonnet/Sol fallback, medium first.
 Auth errors, unknown completion and local request-cost refusal are not fallback.
 Native unavailability stops with exact client/model/error.
 
+Ordinary Claude host drivers use `runOrdinaryClaudeRequest` from
+`src/native/ordinary-host.mjs`, backed by `src/native/ordinary-stream.mjs`. Keep
+`nativeChildEnvironment('claude')` unchanged. The existing GCP driver uses this
+helper between invocations; frozen calls are never retrofitted. It streams partial
+events, warns at 120s without substantive content and cancels at 300s, drains its
+POSIX process group with bounded TERM/KILL, and reports unreleased custody.
+Private progress journals contain only validated task/run/request/PID metadata
+and counters. Never log raw stream, prompts, reasoning or tool bodies. Capture
+limits are structural, not subscription budgets. `stalled` is an execution
+failure, not provider unavailability; retain failed receipts/candidates and let
+owner decide recovery. No automatic retry or accepted result follows.
+Text/reasoning/structured deltas and genuine tool start/matched result count as
+activity; heartbeat traffic, duplicate starts and unmatched results do not.
+Warnings/stalls appear on the existing driver console as redacted
+`native-progress` records as well as the private journal. The tracked host adapter
+owns native argv/environment, signals, capture and receipts; reproduce wiring
+without copying the ignored GCP driver's historical task-specific prompt additions:
+
+```js
+import { runOrdinaryClaudeRequest } from './tools/engineering-harness/src/native/ordinary-host.mjs';
+const outcome = await runOrdinaryClaudeRequest({
+  request, requestPath, prompt: request.payload.prompt,
+  directory, reads: [], readSource, driverUrl: new URL(import.meta.url),
+});
+if (outcome.status === 'failed') process.exitCode = 1;
+```
+
+Use a fresh private directory per exact run/request, preserve failed artifacts,
+and forward only validated `outcome.response` through the existing bridge.
+Missing response or unreleased custody requires owner handling, never fabricated
+acceptance, automatic retry or a model/transport change.
+
 Both native hosts are allowed. Preserve configured subscription gateway settings;
 API credentials stay only in isolated API adapter, never native/tool/verifier
 children. Read `OPENROUTER_API_KEY` from environment; never print or commit it.
