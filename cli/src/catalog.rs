@@ -1,4 +1,4 @@
-//! Opt-in Linux catalog create/reconcile/open/quiesce. No server or destructive lifecycle API.
+//! Opt-in Linux catalog create/reconcile/open/quiesce/tombstone. No server or purge API.
 //!
 //! Root is private to one trusted OS owner. This is not a defense against another
 //! arbitrary same-uid filesystem writer. Directory device/inode and validated
@@ -12,8 +12,19 @@
 //! manager-owned handle exists, proved by the actual handle drop, and re-verifies
 //! materialization. This embedded seam exposes no query, lease or raw `Store`, so it
 //! makes no server query/lease cancellation claim. Receipts are minted only here.
+//!
+//! Tombstone (Linux): an explicit, opt-in, recovery-backed move into manager-owned
+//! trash, journaled by the `TombstoneIntent`, `TombstoneBackedUp` and `Tombstoned`
+//! phases. It needs the exact current `QuiesceReceipt`, no live handle, explicit finite
+//! backup bounds and injected logical time. A real `Store::backup_with_receipt`
+//! package is verified with `BackupReceipt::verify`, and its quads, named graphs and
+//! namespaces are compared record by record with the guarded source; the move happens
+//! only after its exact fingerprint is durably recorded. No purge, restore or server
+//! activation.
 mod codec;
 mod fs;
+#[cfg(target_os = "linux")]
+mod tombstone;
 
 use crate::lease::LogicalTime;
 use crate::repository::{
@@ -22,12 +33,14 @@ use crate::repository::{
 pub use codec::Phase;
 use codec::{Catalog, Entry, Materialized};
 use oxigraph::model::Quad;
-use oxigraph::store::{StorageError, Store, StoreVersionStatus};
+use oxigraph::store::{BackupError, StorageError, Store, StoreVersionStatus};
 use serde::{Deserialize, Serialize};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
+pub use tombstone::{TombstoneInfo, TombstoneLimits, TombstoneReceipt};
 
 /// Explicit operator ceilings; no production defaults inferred from this slice.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -72,6 +85,62 @@ impl ManagerLimits {
     }
 }
 
+/// Copy mirror of the typed `BackupError` kinds so backup failures stay typed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BackupFailure {
+    Unsupported,
+    UnsupportedPlatform,
+    InvalidPath,
+    Limit,
+    Cancelled,
+    TimedOut,
+    InvalidManifest,
+    FileMismatch,
+    CompletionIndeterminate,
+    Io,
+    Storage,
+    Governance,
+    Contributor,
+    Other,
+}
+
+impl BackupFailure {
+    /// Refusals that leave the source untouched and the outcome certain.
+    #[cfg_attr(not(target_os = "linux"), expect(dead_code))]
+    fn definite(self) -> bool {
+        matches!(
+            self,
+            Self::InvalidPath
+                | Self::Limit
+                | Self::Cancelled
+                | Self::TimedOut
+                | Self::Unsupported
+                | Self::UnsupportedPlatform
+        )
+    }
+}
+
+impl From<&BackupError> for BackupFailure {
+    fn from(error: &BackupError) -> Self {
+        match error {
+            BackupError::Unsupported => Self::Unsupported,
+            BackupError::UnsupportedPlatform => Self::UnsupportedPlatform,
+            BackupError::InvalidPath => Self::InvalidPath,
+            BackupError::Limit => Self::Limit,
+            BackupError::Cancelled => Self::Cancelled,
+            BackupError::TimedOut => Self::TimedOut,
+            BackupError::InvalidManifest => Self::InvalidManifest,
+            BackupError::FileMismatch => Self::FileMismatch,
+            BackupError::CompletionIndeterminate(_) => Self::CompletionIndeterminate,
+            BackupError::Io(_) => Self::Io,
+            BackupError::Storage(_) => Self::Storage,
+            BackupError::Governance(_) => Self::Governance,
+            BackupError::Contributor(_) => Self::Contributor,
+            _ => Self::Other,
+        }
+    }
+}
+
 /// Errors redact physical paths, IDs and underlying storage payloads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CatalogError {
@@ -93,6 +162,14 @@ pub enum CatalogError {
     Quiescing,
     /// Completion refused: a manager-owned handle still exists.
     Busy,
+    /// The checked retention deadline would overflow logical time.
+    Retention,
+    /// Injected logical time precedes the persisted intent time of this entry.
+    TimeRegression,
+    /// The recovery package would omit or depend on unsupported contributor inputs.
+    UnsupportedProfile,
+    /// Typed recovery backup or package verification failure.
+    Backup(BackupFailure),
 }
 impl fmt::Display for CatalogError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -116,6 +193,12 @@ impl From<StorageError> for CatalogError {
     }
 }
 
+impl From<BackupError> for CatalogError {
+    fn from(error: BackupError) -> Self {
+        Self::Backup(BackupFailure::from(&error))
+    }
+}
+
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FaultPoint {
@@ -133,6 +216,15 @@ pub enum FaultPoint {
     AfterClosed,
     BeforeVerification,
     BeforeStoreOpen,
+    BeforeTombstoneIntent,
+    AfterTombstoneIntent,
+    BeforeBackup,
+    AfterBackup,
+    AfterBackupRecorded,
+    BeforeMove,
+    AfterMove,
+    AfterMoveSynced,
+    AfterTombstoned,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -210,6 +302,17 @@ fn new_uuid() -> String {
         &hex[16..20],
         &hex[20..]
     )
+}
+
+#[cfg(not(target_os = "linux"))]
+#[expect(clippy::multiple_inherent_impl, clippy::unused_self)]
+impl RepositoryManager {
+    fn reconcile_backed_up(&self, _index: usize) -> Result<(), CatalogError> {
+        Err(CatalogError::Unsupported)
+    }
+    fn tombstone_inventory(&self) -> Result<Vec<PathBuf>, CatalogError> {
+        Ok(Vec::new())
+    }
 }
 
 impl RepositoryManager {
@@ -338,26 +441,42 @@ impl RepositoryManager {
     }
 
     /// Bounded privileged inventory. Unknown entries remain untouched and nonready.
+    /// Unrecorded recovery packages and unknown trash entries are reported too. A
+    /// `Tombstoned` entry owns no source or staging path, so a recreated one is
+    /// reported as unknown, never adopted.
     pub fn orphan_inventory(&self) -> Result<Vec<PathBuf>, CatalogError> {
         self.usable()?;
         let catalog = self.catalog.borrow();
         let known: BTreeSet<_> = catalog
             .entries
             .iter()
+            .filter(|e| e.phase != Phase::Tombstoned)
             .flat_map(|e| {
                 [
                     self.root.path.join("repos").join(&e.uuid),
                     self.root.path.join("staging").join(&e.uuid),
                 ]
             })
-            .chain(["catalog", "manager.lock", "repos", "staging"].map(|p| self.root.path.join(p)))
+            .chain(
+                [
+                    "catalog",
+                    "manager.lock",
+                    "repos",
+                    "staging",
+                    "backups",
+                    "trash",
+                ]
+                .map(|p| self.root.path.join(p)),
+            )
             .collect();
-        Ok(self
+        let mut found: Vec<PathBuf> = self
             .root
             .scan(catalog.limits)?
             .into_iter()
             .filter(|p| !known.contains(p))
-            .collect())
+            .collect();
+        found.extend(self.tombstone_inventory()?);
+        Ok(found)
     }
 
     pub fn create(
@@ -389,6 +508,7 @@ impl RepositoryManager {
             phase: Phase::Reserved,
             changed_at: next.generation,
             evidence: None,
+            tombstone: None,
         });
         self.persist(next, index)?;
         self.point(FaultPoint::AfterReservation)?;
@@ -440,7 +560,11 @@ impl RepositoryManager {
     /// proven materialization/identity mismatch) turns it `Failed`. Capacity,
     /// compatibility and transient I/O refusals keep it `Quiescing` without a write,
     /// so one repository never blocks reopening the root; `complete_quiesce`
-    /// re-verifies. Nothing is initialized, moved or deleted.
+    /// re-verifies. Tombstone phases are never guessed from directory presence:
+    /// `TombstoneIntent` and `Tombstoned` are left untouched, and `TombstoneBackedUp`
+    /// completes the move only after the exact recorded package, the guarded source (or
+    /// trash) evidence and their record-by-record content equality verify; otherwise
+    /// it is preserved unchanged and non-ready. Nothing is initialized or deleted.
     pub fn reconcile(&self) -> Result<(), CatalogError> {
         self.usable()?;
         if !self.active.borrow().is_empty() {
@@ -448,7 +572,14 @@ impl RepositoryManager {
         }
         let entries = self.catalog.borrow().entries.clone();
         for (index, entry) in entries.iter().enumerate() {
-            if matches!(entry.phase, Phase::Failed | Phase::Closed) {
+            if matches!(
+                entry.phase,
+                Phase::Failed | Phase::Closed | Phase::TombstoneIntent | Phase::Tombstoned
+            ) {
+                continue;
+            }
+            if entry.phase == Phase::TombstoneBackedUp {
+                self.reconcile_backed_up(index)?;
                 continue;
             }
             let staging = self.root.path.join("staging").join(&entry.uuid);
