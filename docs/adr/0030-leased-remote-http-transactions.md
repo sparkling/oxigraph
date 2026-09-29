@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-08-25
+- Updated: 2026-09-29
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; the server has no remote transaction
   route, lease registry, or owned server transaction handle
@@ -201,4 +201,34 @@ Current request-owned transaction paths are in
 is in
 [`store.rs`](../../lib/oxigraph/src/store.rs), with negotiated persistence
 traits in [`transactional.rs`](../../lib/oxigraph/src/store/transactional.rs).
-G4.5 owns implementation; no acceptance receipt exists yet.
+G4.5 owns implementation. The bounded prerequisite below is accepted; the
+owned public handle, evaluator and leased HTTP profile remain unimplemented.
+
+## Owned memory writer permit (2026-09-29)
+
+`storage/memory.rs` now stores an `Arc<Lock>` in the existing writer permit.
+All existing memory transaction paths use it; admission, keyed outcomes and
+rollback-before-permit-release behavior are unchanged. The transaction itself
+still borrows `MemoryStorage`: this is not the public owned-handle gate.
+Exact source SHA256:
+`baa3ee489ada2949b35582fabeffcedd8db20abbe76de33661f9ce71a69d7e27`.
+
+Ordinary batch `workflow-klmGGY`, run
+`3fcc6de3-89d0-479b-9069-dc1851abf6bc`, used native Sonnet 5.5/high planning,
+authoring and fresh review, with Opus/high formatting-only repair. Final fresh
+reviewer `0d22939d-274e-4910-bb06-dbb5d7cfccfc` accepted. Candidate no-default
+unit tests pass 14/14 (`run-WT0Fiq`); integration tests pass 7/7
+(`run-KuYSnz`). The concurrency integration file is feature-excluded in that
+configuration, not additional coverage. Canonical default and RDF 1.2 module
+checks each pass 14/14 (`run-dqz21r`, `run-wzP0HK`) with exact source bindings
+verified before this evidence edit. Formatter passes. Candidate no-default
+library/test Clippy exits 0 with warnings, not a warning-free claim.
+
+Lane receipt SHA256:
+`f4d5f28a3cee9062122c7f8c84f35db07432f9ddbe552cdf34a06005ece84062`.
+All 24 event/check/handoff references verified; structured MCP handoff readback
+and native learning retained. Cohort and external actions drained before
+integration. Prior rejected formatting review and original receipts remain.
+Original outcome `task-1787670632421-dkucm8` uses migration registry alias
+`task-1790657013522-cscfy2`; the umbrella remains open. No HTTP exposure,
+qualification, promotion or publication follows. ADR remains Proposed.

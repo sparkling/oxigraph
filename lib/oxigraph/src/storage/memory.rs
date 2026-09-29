@@ -372,18 +372,18 @@ impl MemoryStorage {
         crate::store::retention::health(Some(&governance.state), now, &page)
     }
 
-    fn start_transaction_with_guard<'a>(
-        &'a self,
-        transaction_guard: LockGuard<'a>,
-    ) -> MemoryStorageTransaction<'a> {
+    fn start_transaction_with_guard(
+        &self,
+        transaction_guard: LockGuard,
+    ) -> MemoryStorageTransaction<'_> {
         self.start_transaction_with_guard_and_key(transaction_guard, None)
     }
 
-    fn start_transaction_with_guard_and_key<'a>(
-        &'a self,
-        transaction_guard: LockGuard<'a>,
+    fn start_transaction_with_guard_and_key(
+        &self,
+        transaction_guard: LockGuard,
         transaction_key: Option<[u8; 16]>,
-    ) -> MemoryStorageTransaction<'a> {
+    ) -> MemoryStorageTransaction<'_> {
         let transaction_id = self.transaction_counter.fetch_add(1, Ordering::Acquire);
         let snapshot_id = self.version_counter.load(Ordering::Relaxed);
         MemoryStorageTransaction {
@@ -779,7 +779,8 @@ pub struct MemoryStorageTransaction<'a> {
     transaction_key: Option<[u8; 16]>,
     governed: bool,
     completed: bool,
-    _transaction_guard: LockGuard<'a>,
+    // Must stay last: the permit is released only after Drop::drop finishes rollback.
+    _transaction_guard: LockGuard,
 }
 
 impl MemoryStorageTransaction<'_> {
@@ -1614,22 +1615,21 @@ impl Lock {
         }
     }
 
-    fn lock(&self) -> LockGuard<'_> {
+    fn lock(self: &Arc<Self>) -> LockGuard {
         *self
             .condvar
             .wait_while(self.mutex.lock().unwrap(), |v| *v)
             .unwrap() = true;
         LockGuard {
-            mutex: &self.mutex,
-            condvar: &self.condvar,
+            lock: Arc::clone(self),
         }
     }
 
     fn lock_with_control(
-        &self,
+        self: &Arc<Self>,
         control: &TransactionStartControl,
         started_at: Instant,
-    ) -> Result<LockGuard<'_>, TransactionStartControlError> {
+    ) -> Result<LockGuard, TransactionStartControlError> {
         control.check(started_at)?;
         let mut occupied = self
             .mutex
@@ -1645,21 +1645,20 @@ impl Lock {
         control.check(started_at)?;
         *occupied = true;
         Ok(LockGuard {
-            mutex: &self.mutex,
-            condvar: &self.condvar,
+            lock: Arc::clone(self),
         })
     }
 }
 
-struct LockGuard<'a> {
-    mutex: &'a Mutex<bool>,
-    condvar: &'a Condvar,
+/// Writer permit that owns its lock handle, so it can outlive every other handle to the lock.
+struct LockGuard {
+    lock: Arc<Lock>,
 }
 
-impl Drop for LockGuard<'_> {
+impl Drop for LockGuard {
     fn drop(&mut self) {
-        *self.mutex.lock().unwrap() = false;
-        self.condvar.notify_one();
+        *self.lock.mutex.lock().unwrap() = false;
+        self.lock.condvar.notify_one();
     }
 }
 
@@ -1668,6 +1667,313 @@ impl Drop for LockGuard<'_> {
 mod tests {
     use super::*;
     use crate::model::NamedNode;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::mpsc::{self, RecvTimeoutError};
+    use std::thread;
+    use std::time::Duration;
+
+    const SHORT: Duration = Duration::from_millis(50);
+    const BOUND: Duration = Duration::from_secs(10);
+
+    fn assert_send_static<T: Send + 'static>() {}
+
+    fn timed_out(lock: &Arc<Lock>) -> bool {
+        matches!(
+            lock.lock_with_control(
+                &TransactionStartControl::new().with_timeout(SHORT),
+                Instant::now(),
+            ),
+            Err(TransactionStartControlError::TimedOut)
+        )
+    }
+
+    fn acquirable(lock: &Arc<Lock>) -> bool {
+        lock.lock_with_control(
+            &TransactionStartControl::new().with_timeout(BOUND),
+            Instant::now(),
+        )
+        .is_ok()
+    }
+
+    fn example_quad(label: &str) -> Quad {
+        let node = NamedNode::new_unchecked(format!("urn:permit:{label}"));
+        Quad::new(node.clone(), node.clone(), node, GraphName::DefaultGraph)
+    }
+
+    #[test]
+    fn owned_guard_outlives_original_lock_handle() {
+        assert_send_static::<LockGuard>();
+        let lock = Arc::new(Lock::new());
+        let weak = Arc::downgrade(&lock);
+        let guard = lock.lock();
+        assert_eq!(
+            Arc::strong_count(&lock),
+            2,
+            "guard must own a strong lock handle"
+        );
+        drop(lock);
+        assert_eq!(
+            weak.strong_count(),
+            1,
+            "guard must be the only remaining owner"
+        );
+        let revived = weak
+            .upgrade()
+            .expect("lock must stay alive while the guard is held");
+        assert!(
+            timed_out(&revived),
+            "permit must stay held after the original handle is dropped"
+        );
+        drop(revived);
+        drop(guard);
+        assert!(
+            weak.upgrade().is_none(),
+            "lock must be freed once the guard drops"
+        );
+    }
+
+    #[test]
+    fn held_permit_excludes_second_acquisition_until_release() {
+        let lock = Arc::new(Lock::new());
+        let guard = lock.lock();
+        assert!(timed_out(&lock), "second acquisition must not succeed");
+        drop(guard);
+        assert!(acquirable(&lock), "permit must be free after release");
+    }
+
+    #[test]
+    fn waiter_acquires_only_after_release() {
+        let lock = Arc::new(Lock::new());
+        let released = Arc::new(AtomicBool::new(false));
+        let guard = lock.lock();
+        let (sender, receiver) = mpsc::channel();
+        let waiter = {
+            let lock = Arc::clone(&lock);
+            let released = Arc::clone(&released);
+            thread::spawn(move || {
+                let outcome = lock
+                    .lock_with_control(
+                        &TransactionStartControl::new().with_timeout(BOUND),
+                        Instant::now(),
+                    )
+                    .map(|_guard| released.load(Ordering::SeqCst));
+                sender.send(outcome).ok();
+            })
+        };
+        assert!(
+            matches!(
+                receiver.recv_timeout(Duration::from_millis(100)),
+                Err(RecvTimeoutError::Timeout)
+            ),
+            "waiter acquired while the permit was held"
+        );
+        released.store(true, Ordering::SeqCst);
+        drop(guard);
+        let outcome = receiver
+            .recv_timeout(BOUND)
+            .expect("waiter must finish after release");
+        assert_eq!(
+            outcome,
+            Ok(true),
+            "waiter must acquire only after the release flag was set"
+        );
+        waiter.join().unwrap();
+    }
+
+    #[test]
+    fn concurrent_threads_never_share_the_permit() {
+        let lock = Arc::new(Lock::new());
+        let inside = AtomicUsize::new(0);
+        let entries = AtomicUsize::new(0);
+        thread::scope(|scope| {
+            for _ in 0..4 {
+                scope.spawn(|| {
+                    for _ in 0..25 {
+                        let guard = lock
+                            .lock_with_control(
+                                &TransactionStartControl::new().with_timeout(BOUND),
+                                Instant::now(),
+                            )
+                            .unwrap();
+                        assert_eq!(
+                            inside.fetch_add(1, Ordering::SeqCst),
+                            0,
+                            "two holders were inside the critical section"
+                        );
+                        thread::yield_now();
+                        entries.fetch_add(1, Ordering::SeqCst);
+                        inside.fetch_sub(1, Ordering::SeqCst);
+                        drop(guard);
+                    }
+                });
+            }
+        });
+        assert_eq!(
+            entries.load(Ordering::SeqCst),
+            100,
+            "every iteration must enter the critical section"
+        );
+    }
+
+    #[test]
+    fn cancellation_while_held_keeps_the_permit_with_its_holder() {
+        let lock = Arc::new(Lock::new());
+        let guard = lock.lock();
+        let control = TransactionStartControl::new().with_timeout(BOUND);
+        let (sender, receiver) = mpsc::channel();
+        let waiter = {
+            let lock = Arc::clone(&lock);
+            let control = control.clone();
+            thread::spawn(move || {
+                let outcome = lock
+                    .lock_with_control(&control, Instant::now())
+                    .map(|_guard| ());
+                sender.send(outcome).ok();
+            })
+        };
+        assert!(
+            matches!(
+                receiver.recv_timeout(Duration::from_millis(100)),
+                Err(RecvTimeoutError::Timeout)
+            ),
+            "waiter finished before it was cancelled"
+        );
+        control.cancel();
+        let outcome = receiver
+            .recv_timeout(BOUND)
+            .expect("cancelled waiter must return");
+        assert_eq!(
+            outcome,
+            Err(TransactionStartControlError::Cancelled),
+            "waiter must report cancellation"
+        );
+        waiter.join().unwrap();
+        assert!(timed_out(&lock), "cancellation must not steal the permit");
+        drop(guard);
+        assert!(acquirable(&lock), "permit must be free after release");
+    }
+
+    #[test]
+    fn timeout_while_held_keeps_the_permit_with_its_holder() {
+        let lock = Arc::new(Lock::new());
+        let guard = lock.lock();
+        let started_at = Instant::now();
+        let outcome = lock
+            .lock_with_control(
+                &TransactionStartControl::new().with_timeout(SHORT),
+                started_at,
+            )
+            .map(|_guard| ());
+        assert_eq!(
+            outcome,
+            Err(TransactionStartControlError::TimedOut),
+            "waiter must time out"
+        );
+        assert!(started_at.elapsed() >= SHORT, "timeout must not fire early");
+        assert!(timed_out(&lock), "timeout must not steal the permit");
+        drop(guard);
+        assert!(acquirable(&lock), "permit must be free after release");
+    }
+
+    #[test]
+    fn transaction_releases_the_permit_on_drop_commit_and_rollback() {
+        let storage = MemoryStorage::new();
+
+        let dropped = example_quad("dropped");
+        let mut transaction = storage.start_transaction();
+        transaction.insert(dropped.clone());
+        assert!(
+            timed_out(&storage.transaction_lock),
+            "open transaction must hold the permit"
+        );
+        drop(transaction);
+        assert!(
+            acquirable(&storage.transaction_lock),
+            "drop must release the permit"
+        );
+        assert!(
+            !storage.snapshot().contains(&EncodedQuad::from(&dropped)),
+            "dropped transaction must roll back"
+        );
+
+        let committed = example_quad("committed");
+        let mut transaction = storage.start_transaction();
+        transaction.insert(committed.clone());
+        assert!(
+            timed_out(&storage.transaction_lock),
+            "open transaction must hold the permit"
+        );
+        transaction.commit();
+        assert!(
+            acquirable(&storage.transaction_lock),
+            "commit must release the permit"
+        );
+        assert!(
+            storage.snapshot().contains(&EncodedQuad::from(&committed)),
+            "committed quad must be visible"
+        );
+
+        let rolled_back = example_quad("rolled-back");
+        let mut transaction = storage.start_transaction();
+        transaction.insert(rolled_back.clone());
+        transaction.rollback_with_outcome().unwrap();
+        assert!(
+            acquirable(&storage.transaction_lock),
+            "rollback must release the permit"
+        );
+        assert!(
+            !storage
+                .snapshot()
+                .contains(&EncodedQuad::from(&rolled_back)),
+            "rolled back quad must be invisible"
+        );
+        storage.snapshot().validate().unwrap();
+    }
+
+    #[test]
+    fn keyed_start_while_held_does_not_reserve_the_key() {
+        let storage = MemoryStorage::new();
+        let key = [7; 16];
+        let held = storage.start_transaction();
+        let result = storage.start_keyed_readable_transaction_with_control(
+            &key,
+            &TransactionStartControl::new().with_timeout(SHORT),
+            Instant::now(),
+        );
+        assert!(
+            matches!(result, Err(StorageTransactionStartError::TimedOut)),
+            "keyed admission must time out while the permit is held"
+        );
+        assert!(
+            !storage.transaction_outcomes.contains_key(&key),
+            "timed-out admission must not reserve the key"
+        );
+        assert_eq!(
+            storage.lookup_transaction_outcome(&key).unwrap(),
+            StorageTransactionOutcome::Indeterminate,
+            "unreserved key must be indeterminate"
+        );
+        drop(held);
+
+        let transaction = storage
+            .start_keyed_readable_transaction_with_control(
+                &key,
+                &TransactionStartControl::new().with_timeout(BOUND),
+                Instant::now(),
+            )
+            .ok()
+            .unwrap();
+        transaction.commit_with_outcome().unwrap();
+        assert_eq!(
+            storage.lookup_transaction_outcome(&key).unwrap(),
+            StorageTransactionOutcome::Committed,
+            "key must commit after release"
+        );
+        assert!(
+            acquirable(&storage.transaction_lock),
+            "keyed commit must release the permit"
+        );
+    }
 
     #[test]
     #[expect(
