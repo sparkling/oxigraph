@@ -2838,3 +2838,338 @@ fn schema_upgrade_start_fsync_matrix_process_helper() -> TestResult {
         }
     }
 }
+
+/// Runs one bounded `resume_inner` pre-copy fsync child under the shim, failing
+/// unless it exited successfully after running exactly one test.
+fn run_resume_precopy_fsync_child(
+    shim: &Path,
+    exact: &Path,
+    paths: [&Path; 3],
+    rdf12: bool,
+    expect_fault0: bool,
+    logs: &Path,
+    label: &str,
+) -> TestResult {
+    use std::io::Read as _;
+    const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+    const CAPTURE_LIMIT: u64 = 1 << 20;
+    let [source, package, workspace] = paths;
+    let stdout_path = logs.join(format!("resume-precopy-fsync-{label}.stdout"));
+    let stderr_path = logs.join(format!("resume-precopy-fsync-{label}.stderr"));
+    let captured = |path: &Path| -> TestResult<String> {
+        let mut data = Vec::new();
+        fs::File::open(path)?
+            .take(CAPTURE_LIMIT)
+            .read_to_end(&mut data)?;
+        Ok(String::from_utf8_lossy(&data).into_owned())
+    };
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command
+        .arg("--exact")
+        .arg(helper("schema_upgrade_resume_precopy_fsync_process_helper"));
+    command.env("LD_PRELOAD", shim);
+    command.env_remove("ENOSPC_SHIM_BUDGET_BYTES");
+    command.env_remove("ENOSPC_SHIM_PREFIX");
+    command.env("FSYNC_SHIM_EXACT_PATH", exact);
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_PRECOPY_FSYNC_TEST_SOURCE",
+        source,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_PRECOPY_FSYNC_TEST_PACKAGE",
+        package,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_PRECOPY_FSYNC_TEST_WORKSPACE",
+        workspace,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_PRECOPY_FSYNC_TEST_RDF12",
+        if rdf12 { "1" } else { "0" },
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_RESUME_PRECOPY_FSYNC_TEST_EXPECT_FAULT0",
+        if expect_fault0 { "1" } else { "0" },
+    );
+    command.stdin(std::process::Stdio::null());
+    command.stdout(fs::File::create(&stdout_path)?);
+    command.stderr(fs::File::create(&stderr_path)?);
+    let mut child = command.spawn()?;
+    let deadline = std::time::Instant::now() + TIMEOUT;
+    let waited = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Ok(None) => break Err(io::Error::new(io::ErrorKind::TimedOut, "deadline passed")),
+            Err(error) => break Err(error),
+        }
+    };
+    let status = match waited {
+        Ok(status) => status,
+        Err(error) => {
+            // Never leave the child running or unreaped, whatever went wrong.
+            let killed = child.kill();
+            let reaped = child.wait();
+            return Err(format!(
+                "{label}: child helper did not exit within {TIMEOUT:?} ({error}); kill \
+                 {killed:?}, reap {reaped:?}, stdout {}, stderr {}",
+                captured(&stdout_path)?,
+                captured(&stderr_path)?
+            )
+            .into());
+        }
+    };
+    let stdout = captured(&stdout_path)?;
+    assert!(
+        status.success(),
+        "{label}: child helper failed: status {status:?}, stdout {stdout}, stderr {}",
+        captured(&stderr_path)?
+    );
+    assert!(
+        stdout.contains("running 1 test"),
+        "{label}: the --exact filter did not match exactly one test: {stdout}"
+    );
+    Ok(())
+}
+
+/// Real `EIO` from `fsync` on each pre-copy sync of `resume_inner`: JOURNAL (INTENT append), attempt guard, `store/`, attempt and `attempts/` directories, on both RDF profiles.
+///
+/// The parent starts the workspace with no shim; the shim env is set only on the resume child, and the helper passes only on raw EIO with the expected fault phases.
+///
+/// A failed fsync keeps page-cache bytes: JOURNAL holds the full INTENT frame in every case, and the four attempt-side cases leave a complete guard. Restart abandons the INTENT attempt (FAILED, then a new attempt) and seals with the same UUID.
+///
+/// Models a kernel writeback error only: no power-loss, on-media, activation or profile-admission claim.
+#[test]
+fn resume_precopy_fsync_failure_matrix_preserves_inputs_and_restarts() -> TestResult {
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let shim_directory = std::env::current_exe()?
+        .parent()
+        .ok_or("test binary has no parent directory")?
+        .to_owned();
+    let Some(shim) = compile_enospc_shim(&shim_directory, "resume_precopy_fsync")? else {
+        return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+    };
+    let root = tempfile::tempdir()?;
+    let root_path = root.path().canonicalize()?;
+    let (source, package) = fixture(&root_path)?;
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    let first = format!("{:016}", 0_u64);
+    let entry_names = |path: &Path| -> TestResult<Vec<String>> {
+        let mut names = Vec::new();
+        for entry in fs::read_dir(path)? {
+            names.push(entry?.file_name().to_string_lossy().into_owned());
+        }
+        names.sort();
+        Ok(names)
+    };
+    // (case, whether resume_inner reaches fault(0), i.e. the attempt directories exist)
+    let cases: [(&str, bool); 5] = [
+        ("journal", false),
+        ("guard", true),
+        ("store", true),
+        ("attempt", true),
+        ("attempts", true),
+    ];
+    for (name, fault0) in cases {
+        for rdf12 in [false, true] {
+            let label = format!("{name}-{}", if rdf12 { "rdf12" } else { "rdf11" });
+            let profile = if rdf12 {
+                SchemaRdfProfile::Rdf12
+            } else {
+                SchemaRdfProfile::Rdf11
+            };
+            let options = SchemaUpgradeOptions::new(profile);
+            let holder = tempfile::tempdir_in(&root_path)?;
+            let parent = holder.path().canonicalize()?;
+            let workspace = parent.join("workspace");
+            // Start runs here in the parent, with no fsync shim in its environment.
+            let initial = Store::start_schema_upgrade(&source, &package, &workspace, &options)?;
+            let plan_path = workspace.join(PLAN);
+            let plan = fs::read(&plan_path)?;
+            let journal = workspace.join(JOURNAL);
+            let attempts = workspace.join("attempts");
+            let attempt = attempt_path(&workspace, 0);
+            assert!(plan.starts_with(PLAN_MAGIC), "{label}: plan");
+            assert_eq!(fs::metadata(&journal)?.len(), 0, "{label}: journal");
+            assert_eq!(fs::read_dir(&attempts)?.count(), 0, "{label}: attempts");
+            assert!(!attempt.exists(), "{label}: attempt exists before resume");
+            let exact = match name {
+                "journal" => journal.clone(),
+                "guard" => attempt.join("store").join(UPGRADE_GUARD),
+                "store" => attempt.join("store"),
+                "attempt" => attempt.clone(),
+                _ => attempts.clone(),
+            };
+            let intent_frame = frame(
+                &Record {
+                    kind: INTENT,
+                    attempt: 0,
+                    files: Vec::new(),
+                },
+                &envelope_checksum(PLAN_MAGIC, &plan),
+            );
+            run_resume_precopy_fsync_child(
+                &shim,
+                &exact,
+                [&source, &package, &workspace],
+                rdf12,
+                fault0,
+                &root_path,
+                &label,
+            )?;
+            // The helper only passes on raw EIO with the expected fault phases,
+            // so the child failed at the intended exact path.
+            assert!(exact.exists(), "{label}: the exact path was never created");
+            assert_eq!(fs::read(&plan_path)?, plan, "{label}: plan changed");
+            // fsync EIO keeps the page-cache bytes: the whole INTENT frame is visible.
+            assert_eq!(fs::read(&journal)?, intent_frame, "{label}: journal");
+            let mut expected = vec![
+                JOURNAL.to_owned(),
+                PLAN.to_owned(),
+                WORKSPACE_LOCK.to_owned(),
+                "attempts".to_owned(),
+            ];
+            expected.sort();
+            assert_eq!(entry_names(&workspace)?, expected, "{label}: entries");
+            assert_eq!(fs::metadata(workspace.join(WORKSPACE_LOCK))?.len(), 0);
+            assert!(!workspace.join(COMPLETE).exists(), "{label}: COMPLETE");
+            assert!(!workspace.join(PENDING).exists(), "{label}: PENDING");
+            let attempts_before = bytes(&attempts)?;
+            if fault0 {
+                assert_eq!(entry_names(&attempts)?, vec![first.clone()], "{label}");
+                assert_eq!(entry_names(&attempt)?, vec!["store".to_owned()], "{label}");
+                assert_eq!(
+                    entry_names(&attempt.join("store"))?,
+                    vec![UPGRADE_GUARD.to_owned()],
+                    "{label}"
+                );
+                assert_eq!(
+                    fs::read(attempt.join("store").join(UPGRADE_GUARD))?,
+                    GUARD,
+                    "{label}: the guard must be complete"
+                );
+                assert_eq!(attempts_before.len(), 1, "{label}");
+            } else {
+                assert!(entry_names(&attempts)?.is_empty(), "{label}: attempts");
+                assert!(attempts_before.is_empty(), "{label}");
+            }
+            assert_eq!(bytes(&source)?, before_source, "{label}: source changed");
+            assert_eq!(bytes(&package)?, before_package, "{label}: package changed");
+            let before_workspace = bytes(&workspace)?;
+            // Nothing is sealed, so no receipt is accepted and nothing is repaired.
+            let verified = SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options);
+            assert!(verified.is_err(), "{label}: verify accepted {verified:?}");
+            assert_eq!(bytes(&workspace)?, before_workspace, "{label}");
+            let refused = Store::start_schema_upgrade(&source, &package, &workspace, &options);
+            assert!(
+                matches!(refused, Err(BackupError::InvalidPath)),
+                "{label}: same-path start gave {refused:?}"
+            );
+            assert_eq!(bytes(&workspace)?, before_workspace, "{label}");
+            // Restart: the last record is INTENT, so resume abandons it and builds attempt 1.
+            let state = Store::resume_schema_upgrade(&source, &package, &workspace, &options)
+                .map_err(|error| format!("{label}: resume failed: {error:?}"))?;
+            assert_eq!(state.schema_uuid(), initial.schema_uuid(), "{label}: uuid");
+            let receipt = state.receipt().ok_or("resume did not seal the workspace")?;
+            assert_eq!(receipt.schema_uuid(), initial.schema_uuid(), "{label}");
+            assert_eq!(receipt.envelope().rdf_write_profile(), profile, "{label}");
+            assert_eq!(fs::read(&plan_path)?, plan, "{label}: plan rewritten");
+            assert!(workspace.join(COMPLETE).exists(), "{label}: COMPLETE");
+            let journal_after = fs::read(&journal)?;
+            assert!(
+                journal_after.starts_with(&intent_frame),
+                "{label}: the journal must only grow"
+            );
+            let shape: Vec<(u8, u64)> = decode_records(&journal_after, &plan, &options)?
+                .iter()
+                .map(|record| (record.kind, record.attempt))
+                .collect();
+            assert_eq!(
+                shape,
+                vec![
+                    (INTENT, 0),
+                    (FAILED, 0),
+                    (INTENT, 1),
+                    (VALIDATED, 1),
+                    (SEALED, 1)
+                ],
+                "{label}: journal records"
+            );
+            assert_eq!(attempt.exists(), fault0, "{label}: attempt 0");
+            assert!(attempt_path(&workspace, 1).exists(), "{label}: attempt 1");
+            assert!(!attempt_path(&workspace, 2).exists(), "{label}: attempt 2");
+            assert_eq!(
+                receipt.store_directory(),
+                attempt_path(&workspace, 1).join("store"),
+                "{label}: winning attempt"
+            );
+            let attempts_after = bytes(&attempts)?;
+            for (path, data) in attempts_before {
+                assert_eq!(attempts_after.get(&path), Some(&data), "{label}: {path:?}");
+            }
+            assert_eq!(
+                &SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options)?,
+                receipt,
+                "{label}"
+            );
+            assert_eq!(bytes(&source)?, before_source, "{label}: source changed");
+            assert_eq!(bytes(&package)?, before_package, "{label}: package changed");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_resume_precopy_fsync_process_helper() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let Some(source) = std::env::var_os("OXIGRAPH_SCHEMA_UPGRADE_RESUME_PRECOPY_FSYNC_TEST_SOURCE")
+    else {
+        return Ok(()); // An ordinary run: only the parent test re-invokes this.
+    };
+    let source = PathBuf::from(source);
+    let package = variable("OXIGRAPH_SCHEMA_UPGRADE_RESUME_PRECOPY_FSYNC_TEST_PACKAGE")?;
+    let workspace = variable("OXIGRAPH_SCHEMA_UPGRADE_RESUME_PRECOPY_FSYNC_TEST_WORKSPACE")?;
+    let profile =
+        match std::env::var("OXIGRAPH_SCHEMA_UPGRADE_RESUME_PRECOPY_FSYNC_TEST_RDF12")?.as_str() {
+            "0" => SchemaRdfProfile::Rdf11,
+            "1" => SchemaRdfProfile::Rdf12,
+            other => return Err(format!("unexpected rdf12 flag {other:?}").into()),
+        };
+    let expected: &[u8] =
+        match std::env::var("OXIGRAPH_SCHEMA_UPGRADE_RESUME_PRECOPY_FSYNC_TEST_EXPECT_FAULT0")?
+            .as_str()
+        {
+            "0" => &[],
+            "1" => &[0],
+            other => return Err(format!("unexpected fault0 flag {other:?}").into()),
+        };
+    let options = SchemaUpgradeOptions::new(profile);
+    let mut phases = Vec::new();
+    let result = resume_inner(&source, &package, &workspace, &options, |phase| {
+        phases.push(phase);
+        Ok(())
+    });
+    match result {
+        // Only the shim's exact-path fsync yields EIO; the phases pin it to the
+        // INTENT append (none seen) or a pre-copy sync after fault(0) but before
+        // fault(1).
+        Err(BackupError::Io(error))
+            if error.raw_os_error() == Some(libc::EIO) && phases.as_slice() == expected =>
+        {
+            Ok(())
+        }
+        other => {
+            Err(format!("expected an EIO BackupError::Io, got {other:?}, phases {phases:?}").into())
+        }
+    }
+}

@@ -1618,6 +1618,38 @@ Earlier cancelled `run-GvQOcc` remains negative evidence. Resume/activation
 fsync points, profile admission, derived-index policy and qualification remain
 separate; ADR status stays Proposed. No promotion or publication follows.
 
+### Resume pre-copy fsync errors accepted (2026-09-29)
+
+Task `task-1790717825892-1u4cf9` adds test-only exact-path EIO at the
+resume INTENT JOURNAL, UPGRADE_GUARD, attempt/store, attempt and attempts
+directory fsync boundaries. Five points run under each explicit RDF write
+ceiling. Bounded children verify raw EIO, phase markers, visible INTENT/guard
+state, unchanged source/package/prior-attempt bytes, and same-UUID restart
+into a fresh attempt. Production behavior and historical negative receipts
+remain unchanged. Syscall failure with page-cache visibility is not power loss.
+
+Recovered author `7128b215-ffc9-4ffb-a81c-6c72b691cd1b` is independent of
+fresh Sonnet 5.5/high reviewer `1a920d43-f1c8-4969-aaaf-74b67288846f`.
+Review `2e0dfedc-f39c-43a7-9e03-018918ac2f21` ACCEPT response SHA256:
+`0f5933e7c0a1b8526159f80dd05ede3f2dc957a3b27d0d3b6f4e629e18a650e0`.
+Exact reviewed test-file SHA256:
+`e2740daf7a9d2ed4aab31fee994cd4052b925993f688145f4a5dff579786527d`.
+
+Before integration on `4c76ad961`, owner checked 15,237 unchanged source
+inputs, 17 explicit accepted intervening paths, eight unchanged review reads
+and nine submodule pins. Other live native calls retained isolated snapshot
+reads; scoped owner custody guard passed. Candidate focused default/RDF12
+checks each pass two top-level tests. Canonical `run-IBaOi7` passes 46 default
+schema tests; `run-Tgfmgf` passes 47 RDF12 schema tests, excluding seven nested
+helper summaries in each runner aggregate. Both full source/sourceAfter
+observations match exact canonical code. Scoped rustfmt and diff checks pass;
+compiler warnings remain. Receipt and integration evidence reside under
+`target/engineering-delivery/`, including
+`resume-fsync-current-integration-2e0dfedc-f39c-43a7-9e03-018918ac2f21.json`.
+
+Later resume/activation fsync points, profile admission, derived-index policy
+and qualification remain separate. ADR stays Proposed; no publication follows.
+
 ### Backup publication OS faults accepted (2026-09-29)
 
 `backup_os_fault_tests.rs` covers three child-only, exact-path OS faults:
