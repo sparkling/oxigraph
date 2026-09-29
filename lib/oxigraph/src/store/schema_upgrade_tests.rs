@@ -2550,3 +2550,291 @@ fn schema_upgrade_start_journal_fsync_process_helper() -> TestResult {
         other => Err(format!("expected an EIO BackupError::Io, got {other:?}").into()),
     }
 }
+
+/// Runs one bounded `start_inner` fsync-matrix child under the shim, failing
+/// unless it exited successfully after running exactly one test.
+fn run_start_fsync_child(
+    shim: &Path,
+    exact: &Path,
+    paths: [&Path; 3],
+    rdf12: bool,
+    logs: &Path,
+    label: &str,
+) -> TestResult {
+    use std::io::Read as _;
+    const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+    const CAPTURE_LIMIT: u64 = 1 << 20;
+    let [source, package, workspace] = paths;
+    let stdout_path = logs.join(format!("start-fsync-{label}.stdout"));
+    let stderr_path = logs.join(format!("start-fsync-{label}.stderr"));
+    let captured = |path: &Path| -> TestResult<String> {
+        let mut data = Vec::new();
+        fs::File::open(path)?
+            .take(CAPTURE_LIMIT)
+            .read_to_end(&mut data)?;
+        Ok(String::from_utf8_lossy(&data).into_owned())
+    };
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command
+        .arg("--exact")
+        .arg(helper("schema_upgrade_start_fsync_matrix_process_helper"));
+    command.env("LD_PRELOAD", shim);
+    command.env_remove("ENOSPC_SHIM_BUDGET_BYTES");
+    command.env_remove("ENOSPC_SHIM_PREFIX");
+    command.env("FSYNC_SHIM_EXACT_PATH", exact);
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_START_FSYNC_MATRIX_TEST_SOURCE",
+        source,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_START_FSYNC_MATRIX_TEST_PACKAGE",
+        package,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_START_FSYNC_MATRIX_TEST_WORKSPACE",
+        workspace,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_START_FSYNC_MATRIX_TEST_RDF12",
+        if rdf12 { "1" } else { "0" },
+    );
+    command.stdin(std::process::Stdio::null());
+    command.stdout(fs::File::create(&stdout_path)?);
+    command.stderr(fs::File::create(&stderr_path)?);
+    let mut child = command.spawn()?;
+    let deadline = std::time::Instant::now() + TIMEOUT;
+    let waited = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Ok(None) => break Err(io::Error::new(io::ErrorKind::TimedOut, "deadline passed")),
+            Err(error) => break Err(error),
+        }
+    };
+    let status = match waited {
+        Ok(status) => status,
+        Err(error) => {
+            // Never leave the child running or unreaped, whatever went wrong.
+            let killed = child.kill();
+            let reaped = child.wait();
+            return Err(format!(
+                "{label}: child helper did not exit within {TIMEOUT:?} ({error}); kill \
+                 {killed:?}, reap {reaped:?}, stdout {}, stderr {}",
+                captured(&stdout_path)?,
+                captured(&stderr_path)?
+            )
+            .into());
+        }
+    };
+    let stdout = captured(&stdout_path)?;
+    assert!(
+        status.success(),
+        "{label}: child helper failed: status {status:?}, stdout {stdout}, stderr {}",
+        captured(&stderr_path)?
+    );
+    assert!(
+        stdout.contains("running 1 test"),
+        "{label}: the --exact filter did not match exactly one test: {stdout}"
+    );
+    Ok(())
+}
+
+/// A real `EIO` from `fsync`, injected on exactly one of `start_inner`'s
+/// ordered syncs per case: the `PLAN` file, then the `attempts/`, workspace
+/// and parent directories, each for both RDF profiles. `FSYNC_SHIM_EXACT_PATH`
+/// names that one path in a child-only destination, so setup and the
+/// source/backup syncs pass. The helper succeeds only on a raw `EIO` with
+/// `fault(0)` seen and `fault(1)` not, so an earlier or different failure
+/// fails loudly. A failed fsync does not imply absent bytes: the `PLAN` case
+/// leaves a complete visible `PLAN` and no `JOURNAL`; the directory cases
+/// leave a complete `PLAN` and an empty `JOURNAL`. Directory-sync order is not
+/// observable on disk, so each case is pinned by its exact path, once.
+///
+/// The restart contract is derived from the verify/resume code: nothing is
+/// sealed, `verify` fails, a same-path start is refused with `InvalidPath`,
+/// a missing `JOURNAL` fails closed on resume without repair, and an empty
+/// `JOURNAL` resumes into a first attempt without abandoning one.
+///
+/// This models a kernel-reported writeback error with the page cache still
+/// visible. It makes no power-loss or on-media claim and does not close the
+/// resume/activation fsyncs or profile admission.
+#[test]
+fn fsync_failure_on_start_plan_and_directories_preserves_inputs_and_restarts() -> TestResult {
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let shim_directory = std::env::current_exe()?
+        .parent()
+        .ok_or("test binary has no parent directory")?
+        .to_owned();
+    let Some(shim) = compile_enospc_shim(&shim_directory, "start_fsync_matrix")? else {
+        return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+    };
+    let root = tempfile::tempdir()?;
+    let root_path = root.path().canonicalize()?;
+    let (source, package) = fixture(&root_path)?;
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    // (case, exact path components under the parent, whether JOURNAL exists)
+    let cases: [(&str, &[&str], bool); 4] = [
+        ("plan", &["workspace", PLAN], false),
+        ("attempts", &["workspace", "attempts"], true),
+        ("workspace", &["workspace"], true),
+        ("parent", &[], true),
+    ];
+    for (name, components, journal_created) in cases {
+        for rdf12 in [false, true] {
+            let label = format!("{name}-{}", if rdf12 { "rdf12" } else { "rdf11" });
+            let profile = if rdf12 {
+                SchemaRdfProfile::Rdf12
+            } else {
+                SchemaRdfProfile::Rdf11
+            };
+            let options = SchemaUpgradeOptions::new(profile);
+            let holder = tempfile::tempdir_in(&root_path)?;
+            let parent = holder.path().canonicalize()?;
+            let workspace = parent.join("workspace");
+            let exact = components
+                .iter()
+                .fold(parent.clone(), |path, part| path.join(part));
+            run_start_fsync_child(
+                &shim,
+                &exact,
+                [&source, &package, &workspace],
+                rdf12,
+                &root_path,
+                &label,
+            )?;
+            // The complete PLAN write is proven by its own trailing checksum,
+            // derived from the plan encoding, not copied from a failure.
+            let plan = fs::read(workspace.join(PLAN))?;
+            assert!(
+                plan.len() >= PLAN_MAGIC.len() + 32 && plan.starts_with(PLAN_MAGIC),
+                "{label}: the plan is not a complete visible plan"
+            );
+            let (body, trailer) = plan.split_at(plan.len() - 32);
+            assert_eq!(
+                trailer,
+                envelope_checksum(PLAN_MAGIC, body).as_slice(),
+                "{label}: the plan checksum does not match its body"
+            );
+            let mut names = Vec::new();
+            for entry in fs::read_dir(&workspace)? {
+                names.push(entry?.file_name().to_string_lossy().into_owned());
+            }
+            names.sort();
+            let mut expected = vec![
+                PLAN.to_owned(),
+                WORKSPACE_LOCK.to_owned(),
+                "attempts".to_owned(),
+            ];
+            if journal_created {
+                expected.push(JOURNAL.to_owned());
+            }
+            expected.sort();
+            assert_eq!(names, expected, "{label}: unexpected workspace entries");
+            assert_eq!(fs::metadata(workspace.join(WORKSPACE_LOCK))?.len(), 0);
+            assert!(!workspace.join(COMPLETE).exists(), "{label}: COMPLETE");
+            assert!(!workspace.join(PENDING).exists(), "{label}: PENDING");
+            if journal_created {
+                assert_eq!(fs::metadata(workspace.join(JOURNAL))?.len(), 0, "{label}");
+            }
+            let attempts = workspace.join("attempts");
+            assert!(
+                bytes(&attempts)?.is_empty() && fs::read_dir(&attempts)?.count() == 0,
+                "{label}: attempts must still be empty"
+            );
+            assert_eq!(bytes(&source)?, before_source, "{label}: source changed");
+            assert_eq!(bytes(&package)?, before_package, "{label}: package changed");
+            let before_workspace = bytes(&workspace)?;
+            // Restart contract: nothing is sealed and no receipt is accepted.
+            let verified = SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options);
+            assert!(verified.is_err(), "{label}: verify accepted {verified:?}");
+            assert_eq!(bytes(&workspace)?, before_workspace, "{label}");
+            // The workspace path exists, so a same-path start is refused.
+            let refused = Store::start_schema_upgrade(&source, &package, &workspace, &options);
+            assert!(
+                matches!(refused, Err(BackupError::InvalidPath)),
+                "{label}: same-path start gave {refused:?}"
+            );
+            assert_eq!(bytes(&workspace)?, before_workspace, "{label}");
+            let resumed = Store::resume_schema_upgrade(&source, &package, &workspace, &options);
+            if journal_created {
+                let state =
+                    resumed.map_err(|error| format!("{label}: resume failed: {error:?}"))?;
+                let receipt = state.receipt().ok_or("resume did not seal the workspace")?;
+                assert_eq!(receipt.envelope().rdf_write_profile(), profile, "{label}");
+                assert_eq!(fs::read(workspace.join(PLAN))?, plan, "{label}: plan");
+                assert!(
+                    attempts.join(format!("{:016}", 0_u64)).exists(),
+                    "{label}: no first attempt"
+                );
+                assert!(
+                    !attempts.join(format!("{:016}", 1_u64)).exists(),
+                    "{label}: an empty journal must not cause an abandoned attempt"
+                );
+                assert!(workspace.join(COMPLETE).exists(), "{label}: COMPLETE");
+                assert_eq!(
+                    &SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options)?,
+                    receipt,
+                    "{label}"
+                );
+            } else {
+                // A missing JOURNAL fails closed and resume repairs nothing.
+                assert!(
+                    matches!(&resumed, Err(BackupError::Io(error))
+                        if error.kind() == io::ErrorKind::NotFound),
+                    "{label}: resume gave {resumed:?}"
+                );
+                assert_eq!(bytes(&workspace)?, before_workspace, "{label}");
+                assert!(!workspace.join(JOURNAL).exists(), "{label}: JOURNAL");
+                assert_eq!(fs::read_dir(&attempts)?.count(), 0, "{label}: attempts");
+            }
+            assert_eq!(bytes(&source)?, before_source, "{label}: source changed");
+            assert_eq!(bytes(&package)?, before_package, "{label}: package changed");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_start_fsync_matrix_process_helper() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let Some(source) = std::env::var_os("OXIGRAPH_SCHEMA_UPGRADE_START_FSYNC_MATRIX_TEST_SOURCE")
+    else {
+        return Ok(()); // An ordinary run: only the parent test re-invokes this.
+    };
+    let source = PathBuf::from(source);
+    let package = variable("OXIGRAPH_SCHEMA_UPGRADE_START_FSYNC_MATRIX_TEST_PACKAGE")?;
+    let workspace = variable("OXIGRAPH_SCHEMA_UPGRADE_START_FSYNC_MATRIX_TEST_WORKSPACE")?;
+    let profile =
+        match std::env::var("OXIGRAPH_SCHEMA_UPGRADE_START_FSYNC_MATRIX_TEST_RDF12")?.as_str() {
+            "0" => SchemaRdfProfile::Rdf11,
+            "1" => SchemaRdfProfile::Rdf12,
+            other => return Err(format!("unexpected rdf12 flag {other:?}").into()),
+        };
+    let options = SchemaUpgradeOptions::new(profile);
+    let mut phases = Vec::new();
+    let result = start_inner(&source, &package, &workspace, &options, |phase| {
+        phases.push(phase);
+        Ok(())
+    });
+    match result {
+        // Only the shim's exact-path fsync yields EIO, and phases == [0] pins
+        // it between fault(0) and fault(1): a lease, setup or earlier sync
+        // failure would show no phase, and a completed start would show both.
+        Err(BackupError::Io(error)) if error.raw_os_error() == Some(libc::EIO) && phases == [0] => {
+            Ok(())
+        }
+        other => {
+            Err(format!("expected an EIO BackupError::Io, got {other:?}, phases {phases:?}").into())
+        }
+    }
+}

@@ -1592,6 +1592,32 @@ step, and every fault phase on both paths not exercised by one of these
 four tests, remain proven only under synthetic in-process injection.
 ADR-0028 remains Proposed.
 
+### Start PLAN and directory fsync errors accepted (2026-09-29)
+
+Task `task-1790701802514-o1zlp0` extends the existing test-only shim matrix
+to initial PLAN and attempts/workspace/parent-directory fsync EIO boundaries.
+Each bounded child checks exact visible failure state, preserved source/package
+and prior-attempt bytes, and the supported restart outcome. Existing JOURNAL
+coverage and production behavior remain unchanged. This is reported syscall
+failure with page-cache visibility, not power-loss or media-durability proof.
+
+Fresh Sonnet 5.5/high review `c9bda1e9-1559-4098-9c45-35bde4100e35`, worker
+`5e7b9cd3-2281-4ed0-94fc-03976dfe58f2`, accepted source; custody released.
+Final-format focused test passed once (session 93432). Owner revalidated the
+candidate against accepted main `acaad5879`, including exact reads and the
+explicitly accepted intervening changes, before serial integration.
+Canonical `run-mKesLE` passes 44 default schema tests; `run-8CObsC` passes
+45 RDF12 schema tests. Counts exclude nested helpers. Both full source and
+sourceAfter observations match the unchanged canonical test diff. Scoped
+formatter and diff checks pass; compiler warnings remain, not clean lint.
+
+Exact source SHA256:
+`6e38953e4ac997599470f265a1abfbc00277114c24b9a5f7f792feb210fc0eb0`.
+Integration evidence: `target/engineering-delivery/fsync-current-integration-c9bda1e9-1559-4098-9c45-35bde4100e35.json`.
+Earlier cancelled `run-GvQOcc` remains negative evidence. Resume/activation
+fsync points, profile admission, derived-index policy and qualification remain
+separate; ADR status stays Proposed. No promotion or publication follows.
+
 ### Backup publication OS faults accepted (2026-09-29)
 
 `backup_os_fault_tests.rs` covers three child-only, exact-path OS faults:
