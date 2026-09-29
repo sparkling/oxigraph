@@ -1,0 +1,12 @@
+[Unit]
+Description=Reclaim cold Oxigraph Cargo caches and redundant RocksDB objects under disk pressure
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/.local/lib/oxigraph-maintenance/clean-cargo-incremental.py --repository /srv/home/claude/src/hm/oxigraph --apply
+ExecStart=/usr/bin/python3 %h/.local/lib/oxigraph-maintenance/clean-cargo-incremental.py --repository /srv/home/claude/src/hm/oxigraph --archived-build-objects --apply
+Nice=19
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+StandardOutput=journal
+StandardError=journal

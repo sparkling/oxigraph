@@ -116,8 +116,8 @@ Signed replay, live bindings, lineage and CAS guard activation/rollback; CLI con
 syntax checks pass. Synthetic tests prove contracts, not live training, evolution, performance or resumption. Frozen history remains
 untouched. Unlisted tasks use root policy, recording nonapplicability; signed-task drift/tampering rejects. Wider ADR remains Proposed.
 
-Private Cargo allocation/profile/binary/compiler evidence uses `--target-dir target/engineering-delivery/builds/<allocation-id>`; caller
-owns exclusivity, concurrency unproved.
+Private Cargo allocation/profile/binary/compiler evidence uses `--target-dir target/engineering-delivery/builds/<allocation-id>`; caller owns exclusivity, concurrency unproved. September29 automatic maintenance narrows eviction to cold incremental compiler caches under Cargo's existing nonblocking profile lock; retains lock inode, binaries and all evidence. Pressure85%/stop80%, minimum age6h, hourly systemd timer. No per-outcome retirement queue.
+Sept29 root-reviewed/deployed20:22UTC: hourly second pressure-only pass removes cold oxrocksdb-sys `out/*.o` only when `ar p` bytes match; archives stay. Research, path limits and tests: [Cargo incremental maintenance](../research/cargo-incremental-maintenance.md). This is not a disk quota.
 
 Ordinary `workflow --isolated true` now composes the existing workflow callbacks with a non-Git candidate snapshot under
 `target/engineering-delivery/candidates`. Source observation, admitted file reads, outside-scope checks, command cwd, logs, artifact binding
