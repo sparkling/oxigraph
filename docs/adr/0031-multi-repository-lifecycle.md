@@ -5,7 +5,7 @@
 - Updated: 2026-09-29
 - Deciders: Oxigraph parity programme
 - Implementation status: bounded pure lifecycle model and opt-in Linux
-  create/reconcile/open catalog implemented below. Each current server process
+  create/reconcile/open/quiesce catalog implemented below. Each current server process
   still owns one `Store`; no administrative lifecycle is activated
 - Programme task: `task-1787728710646-enu8i1` (G4.6)
 - **Depends on**:
@@ -342,3 +342,45 @@ Original G4.6 outcome remains `task-1787728710646-enu8i1`, registry migration al
 evaluator, benchmark, service claim, qualification or publication is accepted.
 Full lifecycle, authorization/isolation, upgrades and resource gates remain open;
 ADR remains Proposed.
+
+## Manager-owned quiesce and drain (2026-09-29)
+
+The opt-in catalog now fences counted handles before Store access, persists
+`Quiescing`, and permits completion only after actual handle drop. Receipts bind
+repository ID, internal UUID and entry generation; Debug omits the UUID.
+Restart retains non-ready Quiescing on transient/resource refusal, isolating
+other repositories. Definite identity mismatch becomes Failed. Completion
+re-verifies materialization before Closed. No caller drain assertion, deletion,
+lease cancellation, HTTP route or server activation is introduced.
+
+Ordinary workflow `300f80f6-ce9e-44f7-8e83-f045695917a2` used Sonnet 5.5/high
+ordinary roles and Opus/high repairs. Fresh reviewer
+`8cf4d446-a220-4684-9d00-d0add141bf4b` accepted exact candidate; response SHA256
+`31c5c6fb00a1b5878d56ce2a21cd989304ff37612a14fd243e2be79ce04d5128`.
+Candidate default/no-default matrices each pass 69. Lane SHA256
+`cbf76cdd8ad39c83dbae93f42b83a401b48cc0072dde13a47dabeea768655219`
+and 40 existing referenced files verified; structured MCP readback and native
+learning retained. Earlier catalog-generation, cross-root receipt, child-custody,
+restart-isolation and Debug reviews remain negative evidence.
+
+Before integration, owner verified 15,238 unchanged source inputs, 32 read
+dependencies, exact reviewer/source identities and stopped lane actions. Existing
+coordinator custody checks admitted integration while unrelated snapshot-bound
+lanes continued. Canonical formatting changed whitespace only, verified against
+the reviewed candidate; original check receipts remain preserved. Final formatted
+source passes 186 no-default tests (`run-Ko2I2l`), 234 default tests
+(`run-MOR8ZN`) and the CLI binary build (`run-XIQq8c`). These include CLI library,
+catalog, quiesce, lifecycle and lease model checks, plus default lease registry.
+Source/sourceAfter bindings match before this evidence append. Scoped formatter
+and diff checks pass; no warning-free lint claim.
+
+Exact source SHA256:
+
+- `cli/src/catalog.rs`: `66b352fcbfdd1f4e2a46ede396098b5a8ab0120b352123453f9560d2bc6de82e`.
+- `cli/src/catalog/codec.rs`: `fbe3eed1bdfa3b7fdb80eb26714ee06f53f782ff2a4a6581528708e121adbeb8`.
+- `cli/tests/repository_catalog_quiesce.rs`: `f895176b1b3a1bb0dd9ce6cc56a621f9152314dc5eb888811e7f3e7b1707204d`.
+
+Original G4.6 and migration alias remain open for recovery-backed tombstone,
+restore/purge, protocol/isolation and resource gates. This accepts bounded
+ordinary quiesce only, not qualification or production readiness. ADR remains
+Proposed; no protected-data change, promotion or publication follows.

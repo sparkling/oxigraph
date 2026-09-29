@@ -1,10 +1,17 @@
-//! Opt-in Linux catalog create/reconcile/open. No server or destructive lifecycle API.
+//! Opt-in Linux catalog create/reconcile/open/quiesce. No server or destructive lifecycle API.
 //!
 //! Root is private to one trusted OS owner. This is not a defense against another
 //! arbitrary same-uid filesystem writer. Directory device/inode and validated
 //! format bind materialization; they are not a governed store UUID or backup.
-//! Runtime readiness is never persisted. Catalog generations and process-local
-//! lifecycle-model generations are deliberately separate.
+//! Runtime readiness and handle fences are never persisted. Catalog generations and
+//! process-local lifecycle-model generations are deliberately separate.
+//!
+//! Quiesce: `begin_quiesce` durably records `Quiescing` (generation-checked on the
+//! entry's own generation), rejects new opens and fences live handles through manager
+//! state before any `Store` access. `complete_quiesce` reaches `Closed` only when no
+//! manager-owned handle exists, proved by the actual handle drop, and re-verifies
+//! materialization. This embedded seam exposes no query, lease or raw `Store`, so it
+//! makes no server query/lease cancellation claim. Receipts are minted only here.
 mod codec;
 mod fs;
 
@@ -18,7 +25,7 @@ use oxigraph::model::Quad;
 use oxigraph::store::{StorageError, Store, StoreVersionStatus};
 use serde::{Deserialize, Serialize};
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -82,6 +89,10 @@ pub enum CatalogError {
     Io,
     Poisoned,
     Injected,
+    /// Handle operation refused: its repository is quiescing.
+    Quiescing,
+    /// Completion refused: a manager-owned handle still exists.
+    Busy,
 }
 impl fmt::Display for CatalogError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -131,10 +142,57 @@ pub struct RepositoryRecord {
     pub changed_at: u64,
 }
 
+/// Proof that this manager durably applied one quiesce transition.
+///
+/// `generation` is the entry's own generation (the catalog generation of its last
+/// change). `catalog_generation` is the catalog generation observed at issue and is
+/// informational only: an idempotent repeat may observe a later one. Only the manager
+/// mints receipts, and none is `Clone`. A receipt also binds the entry's internal
+/// random UUID, which is never exposed, including by `Debug`. Completion requires the
+/// exact receipt of the current `Quiescing` entry generation and UUID, so a stale,
+/// repeated, cross-repository or cross-root receipt cannot act even when its external
+/// ID and deterministic generation collide.
+#[derive(Eq, PartialEq)]
+#[must_use]
+pub struct QuiesceReceipt {
+    id: RepositoryId,
+    uuid: String,
+    phase: Phase,
+    generation: u64,
+    catalog_generation: u64,
+}
+
+impl fmt::Debug for QuiesceReceipt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("QuiesceReceipt")
+            .field("id", &self.id)
+            .field("phase", &self.phase)
+            .field("generation", &self.generation)
+            .field("catalog_generation", &self.catalog_generation)
+            .finish_non_exhaustive()
+    }
+}
+
+impl QuiesceReceipt {
+    pub fn id(&self) -> &RepositoryId {
+        &self.id
+    }
+    pub fn phase(&self) -> Phase {
+        self.phase
+    }
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+    pub fn catalog_generation(&self) -> u64 {
+        self.catalog_generation
+    }
+}
+
 pub struct RepositoryManager {
     root: fs::Root,
     catalog: RefCell<Catalog>,
-    active: RefCell<BTreeSet<String>>,
+    /// Counted slots by entry UUID; the flag is the runtime quiesce fence.
+    active: RefCell<BTreeMap<String, bool>>,
     poisoned: Cell<bool>,
     hook: Box<dyn Fn(FaultPoint) -> Result<(), CatalogError>>,
 }
@@ -187,7 +245,7 @@ impl RepositoryManager {
         let manager = Self {
             root,
             catalog: RefCell::new(catalog),
-            active: RefCell::new(BTreeSet::new()),
+            active: RefCell::new(BTreeMap::new()),
             poisoned: Cell::new(false),
             hook: Box::new(hook),
         };
@@ -376,6 +434,13 @@ impl RepositoryManager {
         self.point(FaultPoint::AfterClosed)
     }
 
+    /// Restart safety: a durable `Quiescing` entry stays `Quiescing` (never ready or
+    /// closed by phase alone). The exclusive root lock plus an empty `active` map prove
+    /// old handles are gone. Only definite evidence (retained staging debris or a
+    /// proven materialization/identity mismatch) turns it `Failed`. Capacity,
+    /// compatibility and transient I/O refusals keep it `Quiescing` without a write,
+    /// so one repository never blocks reopening the root; `complete_quiesce`
+    /// re-verifies. Nothing is initialized, moved or deleted.
     pub fn reconcile(&self) -> Result<(), CatalogError> {
         self.usable()?;
         if !self.active.borrow().is_empty() {
@@ -386,9 +451,22 @@ impl RepositoryManager {
             if matches!(entry.phase, Phase::Failed | Phase::Closed) {
                 continue;
             }
-            let mut next = self.catalog.borrow().clone();
             let staging = self.root.path.join("staging").join(&entry.uuid);
             let published = self.root.path.join("repos").join(&entry.uuid);
+            if entry.phase == Phase::Quiescing {
+                let definite = match fs::exists(&staging) {
+                    Ok(true) => true,
+                    Ok(false) => matches!(self.matches_evidence(&published, entry), Ok(false)),
+                    Err(_) => false,
+                };
+                if definite {
+                    let mut next = self.catalog.borrow().clone();
+                    next.entries[index].phase = Phase::Failed;
+                    self.persist(next, index)?;
+                }
+                continue;
+            }
+            let mut next = self.catalog.borrow().clone();
             let staged = fs::exists(&staging)?;
             let ready = fs::exists(&published)?;
             let valid = if entry.phase == Phase::Validated && staged != ready {
@@ -431,7 +509,7 @@ impl RepositoryManager {
         if entry.phase != Phase::Closed {
             return Err(CatalogError::NotReady);
         }
-        if self.active.borrow().contains(&entry.uuid) {
+        if self.active.borrow().contains_key(&entry.uuid) {
             return Err(CatalogError::Conflict);
         }
         let path = self.root.path.join("repos").join(&entry.uuid);
@@ -471,7 +549,8 @@ impl RepositoryManager {
         store.validate().map_err(CatalogError::from)?;
         // Writable open may rotate native metadata after the read-only preflight.
         // It must not return ready when that growth exceeds the scan ceiling.
-        self.root.guard_open_store(&path, catalog.limits.store_files)?;
+        self.root
+            .guard_open_store(&path, catalog.limits.store_files)?;
         model
             .complete_open(
                 &opening,
@@ -479,7 +558,7 @@ impl RepositoryManager {
                 LogicalTime(catalog.generation),
             )
             .map_err(|_| CatalogError::NotReady)?;
-        self.active.borrow_mut().insert(entry.uuid.clone());
+        self.active.borrow_mut().insert(entry.uuid.clone(), false);
         Ok(RepositoryHandle {
             store: Some(store),
             manager: self,
@@ -513,10 +592,131 @@ impl RepositoryManager {
             Err(error) => Err(error),
         }
     }
+
+    fn fence(&self, uuid: &str, fenced: bool) {
+        if let Some(slot) = self.active.borrow_mut().get_mut(uuid) {
+            *slot = fenced;
+        }
+    }
+
+    fn admit(&self, uuid: &str) -> Result<(), CatalogError> {
+        match self.active.borrow().get(uuid) {
+            Some(false) => Ok(()),
+            Some(true) => Err(CatalogError::Quiescing),
+            None => Err(CatalogError::NotReady),
+        }
+    }
+
+    fn receipt(&self, id: &RepositoryId, index: usize) -> QuiesceReceipt {
+        let catalog = self.catalog.borrow();
+        QuiesceReceipt {
+            id: id.clone(),
+            uuid: catalog.entries[index].uuid.clone(),
+            phase: catalog.entries[index].phase,
+            generation: catalog.entries[index].changed_at,
+            catalog_generation: catalog.generation,
+        }
+    }
+
+    /// Durably records `Quiescing` for a `Closed` or ready repository, rejecting new
+    /// opens and fencing live handles before any `Store` access. `expected_generation`
+    /// is the entry's own generation (`RepositoryRecord::changed_at`); a stale value is
+    /// `Conflict`. Repeating it on an already `Quiescing` entry with its current
+    /// generation is idempotent: no write, a receipt for the same entry generation. A
+    /// pre-write refusal (generation or scan exhaustion) removes the fence; a failed
+    /// write poisons the manager and keeps it, because the outcome is uncertain until
+    /// reopen.
+    pub fn begin_quiesce(
+        &self,
+        id: &RepositoryId,
+        expected_generation: u64,
+    ) -> Result<QuiesceReceipt, CatalogError> {
+        self.usable()?;
+        let catalog = self.catalog.borrow().clone();
+        let index = catalog
+            .entries
+            .iter()
+            .position(|entry| entry.id == id.as_str())
+            .ok_or(CatalogError::NotFound)?;
+        let entry = &catalog.entries[index];
+        if entry.changed_at != expected_generation {
+            return Err(CatalogError::Conflict);
+        }
+        if entry.phase == Phase::Quiescing {
+            self.fence(&entry.uuid, true);
+            return Ok(self.receipt(id, index));
+        }
+        if entry.phase != Phase::Closed {
+            return Err(CatalogError::NotReady);
+        }
+        let uuid = entry.uuid.clone();
+        let mut next = catalog;
+        next.entries[index].phase = Phase::Quiescing;
+        self.fence(&uuid, true);
+        if let Err(error) = self.persist(next, index) {
+            if !self.poisoned.get() {
+                self.fence(&uuid, false);
+            }
+            return Err(error);
+        }
+        Ok(self.receipt(id, index))
+    }
+
+    /// Completes a durable quiesce to `Closed`. Refuses with `Busy` while any
+    /// manager-owned handle exists; drain is proved by the actual handle drop, not by
+    /// a caller assertion. Materialization is re-verified before `Closed` is persisted;
+    /// a definite mismatch persists `Failed` and returns `NotReady`, while capacity,
+    /// compatibility and transient refusals return their error without a write. The
+    /// receipt must belong to this ID, this entry's internal UUID and its current
+    /// `Quiescing` generation, so stale, repeated, cross-repository and cross-root
+    /// receipts are `Conflict`.
+    pub fn complete_quiesce(
+        &self,
+        id: &RepositoryId,
+        receipt: &QuiesceReceipt,
+    ) -> Result<QuiesceReceipt, CatalogError> {
+        self.usable()?;
+        let catalog = self.catalog.borrow().clone();
+        let index = catalog
+            .entries
+            .iter()
+            .position(|entry| entry.id == id.as_str())
+            .ok_or(CatalogError::NotFound)?;
+        let entry = &catalog.entries[index];
+        if receipt.id != *id
+            || receipt.uuid != entry.uuid
+            || receipt.phase != Phase::Quiescing
+            || entry.phase != Phase::Quiescing
+            || entry.changed_at != receipt.generation
+        {
+            return Err(CatalogError::Conflict);
+        }
+        if self.active.borrow().contains_key(&entry.uuid) {
+            return Err(CatalogError::Busy);
+        }
+        if catalog.generation.checked_add(1).is_none() {
+            return Err(CatalogError::Limit);
+        }
+        let path = self.root.path.join("repos").join(&entry.uuid);
+        let phase = if self.matches_evidence(&path, entry)? {
+            Phase::Closed
+        } else {
+            Phase::Failed
+        };
+        let mut next = catalog.clone();
+        next.entries[index].phase = phase;
+        self.persist(next, index)?;
+        if phase == Phase::Failed {
+            return Err(CatalogError::NotReady);
+        }
+        Ok(self.receipt(id, index))
+    }
 }
 
 /// Keeps manager lock and counted slot alive. No cloneable raw Store escapes.
 /// This bounded embedded seam exposes RDF insert/read only, not a server route.
+/// The manager fence is authoritative: `snapshot()` is the process-local model and is
+/// not advanced by a quiesce.
 pub struct RepositoryHandle<'a> {
     store: Option<Store>,
     manager: &'a RepositoryManager,
@@ -529,6 +729,7 @@ impl RepositoryHandle<'_> {
         self.model.snapshot()
     }
     pub fn contains(&self, quad: &Quad) -> Result<bool, CatalogError> {
+        self.manager.admit(&self.uuid)?;
         self.store
             .as_ref()
             .ok_or(CatalogError::NotReady)?
@@ -536,6 +737,7 @@ impl RepositoryHandle<'_> {
             .map_err(|_| CatalogError::Storage)
     }
     pub fn insert(&self, quad: Quad) -> Result<(), CatalogError> {
+        self.manager.admit(&self.uuid)?;
         if self.mode != OpenMode::ReadWrite {
             return Err(CatalogError::NotReady);
         }
@@ -546,6 +748,7 @@ impl RepositoryHandle<'_> {
             .map_err(|_| CatalogError::Storage)
     }
     pub fn flush(&self) -> Result<(), CatalogError> {
+        self.manager.admit(&self.uuid)?;
         self.store
             .as_ref()
             .ok_or(CatalogError::NotReady)?

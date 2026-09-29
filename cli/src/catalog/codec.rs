@@ -1,3 +1,12 @@
+//! Catalog v1 codec. Format semantics for `Phase`:
+//!
+//! `Quiescing` is an additive phase string in catalog v1: the header, `version` and
+//! every field are unchanged, so a catalog without a `Quiescing` entry is
+//! byte-identical to before. A `Quiescing` entry requires materialization evidence
+//! like `Validated` and `Closed`. Phase decoding is closed: any other string (unknown
+//! or miscased) fails serde and returns `InvalidCatalog`, so older binaries also fail
+//! closed on a catalog holding `Quiescing`. Encoding stays canonical (decode requires
+//! byte-equal re-encoding) and readiness is never derived from phase alone.
 use super::{CatalogError, ManagerLimits};
 use crate::repository::RepositoryId;
 use serde::{Deserialize, Serialize};
@@ -57,11 +66,13 @@ pub(super) struct Catalog {
 }
 
 /// The per-entry phase is the bounded outstanding-operation journal.
+/// `Quiescing` is an additive v1 phase; see the module documentation.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Phase {
     Reserved,
     Validated,
     Closed,
+    Quiescing,
     Failed,
 }
 
@@ -115,8 +126,10 @@ impl Catalog {
                 || !uuids.insert(&entry.uuid)
                 || entry.changed_at == 0
                 || entry.changed_at > self.generation
-                || (matches!(entry.phase, Phase::Validated | Phase::Closed)
-                    && entry.evidence.is_none())
+                || (matches!(
+                    entry.phase,
+                    Phase::Validated | Phase::Closed | Phase::Quiescing
+                ) && entry.evidence.is_none())
                 || (entry.phase == Phase::Reserved && entry.evidence.is_some())
                 || entry.evidence.as_ref().is_some_and(|e| {
                     e.inode == 0
@@ -159,5 +172,54 @@ impl Catalog {
             return Err(CatalogError::InvalidCatalog);
         }
         Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod quiescing_tests {
+    use super::{Catalog, CatalogError, Entry, ManagerLimits, Materialized, Phase};
+
+    fn limits() -> ManagerLimits {
+        ManagerLimits {
+            repositories: 4,
+            catalog_bytes: 65536,
+            scan_entries: 128,
+            open_handles: 2,
+            store_files: 128,
+            model_retention: 1,
+            model_max_generation: 100,
+        }
+    }
+
+    fn catalog(evidence: bool) -> Catalog {
+        Catalog {
+            version: 1,
+            generation: 2,
+            limits: limits(),
+            entries: vec![Entry {
+                id: "a".into(),
+                uuid: "12345678-1234-4123-8123-123456789012".into(),
+                phase: Phase::Quiescing,
+                changed_at: 2,
+                evidence: evidence.then(|| Materialized {
+                    device: 1,
+                    inode: 1,
+                    format: "0".repeat(64),
+                }),
+            }],
+        }
+    }
+
+    #[test]
+    fn quiescing_round_trips_in_v1_and_requires_evidence() {
+        let with = catalog(true);
+        let bytes = with.encode().unwrap();
+        assert!(bytes.starts_with(b"oxigraph-catalog-v1\n"));
+        assert!(String::from_utf8_lossy(&bytes).contains(r#""phase":"Quiescing""#));
+        assert_eq!(Catalog::decode(&bytes, limits()).unwrap(), with);
+        assert_eq!(
+            catalog(false).encode().unwrap_err(),
+            CatalogError::InvalidCatalog
+        );
     }
 }
