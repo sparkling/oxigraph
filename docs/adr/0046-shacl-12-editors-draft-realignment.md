@@ -1,6 +1,9 @@
 # ADR-0046: SHACL 1.2 editor's-draft realignment
 
 - **Status**: Accepted
+- **Updated**: 2026-09-29 — E3 DATA wording/digest repair accepted in
+  `7c6c3483451d5c833e6b1732e7faba464b05bed9`; GCP execution evidence below.
+  Fresh E4 candidate execution and its evidence acceptance remain separate.
 - **Date**: 2026-09-19
 - **Updated**: 2026-09-22 — candidate clause evidence contracts delivered
   (`899a2d0c`, `8d71c036`); first candidate suite execution recorded. Four of
@@ -28,11 +31,10 @@
   layer lifecycle and scalar-expression absence handling delivered in `85580fc9`.
   Candidate clause evidence contracts delivered in `899a2d0c` with their
   verifier-side checkout test in `8d71c036`; their independent review returned
-  INCONCLUSIVE with one blocker still open, recorded below. The candidate suite
-  has now run for the first time: clause audit and Jena compact pass, the suite
-  command fails at 551 of 560 expected passes on nine unimplemented engine
-  features. The reviewed suite evidence transition and smaller language gaps
-  therefore remain open. The
+  INCONCLUSIVE, with subsequent repairs and reviews recorded below. Historical
+  candidate suite receipts later reached 560 of 560 selected passes; those
+  receipts do not establish fresh GCP acceptance. The reviewed suite evidence
+  transition and smaller language gaps remain separate work. The
   plan below is ordinary buildable work under
   [ADR-0044](0044-post-deployment-production-tuning.md), not a gated backlog.
 - **Related**:
@@ -691,6 +693,40 @@ sets: those are fixed by the readiness file, and a selected failure is a failure
 Ordinary suite execution remains incomplete until they are implemented, and no
 qualification, promotion, conformance or publication claim follows from the two
 passing commands.
+
+### E3 DATA contract reconciliation on GCP, 2026-09-29
+
+`7c6c3483451d5c833e6b1732e7faba464b05bed9` reconciles candidate obligation,
+mapping and residual text with ADR-0047's base-only frozen DATA decision.
+The literal `G0` calls, unused computed `GD`, unresolved upstream #1276 and
+explicit source ambiguity remain recorded. Only the three affected candidate
+collection digests change; source revisions, historical contracts, counts,
+unsupported declarations and preexecution statuses remain unchanged.
+
+Original outcome identity remains `task-1789920942563-yx72lt`.
+`task-1790641997602-ylhpay` is its GCP registry migration alias, not a new
+programme outcome. Migrated September 25 repair output is historical guidance,
+not new acceptance.
+
+Before commit, Node 24.14.1 passed 39 focused checks (`run-y2joyu`) and 25
+impacted checks (`run-573Sni`); Node 20.20.2 passed all 64 (`run-c5NHL1`).
+Those receipts bind `0f30d58d` plus the exact working-tree repair, not a clean
+commit. After commit, Node 24.14.1 passed all 64 on clean `7c6c34834`
+(`run-iyaNFQ`). Checks cover evidence verification, hidden-index entries and
+ordinary delivery contracts; no candidate suite ran in this repair slice.
+
+Fresh independent native `cc/claude-sonnet-5-5[1m]` / high review accepted the
+repair with no blocking findings. Review output:
+`target/engineering-delivery/e3-gcp-review-n7t6o9/output.json`, SHA-256
+`42773eb3eb31ca0fa1dbfa343758351d9084371bb9a4f5531403798da52b69d4`.
+It reviewed the focused Node 24 receipt, not the subsequent impacted, Node 20
+or clean-commit runs; root verified those independently. Abbreviated evidence
+commit references remain a non-blocking review note. Exact commit/evidence
+binding was stored and read back through structured Ruflo MCP at
+`programme-task-evidence/adr0046-e3-gcp-repair-7c6c34834`.
+
+This accepts the bounded source repair, not fresh E4 execution, full programme
+completion, qualification, promotion or publication. ADR-0047 stays provisional.
 
 ### Original investigation
 
