@@ -3,7 +3,8 @@
 - **Status**: Accepted
 - **Updated**: 2026-09-29 — E3 DATA wording/digest repair accepted in
   `7c6c3483451d5c833e6b1732e7faba464b05bed9`; GCP execution evidence below.
-  Fresh E4 candidate execution and its evidence acceptance remain separate.
+  Fresh E4 candidate execution at `8996589fa` also accepted; exact evidence
+  and remaining claim limits below.
 - **Date**: 2026-09-19
 - **Updated**: 2026-09-22 — candidate clause evidence contracts delivered
   (`899a2d0c`, `8d71c036`); first candidate suite execution recorded. Four of
@@ -727,6 +728,43 @@ binding was stored and read back through structured Ruflo MCP at
 
 This accepts the bounded source repair, not fresh E4 execution, full programme
 completion, qualification, promotion or publication. ADR-0047 stays provisional.
+
+### Fresh E4 ordinary execution on GCP, 2026-09-29
+
+Original outcome `task-1789927576007-zcy5h6` now has fresh accepted ordinary
+execution evidence on clean `8996589fafa10944a02f8fe6cf7e328d396e13e2`.
+That commit changes only this ADR atop the accepted E3 source.
+GCP task `task-1790642392426-1m1avp` is a registry migration alias only.
+
+| Command | Receipt | Observed result |
+| --- | --- | --- |
+| `node tools/shacl-tests/clause-audit.mjs` | `run-td7V4I` | exit 0; 9 documents, 233 clause candidates, 219 syntax rules, 153 grammar productions, 38 joins |
+| `node tools/shacl-tests/run.mjs` | `run-ch5NhR` | exit 2; 569 discovered, 567 eligible, 560 passed, 7 unsupported, 0 failed, 2 excluded |
+| `node tools/shacl-tests/jena-compact.mjs` | `run-JgU5Jd` | exit 0; 32 of 32 pinned graph-isomorphism pairs |
+
+The generic engineering runner records `run-ch5NhR` as `failed` because its
+child exits 2. That record is preserved unchanged. The suite's documented
+exit-2 disposition means predeclared unsupported cases exist, not selected-case
+failures. Its candidate receipt has `complete: true`, zero errors and exact
+expected counts. Acceptance uses that verified semantic result, not a relabeled
+generic receipt.
+
+All three immutable candidate receipts were independently revalidated through
+`verifyShaclCandidateArtifacts` against the exact implementation commit:
+`target/engineering-delivery/e4-gcp-acceptance-NXDe8F/verified.json`, SHA-256
+`ed28a7c60207c3bba17c1e6b349b1752867ed4eb500cfa93448e02eb6dc9f609`.
+Fresh native `cc/claude-sonnet-5-5[1m]` / high review accepted with no blocking
+findings: `target/engineering-delivery/e4-gcp-review-Uj0mPd/output.json`,
+session `23b54206-afd0-4a07-9ea8-43397d18473d`. The reviewer inspected receipts,
+source contracts and selected raw logs; root performed byte-hash and verifier
+checks. This is not an independent reimplementation of the verifier.
+
+Candidate source remains `0ccfab4f28324edaac59a1227f8c60ad5b7bbf89`.
+Historical pins and receipts, preexecution declarations, unsupported and
+excluded sets remain intact. E3/E4's bounded evidence transition is accepted;
+smaller language limitations recorded above, provisional ADR-0047 and upstream
+#1276 remain. This ADR stays Accepted, not a full-conformance or whole-programme
+completion claim. No qualification, promotion, publication or push occurred.
 
 ### Original investigation
 
