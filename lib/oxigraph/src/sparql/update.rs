@@ -10,6 +10,7 @@ use crate::model::{
 };
 use crate::sparql::dataset::DatasetView;
 use crate::sparql::error::UpdateEvaluationError;
+use crate::sparql::{BoundPreparedSparqlQuery, PreparedSparqlQuery};
 use crate::storage::{Storage, StorageTransaction};
 use crate::store::evaluation_metrics::EvaluationObservation;
 use crate::store::{
@@ -1122,6 +1123,75 @@ impl<'a, D: WritableDataset + 'a> QueryableDataset<'a> for WritableDatasetView<'
 
     fn externalize_term(&self, term: OxTerm) -> Result<OxTerm, Self::Error> {
         Ok(term)
+    }
+}
+
+#[expect(
+    clippy::multiple_inherent_impl,
+    reason = "the writable-dataset query binding lives beside the private view it wraps"
+)]
+impl PreparedSparqlQuery {
+    /// Binds this query to the staged view of a [`WritableDataset`].
+    ///
+    /// The dataset is only borrowed for reading, and the returned results
+    /// keep that borrow, so the transaction cannot be mutated, committed or
+    /// rolled back while they are alive. The evaluator's cancellation token,
+    /// resource budgets, `SERVICE` handler and egress policy, the dataset
+    /// specification and the substitutions are kept as configured.
+    ///
+    /// ```
+    /// use oxigraph::model::*;
+    /// use oxigraph::sparql::{QueryResults, SparqlEvaluator};
+    /// use oxigraph::store::{Store, TransactionKey, TransactionRequest};
+    ///
+    /// let store = Store::new()?;
+    /// let ex = NamedNode::new("http://example.com")?;
+    /// let mut keyed = store
+    ///     .start_owned_transaction_with_key(
+    ///         TransactionRequest::default(),
+    ///         TransactionKey::new([1; 16]),
+    ///     )?
+    ///     .into_transaction();
+    /// keyed.insert(Quad::new(
+    ///     ex.clone(),
+    ///     ex.clone(),
+    ///     ex.clone(),
+    ///     GraphName::DefaultGraph,
+    /// ));
+    /// let prepared = SparqlEvaluator::new().parse_query("SELECT ?s WHERE { ?s ?p ?o }")?;
+    /// if let QueryResults::Solutions(mut solutions) = prepared.on_writable_dataset(&keyed).execute()? {
+    ///     assert_eq!(solutions.next().unwrap()?.get("s"), Some(&ex.into()));
+    /// }
+    /// assert!(store.is_empty()?);
+    /// # Ok::<_, Box<dyn std::error::Error>>(())
+    /// ```
+    ///
+    /// Results borrow the transaction, so it cannot be mutated meanwhile:
+    /// ```compile_fail,E0502
+    /// use oxigraph::model::*;
+    /// use oxigraph::sparql::SparqlEvaluator;
+    /// use oxigraph::store::{Store, TransactionKey, TransactionRequest};
+    ///
+    /// let store = Store::new()?;
+    /// let ex = NamedNode::new("http://example.com")?;
+    /// let quad = Quad::new(ex.clone(), ex.clone(), ex, GraphName::DefaultGraph);
+    /// let mut keyed = store
+    ///     .start_owned_transaction_with_key(
+    ///         TransactionRequest::default(),
+    ///         TransactionKey::new([2; 16]),
+    ///     )?
+    ///     .into_transaction();
+    /// let prepared = SparqlEvaluator::new().parse_query("SELECT * WHERE { ?s ?p ?o }")?;
+    /// let results = prepared.on_writable_dataset(&keyed).execute()?;
+    /// keyed.insert(quad);
+    /// drop(results);
+    /// # Ok::<_, Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn on_writable_dataset<'a, D: WritableDataset + 'a>(
+        self,
+        dataset: &'a D,
+    ) -> BoundPreparedSparqlQuery<'a, impl QueryableDataset<'a>> {
+        self.on_queryable_dataset(WritableDatasetView::new(dataset))
     }
 }
 

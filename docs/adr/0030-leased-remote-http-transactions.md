@@ -5,9 +5,10 @@
 - Updated: 2026-09-29
 - Deciders: Oxigraph parity programme
 - Implementation status: native owned storage and additive public owned Store
-  handle, deterministic lease model and bounded in-process registry implemented
-  within the evidence below. The server has no remote transaction route or
-  enabled leased HTTP profile; the registry has no SPARQL text adapter
+  handle, deterministic lease model, bounded in-process registry and borrowed
+  prepared-query binding implemented within the evidence below. The server has
+  no remote transaction route or enabled leased HTTP profile; prepared updates
+  and protocol integration remain open
 - Programme task: `task-1787670632421-dkucm8` (G4.5)
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
@@ -23,26 +24,18 @@
 
 ## Context
 
-The HTTP server executes each SPARQL Update or Graph Store mutation in its own
-request-owned transaction. It cannot let a remote client stage several reads
-and writes, observe read-your-writes, and choose commit or rollback later.
-RDF4J interoperability and some administrative workflows need that lifecycle,
-but an unbounded server-held transaction would be unsafe in this repository.
+The HTTP server executes each SPARQL Update or Graph Store mutation in its own request-owned transaction. It cannot let a remote client stage several reads and writes, observe
+read-your-writes, and choose commit or rollback later. RDF4J interoperability and some administrative workflows need that lifecycle, but an unbounded server-held transaction would
+be unsafe in this repository.
 
-`Store::Transaction<'a>` borrows its `Store`, and both built-in backends
-currently serialize writers. Keeping that borrowed transaction in a global
-HTTP registry would require unsafe or self-referential lifetime machinery;
-keeping any write transaction open for an arbitrary client lease would also
-block every later writer for that store. A lost commit response introduces the
-same ambiguous-outcome problem addressed by ADR-0020. Remote transactions must
-therefore be an explicit, tightly bounded optional capability rather than an
+`Store::Transaction<'a>` borrows its `Store`, and both built-in backends currently serialize writers. Keeping that borrowed transaction in a global HTTP registry would require
+unsafe or self-referential lifetime machinery; keeping any write transaction open for an arbitrary client lease would also block every later writer for that store. A lost commit
+response introduces the same ambiguous-outcome problem addressed by ADR-0020. Remote transactions must therefore be an explicit, tightly bounded optional capability rather than an
 HTTP wrapper around the current borrowed type.
 
 ## Decision
 
-Add a native, single-node leased-transaction profile only after the required
-identity, admission, receipt, and outcome-lookup capabilities exist. The
-profile has two layers:
+Add a native, single-node leased-transaction profile only after the required identity, admission, receipt, and outcome-lookup capabilities exist. The profile has two layers:
 
 1. The store exposes an additive owned-transaction capability. The built-in
    implementation owns the storage handle and writer permit safely and
@@ -58,13 +51,9 @@ profile has two layers:
    The registry never serializes staged RDF or attempts to resume it after a
    process restart.
 
-The proposed Rust seam is an `OwnedTransactionalDataset` extension returning
-an `OwnedTransaction` that supports the existing query/update bindings plus
-`WritableDataset`. `OwnedTransaction` is not clonable. Commit and rollback
-consume it, and its drop behavior remains rollback-before-commit-attempt. The
-server wraps it in a per-entry mutex so exactly one request may operate on a
-transaction at a time; a concurrent operation receives typed `TransactionBusy`
-rather than acquiring an unspecified order.
+The proposed Rust seam is an `OwnedTransactionalDataset` extension returning an `OwnedTransaction` that supports the existing query/update bindings plus `WritableDataset`.
+`OwnedTransaction` is not clonable. Commit and rollback consume it, and its drop behavior remains rollback-before-commit-attempt. The server wraps it in a per-entry mutex so
+exactly one request may operate on a transaction at a time; a concurrent operation receives typed `TransactionBusy` rather than acquiring an unspecified order.
 
 The first native HTTP profile is versioned under these routes:
 
@@ -83,34 +72,21 @@ The first native HTTP profile is versioned under these routes:
 - `GET /transactions/{id}/outcome` returns active metadata or the retained
   terminal outcome without exposing staged RDF.
 
-The transaction token is never placed in a URI. The ID alone grants no
-authority. Exact header names and JSON error codes are frozen with the native
-protocol evaluator before implementation; RDF4J-compatible routes in
-ADR-0029 translate onto this lifecycle rather than redefining its state
-machine.
+The transaction token is never placed in a URI. The ID alone grants no authority. Exact header names and JSON error codes are frozen with the native protocol evaluator before
+implementation; RDF4J-compatible routes in ADR-0029 translate onto this lifecycle rather than redefining its state machine.
 
-Lease activity does not renew implicitly. Configuration sets an idle limit,
-an absolute lifetime, a maximum single extension, operations, request bytes,
-result bytes, and staged-change budget. The effective lifetime is capped by
-operator policy even if the client requests more. Expiry cancels an active
-operation, waits only for the bounded cancellation path, and rolls back when
-non-commit is still proven. Once the state reaches `CommitAttempted`, expiry
-cannot report rollback; ADR-0020 outcome lookup resolves committed, proven
-absent, expired/unknown, or indeterminate.
+Lease activity does not renew implicitly. Configuration sets an idle limit, an absolute lifetime, a maximum single extension, operations, request bytes, result bytes, and
+staged-change budget. The effective lifetime is capped by operator policy even if the client requests more. Expiry cancels an active operation, waits only for the bounded
+cancellation path, and rolls back when non-commit is still proven. Once the state reaches `CommitAttempted`, expiry cannot report rollback; ADR-0020 outcome lookup resolves
+committed, proven absent, expired/unknown, or indeterminate.
 
-A clean server shutdown stops admission, cancels active work, rolls back all
-transactions that have not attempted commit, and records counts and terminal
-reasons. After a crash or restart, leases are gone. Retained transaction keys
-and commit receipts resolve possible commit attempts, but staged transactions
-are never reconstructed or replayed. Response loss likewise never triggers an
-automatic update replay.
+A clean server shutdown stops admission, cancels active work, rolls back all transactions that have not attempted commit, and records counts and terminal reasons. After a crash or
+restart, leases are gone. Retained transaction keys and commit receipts resolve possible commit attempts, but staged transactions are never reconstructed or replayed. Response loss
+likewise never triggers an automatic update replay.
 
-The server may reject begin with `429` or `503` and bounded retry advice when
-the per-principal, per-repository, or global lease budget is exhausted. With
-the current serialized-writer backends, the default maximum active write lease
-is one per repository and the lease duration must be short. Benchmark evidence
-may decide that the operational cost makes the feature unsuitable or keeps it
-disabled; this ADR does not assume adoption is inevitable.
+The server may reject begin with `429` or `503` and bounded retry advice when the per-principal, per-repository, or global lease budget is exhausted. With the current
+serialized-writer backends, the default maximum active write lease is one per repository and the lease duration must be short. Benchmark evidence may decide that the operational
+cost makes the feature unsuitable or keeps it disabled; this ADR does not assume adoption is inevitable.
 
 ## Security and operational behavior
 
@@ -165,9 +141,8 @@ disabled; this ADR does not assume adoption is inevitable.
    reader liveness, and ordinary autocommit tail regressions. Numeric promotion
    thresholds are frozen only after parent-first baselining.
 
-No server route or service-description claim is enabled before all applicable
-gates have source-bound receipts. The RDF4J compatibility evaluator is an
-additional gate, not a substitute for the native state model.
+No server route or service-description claim is enabled before all applicable gates have source-bound receipts. The RDF4J compatibility evaluator is an additional gate, not a
+substitute for the native state model.
 
 ## Consequences
 
@@ -197,171 +172,99 @@ additional gate, not a substitute for the native state model.
 
 ## Evidence and task ownership
 
-Current request-owned transaction paths are in
-[`main.rs`](../../cli/src/main.rs) and
-[`graph_store.rs`](../../cli/src/graph_store.rs). The borrowed Rust transaction
-is in
-[`store.rs`](../../lib/oxigraph/src/store.rs), with negotiated persistence
-traits in [`transactional.rs`](../../lib/oxigraph/src/store/transactional.rs).
-G4.5 owns implementation. The bounded native ownership and public handle slices
-below are accepted; the frozen independent evaluator and leased HTTP profile
-remain open.
+Current request-owned transaction paths are in [`main.rs`](../../cli/src/main.rs) and [`graph_store.rs`](../../cli/src/graph_store.rs). The borrowed Rust transaction is in
+[`store.rs`](../../lib/oxigraph/src/store.rs), with negotiated persistence traits in [`transactional.rs`](../../lib/oxigraph/src/store/transactional.rs). G4.5 owns implementation.
+The bounded native ownership and public handle slices below are accepted; the frozen independent evaluator and leased HTTP profile remain open.
 
 ## Owned memory writer permit (2026-09-29)
 
-`storage/memory.rs` now stores an `Arc<Lock>` in the existing writer permit.
-All existing memory transaction paths use it; admission, keyed outcomes and
-rollback-before-permit-release behavior are unchanged. The transaction itself
-still borrows `MemoryStorage`: this is not the public owned-handle gate.
-Exact source SHA256:
+`storage/memory.rs` now stores an `Arc<Lock>` in the existing writer permit. All existing memory transaction paths use it; admission, keyed outcomes and
+rollback-before-permit-release behavior are unchanged. The transaction itself still borrows `MemoryStorage`: this is not the public owned-handle gate. Exact source SHA256:
 `baa3ee489ada2949b35582fabeffcedd8db20abbe76de33661f9ce71a69d7e27`.
 
-Ordinary batch `workflow-klmGGY`, run
-`3fcc6de3-89d0-479b-9069-dc1851abf6bc`, used native Sonnet 5.5/high planning,
-authoring and fresh review, with Opus/high formatting-only repair. Final fresh
-reviewer `0d22939d-274e-4910-bb06-dbb5d7cfccfc` accepted. Candidate no-default
-unit tests pass 14/14 (`run-WT0Fiq`); integration tests pass 7/7
-(`run-KuYSnz`). The concurrency integration file is feature-excluded in that
-configuration, not additional coverage. Canonical default and RDF 1.2 module
-checks each pass 14/14 (`run-dqz21r`, `run-wzP0HK`) with exact source bindings
-verified before this evidence edit. Formatter passes. Candidate no-default
-library/test Clippy exits 0 with warnings, not a warning-free claim.
+Ordinary batch `workflow-klmGGY`, run `3fcc6de3-89d0-479b-9069-dc1851abf6bc`, used native Sonnet 5.5/high planning, authoring and fresh review, with Opus/high formatting-only
+repair. Final fresh reviewer `0d22939d-274e-4910-bb06-dbb5d7cfccfc` accepted. Candidate no-default unit tests pass 14/14 (`run-WT0Fiq`); integration tests pass 7/7 (`run-KuYSnz`).
+The concurrency integration file is feature-excluded in that configuration, not additional coverage. Canonical default and RDF 1.2 module checks each pass 14/14 (`run-dqz21r`,
+`run-wzP0HK`) with exact source bindings verified before this evidence edit. Formatter passes. Candidate no-default library/test Clippy exits 0 with warnings, not a warning-free
+claim.
 
-Lane receipt SHA256:
-`f4d5f28a3cee9062122c7f8c84f35db07432f9ddbe552cdf34a06005ece84062`.
-All 24 event/check/handoff references verified; structured MCP handoff readback
-and native learning retained. Cohort and external actions drained before
-integration. Prior rejected formatting review and original receipts remain.
-Original outcome `task-1787670632421-dkucm8` uses migration registry alias
-`task-1790657013522-cscfy2`; the umbrella remains open. No HTTP exposure,
-qualification, promotion or publication follows. ADR remains Proposed.
+Lane receipt SHA256: `f4d5f28a3cee9062122c7f8c84f35db07432f9ddbe552cdf34a06005ece84062`. All 24 event/check/handoff references verified; structured MCP handoff readback and native
+learning retained. Cohort and external actions drained before integration. Prior rejected formatting review and original receipts remain. Original outcome
+`task-1787670632421-dkucm8` uses migration registry alias `task-1790657013522-cscfy2`; the umbrella remains open. No HTTP exposure, qualification, promotion or publication follows.
+ADR remains Proposed.
 
 ## Owned native RocksDB transaction (2026-09-29)
 
-`storage/rocksdb_wrapper.rs` now retains `Arc<RwDbHandler>` in all three
-readable transaction start paths, returning a native `'static` transaction.
-The covariant lifetime marker preserves existing caller compatibility;
-readers still borrow the transaction. Native batch, options and snapshot are
-destroyed before the database owner is released. Keyed outcome transitions
-and writer-permit semantics remain unchanged. No new unsafe lifetime extension
-or public owned `Store` transaction is introduced. Exact file SHA256:
+`storage/rocksdb_wrapper.rs` now retains `Arc<RwDbHandler>` in all three readable transaction start paths, returning a native `'static` transaction. The covariant lifetime marker
+preserves existing caller compatibility; readers still borrow the transaction. Native batch, options and snapshot are destroyed before the database owner is released. Keyed outcome
+transitions and writer-permit semantics remain unchanged. No new unsafe lifetime extension or public owned `Store` transaction is introduced. Exact file SHA256:
 `3151b51d5591c13cf373de66106288b977fe37d4c3c61008e7437cc63a985156`.
 
-Independent lane in `workflow-klmGGY`, run
-`cd8f7900-02a1-494a-a8e2-1d9892402b97`, used Sonnet 5.5/high ordinary roles,
-Opus/high formatting-only repair and fresh reviewer
-`e076c4cc-4721-465a-9d70-be9060149df9` (ACCEPT). Repaired candidate wrapper
-tests pass 15/15 (`run-sYeHvO`); transaction integration tests pass 12/12
-(`run-nqL2s4`). Formatter passes. Candidate default library/test Clippy exits
-0 with warnings, not a clean-lint claim. Negative review and earlier checks
-remain preserved.
+Independent lane in `workflow-klmGGY`, run `cd8f7900-02a1-494a-a8e2-1d9892402b97`, used Sonnet 5.5/high ordinary roles, Opus/high formatting-only repair and fresh reviewer
+`e076c4cc-4721-465a-9d70-be9060149df9` (ACCEPT). Repaired candidate wrapper tests pass 15/15 (`run-sYeHvO`); transaction integration tests pass 12/12 (`run-nqL2s4`). Formatter
+passes. Candidate default library/test Clippy exits 0 with warnings, not a clean-lint claim. Negative review and earlier checks remain preserved.
 
-Lane receipt SHA256:
-`0f73a316a26f68ffa22272aa6509b757066df4592139b3fb6553187b54bd98c0`.
-All 24 event/check/handoff hashes verified; structured MCP readback and native
-learning retained. After cohort drain, source/read/evaluator inputs were
-revalidated against accepted memory prerequisite `14fd64909`. Its private
-memory change and this ADR's evidence append do not alter the RocksDB packet's
-caller contract. The combined canonical source was rebuilt and tested:
+Lane receipt SHA256: `0f73a316a26f68ffa22272aa6509b757066df4592139b3fb6553187b54bd98c0`. All 24 event/check/handoff hashes verified; structured MCP readback and native learning
+retained. After cohort drain, source/read/evaluator inputs were revalidated against accepted memory prerequisite `14fd64909`. Its private memory change and this ADR's evidence
+append do not alter the RocksDB packet's caller contract. The combined canonical source was rebuilt and tested:
 
 - Default storage suite: 108 passed, 1 ignored (`run-ds3LEK`).
 - RDF 1.2 storage suite: 107 passed, 2 ignored (`run-DV3gSO`).
 - Default and RDF 1.2 transaction contracts: 12 passed each
   (`run-3foZAS`, `run-RZVlRN`).
 
-Storage-suite counts are top-level; nested helper summaries make generic
-runner aggregates larger. Exact canonical source/sourceAfter bindings were
-verified before this evidence append. Registry task
-`task-1790657013821-0hn394` closes only this native prerequisite. Remaining
-backend-storage ownership, public owned handle, evaluator and lease/protocol
-gates stay on original G4.5 outcome. ADR remains Proposed; no HTTP exposure,
-qualification, promotion or publication.
+Storage-suite counts are top-level; nested helper summaries make generic runner aggregates larger. Exact canonical source/sourceAfter bindings were verified before this evidence
+append. Registry task `task-1790657013821-0hn394` closes only this native prerequisite. Remaining backend-storage ownership, public owned handle, evaluator and lease/protocol gates
+stay on original G4.5 outcome. ADR remains Proposed; no HTTP exposure, qualification, promotion or publication.
 
 ## Owned memory storage transaction (2026-09-29)
 
-`MemoryStorageTransaction` now owns its cloned `MemoryStorage`, preserving a
-covariant lifetime marker for existing callers. All native start paths return
-`'static` transactions; readers still borrow the transaction. Receipt commit
-retains a storage clone while consuming the transaction. Existing rollback,
-MVCC, keyed/governed outcomes and permit-last drop order remain unchanged.
-Exact `storage/memory.rs` SHA256:
-`ba3b3f1b0bdf97451917483c3c87cc8f46a4d1d6d4ca14fe3b01be89a6d0c5b2`.
+`MemoryStorageTransaction` now owns its cloned `MemoryStorage`, preserving a covariant lifetime marker for existing callers. All native start paths return `'static` transactions;
+readers still borrow the transaction. Receipt commit retains a storage clone while consuming the transaction. Existing rollback, MVCC, keyed/governed outcomes and permit-last drop
+order remain unchanged. Exact `storage/memory.rs` SHA256: `ba3b3f1b0bdf97451917483c3c87cc8f46a4d1d6d4ca14fe3b01be89a6d0c5b2`.
 
-Batch `workflow-z3f6kV`, run `609acc3b-7d00-4e38-a753-79e8771ff913`, used
-Sonnet 5.5/high ordinary roles and Opus/high formatting-only repair. Fresh
-reviewer `cac607e0-7044-4d3e-8403-c0d0011620d4` accepted exact repaired source.
-Candidate no-default module tests pass 24/24 (`run-wYxoQB`); integration tests
-pass 7/7 (`run-N7oKfA`). The concurrency file is feature-excluded there.
-Formatter passes. Pre-format-repair candidate Clippy exits 0 with warnings;
-no warning-free claim. The rejected formatting review remains preserved.
+Batch `workflow-z3f6kV`, run `609acc3b-7d00-4e38-a753-79e8771ff913`, used Sonnet 5.5/high ordinary roles and Opus/high formatting-only repair. Fresh reviewer
+`cac607e0-7044-4d3e-8403-c0d0011620d4` accepted exact repaired source. Candidate no-default module tests pass 24/24 (`run-wYxoQB`); integration tests pass 7/7 (`run-N7oKfA`). The
+concurrency file is feature-excluded there. Formatter passes. Pre-format-repair candidate Clippy exits 0 with warnings; no warning-free claim. The rejected formatting review
+remains preserved.
 
-Lane receipt SHA256:
-`624471f4582ff820d360334a4b7ce6bbe2a82beade798bef245d8eec0079a6bc`.
-All 24 event/check/handoff references verified, with structured MCP readback
-and native learning retained. Both original and RocksDB repair batches drained
-before integration; their failed RocksDB output receipts remain negative evidence.
-The 15,213 unchanged included source/read inputs and submodule pins matched
-clean canonical base `8b6b83503`. Canonical exact-source default/RDF 1.2 module
-checks pass 24/24 each (`run-eMFmLj`, `run-cvuAUv`); transaction integration
-checks pass 12/12 each (`run-05dnM9`, `run-YV1FF1`). Source/sourceAfter bindings
-verified before this evidence append.
+Lane receipt SHA256: `624471f4582ff820d360334a4b7ce6bbe2a82beade798bef245d8eec0079a6bc`. All 24 event/check/handoff references verified, with structured MCP readback and native
+learning retained. Both original and RocksDB repair batches drained before integration; their failed RocksDB output receipts remain negative evidence. The 15,213 unchanged included
+source/read inputs and submodule pins matched clean canonical base `8b6b83503`. Canonical exact-source default/RDF 1.2 module checks pass 24/24 each (`run-eMFmLj`, `run-cvuAUv`);
+transaction integration checks pass 12/12 each (`run-05dnM9`, `run-YV1FF1`). Source/sourceAfter bindings verified before this evidence append.
 
-This accepts only memory backend ownership. Public owned handle/evaluator,
-RocksDB storage wrapper ownership and lease/protocol gates remain open on
-original G4.5 outcome. No HTTP exposure, qualification or publication. ADR
-remains Proposed.
+This accepts only memory backend ownership. Public owned handle/evaluator, RocksDB storage wrapper ownership and lease/protocol gates remain open on original G4.5 outcome. No HTTP
+exposure, qualification or publication. ADR remains Proposed.
 
 ## Owned RocksDB storage transaction (2026-09-29)
 
-`RocksDbStorageReadableTransaction` now owns a cloned `RocksDbStorage`;
-readable, controlled, keyed and governed start paths return `'static` handles.
-The native transaction retains its covariant lifetime marker. Readers still
-borrow it, and field order releases the native transaction before the storage
-clone. Existing outcomes, receipts, write-only and bulk paths remain unchanged.
-Exact `storage/rocksdb.rs` SHA256:
-`a48be99fbfe215762be3e336e03548b67744ac99ecef6e21d88fc5cd4e730394`.
+`RocksDbStorageReadableTransaction` now owns a cloned `RocksDbStorage`; readable, controlled, keyed and governed start paths return `'static` handles. The native transaction
+retains its covariant lifetime marker. Readers still borrow it, and field order releases the native transaction before the storage clone. Existing outcomes, receipts, write-only
+and bulk paths remain unchanged. Exact `storage/rocksdb.rs` SHA256: `a48be99fbfe215762be3e336e03548b67744ac99ecef6e21d88fc5cd4e730394`.
 
-Sonnet run `462373f3-d6c2-4ac7-9b91-71ffae561dfc` and same-task Opus repair
-`8f302887-75b9-424f-b65a-b69fd5d43dce` returned `INCONCLUSIVE`, no structured
-changes, reporting full-file output failures. Both negative receipts remain:
-`1e2e22056fd53c7950aa79a39e8cd70228909a4660fab05317a7b1cfb6d02af3`
-and `52fd3da80c565c3c04fd7903690c8a4609b3fedce3585deedfa387552d3aba61`.
-These are not successful workflow or acceptance evidence.
+Sonnet run `462373f3-d6c2-4ac7-9b91-71ffae561dfc` and same-task Opus repair `8f302887-75b9-424f-b65a-b69fd5d43dce` returned `INCONCLUSIVE`, no structured changes, reporting
+full-file output failures. Both negative receipts remain: `1e2e22056fd53c7950aa79a39e8cd70228909a4660fab05317a7b1cfb6d02af3` and
+`52fd3da80c565c3c04fd7903690c8a4609b3fedce3585deedfa387552d3aba61`. These are not successful workflow or acceptance evidence.
 
-Under the direct-work policy, root applied the exact Opus summary edits and
-tests, then formatting, to fresh isolated `source-io8Wvq` from accepted
-`453cff01b`. Only the declared source file changed. Direct candidate checks
-pass 13/13 module tests and 12/12 transaction integration tests; formatter
-passes. Clippy exits 0 with 603 library-test warnings, not a clean-lint claim.
-Observations are recorded as coordinator-observed checks, not runner receipts,
-in `target/engineering-delivery/g45-direct-check-observations.json` and
+Under the direct-work policy, root applied the exact Opus summary edits and tests, then formatting, to fresh isolated `source-io8Wvq` from accepted `453cff01b`. Only the declared
+source file changed. Direct candidate checks pass 13/13 module tests and 12/12 transaction integration tests; formatter passes. Clippy exits 0 with 603 library-test warnings, not a
+clean-lint claim. Observations are recorded as coordinator-observed checks, not runner receipts, in `target/engineering-delivery/g45-direct-check-observations.json` and
 `g45-direct-clippy-observation.json` in that same directory.
 
-Fresh independent Sonnet 5.5/high review
-`7f0f1464-d824-4477-b5fe-feccb3664b45`, reviewer
-`c7b0fb1b-33ea-4dca-8d4a-6a2371f18933`, accepts exact source. Review identity,
-15,213 unchanged included source/read inputs and submodule pins were revalidated
-after all native/check actions drained. No failed worker acceptance was inherited.
-The composed canonical source passes default storage 120 tests/1 ignored
-(`run-uC4KFQ`) and RDF 1.2 storage 119 tests/2 ignored (`run-QpmJgR`), using
-top-level counts rather than nested helper summaries. Default/RDF 1.2
-transaction integrations pass 12/12 each (`run-vE6nSz`, `run-yIcRoc`). Exact
-source/sourceAfter bindings verified before this evidence append.
+Fresh independent Sonnet 5.5/high review `7f0f1464-d824-4477-b5fe-feccb3664b45`, reviewer `c7b0fb1b-33ea-4dca-8d4a-6a2371f18933`, accepts exact source. Review identity, 15,213
+unchanged included source/read inputs and submodule pins were revalidated after all native/check actions drained. No failed worker acceptance was inherited. The composed canonical
+source passes default storage 120 tests/1 ignored (`run-uC4KFQ`) and RDF 1.2 storage 119 tests/2 ignored (`run-QpmJgR`), using top-level counts rather than nested helper summaries.
+Default/RDF 1.2 transaction integrations pass 12/12 each (`run-vE6nSz`, `run-yIcRoc`). Exact source/sourceAfter bindings verified before this evidence append.
 
-Task `task-1790659791175-01dgrw` closes only this backend prerequisite.
-Public owned-handle/evaluator and lease/protocol work remain on G4.5.
-ADR remains Proposed; no HTTP exposure, qualification, promotion or publication.
+Task `task-1790659791175-01dgrw` closes only this backend prerequisite. Public owned-handle/evaluator and lease/protocol work remain on G4.5. ADR remains Proposed; no HTTP
+exposure, qualification, promotion or publication.
 
 ## Owned backend-neutral storage dispatch (2026-09-29)
 
-The four readable, controlled, keyed and governed starts in `storage/mod.rs`
-now return existing `'static` wrappers over the accepted owned backends.
-Bodies, readers borrowing transactions, public borrowed `Store` API, write-only
-and bulk paths, admission and terminal observation semantics are unchanged.
-New `storage/owned_transaction_tests.rs` covers both backends: lifetime bounds,
-original-storage drop, staged RDF/topology/namespaces, commit/rollback/drop,
-keyed and governed outcomes, receipt lookup, admission, metrics ownership and
-cross-thread use. No public owned API or HTTP capability is claimed yet.
+The four readable, controlled, keyed and governed starts in `storage/mod.rs` now return existing `'static` wrappers over the accepted owned backends. Bodies, readers borrowing
+transactions, public borrowed `Store` API, write-only and bulk paths, admission and terminal observation semantics are unchanged. New `storage/owned_transaction_tests.rs` covers
+both backends: lifetime bounds, original-storage drop, staged RDF/topology/namespaces, commit/rollback/drop, keyed and governed outcomes, receipt lookup, admission, metrics
+ownership and cross-thread use. No public owned API or HTTP capability is claimed yet.
 
 Exact file SHA256 values:
 
@@ -370,46 +273,29 @@ Exact file SHA256 values:
 - `storage/owned_transaction_tests.rs`:
   `2d31f75f2a6867e9e41ee78cdf262a650cec4307d3fb389791ca5c7b14e2ac16`.
 
-Ordinary batch `workflow-Icm5j7`, run
-`d92839d2-614d-471d-b97f-88609c14af84`, used Sonnet 5.5/high ordinary roles
-and Opus/high whitespace-only repair. Fresh reviewer
-`9c264765-563f-425d-89cf-03826e613adb` accepted the repaired source. Candidate
-no-default/default module checks pass 7/7 each (`run-NTp2HS`, `run-rMNnuH`);
-transaction contracts pass 12/12 (`run-by50VZ`). Focused formatter passes.
-Pre-format candidate Clippy exits 0 with 603 library-test warnings, including
-38 duplicates, not a clean-lint claim. Direct observation is recorded in
-`target/engineering-delivery/g45-dispatch-clippy-observation.json`, not a
-runner-owned receipt. Original formatting rejection and checks remain intact.
+Ordinary batch `workflow-Icm5j7`, run `d92839d2-614d-471d-b97f-88609c14af84`, used Sonnet 5.5/high ordinary roles and Opus/high whitespace-only repair. Fresh reviewer
+`9c264765-563f-425d-89cf-03826e613adb` accepted the repaired source. Candidate no-default/default module checks pass 7/7 each (`run-NTp2HS`, `run-rMNnuH`); transaction contracts
+pass 12/12 (`run-by50VZ`). Focused formatter passes. Pre-format candidate Clippy exits 0 with 603 library-test warnings, including 38 duplicates, not a clean-lint claim. Direct
+observation is recorded in `target/engineering-delivery/g45-dispatch-clippy-observation.json`, not a runner-owned receipt. Original formatting rejection and checks remain intact.
 
-Lane receipt SHA256:
-`a3e7ba1832f7d230bb8d18521aad46c36d4d5771d6baec960751d4e764955a61`.
-All 28 event/check/handoff references, nine submodule pins, fresh reviewer
-identity and 15,213 unchanged included source/read inputs verified before
-integration. Structured MCP readback and native learning retained. Batch and
-external actions drained; canonical default/RDF 1.2 checks used separate
-targets and shared host capacity:
+Lane receipt SHA256: `a3e7ba1832f7d230bb8d18521aad46c36d4d5771d6baec960751d4e764955a61`. All 28 event/check/handoff references, nine submodule pins, fresh reviewer identity and
+15,213 unchanged included source/read inputs verified before integration. Structured MCP readback and native learning retained. Batch and external actions drained; canonical
+default/RDF 1.2 checks used separate targets and shared host capacity:
 
 - Storage default: 127 passed, 1 ignored (`run-LeR0Fu`).
 - Storage RDF 1.2: 126 passed, 2 ignored (`run-rCgv6D`).
 - Transaction contracts default/RDF 1.2: 12 passed each
   (`run-QQ2Cl7`, `run-PXV7Cl`).
 
-Counts are top-level, not nested helper aggregates. Exact canonical
-source/sourceAfter bindings and candidate file equality verified before this
-evidence append. Reader borrowing remains enforced by unchanged signatures;
-this slice adds no compile-fail reader test. Original G4.5 registry alias
-`task-1790657013522-cscfy2` stays open for public owned handle/evaluator and
-lease/protocol gates. ADR remains Proposed; no qualification or publication.
+Counts are top-level, not nested helper aggregates. Exact canonical source/sourceAfter bindings and candidate file equality verified before this evidence append. Reader borrowing
+remains enforced by unchanged signatures; this slice adds no compile-fail reader test. Original G4.5 registry alias `task-1790657013522-cscfy2` stays open for public owned
+handle/evaluator and lease/protocol gates. ADR remains Proposed; no qualification or publication.
 
 ## Additive public owned Store handle (2026-09-29)
 
-`OwnedTransaction` wraps the existing `Transaction<'static>` and reuses its
-query/update bindings, namespace operations and consuming terminals. The
-separate `OwnedTransactionalDataset` extension preserves the minimal traits
-and borrowed APIs. Owned and borrowed negotiation share unchanged requirement
-and admission behavior. No unsafe lifetime extension, clone, savepoint,
-per-update atomicity or HTTP capability is introduced. Failed caller-managed
-updates can retain staged state until explicit rollback or drop.
+`OwnedTransaction` wraps the existing `Transaction<'static>` and reuses its query/update bindings, namespace operations and consuming terminals. The separate
+`OwnedTransactionalDataset` extension preserves the minimal traits and borrowed APIs. Owned and borrowed negotiation share unchanged requirement and admission behavior. No unsafe
+lifetime extension, clone, savepoint, per-update atomicity or HTTP capability is introduced. Failed caller-managed updates can retain staged state until explicit rollback or drop.
 
 Exact source SHA256 values:
 
@@ -417,58 +303,32 @@ Exact source SHA256 values:
 - `store/transactional.rs`: `71b8c5db75dc50303d181aeb1e47bf53bb31129b03321762763fb23520452334`.
 - `tests/owned_transaction.rs`: `31a8adbc87ecb78711b328350dafd42a571837e489b1278763f5431aac67c350`.
 
-Original ordinary batch `workflow-pJ0IgW`, run
-`da6c018f-7bd5-403a-b93c-b314670671f7`, failed with an inconclusive partial
-Sonnet proposal after full-file output overflow. Negative lane SHA256
-`83a7c54d059f7ab761a6479595b8b26a00ec3051f3a29c47aa99618806e35915`
-remains unchanged; it is not successful workflow or acceptance evidence.
-Root applied exact Opus repair instructions in isolated `source-xnYgHD`,
-then bounded test fixes and formatting. Initial E0521 fixture failure and
-fresh review rejection for test gaps remain preserved. Same-task Opus repair
-added negotiated metrics, an external owned-extension backend and paired
-positive/compile-fail borrow examples, without changing production behavior.
+Original ordinary batch `workflow-pJ0IgW`, run `da6c018f-7bd5-403a-b93c-b314670671f7`, failed with an inconclusive partial Sonnet proposal after full-file output overflow. Negative
+lane SHA256 `83a7c54d059f7ab761a6479595b8b26a00ec3051f3a29c47aa99618806e35915` remains unchanged; it is not successful workflow or acceptance evidence. Root applied exact Opus
+repair instructions in isolated `source-xnYgHD`, then bounded test fixes and formatting. Initial E0521 fixture failure and fresh review rejection for test gaps remain preserved.
+Same-task Opus repair added negotiated metrics, an external owned-extension backend and paired positive/compile-fail borrow examples, without changing production behavior.
 
-Fresh independent Sonnet 5.5/high review run
-`001620e9-adc3-4748-bd7b-e59a01411bba`, reviewer
-`06fad798-4ee9-498d-aff9-6da5fbd99028`, accepts exact repaired source.
-Response SHA256:
-`55932facc7ab264722044df485a1ac9d4cecacf03b20589e28dc7eaeb5f3926e`.
-All native/check actions drained before integration. Revalidation covered
-15,213 unchanged included source inputs, nine submodule pins, 16 review
-dependencies and exact request/response identities and file hashes.
+Fresh independent Sonnet 5.5/high review run `001620e9-adc3-4748-bd7b-e59a01411bba`, reviewer `06fad798-4ee9-498d-aff9-6da5fbd99028`, accepts exact repaired source. Response
+SHA256: `55932facc7ab264722044df485a1ac9d4cecacf03b20589e28dc7eaeb5f3926e`. All native/check actions drained before integration. Revalidation covered 15,213 unchanged included
+source inputs, nine submodule pins, 16 review dependencies and exact request/response identities and file hashes.
 
-Candidate default/RDF 1.2 impacted transaction suites pass 61 each;
-no-default checks pass 19; Store doctests pass 42, including two compile-fail
-cases and a passing positive control. Stable rustdoc does not enforce the
-error-code annotation. Formatter passes. Current-source Clippy exits 0 with
-79 owned-test warnings plus existing warnings, not warning-free evidence.
-Direct observations are in
-`target/engineering-delivery/g45-public-direct-repaired-observations.json`,
-not manufactured runner receipts.
+Candidate default/RDF 1.2 impacted transaction suites pass 61 each; no-default checks pass 19; Store doctests pass 42, including two compile-fail cases and a passing positive
+control. Stable rustdoc does not enforce the error-code annotation. Formatter passes. Current-source Clippy exits 0 with 79 owned-test warnings plus existing warnings, not
+warning-free evidence. Direct observations are in `target/engineering-delivery/g45-public-direct-repaired-observations.json`, not manufactured runner receipts.
 
-Canonical default/RDF 1.2 impacted suites pass 61 each (`run-TecY2W`,
-`run-kRBvxu`); Store unit tests pass 183 (`run-a97Zi8`, 1482.22 seconds).
-These are top-level counts, not nested process-helper totals. Source and
-sourceAfter bindings verified before this evidence append. Canonical RDF 1.2
-Store doctests pass 42 via direct Cargo, session 37012: the recorded runner
-rejects `--doc`, so no runner receipt is claimed for that command.
+Canonical default/RDF 1.2 impacted suites pass 61 each (`run-TecY2W`, `run-kRBvxu`); Store unit tests pass 183 (`run-a97Zi8`, 1482.22 seconds). These are top-level counts, not
+nested process-helper totals. Source and sourceAfter bindings verified before this evidence append. Canonical RDF 1.2 Store doctests pass 42 via direct Cargo, session 37012: the
+recorded runner rejects `--doc`, so no runner receipt is claimed for that command.
 
-This accepts the bounded public API and ordinary regression tests, not the
-frozen independent public evaluator gate. The extension's associated owned
-type requires `'static`, not `Send`; a generic server must impose its own
-thread-safety bound. Owned keyed/governed openers, frozen evaluator and
-lease/protocol stages remain on G4.5. ADR remains Proposed. No qualification,
-promotion, HTTP exposure or publication follows.
+This accepts the bounded public API and ordinary regression tests, not the frozen independent public evaluator gate. The extension's associated owned type requires `'static`, not
+`Send`; a generic server must impose its own thread-safety bound. Owned keyed/governed openers, frozen evaluator and lease/protocol stages remain on G4.5. ADR remains Proposed. No
+qualification, promotion, HTTP exposure or publication follows.
 
 ## Owned keyed and governed public openers (2026-09-29)
 
-Additive inherent Store constructors now return the existing
-`KeyedTransaction<'static>` and `GovernedTransaction<'static>` through
-`NegotiatedTransaction`. Controlled counterparts preserve rejection before
-admission/key reservation, cancellation, effective capabilities and typed
-terminal outcomes. Borrowed signatures and persistence traits stay unchanged.
-Governed admission shares a private helper; effect capture, receipt/outbox
-publication and rollback semantics remain the existing implementation.
+Additive inherent Store constructors now return the existing `KeyedTransaction<'static>` and `GovernedTransaction<'static>` through `NegotiatedTransaction`. Controlled counterparts
+preserve rejection before admission/key reservation, cancellation, effective capabilities and typed terminal outcomes. Borrowed signatures and persistence traits stay unchanged.
+Governed admission shares a private helper; effect capture, receipt/outbox publication and rollback semantics remain the existing implementation.
 
 Exact source SHA256 values:
 
@@ -481,124 +341,72 @@ Exact source SHA256 values:
 - `tests/owned_governed_transaction.rs`:
   `d1fcf2afab8a8f52e6a1e557c7a4c083b3d5dc22ee994c01b631570d7ba95e70`.
 
-Ordinary batch `workflow-AFbaz5` ran independent keyed/governed lanes
-`9f075e67-783c-486d-859e-e01e033e856d` and
-`3bd18d56-f53e-4ed7-b0a3-ccd0db685906`, with Sonnet 5.5/high ordinary roles
-and Opus/high formatting-only repairs. Both fresh reviews accepted. Each
-lane's 27 event/check references and structured MCP handoff were verified.
-Negative formatting reviews and earlier output-limit receipts remain intact.
-Both lanes and all external actions drained before canonical integration.
+Ordinary batch `workflow-AFbaz5` ran independent keyed/governed lanes `9f075e67-783c-486d-859e-e01e033e856d` and `3bd18d56-f53e-4ed7-b0a3-ccd0db685906`, with Sonnet 5.5/high
+ordinary roles and Opus/high formatting-only repairs. Both fresh reviews accepted. Each lane's 27 event/check references and structured MCP handoff were verified. Negative
+formatting reviews and earlier output-limit receipts remain intact. Both lanes and all external actions drained before canonical integration.
 
-After harness deployment merge `1c065610c`, a fresh composed candidate
-`source-sa7HPT` received independent Sonnet 5.5/high review
-`30f605c1-7f66-4944-8927-9486c425483e`, reviewer
-`6e37de31-483a-4157-a9d1-f12caba9a9cb` (ACCEPT). Response SHA256:
-`dc132031a24a115b560c1dbdcf26c5f70c1a54e42334e4f36dab67da1ce3b839`.
-Revalidation checked 15,214 unchanged included source inputs, 17 review
-dependencies, request/response identity and all four candidate hashes.
-Composed candidate checks pass 114 default, 20 no-default, 39 RDF 1.2
-integration tests and five receipt unit tests. Focused formatter passes.
-Clippy exits 0 with 67 governed-test and 59 keyed-test warnings plus existing
-library warnings; this is not warning-free evidence.
+After harness deployment merge `1c065610c`, a fresh composed candidate `source-sa7HPT` received independent Sonnet 5.5/high review `30f605c1-7f66-4944-8927-9486c425483e`, reviewer
+`6e37de31-483a-4157-a9d1-f12caba9a9cb` (ACCEPT). Response SHA256: `dc132031a24a115b560c1dbdcf26c5f70c1a54e42334e4f36dab67da1ce3b839`. Revalidation checked 15,214 unchanged included
+source inputs, 17 review dependencies, request/response identity and all four candidate hashes. Composed candidate checks pass 114 default, 20 no-default, 39 RDF 1.2 integration
+tests and five receipt unit tests. Focused formatter passes. Clippy exits 0 with 67 governed-test and 59 keyed-test warnings plus existing library warnings; this is not
+warning-free evidence.
 
-Exact canonical source/sourceAfter bindings were verified before this append:
-default nine-target integration suite passes 114 (`run-QnWaqI`), RDF 1.2
-passes 116 (`run-UvjZsW`), and RDF 1.2 receipt unit tests pass five
-(`run-MaD7E2`). Counts are top-level, not nested helper aggregates. New
-governed fault coverage proves typed-key retention around both final batch
-fault boundaries after original Store drop, with orderly reopen lookup.
-It does not claim power-loss qualification.
+Exact canonical source/sourceAfter bindings were verified before this append: default nine-target integration suite passes 114 (`run-QnWaqI`), RDF 1.2 passes 116 (`run-UvjZsW`),
+and RDF 1.2 receipt unit tests pass five (`run-MaD7E2`). Counts are top-level, not nested helper aggregates. New governed fault coverage proves typed-key retention around both
+final batch fault boundaries after original Store drop, with orderly reopen lookup. It does not claim power-loss qualification.
 
-This accepts bounded native API slices only. Governed support task
-`task-1790669488928-73stxw` closes; original G4.5 alias remains open for
-independent evaluator, lease model, protocol and later applicable gates.
-ADR remains Proposed. No HTTP activation, qualification or publication.
+This accepts bounded native API slices only. Governed support task `task-1790669488928-73stxw` closes; original G4.5 alias remains open for independent evaluator, lease model,
+protocol and later applicable gates. ADR remains Proposed. No HTTP activation, qualification or publication.
 
 ## Deterministic lease model (2026-09-29)
 
-`cli/src/lease.rs` adds a safe, clock-free state model with injected logical
-time, finite validated limits, immutable caller-asserted identity binding,
-generation-CAS renewal, exclusive operation authority, bounded cancellation,
-commit ambiguity, response-loss observation, retention and restart classification.
-It is not authentication, a runtime registry, or an HTTP transaction service.
-External lookup supplies durable outcomes; the model never invents them.
+`cli/src/lease.rs` adds a safe, clock-free state model with injected logical time, finite validated limits, immutable caller-asserted identity binding, generation-CAS renewal,
+exclusive operation authority, bounded cancellation, commit ambiguity, response-loss observation, retention and restart classification. It is not authentication, a runtime
+registry, or an HTTP transaction service. External lookup supplies durable outcomes; the model never invents them.
 
-Instance-private handle identity prevents cross-completion even for equal public
-lease IDs. Rejected binding/time checks retain borrowed operation/commit handles
-for retry; successful completion still cannot replay. The independent public-API
-trace consumer checks 256 deterministic seeds, shrinking, boundary cases and
-negative controls. Retry coverage counts successful same-handle retries, not
-terminal errors. Exact source SHA256:
+Instance-private handle identity prevents cross-completion even for equal public lease IDs. Rejected binding/time checks retain borrowed operation/commit handles for retry;
+successful completion still cannot replay. The independent public-API trace consumer checks 256 deterministic seeds, shrinking, boundary cases and negative controls. Retry coverage
+counts successful same-handle retries, not terminal errors. Exact source SHA256:
 
 - `cli/src/lib.rs`: `a3c1aca190eddc428227c3a82f122777f40e0b876a18c204caf28491d859f298`.
 - `cli/src/lease.rs`: `ea031162d58dd7f133e00f8d8b7a65cc1171f34db21f2b739533e2f1a8719fb4`.
 - `cli/tests/lease_state_model.rs`: `7e292df83a77a58a9f7e6a705f9a834d90d464615a0d6622ac78b5df19128650`.
 
-Original ordinary batch `workflow-4JdfeU` failed; its timeout, cross-instance
-defect and later rejected retry/coverage reviews remain negative evidence.
-Direct same-task repairs used recorded Opus proposals in isolated `source-s3mRxK`
-from accepted `6649e7e1d`. Fresh Sonnet 5.5/high review
-`5fd1dd88-6d01-40f9-9894-ef7ac98140ee`, independent reviewer
-`d92bd797-0fe6-4011-9deb-49da1e9bc255`, accepts final exact source.
-Response SHA256: `a6e952a232de4fb921c5bd66973adca0a34636b223317957c7a0c62a43adfe7a`.
-Request/response/terminal binding, all three source hashes, 11 read dependencies
-and 15,219 unchanged candidate files were verified after external actions drained.
+Original ordinary batch `workflow-4JdfeU` failed; its timeout, cross-instance defect and later rejected retry/coverage reviews remain negative evidence. Direct same-task repairs
+used recorded Opus proposals in isolated `source-s3mRxK` from accepted `6649e7e1d`. Fresh Sonnet 5.5/high review `5fd1dd88-6d01-40f9-9894-ef7ac98140ee`, independent reviewer
+`d92bd797-0fe6-4011-9deb-49da1e9bc255`, accepts final exact source. Response SHA256: `a6e952a232de4fb921c5bd66973adca0a34636b223317957c7a0c62a43adfe7a`. Request/response/terminal
+binding, all three source hashes, 11 read dependencies and 15,219 unchanged candidate files were verified after external actions drained.
 
-Candidate default/no-default checks each pass 37; formatter passes. Focused
-Clippy exits 0 with warnings, not a clean-lint claim. Canonical no-default
-checks pass 37 (`run-SiMSuO`); default checks pass 37 plus 77 existing CLI
-library regressions (`run-5fS3dK`). Both source/sourceAfter bindings matched
-exact canonical source before this evidence append. CLI no-default still
-includes its normal Oxigraph dependency features; it is not memory-only proof.
+Candidate default/no-default checks each pass 37; formatter passes. Focused Clippy exits 0 with warnings, not a clean-lint claim. Canonical no-default checks pass 37
+(`run-SiMSuO`); default checks pass 37 plus 77 existing CLI library regressions (`run-5fS3dK`). Both source/sourceAfter bindings matched exact canonical source before this evidence
+append. CLI no-default still includes its normal Oxigraph dependency features; it is not memory-only proof.
 
-This accepts bounded ordinary implementation and tests, not a frozen independent
-qualification gate. G4.5 alias `task-1790657013522-cscfy2` remains open for
-the server lifecycle, protocol and later applicable evaluators. No token,
-HTTP route, persistence, promotion or publication is enabled. ADR remains Proposed.
+This accepts bounded ordinary implementation and tests, not a frozen independent qualification gate. G4.5 alias `task-1790657013522-cscfy2` remains open for the server lifecycle,
+protocol and later applicable evaluators. No token, HTTP route, persistence, promotion or publication is enabled. ADR remains Proposed.
 
 ## Bounded in-process owned lease registry (2026-09-29)
 
-`cli/src/lease/registry.rs` consumes the accepted model and owned keyed Store
-transactions. It reserves finite global/repository/principal capacity before
-bounded writer acquisition, admits one operation per lease, and releases native
-writers before capacity. It preserves staged RDF/topology/namespaces, explicit
-rollback/drop, single commit attempt, response-loss ambiguity and bounded
-maintenance/terminal retention. Caller bindings are already-authorized assertions,
-not authentication; process-local IDs are not remote credentials.
+`cli/src/lease/registry.rs` consumes the accepted model and owned keyed Store transactions. It reserves finite global/repository/principal capacity before bounded writer
+acquisition, admits one operation per lease, and releases native writers before capacity. It preserves staged RDF/topology/namespaces, explicit rollback/drop, single commit
+attempt, response-loss ambiguity and bounded maintenance/terminal retention. Caller bindings are already-authorized assertions, not authentication; process-local IDs are not remote
+credentials.
 
-`ActiveOperation` forwards staged reads/mutations but never lends an extractable
-native handle. Entries retain their original Store clone for outcome lookup,
-preventing a same-key outcome in another store from resolving a lease. Dropping
-an operation while cancelling cannot manufacture cancellation acknowledgement
-or proven rollback. Restart never reconstructs staged state. No SPARQL text
-binding, token, HTTP route, background worker or new dependency is added.
+`ActiveOperation` forwards staged reads/mutations but never lends an extractable native handle. Entries retain their original Store clone for outcome lookup, preventing a same-key
+outcome in another store from resolving a lease. Dropping an operation while cancelling cannot manufacture cancellation acknowledgement or proven rollback. Restart never
+reconstructs staged state. No SPARQL text binding, token, HTTP route, background worker or new dependency is added.
 
-Original batch `workflow-zJd0Ew` expired with
-`Host action timed out after 30 minutes`; original run
-`14b3dccf-87b4-413a-9fd6-f0cfa810721c` and its rejected encapsulation/store
-identity review remain negative evidence. Original Opus repair
-`df9bf8ed-d99b-4826-9d3c-2ffcad3bedaa` finished later. Root validated exact
-request/response/read hashes before applying it to retained `source-VtXPrU`,
-then corrected one measured formatter layout. No expired workflow acceptance
-was inherited and no watchdog changed.
+Original batch `workflow-zJd0Ew` expired with `Host action timed out after 30 minutes`; original run `14b3dccf-87b4-413a-9fd6-f0cfa810721c` and its rejected encapsulation/store
+identity review remain negative evidence. Original Opus repair `df9bf8ed-d99b-4826-9d3c-2ffcad3bedaa` finished later. Root validated exact request/response/read hashes before
+applying it to retained `source-VtXPrU`, then corrected one measured formatter layout. No expired workflow acceptance was inherited and no watchdog changed.
 
-Fresh independent Sonnet 5.5/high review
-`a0c84a3c-8257-4704-88e0-a9708e7771b3`, reviewer
-`485fe96b-f6e9-4405-9896-f131aa110a37`, accepted exact repaired source.
-Response SHA256:
-`6443f173caf513a676f7eacb5ec46446d94f1968eb8395b4a43b4d141314c877`.
-Candidate default/no-default checks each pass 48 registry plus 37 model tests;
-the compile-fail doctest passes. Direct logs are
-`target/engineering-delivery/registry-final-{default,no-default,doctests}.log`,
-coordinator observations rather than manufactured runner receipts. Formatter
-passes. Stable rustdoc does not independently enforce the annotated error code.
+Fresh independent Sonnet 5.5/high review `a0c84a3c-8257-4704-88e0-a9708e7771b3`, reviewer `485fe96b-f6e9-4405-9896-f131aa110a37`, accepted exact repaired source. Response SHA256:
+`6443f173caf513a676f7eacb5ec46446d94f1968eb8395b4a43b4d141314c877`. Candidate default/no-default checks each pass 48 registry plus 37 model tests; the compile-fail doctest passes.
+Direct logs are `target/engineering-delivery/registry-final-{default,no-default,doctests}.log`, coordinator observations rather than manufactured runner receipts. Formatter passes.
+Stable rustdoc does not independently enforce the annotated error code.
 
-Owner revalidated 15,223 unchanged included source inputs, nine submodule pins,
-17 supplemental reads, reviewer independence and exact file hashes against
-accepted main `300199af5`. Accepted F0/lifecycle changes are disjoint from
-this packet's reads and mutation paths; canonical combined checks cover coexistence.
-Retained sibling custody passed owner independence checks before integration.
-Canonical source-bound checks before this evidence append:
+Owner revalidated 15,223 unchanged included source inputs, nine submodule pins, 17 supplemental reads, reviewer independence and exact file hashes against accepted main
+`300199af5`. Accepted F0/lifecycle changes are disjoint from this packet's reads and mutation paths; canonical combined checks cover coexistence. Retained sibling custody passed
+owner independence checks before integration. Canonical source-bound checks before this evidence append:
 
 - `run-Cyu9M9`: no-default registry/model/lifecycle join, 116 passed.
 - `run-rYVAOy`: default join including CLI library, 193 passed.
@@ -611,8 +419,32 @@ Exact source SHA256:
 - `cli/src/lease/registry.rs`: `708ddb38b0976a3d62563e73daa92477aee5bd03f1a51d7917d1b1ed6613895a`.
 - `cli/tests/lease_registry.rs`: `7dd69ba5782078bfa5b0627ade3f7db427b820d01e96335b7b4822d4a44341bb`.
 
-Original G4.5 outcome and migration alias `task-1790657013522-cscfy2` remain
-open. This accepts only the bounded in-process registry, not the full
-owned query/update contract, frozen evaluator, leased HTTP profile or promotion
-gates. Leaked guards retain capacity until process exit. ADR stays Proposed;
-no server activation, qualification, protected-data change or publication.
+Original G4.5 outcome and migration alias `task-1790657013522-cscfy2` remain open. This accepts only the bounded in-process registry, not the full owned query/update contract,
+frozen evaluator, leased HTTP profile or promotion gates. Leaked guards retain capacity until process exit. ADR stays Proposed; no server activation, qualification, protected-data
+change or publication.
+
+## Borrowed prepared queries over staged lease state (2026-09-29)
+
+`PreparedSparqlQuery::on_writable_dataset` reuses the private writable-dataset view and existing bound evaluator. `ActiveOperation::query` lends only results bound to the
+operation's shared borrow, never the keyed handle or terminal authority. Caller cancellation, budgets, dataset, substitutions and SERVICE/ egress configuration survive. Like
+existing transaction bindings, this seam does not install Store observation or Store-specific SERVICE catalog binding. Query errors leave lease/transaction state unchanged; no
+rollback or commit is implied. Prepared updates, HTTP/token/authorization integration and full G4.5 remain open. Default execution and persistence traits are unchanged.
+
+Original ordinary batch `workflow-vugqUp`, lease run `78804faf-8d9d-4580-8a55-79c32835156f`, used Sonnet 5.5/high ordinary roles and Opus/high test-lifetime/formatting repair.
+Lease fulfilled pending owner acceptance; analytical sibling rejection and original E0505 check remain negative evidence. Lease receipt SHA256:
+`96abf8f9df3cd19b7ab332ace689b60624f5c62f9d5aa41123a210ed0943287a`. No old-base acceptance was inherited after the harness rollout.
+
+Fresh snapshot from accepted `898a5fe7d` passes 23 library, 101 CLI no-default and 101 CLI default tests. Fresh independent Sonnet review `638baeb4-aa7f-4774-9ca6-69ba9eb2ff04`,
+reviewer `d6a20090-bbfb-488f-8f91-e9631a1f0d17`, accepts exact source; response SHA256 `f14f2e8070fc1ab4b8a227580a474e73d14855b28dec22f708c23ed9487f4991`. Owner verified 15,236
+unchanged source inputs, 27 read dependencies and exact request/response/check/file hashes. Original batch drained and native custody released. Separate analytical candidate checks
+remain isolated, not dependencies.
+
+Canonical dirty tree checks bind exact reviewed source/sourceAfter before this evidence append: 23 no-default library (`run-LkF1Rk`), 41 HTTP-client/RDF12 library (`run-UXze64`),
+101 CLI no-default (`run-YHWAOZ`), 196 combined CLI default/library/lease/catalog (`run-Gblgya`); CLI build passes (`run-HWieP6`). These are ordinary regression receipts, not
+clean-commit qualification receipts. Same four candidate source hashes also pass two library and three CLI doctests, 15 HTTP-client/RDF12 keyed-query tests, focused formatter and
+both Clippy variants (exit 0 with warnings). Stable rustdoc does not enforce diagnostic-code annotations; mid-stream cancellation remains an untested query-binding case.
+
+Exact source SHA256: `sparql/update.rs` `13b10aa368e65aebe2532e1032c6b72765b32d9724279bcb389ee234316f7e68`; `tests/keyed_query_view.rs`
+`0fc1d24890301fabd913907e03adb2e1cb7a3288c6679f43195a3b6599a675e0`; `cli/src/lease/registry.rs` `dd95b4ac472e00d5484f8d85b87b032667a79805d0f5607433fe448e0f710bd5`;
+`cli/tests/lease_sparql_query.rs` `8edcf00863c6937edf158954ac6fc74f852a59915d4b6488378c222107dc937e`. G4.5 alias `task-1790657013522-cscfy2` stays open. ADR remains Proposed; no
+qualification, promotion, server activation or publication follows.
