@@ -4976,3 +4976,44 @@ an owned child could still block its following reap; ordinary owned-child
 timeout behavior is covered, not an arbitrary OS-failure guarantee.
 Task `task-1790647971057-rzk7v7` remains the single support outcome; earlier
 cancelled batch and rejected candidate evidence are preserved, not relabelled.
+
+### First schema-upgrade fsync error accepted (2026-09-29)
+
+The test-only `schema_upgrade_tests.rs` addition injects exact-path `EIO`
+at `start_inner`'s initial JOURNAL fsync. The new fsync/fdatasync shim path
+is stateless; historical write/pwrite ENOSPC logic remains unchanged.
+The bounded child proves a complete PLAN, empty JOURNAL, no copied attempts,
+unchanged source/package, refusal of another start and successful verified
+resume. This is reported OS writeback failure with visible page-cache data,
+not power loss, media durability or the full fsync/crash matrix.
+
+Exact reviewed source SHA256:
+`2a1d53d6674ca9c14c91852b2d08515fa645ca75c1fe858d5ca6d387dca2d48c`.
+Same-task Opus/high repair worker `9fe3e208-aab6-4469-b18b-caee892f44a0`
+fixed bounded child capture/kill/reap and new C-path thread safety. Fresh
+Sonnet 5.5/high reviewer `04c67979-9e04-4eae-9a44-8ab023dd538a` accepted:
+`target/engineering-delivery/resume-native/79cfbf2e-b1db-415c-98bb-825024068461-1/response.json`,
+SHA256 `4c0a5b0ff73b0c4ee15b80b171f15431b18b2619e47027b0fa3a0c4e0f13daad`.
+Candidate focused 1/1 and schema 42/42 passed in `source-KY9kfI`
+(`run-NZZ4Dw`, `run-Id0SQm`). Direct candidate Clippy subsequently exited 0
+with warnings, including added `unused_qualifications`; it is neither
+warning-free nor a runner-owned receipt. The review explicitly left that
+terminal result for owner verification.
+
+After the overlapping publication-fault batch and all external actions drained,
+comparison of 15,212 snapshot files against accepted `f6d9328ce` found only
+the declared test file changed. Root applied the exact reviewed bytes and ran:
+
+| Canonical check | Receipt under `target/engineering-delivery/` | Result |
+| --- | --- | --- |
+| Default focused fsync test | `run-xTCLF8/result.json` | 1 passed |
+| RDF12 focused fsync test | `run-Hw1zPq/result.json` | 1 passed |
+| Default schema-upgrade module | `run-9kGPGS/result.json` | 42 passed |
+
+Complete source/sourceAfter observations match the exact canonical code diff.
+The schema runner also observes seven nested helper successes; its aggregate
+49 is not 49 distinct top-level tests. Focused formatting and diff checks pass.
+Task `task-1790647971378-qnolmc` owns this bounded first point only. Earlier
+failed/cancelled runs remain preserved. Other fsync points, profile admission,
+derived-index policy and separately authorized qualification remain open;
+ADR-0028 remains Proposed.

@@ -1195,6 +1195,16 @@ fn schema_upgrade_start_process_helper() -> TestResult {
 /// in two further files at the time, and applied here proactively too
 /// once flagged by an independent review, rather than waiting for this
 /// file's own higher-concurrency exposure to produce a flake first.
+///
+/// One opt-in addition, local to this file: when `FSYNC_SHIM_EXACT_PATH`
+/// is set, `fsync` and `fdatasync` fail with a real `EIO` for descriptors
+/// whose resolved path equals that value exactly (not a prefix). Unset,
+/// empty, or too long for the shim's buffer, both pass straight through
+/// without even resolving the path, so every `ENOSPC`-only caller behaves
+/// as before. Unlike the `write` path, this addition keeps no mutable
+/// state at all: every call re-reads the variable, resolves the path into
+/// its own stack buffer and looks up the real symbol into a local, so
+/// concurrent RocksDB threads syncing at the same time cannot race on it.
 #[expect(
     clippy::print_stderr,
     reason = "diagnostic for a CI host missing a C compiler, opt-in test infrastructure only"
@@ -1264,6 +1274,34 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
     if (!real) real = (pwrite_fn)dlsym(RTLD_NEXT, "pwrite");
     if (should_inject(fd, count)) { errno = ENOSPC; return -1; }
     return real(fd, buf, count, offset);
+}
+
+/* Stateless per call: no globals, so concurrent syncing threads cannot race. */
+static int fd_is_exact_fsync_path(int fd) {
+    const char *p = getenv("FSYNC_SHIM_EXACT_PATH");
+    char linkpath[64];
+    char target[4096];
+    if (!p || p[0] == '\0' || strlen(p) >= sizeof(target)) return 0;
+    int n = snprintf(linkpath, sizeof(linkpath), "/proc/self/fd/%d", fd);
+    if (n <= 0 || (size_t)n >= sizeof(linkpath)) return 0;
+    ssize_t len = readlink(linkpath, target, sizeof(target) - 1);
+    if (len <= 0) return 0;
+    target[len] = '\0';
+    return strcmp(target, p) == 0;
+}
+
+typedef int (*fsync_fn)(int);
+
+int fsync(int fd) {
+    if (fd_is_exact_fsync_path(fd)) { errno = EIO; return -1; }
+    fsync_fn real = (fsync_fn)dlsym(RTLD_NEXT, "fsync");
+    return real(fd);
+}
+
+int fdatasync(int fd) {
+    if (fd_is_exact_fsync_path(fd)) { errno = EIO; return -1; }
+    fsync_fn real = (fsync_fn)dlsym(RTLD_NEXT, "fdatasync");
+    return real(fd);
 }
 "#;
     let source_path = directory.join(format!(
@@ -2327,5 +2365,188 @@ fn schema_upgrade_resume_envelope_enospc_process_helper() -> TestResult {
             "expected a StorageFull BackupError::Storage(StorageError::Io(_)), got {other:?}"
         )
         .into()),
+    }
+}
+
+/// A real `EIO` from `fsync`, not a synthetic phase callback, a real process
+/// kill or a write failure, injected on `start_inner`'s own `JOURNAL` file
+/// sync -- strictly between `fault(0)` and `fault(1)`, after the complete
+/// `PLAN` write and its own sync have succeeded, and before any of the three
+/// directory syncs run. `FSYNC_SHIM_EXACT_PATH` names the `JOURNAL` file
+/// itself, so every other `fsync`/`fdatasync` in the child (the `PLAN` sync,
+/// the directory syncs, every RocksDB sync) passes through unmodified; no
+/// `ENOSPC_SHIM_*` variable is passed, so every `write` passes through too.
+/// The resulting state -- a complete `PLAN`, an empty `JOURNAL`, an empty
+/// `attempts/` -- differs from both the phase-0 real kill (no `PLAN`) and
+/// the plan-write `ENOSPC` (an empty `PLAN`).
+///
+/// The child is bounded: its stdin is null and its stdout/stderr go to files
+/// in this test's own temporary root (outside source, package and
+/// workspace), so no pipe can fill and block it. It is polled against a
+/// fixed deadline and, if it has not exited by then, killed and reaped
+/// before the test fails. Its captured output is read only after it has
+/// been reaped, bounded per stream.
+///
+/// This models only a kernel reporting a writeback error for one file while
+/// its page cache stays visible on the same machine. It makes no power-loss
+/// or on-media durability claim, and it is one fsync point only, not a
+/// closure of the crash matrix: the directory syncs, `append`'s `sync_all`,
+/// `PENDING` and every activation sync still lack real fsync-error coverage.
+#[test]
+fn fsync_failure_on_the_start_journal_preserves_inputs_and_resumes() -> TestResult {
+    use std::io::Read as _;
+    const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+    const CAPTURE_LIMIT: u64 = 1 << 20;
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let shim_directory = std::env::current_exe()?
+        .parent()
+        .ok_or("test binary has no parent directory")?
+        .to_owned();
+    let Some(shim) = compile_enospc_shim(&shim_directory, "start_journal_fsync")? else {
+        return Ok(()); // No C compiler available: this fault is opt-in infrastructure.
+    };
+    let root = tempfile::tempdir()?;
+    let root_path = root.path().canonicalize()?;
+    let (source, package) = fixture(&root_path)?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let before_source = bytes(&source)?;
+    let before_package = bytes(&package)?;
+    let workspace = root_path.join("start-journal-fsync");
+    let journal = workspace.join(JOURNAL);
+    let stdout_path = root_path.join("start-journal-fsync.stdout");
+    let stderr_path = root_path.join("start-journal-fsync.stderr");
+    let captured = |path: &Path| -> TestResult<String> {
+        let mut data = Vec::new();
+        fs::File::open(path)?
+            .take(CAPTURE_LIMIT)
+            .read_to_end(&mut data)?;
+        Ok(String::from_utf8_lossy(&data).into_owned())
+    };
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command
+        .arg("--exact")
+        .arg(helper("schema_upgrade_start_journal_fsync_process_helper"));
+    command.env("LD_PRELOAD", shim);
+    command.env_remove("ENOSPC_SHIM_BUDGET_BYTES");
+    command.env_remove("ENOSPC_SHIM_PREFIX");
+    command.env("FSYNC_SHIM_EXACT_PATH", &journal);
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_START_JOURNAL_FSYNC_TEST_SOURCE",
+        &source,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_START_JOURNAL_FSYNC_TEST_PACKAGE",
+        &package,
+    );
+    command.env(
+        "OXIGRAPH_SCHEMA_UPGRADE_START_JOURNAL_FSYNC_TEST_WORKSPACE",
+        &workspace,
+    );
+    command.stdin(std::process::Stdio::null());
+    command.stdout(fs::File::create(&stdout_path)?);
+    command.stderr(fs::File::create(&stderr_path)?);
+    let mut child = command.spawn()?;
+    let deadline = std::time::Instant::now() + TIMEOUT;
+    let waited = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Ok(None) => break Err(io::Error::new(io::ErrorKind::TimedOut, "deadline passed")),
+            Err(error) => break Err(error),
+        }
+    };
+    let status = match waited {
+        Ok(status) => status,
+        Err(error) => {
+            // Never leave the child running or unreaped, whatever went wrong.
+            let killed = child.kill();
+            let reaped = child.wait();
+            return Err(format!(
+                "child helper did not exit within {TIMEOUT:?} ({error}); kill {killed:?}, \
+                 reap {reaped:?}, stdout {}, stderr {}",
+                captured(&stdout_path)?,
+                captured(&stderr_path)?
+            )
+            .into());
+        }
+    };
+    let stdout = captured(&stdout_path)?;
+    assert!(
+        status.success(),
+        "child helper failed: status {status:?}, stdout {stdout}, stderr {}",
+        captured(&stderr_path)?
+    );
+    assert!(
+        stdout.contains("running 1 test"),
+        "the --exact filter did not match exactly one test: {stdout}"
+    );
+    // The helper only succeeds on the injected EIO, so the child reached the
+    // JOURNAL sync. The complete PLAN and empty JOURNAL pin that point: after
+    // the plan write, before any journal record or directory sync.
+    let plan = fs::read(workspace.join(PLAN))?;
+    assert!(
+        plan.starts_with(PLAN_MAGIC),
+        "the plan must have been written in full before the journal sync"
+    );
+    assert_eq!(
+        fs::metadata(&journal)?.len(),
+        0,
+        "the journal must still be the empty file start_inner created"
+    );
+    assert_eq!(fs::read_dir(workspace.join("attempts"))?.count(), 0);
+    assert_eq!(bytes(&source)?, before_source);
+    assert_eq!(bytes(&package)?, before_package);
+    // Restart contract, refusal half: the workspace already exists, so a
+    // second start is refused without touching it.
+    let before_workspace = bytes(&workspace)?;
+    assert!(Store::start_schema_upgrade(&source, &package, &workspace, &options).is_err());
+    assert_eq!(bytes(&workspace)?, before_workspace);
+    // Restart contract, resume half: the visible PLAN verifies and the empty
+    // JOURNAL means a first INTENT, not an abandoned attempt.
+    let state = Store::resume_schema_upgrade(&source, &package, &workspace, &options)?;
+    assert!(state.receipt().is_some());
+    assert_eq!(
+        fs::read(workspace.join(PLAN))?,
+        plan,
+        "resume must reuse the existing plan, not rewrite it"
+    );
+    let attempts = workspace.join("attempts");
+    assert!(attempts.join(format!("{:016}", 0_u64)).exists());
+    assert!(
+        !attempts.join(format!("{:016}", 1_u64)).exists(),
+        "an empty journal must not cause an abandoned attempt"
+    );
+    SchemaUpgradeReceipt::verify(&source, &package, &workspace, &options)?;
+    assert_eq!(bytes(&source)?, before_source);
+    assert_eq!(bytes(&package)?, before_package);
+    Ok(())
+}
+
+#[test]
+fn schema_upgrade_start_journal_fsync_process_helper() -> TestResult {
+    if option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND") != Some("vendored") {
+        return Ok(());
+    }
+    let Some(source) = std::env::var_os("OXIGRAPH_SCHEMA_UPGRADE_START_JOURNAL_FSYNC_TEST_SOURCE")
+    else {
+        return Ok(()); // An ordinary run: only the parent test re-invokes this.
+    };
+    let source = PathBuf::from(source);
+    let package = variable("OXIGRAPH_SCHEMA_UPGRADE_START_JOURNAL_FSYNC_TEST_PACKAGE")?;
+    let workspace = variable("OXIGRAPH_SCHEMA_UPGRADE_START_JOURNAL_FSYNC_TEST_WORKSPACE")?;
+    let options = SchemaUpgradeOptions::new(SchemaRdfProfile::Rdf11);
+    let result = Store::start_schema_upgrade(&source, &package, &workspace, &options);
+    match result {
+        // Only the shim's exact-path fsync produces EIO on this path: a start
+        // that never syncs JOURNAL, or fails anywhere else, cannot match.
+        Err(BackupError::Io(error)) if error.raw_os_error() == Some(libc::EIO) => Ok(()),
+        other => Err(format!("expected an EIO BackupError::Io, got {other:?}").into()),
     }
 }
