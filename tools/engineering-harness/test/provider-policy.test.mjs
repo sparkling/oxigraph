@@ -6,6 +6,32 @@ import test from "node:test";
 import { claudeInvocation } from "../src/native/claude.mjs";
 import { codexInvocation } from "../src/native/codex.mjs";
 import { validateProviderInvocation } from "../src/policy/providers.mjs";
+import { nativeChildEnvironment } from "../src/native/environment.mjs";
+
+test("Claude requested output ceiling defaults high and preserves valid operator overrides only", () => {
+  const name = "CLAUDE_CODE_MAX_OUTPUT_TOKENS", before = process.env[name];
+  const executionRoot = mkdtempSync(join(tmpdir(), "oxigraph-provider-test-"));
+  try {
+    delete process.env[name];
+    assert.equal(claudeInvocation({ executionRoot, model: "opus", prompt: "inspect" }).environment[name], "128000");
+    for (const value of ["1", "64000", "128000", "200000", String(Number.MAX_SAFE_INTEGER)]) {
+      process.env[name] = value;
+      const invocation = claudeInvocation({ executionRoot, model: "opus", prompt: "inspect" });
+      assert.equal(invocation.environment[name], value);
+      assert.equal(validateProviderInvocation(invocation), true);
+      assert.equal(nativeChildEnvironment("codex")[name], undefined);
+      assert.equal(invocation.environment.MAX_THINKING_TOKENS, undefined);
+    }
+    for (const value of ["", "0", "-1", "1.5", "NaN", "Infinity", "1e5", " 64000", "9007199254740992"]) {
+      process.env[name] = value;
+      assert.throws(() => nativeChildEnvironment("claude"), /positive safe integer/);
+      assert.equal(nativeChildEnvironment("codex")[name], undefined);
+    }
+  } finally {
+    if (before === undefined) delete process.env[name]; else process.env[name] = before;
+    rmSync(executionRoot, { recursive: true, force: true });
+  }
+});
 
 test("native invocations are explicit, read-only, ephemeral, and provider-local", () => {
   const executionRoot = mkdtempSync(join(tmpdir(), "oxigraph-provider-test-"));
@@ -47,7 +73,7 @@ test("native invocations are explicit, read-only, ephemeral, and provider-local"
       assert.match(invocation.attestation.sha256, /^[0-9a-f]{64}$/);
       assert.ok(
         !Object.keys(invocation.environment).some((name) =>
-          /token|secret|api_?key/i.test(name),
+          name !== "CLAUDE_CODE_MAX_OUTPUT_TOKENS" && /token|secret|api_?key/i.test(name),
         ),
       );
     }
