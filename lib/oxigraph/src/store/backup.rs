@@ -1469,6 +1469,7 @@ mod tests {
     use super::*;
     use crate::model::{GraphName, NamedNode, Quad};
     use crate::store::{TransactionKey, TransactionRequest};
+    use std::time::Duration;
     type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
     #[test]
@@ -1740,6 +1741,37 @@ mod tests {
         format!("{path}::{name}")
     }
 
+    const CHILD_LIMIT: Duration = Duration::from_secs(120);
+
+    /// Waits for an owned child up to `limit`; on expiry kills it, always reaps it
+    /// (even if the kill fails) and reports `TimedOut`.
+    fn wait_bounded(child: &mut std::process::Child, limit: Duration) -> io::Result<Option<i32>> {
+        let deadline = Instant::now() + limit;
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => return Ok(status.code()),
+                Ok(None) => {}
+                Err(error) => {
+                    // Best-effort cleanup; the original wait error is reported.
+                    drop(child.kill());
+                    drop(child.wait());
+                    return Err(error);
+                }
+            }
+            if Instant::now() >= deadline {
+                let killed = child.kill();
+                let reaped = child.wait();
+                killed?;
+                reaped?;
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "child exceeded its deadline and was killed",
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     /// A real OS-level process kill at every phase of
     /// `backup_with_receipt_inner`, the backup every upgrade path takes first.
     /// Phases 0-3 precede the manifest rename: no receipt may exist, and the
@@ -1765,14 +1797,17 @@ mod tests {
                 ))?;
             }
             let before = Store::open_read_only(&source)?.backup_checkpoint()?.0;
-            let status = std::process::Command::new(std::env::current_exe()?)
+            let mut child = std::process::Command::new(std::env::current_exe()?)
                 .arg("--exact")
                 .arg(helper("receipt_backup_process_helper"))
                 .env("OXIGRAPH_RECEIPT_BACKUP_TEST_SOURCE", &source)
                 .env("OXIGRAPH_RECEIPT_BACKUP_TEST_DESTINATION", &destination)
                 .env("OXIGRAPH_RECEIPT_BACKUP_TEST_EXIT_AT", stop.to_string())
-                .status()?;
-            assert_eq!(status.code(), Some(73), "the child did not reach {stop}");
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .spawn()?;
+            let code = wait_bounded(&mut child, CHILD_LIMIT)?;
+            assert_eq!(code, Some(73), "the child did not reach {stop}");
             let verified = BackupReceipt::verify(&destination, &TransactionStartControl::new());
             if stop < 4 {
                 assert!(!destination.join(MANIFEST).exists(), "phase {stop}");
@@ -1812,5 +1847,46 @@ mod tests {
             },
         )?;
         Err("the child returned instead of exiting at its crash point".into())
+    }
+
+    /// Inert in ordinary runs; only the timeout regression sets the env var. The
+    /// self-cap bounds a child leaked by a failed parent.
+    #[test]
+    fn receipt_backup_sleep_helper() -> TestResult {
+        if std::env::var_os("OXIGRAPH_RECEIPT_BACKUP_TEST_SLEEP").is_none() {
+            return Ok(()); // An ordinary run: only the timeout regression re-invokes this.
+        }
+        std::thread::sleep(Duration::from_secs(60));
+        Err("the sleep helper outlived its parent's deadline".into())
+    }
+
+    #[test]
+    fn bounded_child_wait_kills_and_reaps_on_timeout() -> TestResult {
+        use std::os::unix::process::ExitStatusExt;
+        let mut child = std::process::Command::new(std::env::current_exe()?)
+            .arg("--exact")
+            .arg(helper("receipt_backup_sleep_helper"))
+            .env("OXIGRAPH_RECEIPT_BACKUP_TEST_SLEEP", "1")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .spawn()?;
+        let started = Instant::now();
+        let error = wait_bounded(&mut child, Duration::from_millis(200))
+            .err()
+            .ok_or("a sleeping child was reported as exited")?;
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut, "{error}");
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "the bounded wait did not honor its short deadline"
+        );
+        let status = child
+            .try_wait()?
+            .ok_or("the timed-out child was not reaped")?;
+        assert_eq!(
+            status.signal(),
+            Some(9),
+            "the timed-out child was not killed"
+        );
+        Ok(())
     }
 }

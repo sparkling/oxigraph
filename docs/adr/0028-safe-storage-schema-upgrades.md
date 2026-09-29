@@ -4935,3 +4935,44 @@ This closes only the restore process-exit test slice of residual item 3.
 Backup/restore OS writeback-fault coverage, other fsync points, profile admission
 and derived-index policy, and separately authorized qualification remain outside
 this slice. ADR-0028 remains Proposed; no publication or promotion follows.
+
+### Bounded backup child support accepted (2026-09-29)
+
+The existing backup process-exit parent used unbounded `Command::status()`.
+The test-only change in `lib/oxigraph/src/store/backup.rs` replaces it with
+a 120-second polling deadline, kill and reap. Existing phase 0 through 4
+exit-73 and preservation assertions remain unchanged. A 200ms timeout
+regression checks timeout, SIGKILL and reaped status; its child is inert in
+ordinary test runs and self-caps at 60 seconds. This support fix does not
+claim new production behavior or power-loss coverage.
+
+Exact reviewed file SHA256:
+`85e5de347f3da2b82862a55d60a3401d38b1cae9bf454dc6b70cb44a8c5f2236`.
+Initial fresh review rejected two cleanup warnings. Same-task Opus/high repair
+`aa6ef538-6d43-40f6-a3fb-bf01435380d1` fixed them; fresh Sonnet 5.5/high reviewer
+`751fd30e-f7b8-4927-a013-60faa4841312` accepted the repaired candidate.
+Review response is
+`target/engineering-delivery/resume-native/6a60f094-8381-4dee-80ba-95e8ec56191e-1/response.json`,
+SHA256 `70f658b05209c187447a3b0514d85e9a39ad2a1fc1ce19f2f010018d2716c03e`.
+
+After cohort drain, root verified the 15,212-file candidate snapshot against
+main: only the declared backup file differed. The subsequent restore acceptance
+commit changed this ADR only; code, evaluator and production read inputs remained
+unchanged. Exact candidate bytes were integrated on `1ba69022c` and checked:
+
+| Canonical check | Receipt under `target/engineering-delivery/` | Result |
+| --- | --- | --- |
+| Default backup unit tests | `run-mzg9VA/result.json` | 11 passed |
+| RDF12 backup unit tests | `run-VuIZzo/result.json` | 11 passed |
+| Default public backup/restore receipts | `run-vKXxCb/result.json` | 18 passed |
+| RDF12 public backup/restore receipts | `run-70XOKG/result.json` | 18 passed |
+
+Complete source/sourceAfter observations match the exact canonical code diff.
+Focused rustfmt and diff checks pass. Repaired candidate Clippy exited 0 with
+571 library-test warnings: two added existing-style `tests_outside_test_module`
+diagnostics, no new cleanup warnings. Those direct candidate checks are not
+runner-owned receipts. Fresh review notes that an exceptional failure to kill
+an owned child could still block its following reap; ordinary owned-child
+timeout behavior is covered, not an arbitrary OS-failure guarantee.
+Task `task-1790647971057-rzk7v7` remains the single support outcome; earlier
+cancelled batch and rejected candidate evidence are preserved, not relabelled.
