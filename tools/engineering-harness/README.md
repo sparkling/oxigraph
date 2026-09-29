@@ -9,9 +9,10 @@ mandatory-harness, Claude-only and one-process instructions.
 Direct application/harness implementation, repair, tests and builds are allowed.
 Harness dispatch is optional. Keep orchestration and learning available; preserve
 scoped checks, independent review, source/data isolation and one canonical
-integrator. Current September 29 instruction pauses the goal with GCP VM terminated:
-local harness-only refactor, no programme/cloud restart. Earlier resumption is
-superseded; `a33301f33` G4.3 WIP remains preserved, not accepted.
+integrator. Latest September 29 goal continuation authorizes root-owned GCP
+programme restart after local validation; this proof performs no cloud or Rust
+programme actions. VM stays terminated until root restarts it; `a33301f33` G4.3
+WIP remains preserved, not accepted.
 
 ## Configured subscription transport
 
@@ -150,6 +151,13 @@ requests before draining callbacks. Result retains candidate pointers and lists
 `externalActionsUnconfirmed`; ownership remains retained until owner confirms
 external native/root actions stopped. Closing bridge does not kill external work.
 Exit 0 means all candidates await owner review, never canonical acceptance.
+
+Opt-in local native proof: `node tools/engineering-harness/test/support/prove-native-batch.mjs --run`.
+It services this same bridge with real configured native Sonnet5.5 planning,
+authoring and fresh review for two scoped harness regressions, records PIDs/timing,
+and leaves canonical integration to owner. It is proof tooling, not a production
+MCP bridge or scheduler. Requires current native-execution authority; no Rust/cloud
+work. ADR-0049 pins successful overlap and separate accepted-source handoff evidence.
 
 `src/ordinary-pool.mjs` exports `runOrdinaryBatch(entries, {maxConcurrency, signal})`.
 Each entry supplies unique ID, validated workflow spec, host callback, optional
