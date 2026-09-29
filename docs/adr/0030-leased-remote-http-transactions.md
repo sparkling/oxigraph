@@ -5,7 +5,8 @@
 - Updated: 2026-09-29
 - Deciders: Oxigraph parity programme
 - Implementation status: native owned storage and additive public owned Store
-  handle implemented within the bounded evidence below. The server has no
+  handle plus deterministic lease model implemented within the bounded evidence
+  below. The server has no
   remote transaction route, lease registry, or owned server transaction handle
 - Programme task: `task-1787670632421-dkucm8` (G4.5)
 - **Depends on**:
@@ -512,3 +513,45 @@ This accepts bounded native API slices only. Governed support task
 `task-1790669488928-73stxw` closes; original G4.5 alias remains open for
 independent evaluator, lease model, protocol and later applicable gates.
 ADR remains Proposed. No HTTP activation, qualification or publication.
+
+## Deterministic lease model (2026-09-29)
+
+`cli/src/lease.rs` adds a safe, clock-free state model with injected logical
+time, finite validated limits, immutable caller-asserted identity binding,
+generation-CAS renewal, exclusive operation authority, bounded cancellation,
+commit ambiguity, response-loss observation, retention and restart classification.
+It is not authentication, a runtime registry, or an HTTP transaction service.
+External lookup supplies durable outcomes; the model never invents them.
+
+Instance-private handle identity prevents cross-completion even for equal public
+lease IDs. Rejected binding/time checks retain borrowed operation/commit handles
+for retry; successful completion still cannot replay. The independent public-API
+trace consumer checks 256 deterministic seeds, shrinking, boundary cases and
+negative controls. Retry coverage counts successful same-handle retries, not
+terminal errors. Exact source SHA256:
+
+- `cli/src/lib.rs`: `a3c1aca190eddc428227c3a82f122777f40e0b876a18c204caf28491d859f298`.
+- `cli/src/lease.rs`: `ea031162d58dd7f133e00f8d8b7a65cc1171f34db21f2b739533e2f1a8719fb4`.
+- `cli/tests/lease_state_model.rs`: `7e292df83a77a58a9f7e6a705f9a834d90d464615a0d6622ac78b5df19128650`.
+
+Original ordinary batch `workflow-4JdfeU` failed; its timeout, cross-instance
+defect and later rejected retry/coverage reviews remain negative evidence.
+Direct same-task repairs used recorded Opus proposals in isolated `source-s3mRxK`
+from accepted `6649e7e1d`. Fresh Sonnet 5.5/high review
+`5fd1dd88-6d01-40f9-9894-ef7ac98140ee`, independent reviewer
+`d92bd797-0fe6-4011-9deb-49da1e9bc255`, accepts final exact source.
+Response SHA256: `a6e952a232de4fb921c5bd66973adca0a34636b223317957c7a0c62a43adfe7a`.
+Request/response/terminal binding, all three source hashes, 11 read dependencies
+and 15,219 unchanged candidate files were verified after external actions drained.
+
+Candidate default/no-default checks each pass 37; formatter passes. Focused
+Clippy exits 0 with warnings, not a clean-lint claim. Canonical no-default
+checks pass 37 (`run-SiMSuO`); default checks pass 37 plus 77 existing CLI
+library regressions (`run-5fS3dK`). Both source/sourceAfter bindings matched
+exact canonical source before this evidence append. CLI no-default still
+includes its normal Oxigraph dependency features; it is not memory-only proof.
+
+This accepts bounded ordinary implementation and tests, not a frozen independent
+qualification gate. G4.5 alias `task-1790657013522-cscfy2` remains open for
+the server lifecycle, protocol and later applicable evaluators. No token,
+HTTP route, persistence, promotion or publication is enabled. ADR remains Proposed.
