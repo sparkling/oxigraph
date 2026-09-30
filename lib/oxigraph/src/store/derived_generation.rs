@@ -15,10 +15,8 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
 use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
 use std::path::{Path, PathBuf};
-use std::sync::{
-    Arc,
-    atomic::{AtomicU8, Ordering},
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Instant;
 
 const IDENTITY: &str = "index.identity";
@@ -724,7 +722,8 @@ impl DerivedFiles {
     #[cfg(any(
         feature = "text-index",
         feature = "spatial-index",
-        feature = "statistics"
+        feature = "statistics",
+        feature = "rdfs"
     ))]
     pub(super) fn read_verified(
         &self,

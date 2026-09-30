@@ -329,3 +329,30 @@ runner receipts. Earlier rejected reviews, failed tests and native stalls remain
 negative evidence. Query consistency, broader recovery/resource gates and
 separately authorized qualification remain open on the same G4.7 outcome.
 ADR remains Proposed; no default promotion, protected-data change or publication.
+
+## Retained payload inventory binding (2026-09-30)
+
+Provider loading now reuses `DerivedFiles::read_verified` for RDFS payloads.
+Copied `meta`, `image` and `inferred` bytes must match the admitted generation's
+retained size/hash inventory, not only their own internally consistent metadata.
+Wire format, public API, bounds and final control checks remain unchanged.
+The new public regression replaces all three files with another valid generation:
+before repair it incorrectly loaded successfully (`session6451`, retained RED);
+after repair it returns `Corrupt`. This is a hydration integrity prerequisite,
+not a query overlay, snapshot-consistency admission or incremental algorithm.
+
+Fresh native Sol6.1/high review `e10747f4-5044-45d4-9654-81890137f45f`, worker
+`01a0f2db-c720-71c1-86d8-97ade658af39`, ACCEPTs exact three-file source; response
+SHA256 `1420ca196d72cd01663b5d59b4f30f28f230a09b97723a6172699e05716b5735`.
+Owner verified request/receipt/custody, eight reads and 15,256 unchanged inputs,
+reconciling only the accepted three-path harness correction since parent
+`86faf32c`. Evidence: `target/engineering-delivery/hydration-integration-e10747f4.json`.
+
+Canonical checks pass 24 derived-input/provider/reference tests (`session21181`),
+12 provider unit tests and default-feature library check (`session54405`).
+Reviewed hashes still match after validation; scoped nightly formatting and diff
+checks pass. Candidate integration/unit checks each pass 12. Compiler warnings
+remain. Counts are direct owner observations, not runner-issued qualification
+receipts. Earlier native stalls remain negative; no stalled proposal was applied.
+Same G4.7 outcome stays open. ADR remains Proposed; no server/default activation,
+qualification, protected-data mutation or publication follows.

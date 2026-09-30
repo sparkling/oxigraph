@@ -447,25 +447,12 @@ fn read_all(
     limits: &DerivedLimits,
     started: Instant,
 ) -> Result<Vec<u8>, DerivedGenerationError> {
-    let mut reader = files.read(name)?;
-    let mut bytes = Vec::new();
-    let mut buffer = vec![0_u8; 64 * 1024];
-    loop {
-        check(&limits.control, started)?;
-        let count = reader.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        let total = u64::try_from(bytes.len())
-            .ok()
-            .and_then(|size| size.checked_add(u64::try_from(count).ok()?))
-            .ok_or(DerivedGenerationError::Limit)?;
-        if total > max {
-            return Err(DerivedGenerationError::Limit);
-        }
-        bytes.extend_from_slice(&buffer[..count]);
-    }
-    Ok(bytes)
+    files.read_verified(
+        name,
+        usize::try_from(max).map_err(|_| DerivedGenerationError::Limit)?,
+        limits,
+        started,
+    )
 }
 
 /// Reads at most the declared section size; a longer file is corrupt, not a limit.

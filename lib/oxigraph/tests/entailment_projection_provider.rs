@@ -749,6 +749,33 @@ fn every_payload_file_detects_byte_flips_and_truncation() -> Res {
 }
 
 #[test]
+fn retained_inventory_rejects_coherent_payload_replacement() -> Res {
+    let mut fx = Fixture::new()?;
+    fx.step(&dog_animal_ops())?;
+    let retained = fx.index.active(&fx.limits).ctx("retained generation")?;
+    EntailmentProjectionState::load(retained.files()).ctx("valid retained payload")?;
+    fx.step(&[Op::Insert(type_of("another-dog", "Dog"))])?;
+    let replacement = fx.index.active(&fx.limits).ctx("replacement generation")?;
+    ensure(
+        retained.directory() != replacement.directory(),
+        "distinct generations",
+    )?;
+    EntailmentProjectionState::load(replacement.files()).ctx("valid replacement payload")?;
+    for name in ["meta", "image", "inferred"] {
+        std::fs::copy(
+            replacement.directory().join(name),
+            retained.directory().join(name),
+        )
+        .ctx("replace complete internally consistent payload set")?;
+    }
+    let error = err_of(EntailmentProjectionState::load(retained.files()))?;
+    ensure(
+        matches!(error, DerivedGenerationError::Corrupt),
+        &format!("retained inventory mismatch returned {error}"),
+    )
+}
+
+#[test]
 fn state_apply_is_idempotent_and_rejects_foreign_lower_and_gapped_deltas() -> Res {
     let mut fx = Fixture::new()?;
     // Genesis generation: no governed commit yet.
