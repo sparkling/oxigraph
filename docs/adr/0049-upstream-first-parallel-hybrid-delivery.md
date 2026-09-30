@@ -1,7 +1,7 @@
 # ADR-0049: Upstream-first parallel hybrid delivery
 - **Status**: Proposed
 - **Date**: 2026-09-26
-- **Updated**: 2026-09-30
+- **Updated**: 2026-10-01
 - **Deciders**:
 - **Tags**: engineering, ruflo, metaharness, parallel-delivery, openrouter
 - **Related**: ADR-0017, ADR-0043, ADR-0048
@@ -118,7 +118,7 @@ syntax checks pass. Synthetic tests prove contracts, not live training, evolutio
 untouched. Unlisted tasks use root policy, recording nonapplicability; signed-task drift/tampering rejects. Wider ADR remains Proposed.
 
 Private Cargo allocation/profile/binary/compiler evidence uses `--target-dir target/engineering-delivery/builds/<allocation-id>`; caller owns exclusivity, concurrency unproved. September29 automatic maintenance narrows eviction to cold incremental compiler caches under Cargo's existing nonblocking profile lock; retains lock inode, binaries and all evidence. Pressure85%/stop80%, minimum age6h, hourly systemd timer. No per-outcome retirement queue.
-Sept29 root-reviewed/deployed20:22UTC: hourly second pressure-only pass removes cold oxrocksdb-sys `out/*.o` only when `ar p` bytes match; archives stay. Research, path limits and tests: [Cargo incremental maintenance](../research/cargo-incremental-maintenance.md). This is not a disk quota.
+Sept29 root-reviewed/deployed20:22UTC: hourly second pressure-only pass removes cold oxrocksdb-sys `out/*.o` only when `ar p` bytes match; archives stay. Research, path limits and tests: [Cargo incremental maintenance](../research/cargo-incremental-maintenance.md). This is not a disk quota. September30 23:15UTC storage recovery (October1 local date): healthy hourly cleanup reclaimed6,289,272,832 bytes but retained outputs left95% usage; no whole allocation proved safely disposable. Under prior conditional1TB authorization, exact nonboot pd-balanced disk hm-builders-cbde45e2/europe-west2-b/oxigraph-data, ID7376461430295037379, grew512 to1024GiB. Guest confirmed1099511627776 bytes before online ext4 resize2fs on /dev/disk/by-id/google-oxigraph-data; unchanged rw /srv now47% used,511GiB free. Boot device unchanged. No deletion, reboot, worker signal, source/cron change, Rust/model run or harness deployment. Cleaner remains unchanged; capacity growth does not qualify application acceptance or alter Proposed status.
 
 Ordinary `workflow --isolated true` now composes the existing workflow callbacks with a non-Git candidate snapshot under
 `target/engineering-delivery/candidates`. Source observation, admitted file reads, outside-scope checks, command cwd, logs, artifact binding
