@@ -1,12 +1,13 @@
 # ADR-0049: Upstream-first parallel hybrid delivery
 - **Status**: Proposed
 - **Date**: 2026-09-26
-- **Updated**: 2026-09-29
+- **Updated**: 2026-09-30
 - **Deciders**:
 - **Tags**: engineering, ruflo, metaharness, parallel-delivery, openrouter
 - **Related**: ADR-0017, ADR-0043, ADR-0048
 
-## September 29 ordinary routing and resumption amendment
+## September 29-30 ordinary routing and custody
+September30 local correction: ordinary batches reserve task identities, paths/resources across CLI processes through Fabric's brief flock/record pattern under target/engineering-delivery/outcome-pool. Settlement releases only its claim; cancellation drains started workflows. Dead-owner records require external-action inspection. Release errors return custodyErrors without replacing success/original task failure; disk claims remain for inspection. onSettled promises cannot stall refill/return; late rejection emits safe ordinary-pool-observer-error stderr metadata, never private exception bodies. Syntax checks and19 focused pool/coordinator/workflow tests pass, including cross-process conflict/refill, real isolated checks, release faults and late reporting failure. Initial Opus findings corrected; unchanged-route Sonnet5.5/high retry independently APPROVED (review SHA256 13f7f3d03a31c1abc8cbbfb132572f3acd66c523b6824055b65346fe40401449); prior preflight failure stays negative. Native route/stream and canonical acceptance unchanged. Overall ADR Proposed; scoped local correction implemented, cloud adoption pending.
 September29 credit-route audit: future confirmed nonexecuted HTTP402 fallback uses Sonnet5.5/medium in both direct workflow default and learned candidate selection. Sol/medium, Opus capability repair, explicit pins and historical evidence stay unchanged. API/runtime join18/18 and syntax checks pass locally; cloud adoption remains separate.
 
 GCP adoption (September 29, 16:12 UTC): sole owner fast-forwarded clean main from accepted application `154551eaf` to `5dbe4537d`, including `bfb4817ae`. Exact seven-path custody check preceded integration; active isolated Cargo commands and historical candidate pins stayed unchanged. Node 24.14.1 stream/host/API/runtime join passes 59/59, plus syntax checks. Log `target/engineering-delivery/redacted-progress-cloud-deploy-tests.log` SHA256 `3b557e0861559d055b3307195258f2494a2bf31058c4d861100d9afd3d4a2b38`.
@@ -14,7 +15,6 @@ Actual overlapping native calls use stream helper SHA256 `f3bbc5277cdfb39e23ac6b
 This is invocation/progress evidence, not completed application acceptance or live API-fallback proof. Earlier stalls and negative receipts remain unchanged; their uncaptured stream framing is not retrospectively inferred. Candidates still require current-source/read/evaluator revalidation before integration. No push, qualification, new scheduler or transport substitution. ADR remains Proposed.
 
 ### Ordinary native host stream repair (September 29)
-
 Owner authorizes this bounded repair separately from the closed fixture-timeout rollout. The ignored GCP host driver
 `target/engineering-delivery/native-request-20260929.mjs` previously accumulated buffered JSON/stdout/stderr without limits or inactivity
 detection and forwarded signals only to its direct child. Frozen invocations and historical receipts stay unchanged. Snapshot/hash

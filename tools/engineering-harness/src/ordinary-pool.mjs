@@ -2,6 +2,9 @@
 import { runBoundedPool } from "@claude-flow/cli/dist/src/services/bounded-worker-pool.js";
 import { runIsolatedWorkflow } from "./ordinary-workspace.mjs";
 import { validateWorkflow } from "./workflow.mjs";
+import { join } from "node:path";
+import { repository } from "./delivery.mjs";
+import { reserveOrdinaryCustody } from "./ordinary-custody.mjs";
 
 const overlaps = (a, b) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 
@@ -21,7 +24,7 @@ export function readyBatchEntries(batch, host, options = {}) {
   });
 }
 
-export async function runOrdinaryBatch(entries, { maxConcurrency, signal, onSettled } = {}, execute = runIsolatedWorkflow) {
+export async function runOrdinaryBatch(entries, { maxConcurrency, signal, onSettled, custodyDirectory } = {}, execute = runIsolatedWorkflow) {
   signal?.throwIfAborted();
   if (onSettled !== undefined && typeof onSettled !== "function") throw new Error("onSettled must be a callback");
   if (!Array.isArray(entries)) throw new Error("Ordinary pool requires ready workflow entries");
@@ -47,20 +50,36 @@ export async function runOrdinaryBatch(entries, { maxConcurrency, signal, onSett
     }
   }
   const started = performance.now();
+  const release = reserveOrdinaryCustody(custodyDirectory ?? join(repository, "target/engineering-delivery/outcome-pool"), tasks, overlaps);
+  const claimed = new Set(tasks.map(task => task.id));
+  const custodyErrors = [];
+  const releaseTask = id => {
+    if (!claimed.has(id)) return;
+    try { release(id); }
+    catch (error) { custodyErrors.push({ id, error: error instanceof Error ? error.message : String(error) }); }
+    claimed.delete(id);
+  };
   const active = [];
   const retained = new Map();
   const notificationErrors = [];
-  const notify = async (task, workerSignal, status, value, error) => {
+  const notificationFailed = task => {
+    const event = { id: task.id, error: "lane-notification-failed" };
+    notificationErrors.push(event);
+    console.error(JSON.stringify({ type: "ordinary-pool-observer-error", ...event }));
+  };
+  const notify = (task, workerSignal, status, value, error) => {
     if (!onSettled) return;
     try {
       // Observers write local metadata only; never await integration or model work here.
-      await onSettled(structuredClone({ id: task.id, taskId: task.spec.taskId,
+      void Promise.resolve(onSettled(structuredClone({ id: task.id, taskId: task.spec.taskId,
         status: workerSignal.aborted ? "cancelled" : status,
         ...(status === "fulfilled" ? { value } : { error: error instanceof Error ? error.message : String(error) }),
-        ...retained.get(task.id), integration: "pending-owner-acceptance" }));
+        ...retained.get(task.id), integration: "pending-owner-acceptance" }))).catch(() => {
+          notificationFailed(task);
+        });
     } catch {
       // Reporting failure cannot hide workflow outcome or lose candidate custody.
-      notificationErrors.push({ id: task.id, error: "lane-notification-failed" });
+      notificationFailed(task);
     }
   };
   let result;
@@ -77,13 +96,15 @@ export async function runOrdinaryBatch(entries, { maxConcurrency, signal, onSett
         if (value?.candidateRoot) retained.set(task.id, {
           candidateRoot: value.candidateRoot, evidenceDirectory: value.directory,
         });
-        await notify(task, workerSignal, "fulfilled", value);
+        releaseTask(task.id);
+        notify(task, workerSignal, "fulfilled", value);
         return value;
       }, async (error) => {
         if (error?.candidateRoot) retained.set(task.id, {
           candidateRoot: error.candidateRoot, evidenceDirectory: error.evidenceDirectory,
         });
-        await notify(task, workerSignal, "rejected", undefined, error);
+        releaseTask(task.id);
+        notify(task, workerSignal, "rejected", undefined, error);
         throw error;
       });
       active.push(job);
@@ -93,8 +114,9 @@ export async function runOrdinaryBatch(entries, { maxConcurrency, signal, onSett
     // Upstream cancellation can return before a noncooperative callback terminates.
     // Keep caller ownership until every started workflow actually settles.
     await Promise.allSettled(active);
+    for (const id of claimed) releaseTask(id);
   }
   return { ...result, results: result.results.map((item) => ({ ...item, ...retained.get(item.id) })),
     poolDurationMs: result.durationMs, durationMs: performance.now() - started,
-    notificationErrors, integration: "pending-owner-acceptance" };
+    notificationErrors, custodyErrors, integration: "pending-owner-acceptance" };
 }

@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { runOrdinaryBatch } from "../src/ordinary-pool.mjs";
 import { repository, sourceObservation } from "../src/delivery.mjs";
 import { verifyJsonReference } from "../src/workflow.mjs";
 
-test("upstream pool runs two isolated workflows with real checks and candidate-only edits", async () => {
+test("upstream pool runs two isolated workflows with real checks and candidate-only edits", async t => {
+  const custodyDirectory = mkdtempSync(join(tmpdir(), 'ox-workflow-custody-'));
+  t.after(() => rmSync(custodyDirectory, { recursive: true, force: true }));
   const before = sourceObservation();
   const paths = ["tools/engineering-harness/README.md", "tools/engineering-harness/src/workflow-host.mjs"];
   const canonical = paths.map((path) => readFileSync(join(repository, path), "utf8"));
@@ -46,7 +49,7 @@ test("upstream pool runs two isolated workflows with real checks and candidate-o
       return { ...identity, result };
     },
   }));
-  const batch = await runOrdinaryBatch(entries, { maxConcurrency: 2 });
+  const batch = await runOrdinaryBatch(entries, { maxConcurrency: 2, custodyDirectory });
   assert.equal(batch.peakConcurrency, 2);
   assert.equal(new Set(roots).size, 2);
   for (const [index, entry] of batch.results.entries()) {
