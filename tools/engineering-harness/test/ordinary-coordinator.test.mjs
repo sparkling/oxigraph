@@ -2,9 +2,20 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
 import { coordinatorLaunch, coordinatorPrompt, startCoordinator } from "../src/ordinary-coordinator.mjs";
+import { routeDelivery } from "../src/delivery.mjs";
 
 const session = "11111111-2222-3333-4444-555555555555";
 const cli = "tools/engineering-harness/bin/oxigraph-delivery.mjs";
+test("coordinator ordinary instructions match configured default routes and retain repair/pins", () => {
+  for (const role of ["plan", "implement", "documentation", "review"]) {
+    const route = routeDelivery({ role, taskId: "task-coordinator-routing", completionCheck: "reviewed result" });
+    assert.ok(coordinatorPrompt.includes(`${route.model}/${route.effort}`), role);
+    assert.equal(route.transport, "native-subscription");
+  }
+  assert.ok(coordinatorPrompt.includes("Opus repair and stronger explicit task pins"));
+  assert.ok(coordinatorPrompt.includes("Historical routes and receipts remain unchanged"));
+  assert.ok(!coordinatorPrompt.includes("Preserve Sonnet 5.5 ordinary"));
+});
 test("coordinator preview pins existing resume and native model without spawning", () => {
   const launch = JSON.parse(execFileSync(process.execPath, [cli, "coordinator", "--session", session], { encoding: "utf8" }));
   assert.equal(launch.executionStarted, false);
