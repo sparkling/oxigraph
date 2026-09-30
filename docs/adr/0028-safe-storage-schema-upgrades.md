@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-29 — historical restore process-exit WIP validated and accepted below; broader residual gates remain open
+- Updated: 2026-09-30 — resume receipt-publication fsync matrix accepted; broader residual gates remain open
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
@@ -91,6 +91,45 @@
   [ADR-0014 — End-to-end RDF dataset graph topology](0014-rdf-dataset-graph-topology.md),
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md)
+
+## Resume receipt-publication fsync evidence (2026-09-30)
+
+Test-only slice `task-1790724575075-eixr84`, child of accepted `6149cf617`,
+injects exact-path OS `EIO` at the receipt PENDING-file fsync and workspace
+directory fsync before/after completion rename. Both RDF write ceilings prove
+typed incomplete versus `CompletionIndeterminate` outcomes, visible bytes,
+source/package preservation, receipt verification and same-path restart.
+Positive ordinal controls exercise the shim; bounded child capture/kill/reap
+remains in place. This is syscall/page-cache evidence, not power-loss durability,
+version-3 admission or whole G4.3 completion. Production behavior is unchanged.
+
+Exact reviewed files:
+- `schema_upgrade_tests.rs`: SHA256
+  `24e8986ff2be09306ce5e59be69e56f9c14db91446615944e24f113f5537073e`.
+- `schema_upgrade_publication_fsync_tests.rs`: SHA256
+  `bd1376ba3b64434fa3a3d921b60cca3263ef681e6d15eb97b7f8fd198313ae25`.
+
+Fresh independent historical Sonnet/high review
+`9523118d-fa01-4d96-afa4-5e836c58b881`, worker
+`241c792d-d837-452b-b75a-4ff1b24c8530`, accepted exact candidate bytes; response
+SHA256 `ccdc58fa8ff69a29265c88abd5cc120d619cbd66b9039774ea78199cdb4f875a`.
+Native request/receipt identity, eight supplemental reads and full snapshot
+inputs were revalidated against main `a987ecb58`; intervening accepted harness
+and snapshot-admission changes were reconciled. Owner custody guard confirmed
+independent retained snapshot-bound protocol work before serial integration.
+Evidence: `target/engineering-delivery/publication-fsync-integration-9523118d-fa01-4d96-afa4-5e836c58b881.json`.
+
+Canonical ordinary default matrix `run-WSkT1B` passes 50/50; RDF12 matrix
+`run-vc5JAa` passes 51/51. Both complete source/sourceAfter observations match
+exact reviewed canonical code. Runner aggregate counts 57/58 include seven
+nested helper observations each, not additional top-level tests. Separate warm
+targets used supported jobs16/test-threads8; test durations1575.29/1659.42s
+are measured, detailed timing attribution unproved. Candidate focused matrices
+previously passed4/4 each and impacted RDF12 passed51/51. Scoped nightly
+rustfmt and diff checks pass. Compiler warnings remain, including test-only
+unused qualifications; no warning-free or new Clippy claim. Failed/cancelled
+receipts remain negative. Remaining activation-fsync, derived-index and separately
+authorized qualification gates stay open. ADR remains Proposed; no publication.
 
 ## Context
 
