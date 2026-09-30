@@ -8,10 +8,11 @@ use crate::model::vocab::rdf;
 use crate::model::vocab::rdfs;
 use crate::model::{Dataset, GraphName, NamedNode, NamedOrBlankNode, Quad, Term};
 use crate::sparql::{CancellationToken, QueryEvaluationError};
-use crate::store::StorageError;
+use crate::store::{SnapshotItem, StorageError};
 #[cfg(any(feature = "owl2-rl", feature = "rdfs"))]
 use std::collections::HashSet;
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 mod control;
@@ -164,6 +165,7 @@ pub struct QueryEntailmentOptions {
     profile: QueryEntailment,
     timeout: Option<Duration>,
     cancellation_token: Option<CancellationToken>,
+    limits: Limits,
 }
 
 impl fmt::Debug for QueryEntailmentOptions {
@@ -172,6 +174,8 @@ impl fmt::Debug for QueryEntailmentOptions {
             .field("profile", &self.profile)
             .field("timeout", &self.timeout)
             .field("has_cancellation_token", &self.cancellation_token.is_some())
+            .field("max_materialized_quads", &self.limits.quads)
+            .field("max_estimated_materialization_bytes", &self.limits.bytes)
             .finish()
     }
 }
@@ -183,6 +187,10 @@ impl QueryEntailmentOptions {
             profile,
             timeout: None,
             cancellation_token: None,
+            limits: Limits {
+                quads: None,
+                bytes: None,
+            },
         }
     }
 
@@ -207,6 +215,90 @@ impl QueryEntailmentOptions {
         self.cancellation_token = Some(token);
         self
     }
+
+    /// Sets an opt-in logical quad ceiling for finite RDFS materialization.
+    ///
+    /// Only [`QueryEntailment::Rdfs12Finite`] enforces ceilings. Any other
+    /// profile fails with [`QueryEntailmentError::UnsupportedLimits`] instead of
+    /// ignoring them. `None`, the default, keeps the existing behaviour.
+    ///
+    /// The ceiling is checked before each wrapper-owned copy grows:
+    ///
+    /// - `snapshot`: quads plus named-graph declarations copied from the Store.
+    ///   The Store copies its complete contents before `FROM`/`FROM NAMED`
+    ///   selection. Each decoded record is admitted before the Store inserts
+    ///   it into the owned snapshot, so the accumulated snapshot never exceeds
+    ///   the ceiling; only the refused record has already been decoded;
+    /// - `source`: quads of the effective query dataset;
+    /// - `working`: source plus RDF and container-membership axioms, including
+    ///   the axioms generated for empty named graphs;
+    /// - inference: the engine fact ceiling is lowered to this value;
+    /// - `visible`: base plus exposed inferred quads.
+    ///
+    /// Wrapper stages fail with [`QueryEntailmentError::LimitExceeded`]. Engine
+    /// exhaustion keeps its original `QueryEntailmentError::Rdfs` error. The
+    /// ceiling only tightens the engine's built-in fact bound; it never raises it.
+    #[must_use]
+    pub const fn with_max_materialized_quads(mut self, max: Option<NonZeroUsize>) -> Self {
+        self.limits.quads = max;
+        self
+    }
+
+    /// Sets an opt-in ceiling on the deterministic logical memory estimate of
+    /// finite RDFS materialization.
+    ///
+    /// Each quad is charged 160 bytes plus its N-Quads display length, the
+    /// estimate the RDFS engine itself uses, counted without formatting into a
+    /// buffer. Store snapshot named-graph declarations are charged 160 bytes
+    /// plus their display length, so empty graphs with huge names are bounded
+    /// too. The Store snapshot admits each decoded quad and named-graph
+    /// declaration before inserting it into the owned snapshot (`snapshot`),
+    /// so an oversized snapshot is refused without being fully materialized.
+    /// The source, working and visible datasets are each charged before this
+    /// wrapper grows them, and the engine memory ceiling is lowered to this
+    /// value.
+    ///
+    /// For one snapshot record, cancellation and deadlines are checked first,
+    /// then the quad ceiling, then this ceiling.
+    ///
+    /// Only this logical estimate is bounded. The refused record has already
+    /// been decoded; storage read buffers, decoder allocations, allocator
+    /// overhead, indexes and process RSS are neither measured nor bounded.
+    /// Stages are bounded individually, not in sum. Several copies coexist
+    /// during materialization, so peak logical usage is a small multiple of the
+    /// ceiling. Profile support and error reporting follow
+    /// [`Self::with_max_materialized_quads`].
+    #[must_use]
+    pub const fn with_max_estimated_materialization_bytes(
+        mut self,
+        max: Option<NonZeroUsize>,
+    ) -> Self {
+        self.limits.bytes = max;
+        self
+    }
+
+    /// Returns the configured quad ceiling, if any.
+    pub const fn max_materialized_quads(&self) -> Option<NonZeroUsize> {
+        self.limits.quads
+    }
+
+    /// Returns the configured logical memory-estimate ceiling, if any.
+    pub const fn max_estimated_materialization_bytes(&self) -> Option<NonZeroUsize> {
+        self.limits.bytes
+    }
+
+    /// Fails before query execution if the profile is unavailable or cannot
+    /// enforce the configured ceilings.
+    pub fn ensure_supported(&self) -> Result<(), QueryEntailmentError> {
+        self.profile.ensure_supported()?;
+        if self.limits.is_unbounded() || self.profile == QueryEntailment::Rdfs12Finite {
+            Ok(())
+        } else {
+            Err(QueryEntailmentError::UnsupportedLimits {
+                profile: self.profile,
+            })
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -227,6 +319,28 @@ pub enum QueryEntailmentError {
         profile: QueryEntailment,
         /// Comma-separated Cargo features required by the profile.
         required_features: &'static str,
+    },
+    /// Materialization ceilings were configured for a profile that does not
+    /// enforce them; the request fails instead of ignoring them.
+    #[error(
+        "query entailment profile {profile} does not enforce materialization ceilings; only rdfs-1.2-finite does"
+    )]
+    UnsupportedLimits {
+        /// The profile selected together with the ceilings.
+        profile: QueryEntailment,
+    },
+    /// A configured materialization ceiling would have been exceeded by a
+    /// wrapper-owned copy. Engine exhaustion keeps its own error.
+    #[error(
+        "query entailment {limit} ceiling {ceiling} exceeded while building the {stage} dataset"
+    )]
+    LimitExceeded {
+        /// `"quad"` or `"estimated-byte"`.
+        limit: &'static str,
+        /// `"snapshot"`, `"source"`, `"working"` or `"visible"`.
+        stage: &'static str,
+        /// The configured ceiling.
+        ceiling: usize,
     },
     /// An input blank node collides with the engine's reserved witness space.
     #[error(
@@ -266,6 +380,180 @@ pub enum QueryEntailmentError {
         /// Number of independently observed contradictions.
         contradictions: usize,
     },
+}
+
+const QUAD_LIMIT: &str = "quad";
+const BYTE_LIMIT: &str = "estimated-byte";
+const SNAPSHOT_STAGE: &str = "snapshot";
+const SOURCE_STAGE: &str = "source";
+#[cfg(feature = "rdfs")]
+const WORKING_STAGE: &str = "working";
+#[cfg(any(feature = "owl2-rl", feature = "rdfs"))]
+const VISIBLE_STAGE: &str = "visible";
+
+/// Opt-in logical materialization ceilings; both unset by default.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Limits {
+    quads: Option<NonZeroUsize>,
+    bytes: Option<NonZeroUsize>,
+}
+
+impl Limits {
+    const fn is_unbounded(self) -> bool {
+        self.quads.is_none() && self.bytes.is_none()
+    }
+}
+
+/// Pre-insertion accounting for one wrapper-owned dataset copy. Unbounded
+/// budgets insert exactly as the unbudgeted code did.
+#[derive(Clone, Copy, Debug)]
+struct Budget {
+    limits: Limits,
+    stage: &'static str,
+    bytes: usize,
+}
+
+impl Budget {
+    const fn new(limits: Limits, stage: &'static str) -> Self {
+        Self {
+            limits,
+            stage,
+            bytes: 0,
+        }
+    }
+
+    /// Charges an already-owned dataset before anything is copied from it.
+    #[cfg(feature = "rdfs")]
+    fn starting_with(
+        limits: Limits,
+        stage: &'static str,
+        dataset: &Dataset,
+        control: &Control,
+    ) -> Result<Self, QueryEntailmentError> {
+        let mut budget = Self::new(limits, stage);
+        budget.check_len(dataset.len())?;
+        if limits.bytes.is_some() {
+            for quad in dataset {
+                control.check()?;
+                budget.charge(&quad)?;
+            }
+        }
+        Ok(budget)
+    }
+
+    /// Continues charging a superset of the accounted dataset under a new stage.
+    #[cfg(feature = "rdfs")]
+    const fn at_stage(self, stage: &'static str) -> Self {
+        Self { stage, ..self }
+    }
+
+    fn exceeded(&self, limit: &'static str, ceiling: NonZeroUsize) -> QueryEntailmentError {
+        QueryEntailmentError::LimitExceeded {
+            limit,
+            stage: self.stage,
+            ceiling: ceiling.get(),
+        }
+    }
+
+    fn check_len(&self, len: usize) -> Result<(), QueryEntailmentError> {
+        match self.limits.quads {
+            Some(max) if len > max.get() => Err(self.exceeded(QUAD_LIMIT, max)),
+            _ => Ok(()),
+        }
+    }
+
+    fn charge(&mut self, quad: &Quad) -> Result<(), QueryEntailmentError> {
+        if self.limits.bytes.is_some() {
+            self.charge_bytes(estimated_quad_bytes(quad))?;
+        }
+        Ok(())
+    }
+
+    fn charge_bytes(&mut self, bytes: usize) -> Result<(), QueryEntailmentError> {
+        if let Some(max) = self.limits.bytes {
+            let total = self.bytes.saturating_add(bytes);
+            if total > max.get() {
+                return Err(self.exceeded(BYTE_LIMIT, max));
+            }
+            self.bytes = total;
+        }
+        Ok(())
+    }
+
+    /// Inserts `quad` only if the grown dataset stays within both ceilings.
+    fn insert(&mut self, target: &mut Dataset, quad: Quad) -> Result<(), QueryEntailmentError> {
+        if !self.limits.is_unbounded() {
+            if target.contains(&quad) {
+                return Ok(());
+            }
+            self.check_len(target.len().saturating_add(1))?;
+            self.charge(&quad)?;
+        }
+        target.insert(quad);
+        Ok(())
+    }
+}
+
+/// Admits each decoded Store snapshot record before the Store inserts it into
+/// the owned snapshot. Quads and named-graph declarations both count against
+/// the quad ceiling and are both charged estimated bytes; the count is checked
+/// before the bytes of the same record. Store records are distinct, so the
+/// admitted count equals the final snapshot count.
+struct SnapshotAdmission {
+    budget: Budget,
+    records: usize,
+}
+
+impl SnapshotAdmission {
+    const fn new(limits: Limits) -> Self {
+        Self {
+            budget: Budget::new(limits, SNAPSHOT_STAGE),
+            records: 0,
+        }
+    }
+
+    fn admit(&mut self, item: &SnapshotItem<'_>) -> Result<(), QueryEntailmentError> {
+        let records = self.records.saturating_add(1);
+        self.budget.check_len(records)?;
+        if self.budget.limits.bytes.is_some() {
+            self.budget.charge_bytes(match item {
+                SnapshotItem::Quad(quad) => estimated_quad_bytes(quad),
+                SnapshotItem::NamedGraph(graph) => estimated_named_graph_bytes(graph),
+            })?;
+        }
+        self.records = records;
+        Ok(())
+    }
+}
+
+struct ByteCount(usize);
+
+impl fmt::Write for ByteCount {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.0 = self.0.saturating_add(s.len());
+        Ok(())
+    }
+}
+
+/// 160 bytes plus the display length, counted without allocating the rendered
+/// string.
+fn estimated_display_bytes(value: &dyn fmt::Display) -> usize {
+    let mut count = ByteCount(0);
+    if fmt::write(&mut count, format_args!("{value}")).is_err() {
+        return usize::MAX;
+    }
+    160_usize.saturating_add(count.0)
+}
+
+/// The finite RDFS engine's per-quad estimate: 160 bytes plus the N-Quads
+/// display length.
+fn estimated_quad_bytes(quad: &Quad) -> usize {
+    estimated_display_bytes(quad)
+}
+
+/// A named-graph declaration costs 160 bytes plus its term display length.
+fn estimated_named_graph_bytes(graph: &NamedOrBlankNode) -> usize {
+    estimated_display_bytes(graph)
 }
 
 fn rdf_required_datatypes() -> Vec<NamedNode> {
@@ -331,11 +619,14 @@ fn rdfs_working_dataset(
     base: &Dataset,
     named_graphs: &[GraphName],
     control: &Control,
+    mut budget: Budget,
 ) -> Result<Dataset, QueryEntailmentError> {
     let mut result = control.copy(base)?;
     for graph in std::iter::once(GraphName::DefaultGraph).chain(named_graphs.iter().cloned()) {
         control.check()?;
-        insert_rdf_axioms(&mut result, &graph);
+        for axiom in rdf_axioms(&graph) {
+            budget.insert(&mut result, axiom)?;
+        }
     }
     for quad in base {
         control.check()?;
@@ -346,12 +637,10 @@ fn rdfs_working_dataset(
                     (rdfs::DOMAIN, rdfs::RESOURCE),
                     (rdfs::RANGE, rdfs::RESOURCE),
                 ] {
-                    result.insert(Quad::new(
-                        node.clone(),
-                        predicate,
-                        object,
-                        quad.graph_name.clone(),
-                    ));
+                    budget.insert(
+                        &mut result,
+                        Quad::new(node.clone(), predicate, object, quad.graph_name.clone()),
+                    )?;
                 }
             }
         }
@@ -360,8 +649,8 @@ fn rdfs_working_dataset(
     Ok(result)
 }
 
-fn insert_rdf_axioms(dataset: &mut Dataset, graph: &GraphName) {
-    for property in [
+fn rdf_axioms(graph: &GraphName) -> Vec<Quad> {
+    let mut axioms = [
         rdf::TYPE,
         rdf::SUBJECT,
         rdf::PREDICATE,
@@ -369,17 +658,25 @@ fn insert_rdf_axioms(dataset: &mut Dataset, graph: &GraphName) {
         rdf::FIRST,
         rdf::REST,
         rdf::VALUE,
-    ] {
-        dataset.insert(Quad::new(property, rdf::TYPE, rdf::PROPERTY, graph.clone()));
-    }
+    ]
+    .into_iter()
+    .map(|property| Quad::new(property, rdf::TYPE, rdf::PROPERTY, graph.clone()))
+    .collect::<Vec<_>>();
     #[cfg(feature = "rdf-12")]
-    dataset.insert(Quad::new(
+    axioms.push(Quad::new(
         rdf::REIFIES,
         rdf::TYPE,
         rdf::PROPERTY,
         graph.clone(),
     ));
-    dataset.insert(Quad::new(rdf::NIL, rdf::TYPE, rdf::LIST, graph.clone()));
+    axioms.push(Quad::new(rdf::NIL, rdf::TYPE, rdf::LIST, graph.clone()));
+    axioms
+}
+
+fn insert_rdf_axioms(dataset: &mut Dataset, graph: &GraphName) {
+    for axiom in rdf_axioms(graph) {
+        dataset.insert(axiom);
+    }
 }
 
 #[cfg(any(feature = "owl2-rl", feature = "rdfs"))]
@@ -387,6 +684,7 @@ fn visible_dataset(
     base: &Dataset,
     closure: &Dataset,
     control: &Control,
+    mut budget: Budget,
 ) -> Result<Dataset, QueryEntailmentError> {
     let base_blank_nodes = blank_nodes(base, control)?;
     let mut visible = control.copy(base)?;
@@ -396,7 +694,7 @@ fn visible_dataset(
             .iter()
             .all(|node| base_blank_nodes.contains(node))
         {
-            visible.insert(quad);
+            budget.insert(&mut visible, quad)?;
         }
     }
     control.check()?;

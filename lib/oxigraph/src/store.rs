@@ -759,6 +759,12 @@ pub struct Store {
     transaction_capabilities: TransactionCapabilities,
 }
 
+/// Borrowed snapshot record before insertion into the accumulated owned view.
+pub(crate) enum SnapshotItem<'a> {
+    Quad(&'a Quad),
+    NamedGraph(&'a NamedOrBlankNode),
+}
+
 /// Options used when opening an on-disk [`Store`].
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 #[derive(Clone, Debug, Default)]
@@ -1034,21 +1040,41 @@ impl Store {
         self.snapshot_contents_with_control(|| Ok::<(), StorageError>(()))
     }
 
+    #[cfg(any(
+        test,
+        feature = "datalog",
+        feature = "rdfs",
+        feature = "owl2-rl",
+        feature = "shacl"
+    ))]
     pub(crate) fn snapshot_contents_with_control<E: From<StorageError>>(
         &self,
+        check: impl FnMut() -> Result<(), E>,
+    ) -> Result<(Dataset, Vec<NamedOrBlankNode>), E> {
+        self.snapshot_contents_with_admission(check, |_| Ok(()))
+    }
+
+    /// Admits each decoded record before accumulating it in the owned snapshot.
+    /// One decoded record may already exist; this is not a decoder/RSS bound.
+    pub(crate) fn snapshot_contents_with_admission<E: From<StorageError>>(
+        &self,
         mut check: impl FnMut() -> Result<(), E>,
+        mut admit: impl FnMut(SnapshotItem<'_>) -> Result<(), E>,
     ) -> Result<(Dataset, Vec<NamedOrBlankNode>), E> {
         check()?;
         let reader = self.storage.snapshot();
         let mut dataset = Dataset::new();
         for quad in reader.quads_for_pattern(None, None, None, None) {
             check()?;
-            dataset.insert(reader.decode_quad(&quad?)?);
+            let quad = reader.decode_quad(&quad?)?;
+            admit(SnapshotItem::Quad(&quad))?;
+            dataset.insert(quad);
         }
         let mut named_graphs = Vec::new();
         for graph_name in reader.named_graphs() {
             check()?;
             let graph_name = reader.decode_named_or_blank_node(&graph_name?)?;
+            admit(SnapshotItem::NamedGraph(&graph_name))?;
             dataset.insert_named_graph(graph_name.clone());
             named_graphs.push(graph_name);
         }

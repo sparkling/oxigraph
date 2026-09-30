@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-29
+- Updated: 2026-09-30
 - Deciders: Oxigraph parity programme
 - Implementation status: bounded outbox/full-closure reference evaluator
   implemented; production entailment still uses full snapshot evaluation or
@@ -250,3 +250,37 @@ This accepts ordinary test development only, not an incremental algorithm,
 durable cursor, Strict query provider or frozen qualification gate. Original
 G4.7 uses migration alias `task-1790674619203-1j3qcu`; umbrella remains open.
 ADR remains Proposed. No default/server activation or qualification follows.
+
+## Opt-in materialization admission prerequisite (2026-09-30)
+
+`QueryEntailmentOptions` now accepts opt-in fact and estimated-byte ceilings.
+Unsupported bounded profiles refuse explicitly. The Store snapshot hook admits
+each decoded quad or named-graph declaration before accumulation; empty-graph
+names consume the byte budget too. Existing cancellation checkpoints and default
+unbounded behavior remain. One decoded record already exists before admission:
+this is neither a decoder allocation bound nor a process RSS guarantee. Working
+stages have separate logical ceilings; existing finite-engine ceilings still
+apply. No incremental provider, durable cursor, query overlay or server is enabled.
+
+Original provider rejection and native stalls remain negative evidence. Root's
+snapshot hook and recorded Opus consumer repair received fresh full three-file
+review. Accepted analytical work changed four supplemental inputs, so owner
+created fresh `source-RGKlmt` from accepted `6149cf617`; old-source acceptance
+was not inherited. Fresh review `9b40bb2c-22d9-4671-b33d-ab7c6083b3c5`, native
+Sonnet5.5/high reviewer `653817bb-1a63-49a1-9a58-bb5348d40d59`, returned ACCEPT
+before September30 Sol route adoption. Exact request, worker, receipt, source
+and supplemental hashes were verified. The later deployed harness-only delta
+through `759b6e31d` changes no application input; explicit reconciliation is in
+`target/engineering-delivery/projection-prerequisite-integration-9b40bb2c-22d9-4671-b33d-ab7c6083b3c5.json`.
+
+Candidate and canonical no-default/RDFS checks each pass 130 top-level tests:
+107 library, six reference-evaluator and 17 query-entailment tests. Canonical
+session `79080` reused the exclusively owned `projection-limits` target. These
+are direct owner observations, not runner receipts: the recorded runner rejected
+the existing nested target path with `Cargo target must name one private ordinary
+build directory`. Candidate no-default/RDFS/OWL2-RL/Datalog library check passes;
+scoped formatter and diff checks pass. Warnings remain. This slice has no new
+default/RocksDB matrix, frozen semantic receipt or performance claim.
+
+Only the admission prerequisite is accepted. Full G4.7 provider defects,
+resource/recovery gates and original task remain open. ADR stays Proposed.
