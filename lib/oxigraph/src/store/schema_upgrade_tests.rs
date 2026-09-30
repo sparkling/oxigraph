@@ -1,3 +1,6 @@
+#[path = "schema_upgrade_journal_fsync_tests.rs"]
+mod journal_fsync;
+
 #[path = "schema_upgrade_publication_fsync_tests.rs"]
 mod publication_fsync;
 
