@@ -37,6 +37,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 const PROFILE: QueryEntailment = QueryEntailment::Rdfs12Finite;
+mod hydration;
+pub use hydration::{
+    EntailmentProjectionHydrationError, EntailmentProjectionHydrationLimits,
+    EntailmentProjectionHydrationResource, EntailmentProjectionSnapshot,
+};
 const FILE_META: &str = "meta";
 const FILE_IMAGE: &str = "image";
 const FILE_INFERRED: &str = "inferred";

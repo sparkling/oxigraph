@@ -4,8 +4,8 @@
 - **Date**: 2026-08-25
 - Updated: 2026-09-30
 - Deciders: Oxigraph parity programme
-- Implementation status: bounded outbox/full-closure reference evaluator and
-  opt-in finite-RDFS full-recompute derived provider implemented. Ordinary query
+- Implementation status: bounded outbox/full-closure reference evaluator,
+  opt-in finite-RDFS full-recompute provider and immutable hydration implemented. Ordinary query
   entailment still uses full snapshots or explicit one-shot materialization;
   no incremental algorithm or query overlay is activated
 - Programme task: `task-1787670632864-10hfsk` (G4.7)
@@ -356,3 +356,40 @@ remain. Counts are direct owner observations, not runner-issued qualification
 receipts. Earlier native stalls remain negative; no stalled proposal was applied.
 Same G4.7 outcome stays open. ADR remains Proposed; no server/default activation,
 qualification, protected-data mutation or publication follows.
+
+## Immutable admitted-view hydration (2026-09-30)
+
+`EntailmentProjectionSnapshot::hydrate` copies primary image and inferred data
+from one admitted strict generation, not a later live Store snapshot. It verifies
+retained inventory, provider identity, exact checkpoints and graph topology.
+Owned datasets remain immutable after primary commits, ACTIVE swaps, payload
+replacement and handle release. Eventual views fail before payload I/O.
+Four mandatory caller ceilings bound source/inferred records, cumulative copied
+payload bytes and logical retained-byte estimates. They do not bound one decoded
+record, topology sets, hashing, allocator overhead or process RSS. Control checks
+span final inferred decode and publication, preserving absolute-token expiry as
+`TimedOut` even when the nested backup-style reader reports `Cancelled`.
+No query consumer, incremental algorithm, server/default or schema change.
+
+Same-outcome Opus repair `8b31b67d-3e9b-49fd-9095-16ecad182358` completed after
+an inactivity warning; prior Sol stalls remain negative. Initial integration
+compile21539 lacked a trait import. Fresh reviewf5abac15 rejected two test gaps;
+root repaired the import and added old-view-after-ACTIVE-swap and absolute-token
+boundary/nested-reader regressions. Fresh Sol6.1/high review
+`61a95c82-4e8d-48f8-a6ff-01e06d6962a2`, worker
+`01a0f322-ea5b-7203-9d3f-a86a8377619f`, ACCEPTs all four code files; response
+SHA256 `5ab23b27a41b1ec9aac9adb1b960993461a2986dee2d1107ea3a124e0484a6d6`.
+Owner verified request/custody, 17 reads and 15,253 unchanged snapshot inputs;
+accepted intervening restore/journal changes were explicitly reconciled against
+main `ddafc7393`. Exact binding:
+`target/engineering-delivery/hydration-snapshot-integration-61a95c82.json`.
+
+Canonical default/RDFS integration join54812 passes 53 tests: hydration10,
+provider12, reference6, query17 and outbox8. Unit join79270 passes 19,
+including seven hydration controls; no-default/RDFS library check47442 exits0.
+Candidate focused10/7 and impacted53 also pass. Scoped nightly formatting,
+diff checks and unchanged reviewed source hashes pass. Existing exclusive
+`projection-limits` target used jobs16/test-threads4; compiler warnings remain.
+Counts are direct owner observations, not runner-issued qualification receipts.
+Original G4.7/migration alias remains open for query/recovery/resource gates;
+ADR stays Proposed. Negative reviews/checks retained; no publication follows.
