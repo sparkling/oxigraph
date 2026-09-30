@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-30 — resume receipt-publication, VALIDATED and SEALED journal fsync slices accepted; broader gates remain open
+- Updated: 2026-09-30 — resume receipt-publication, abandoned FAILED, VALIDATED and SEALED journal fsync slices accepted; broader gates remain open
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
@@ -91,6 +91,37 @@
   [ADR-0014 — End-to-end RDF dataset graph topology](0014-rdf-dataset-graph-topology.md),
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md)
+
+## Abandoned FAILED-journal fsync evidence (2026-09-30)
+
+Test-only `schema_upgrade_abandoned_fsync_tests.rs` starts from INTENT0 with
+no attempt directory. Exact JOURNAL sync ordinal1 returns EIO while appending
+FAILED0, before any callback; complete visible frames remain independently
+checksum-bound. Ordinal3 succeeds through FAILED0/INTENT1, then cancels phase0.
+RDF11/RDF12 each exercise failure and control. Refusals preserve source, package
+and workspace; shimless recovery wins attempt1 or2 respectively, preserving
+PLAN/UUID/profile and independently checked COMPLETE bytes and inventory.
+Private child capture/TERM/KILL/reap and exact-one-test checks remain bounded.
+This is reported syscall failure and same-host visible recovery, not power loss.
+
+Fresh Sol6.1/high review `8e9568c0-14fe-49b8-96d3-9de88714507a`, worker
+`01a0f36f-d763-7282-ba75-1ff035032879`, ACCEPT; response SHA256
+`ef6ba6dff7e3cf614fffda3ddb4853f496971a03e40230aa8818b07251ea055f`.
+Owner verified exact identities/custody,12 reads and15,265 unchanged inputs;
+accepted query delta explicitly reconciled. Binding:
+`target/engineering-delivery/abandoned-fsync-integration-8e9568c0.json`.
+Subsequent accepted recovery commit `d818432b3` changes only an integration test
+and ADR0032, neither a journal read nor `--lib` input. Reviewed code hashes remain
+exact; running binaries and private targets were never overwritten.
+
+Candidate default/RDF12 checks pass2/2 each (26553/6258,742.63/780.74s).
+Canonical checks pass2/2 each (39627/34283,746.51/780.95s). Each count comprises
+one substantive four-case matrix and one inert helper. Scoped nightly format,
+diff and source-hash checks pass. Existing targets used jobs16/default and
+jobs14/canonical RDF12, test-threads4; warnings remain. Counts are direct owner
+observations, not runner-issued qualification receipts. Prior Sol author stall
+remains negative. No production change; same G4.3 outcome and broader gates
+remain open. ADR stays Proposed; no publication follows.
 
 ## Resume VALIDATED-journal fsync evidence (2026-09-30)
 

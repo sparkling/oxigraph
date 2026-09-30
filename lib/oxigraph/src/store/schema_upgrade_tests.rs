@@ -1,6 +1,9 @@
 #[path = "schema_upgrade_validated_fsync_tests.rs"]
 mod validated_fsync;
 
+#[path = "schema_upgrade_abandoned_fsync_tests.rs"]
+mod abandoned_fsync;
+
 #[path = "schema_upgrade_journal_fsync_tests.rs"]
 mod journal_fsync;
 
