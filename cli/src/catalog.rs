@@ -1,4 +1,4 @@
-//! Opt-in Linux catalog create/reconcile/open/quiesce/tombstone. No server or purge API.
+//! Opt-in Linux catalog create/reconcile/open/quiesce/tombstone/restore. No server or purge API.
 //!
 //! Root is private to one trusted OS owner. This is not a defense against another
 //! arbitrary same-uid filesystem writer. Directory device/inode and validated
@@ -19,10 +19,33 @@
 //! backup bounds and injected logical time. A real `Store::backup_with_receipt`
 //! package is verified with `BackupReceipt::verify`, and its quads, named graphs and
 //! namespaces are compared record by record with the guarded source; the move happens
-//! only after its exact fingerprint is durably recorded. No purge, restore or server
+//! only after its exact fingerprint is durably recorded. No purge or server
 //! activation.
+//!
+//! Restore (Linux): `restore_tombstoned` re-creates a repository from its OWN
+//! tombstone recovery package under a NEW manager-generated UUID and a caller-supplied
+//! fresh `RepositoryId`. The caller gives generations, the exact backup fingerprint
+//! and injected time, never a path or raw backup URI. The package is verified (tree
+//! walk, `BackupReceipt::verify`, recorded binding), restored with
+//! `Store::restore_backup` into `staging/<uuid>.restore`, moved and synced, its
+//! copied store re-verified, compared record by record with the package and its
+//! CURRENT checkpoint and outbox checked against the completion receipt, and only
+//! then published `Closed`. Restart re-proves a `Validated` restore the same way,
+//! staged or already published, and re-syncs both publication parents before
+//! `Closed`. The entry carries provenance to the exact tombstone backup receipt. The
+//! source entry, trash, package and retention are never changed and the package is
+//! not consumed. Failed or incomplete candidates stay nonready and inventoried;
+//! nothing is adopted or deleted.
+//!
+//! Identity semantics: ADR-0022 restore preserves the physical DB ID and governed
+//! `StoreIdentity` of the package. A new manager UUID is therefore NOT a new store
+//! identity. Restoring the same tombstone twice yields two catalog entries with
+//! distinct UUIDs and an equal `StoreIdentity`; this is not a fork. No rekey or fork
+//! primitive is claimed. No purge, HTTP/admin activation.
 mod codec;
 mod fs;
+#[cfg(target_os = "linux")]
+mod restore;
 #[cfg(target_os = "linux")]
 mod tombstone;
 
@@ -34,6 +57,8 @@ pub use codec::Phase;
 use codec::{Catalog, Entry, Materialized};
 use oxigraph::model::Quad;
 use oxigraph::store::{BackupError, StorageError, Store, StoreVersionStatus};
+#[cfg(target_os = "linux")]
+pub use restore::{RestoreInfo, RestoreRequest};
 use serde::{Deserialize, Serialize};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -170,6 +195,8 @@ pub enum CatalogError {
     UnsupportedProfile,
     /// Typed recovery backup or package verification failure.
     Backup(BackupFailure),
+    /// Restore refused: injected logical time is at or after the tombstone deadline.
+    RetentionExpired,
 }
 impl fmt::Display for CatalogError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -199,6 +226,9 @@ impl From<BackupError> for CatalogError {
     }
 }
 
+/// Deterministic crash and fault seams. The live restore path fires exactly its
+/// original sequence; the three `*Restore*Recheck`/`*RestorePublish*` points fire only
+/// while restart reconciliation settles a `Validated` restore entry.
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FaultPoint {
@@ -225,6 +255,19 @@ pub enum FaultPoint {
     AfterMove,
     AfterMoveSynced,
     AfterTombstoned,
+    BeforeRestoreIntent,
+    AfterRestoreIntent,
+    BeforeRestore,
+    AfterRestore,
+    BeforeRestoreMove,
+    AfterRestoreMove,
+    AfterRestoreMoveSynced,
+    /// Restart only: before a `Validated` restore candidate is proved again.
+    BeforeRestoreRecheck,
+    /// Restart only: after the staged candidate was renamed, before the parent syncs.
+    AfterRestorePublishRename,
+    /// Restart only: after both publication parents synced, before `Closed`.
+    AfterRestorePublishSynced,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -310,12 +353,28 @@ impl RepositoryManager {
     fn reconcile_backed_up(&self, _index: usize) -> Result<(), CatalogError> {
         Err(CatalogError::Unsupported)
     }
+    fn reconcile_restoring(&self, _index: usize) -> Result<(), CatalogError> {
+        Err(CatalogError::Unsupported)
+    }
+    fn reconcile_restore_validated(&self, _index: usize) -> Result<(), CatalogError> {
+        Err(CatalogError::Unsupported)
+    }
+    fn known_restore_root(&self, _entry: &Entry) -> Option<PathBuf> {
+        None
+    }
     fn tombstone_inventory(&self) -> Result<Vec<PathBuf>, CatalogError> {
         Ok(Vec::new())
     }
 }
 
 impl RepositoryManager {
+    fn restore_root(&self, uuid: &str, attempt: u64) -> PathBuf {
+        self.root
+            .path
+            .join("staging")
+            .join(format!("{uuid}.restore-{attempt}"))
+    }
+
     pub fn open(path: impl AsRef<Path>, limits: ManagerLimits) -> Result<Self, CatalogError> {
         Self::open_with_hook(path, limits, |_| Ok(()))
     }
@@ -443,32 +502,32 @@ impl RepositoryManager {
     /// Bounded privileged inventory. Unknown entries remain untouched and nonready.
     /// Unrecorded recovery packages and unknown trash entries are reported too. A
     /// `Tombstoned` entry owns no source or staging path, so a recreated one is
-    /// reported as unknown, never adopted.
+    /// reported as unknown, never adopted. Only a current restore attempt with a
+    /// matching completion receipt is hidden; incomplete and earlier attempts remain
+    /// inventoried debris, never adopted or deleted.
     pub fn orphan_inventory(&self) -> Result<Vec<PathBuf>, CatalogError> {
         self.usable()?;
         let catalog = self.catalog.borrow();
-        let known: BTreeSet<_> = catalog
-            .entries
-            .iter()
-            .filter(|e| e.phase != Phase::Tombstoned)
-            .flat_map(|e| {
-                [
-                    self.root.path.join("repos").join(&e.uuid),
-                    self.root.path.join("staging").join(&e.uuid),
-                ]
-            })
-            .chain(
-                [
-                    "catalog",
-                    "manager.lock",
-                    "repos",
-                    "staging",
-                    "backups",
-                    "trash",
-                ]
-                .map(|p| self.root.path.join(p)),
-            )
-            .collect();
+        let mut known: BTreeSet<PathBuf> = [
+            "catalog",
+            "manager.lock",
+            "repos",
+            "staging",
+            "backups",
+            "trash",
+        ]
+        .into_iter()
+        .map(|name| self.root.path.join(name))
+        .collect();
+        for entry in &catalog.entries {
+            if entry.phase != Phase::Tombstoned {
+                known.insert(self.root.path.join("repos").join(&entry.uuid));
+                known.insert(self.root.path.join("staging").join(&entry.uuid));
+            }
+            if let Some(path) = self.known_restore_root(entry) {
+                known.insert(path);
+            }
+        }
         let mut found: Vec<PathBuf> = self
             .root
             .scan(catalog.limits)?
@@ -509,6 +568,7 @@ impl RepositoryManager {
             changed_at: next.generation,
             evidence: None,
             tombstone: None,
+            restore: None,
         });
         self.persist(next, index)?;
         self.point(FaultPoint::AfterReservation)?;
@@ -564,7 +624,16 @@ impl RepositoryManager {
     /// `TombstoneIntent` and `Tombstoned` are left untouched, and `TombstoneBackedUp`
     /// completes the move only after the exact recorded package, the guarded source (or
     /// trash) evidence and their record-by-record content equality verify; otherwise
-    /// it is preserved unchanged and non-ready. Nothing is initialized or deleted.
+    /// it is preserved unchanged and non-ready. A `Reserved` restore entry is advanced
+    /// only from what is durably on disk (its restore root, marker and staged store);
+    /// with nothing on disk it stays non-ready awaiting `retry_restore`, and definite
+    /// debris turns it `Failed`. A `Validated` restore entry never uses the generic
+    /// evidence-only path: its source binding, recorded evidence, completion receipt,
+    /// exact package, content and CURRENT primary checkpoint/outbox are proved again,
+    /// staged or already published, and both publication parents are synced before
+    /// `Closed`; transient refusals leave it `Validated` and non-ready. A generic
+    /// published `Validated` entry re-syncs both parents too. Nothing is initialized
+    /// or deleted.
     pub fn reconcile(&self) -> Result<(), CatalogError> {
         self.usable()?;
         if !self.active.borrow().is_empty() {
@@ -580,6 +649,14 @@ impl RepositoryManager {
             }
             if entry.phase == Phase::TombstoneBackedUp {
                 self.reconcile_backed_up(index)?;
+                continue;
+            }
+            if entry.phase == Phase::Reserved && entry.restore.is_some() {
+                self.reconcile_restoring(index)?;
+                continue;
+            }
+            if entry.phase == Phase::Validated && entry.restore.is_some() {
+                self.reconcile_restore_validated(index)?;
                 continue;
             }
             let staging = self.root.path.join("staging").join(&entry.uuid);
@@ -611,6 +688,9 @@ impl RepositoryManager {
                         self.poisoned.set(true);
                         return Err(error);
                     }
+                } else {
+                    // A crash may have followed the rename but preceded its syncs.
+                    self.root.sync_publication()?;
                 }
                 next.entries[index].phase = Phase::Closed;
             } else {

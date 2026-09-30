@@ -123,6 +123,12 @@ impl Root {
 
     #[cfg(target_os = "linux")]
     fn regular_if_present(&self, path: &Path, live: bool) -> Result<Option<File>, CatalogError> {
+        match fs::symlink_metadata(path) {
+            Ok(meta) if !meta.is_file() => return Err(CatalogError::UnsafePath),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        }
         let file = match OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
@@ -130,6 +136,9 @@ impl Root {
         {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) if error.raw_os_error() == Some(libc::ELOOP) => {
+                return Err(CatalogError::UnsafePath);
+            }
             Err(error) => return Err(error.into()),
         };
         let meta = file.metadata()?;
@@ -313,7 +322,15 @@ impl Root {
         Err(CatalogError::Unsupported)
     }
 
+    /// Rename then sync of both publication parents.
     pub fn publish(&self, uuid: &str) -> Result<(), CatalogError> {
+        self.rename_published(uuid)?;
+        self.sync_publication()
+    }
+
+    /// Same-device rename of `staging/<uuid>` to `repos/<uuid>` after an existence check.
+    /// Durability needs `sync_publication`.
+    pub fn rename_published(&self, uuid: &str) -> Result<(), CatalogError> {
         let staging = self.path.join("staging").join(uuid);
         let target = self.path.join("repos").join(uuid);
         self.directory(&staging)?;
@@ -321,6 +338,12 @@ impl Root {
             return Err(CatalogError::UnsafePath);
         }
         fs::rename(staging, target)?;
+        Ok(())
+    }
+
+    /// Syncs both publication parents: `repos/` gains and `staging/` loses the entry.
+    /// Repeatable, so a crash between a rename and its syncs can be settled later.
+    pub fn sync_publication(&self) -> Result<(), CatalogError> {
         File::open(self.path.join("repos"))?.sync_all()?;
         File::open(self.path.join("staging"))?.sync_all()?;
         Ok(())
@@ -346,7 +369,10 @@ mod tests {
         assert!(root.regular_if_present(&file, true).unwrap().is_some());
         let link = dir.path().join("link.sst");
         symlink(&file, &link).unwrap();
-        assert!(root.regular_if_present(&link, true).is_err());
+        assert!(matches!(
+            root.regular_if_present(&link, true),
+            Err(CatalogError::UnsafePath)
+        ));
         fs::hard_link(&file, dir.path().join("hard.sst")).unwrap();
         assert!(matches!(
             root.regular_if_present(&file, true),
