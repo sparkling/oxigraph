@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-30 — resume receipt-publication and SEALED-journal fsync slices accepted; broader gates remain open
+- Updated: 2026-09-30 — resume receipt-publication, VALIDATED and SEALED journal fsync slices accepted; broader gates remain open
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
@@ -91,6 +91,37 @@
   [ADR-0014 — End-to-end RDF dataset graph topology](0014-rdf-dataset-graph-topology.md),
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md)
+
+## Resume VALIDATED-journal fsync evidence (2026-09-30)
+
+Test-only `schema_upgrade_validated_fsync_tests.rs` exercises exact JOURNAL
+fsync ordinal 2: INTENT succeeds, a complete VALIDATED frame is visible, then
+the caller receives `EIO` before phase 6. Ordinal 3 is a positive control:
+explicit cancellation at phase 6 proves both earlier syncs succeeded without
+appending SEALED. RDF11 and RDF12 profiles each run both cases. Complete phase
+vectors, independently chained frame/receipt bytes, attempt-0 inventory and
+source/package preservation are checked. Verification and same-path restart
+refuse without byte changes; shimless recovery reuses attempt 0 and publishes
+the verified receipt. This is syscall/page-cache evidence, not power loss.
+
+Fresh native Sol6.1/high review `1573e6d8-66d2-404f-bf65-cee83ddb9951`, worker
+`01a0f339-bfee-7db1-a8d7-f48ed3c25047`, ACCEPT; response SHA256
+`8838380456e47af76d9c4541741d23d2f77272f4be415d468832de9d4d53bf2a`.
+Owner verified exact request/identity, released custody, 11 read hashes and
+15,261 unchanged snapshot inputs. Accepted intervening hydration source was
+explicitly reconciled against main `cb03176da`. Binding evidence:
+`target/engineering-delivery/validated-fsync-integration-1573e6d8.json`.
+
+Candidate default/RDF12 checks pass 2/2 each (sessions 16498/1980, 530.29/556.00s).
+Canonical default/RDF12 checks pass 2/2 each (73876/87863, 533.70/566.89s).
+Each count includes one substantive four-case matrix and one inert process
+helper. Scoped nightly formatting, diff checks and unchanged reviewed hashes
+pass. Existing private targets used jobs16/test-threads4; warnings remain.
+These are owner observations, not qualification or runner-issued receipts.
+Prior author stall remains negative; this slice changes no production behavior.
+Original G4.3/migration alias remains open for other writeback boundaries,
+profile/derived-index policy and separately authorized qualification.
+ADR remains Proposed; no publication follows.
 
 ## Resume SEALED-journal fsync evidence (2026-09-30)
 
