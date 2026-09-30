@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import test, { after } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { runOrdinaryBatch as runBatch } from "../src/ordinary-pool.mjs";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { assertNativeBatchProofCustody } from "./support/native-batch-proof-custody.mjs";
 const custodyDirectory = mkdtempSync(join(tmpdir(), "ox-pool-custody-"));
 after(() => rmSync(custodyDirectory, { recursive: true, force: true }));
 const runOrdinaryBatch = (entries, options, execute) => runBatch(entries, { custodyDirectory, ...options }, execute);
@@ -34,8 +35,28 @@ for (const reject of [false, true]) test(`release failure preserves task result 
     assert.deepEqual(result.custodyErrors, [{ id: "first", error: "Invalid ordinary custody directory or lease" }]);
     const record = readdirSync(directory).find(name => name.endsWith(".json"));
     assert.equal(JSON.parse(readFileSync(join(directory, record), "utf8")).outcomes[0].id, "first");
+    writeFileSync(join(directory, "result.json"), JSON.stringify(result));
+    assert.throws(() => assertNativeBatchProofCustody({ directory, status: "ready-for-owner-review" }),
+      /Native batch proof requires released durable custody/);
     rmSync(join(directory, "registry.lease"), { recursive: true });
     await assert.rejects(runOrdinaryBatch([pair()[0]], { maxConcurrency: 1, custodyDirectory: directory }, async () => ({})), /ownership conflict/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("native proof custody gate reads durable result rather than ready CLI summary", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "ox-proof-custody-"));
+  try {
+    const result = await runOrdinaryBatch([pair()[0]], { maxConcurrency: 1 }, async () => ({}));
+    writeFileSync(join(directory, "result.json"), JSON.stringify(result));
+    const final = { directory, status: "ready-for-owner-review" };
+    assert.deepEqual(assertNativeBatchProofCustody(final), result);
+    for (const custodyErrors of [undefined, null, {}]) {
+      writeFileSync(join(directory, "result.json"), JSON.stringify({ ...result, custodyErrors }));
+      assert.throws(() => assertNativeBatchProofCustody(final),
+        /Native batch proof requires released durable custody/);
+    }
+    rmSync(join(directory, "result.json"));
+    assert.throws(() => assertNativeBatchProofCustody(final), /ENOENT/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
