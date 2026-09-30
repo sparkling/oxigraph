@@ -5,9 +5,9 @@
 - Updated: 2026-09-30
 - Deciders: Oxigraph parity programme
 - Implementation status: bounded outbox/full-closure reference evaluator,
-  opt-in finite-RDFS full-recompute provider and immutable hydration implemented. Ordinary query
-  entailment still uses full snapshots or explicit one-shot materialization;
-  no incremental algorithm or query overlay is activated
+  opt-in finite-RDFS full-recompute provider, immutable hydration and explicit
+  strict projection-query binding implemented. Ordinary query entailment keeps
+  its full-snapshot path; no incremental algorithm or server default activated
 - Programme task: `task-1787670632864-10hfsk` (G4.7)
 - **Depends on**:
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),
@@ -393,3 +393,38 @@ diff checks and unchanged reviewed source hashes pass. Existing exclusive
 Counts are direct owner observations, not runner-issued qualification receipts.
 Original G4.7/migration alias remains open for query/recovery/resource gates;
 ADR stays Proposed. Negative reviews/checks retained; no publication follows.
+
+## Explicit strict projection-query binding (2026-09-30)
+
+`PreparedSparqlQuery::on_entailment_projection` binds one admitted strict
+finite-RDFS generation to an owned visible dataset, without rereading Store or
+ACTIVE or recomputing closure. Original FROM/FROM NAMED clauses, nondefault
+dataset scopes, unsupported profiles and incompatible checkpoints fail before
+payload I/O. Mandatory record/estimated-byte ceilings govern visible retention;
+they are logical bounds, not RSS guarantees. Existing evaluator retains token,
+absolute deadline and lazy cancellation semantics. Context names exact generation,
+checkpoint and profile. Ordinary queries, primary RDF and server defaults remain
+unchanged. This is a query consumer, not an incremental maintenance algorithm.
+
+Same-outcome module/public-test Opus proposals received fresh Sol6.1/high review
+`53ffef4b-a713-4e2f-a3b2-575158ff7471`, worker
+`01a0f360-3b33-7213-84b1-885cc71cb3bb`, ACCEPT. Response SHA256:
+`5f339ab4f968ec831e280ed1029ec6e0555d052cb80e854ca86bd2ed7ed074cd`.
+Owner verified exact identity/custody,17 reads and15,264 unchanged source inputs,
+reconciling only accepted VALIDATED-journal changes since snapshot `cb03176da`.
+Binding: `target/engineering-delivery/projection-query-integration-53ffef4b.json`.
+
+Canonical join40227 passes63 integration tests: hydration10, provider12,
+reference6, existing query17, new public query10 and outbox8. Unit join91853
+passes26, including seven query-binding controls. No-default/RDFS library check
+exits0; scoped nightly format/diff and unchanged reviewed-source hashes pass.
+Candidate public10, private7 and impacted53 also pass. RDFS enables RDF12;
+the extra explicit-RDF12 candidate run is repeat evidence, not a separate profile.
+Checks reuse the exclusive projection-limits target, jobs16/test-threads4.
+Direct owner observations are not runner-issued qualification receipts.
+
+Fresh review notes nonblocking missing iteration-deadline-expiry regression and
+an unused-must-use warning in a positive private control; warnings remain visible.
+Earlier stalled native attempts remain negative, with no proposal accepted from
+them. Same G4.7 outcome and broader recovery/resource/qualification gates remain
+open. ADR stays Proposed; no protected-data mutation, promotion or publication.
