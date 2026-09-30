@@ -428,3 +428,32 @@ an unused-must-use warning in a positive private control; warnings remain visibl
 Earlier stalled native attempts remain negative, with no proposal accepted from
 them. Same G4.7 outcome and broader recovery/resource/qualification gates remain
 open. ADR stays Proposed; no protected-data mutation, promotion or publication.
+
+## Expired-cursor recovery query regression (2026-09-30)
+
+`entailment_projection_recovery.rs` joins real finite-RDFS cursor expiry,
+orderly persisted reopen, explicit full rebuild and strict query consumption.
+Expired catch-up preserves ACTIVE and fails with the exact retained boundary;
+strict access remains NotFresh. Rebuild restores exact checkpoint/generation
+provenance and matches an independent full-closure oracle, including retraction,
+empty graph topology and duplicate solution rows. Primary contents, namespaces
+and checkpoint remain unchanged. This is orderly handle-release recovery, not
+new process-crash, syscall-fault or power-loss evidence; production is unchanged.
+
+Initial source review `c0a09dda` rejected vacuous multiplicity coverage. Root
+added a subject-only projection and an explicit duplicate-oracle guard, retaining
+the negative review. Fresh Sol6.1/high review
+`230744c8-3ab0-447f-8de6-fd5065fc2fdc`, worker
+`01a0f385-27eb-7a41-9a12-4e517db96a35`, ACCEPT; response SHA256
+`21b4635e57e750dfe9cb256abcf26afb74fa8cd2ae69c228d43b4bbb2b81b667`.
+Exact request/custody,20 reads and15,269 unchanged source inputs verified.
+Two independently reviewed pending journal-test paths were separately hash-bound,
+not absorbed into this slice. Their frozen binaries and private targets remain
+independent. Binding: `target/engineering-delivery/projection-recovery-integration-230744c8.json`.
+
+Candidate39842 and canonical9380 each pass39 tests: derived6, provider12,
+recovery1, retention10 and query10. Scoped format/diff and exact reviewed-source
+hashes pass; compiler warnings remain. Existing exclusive target uses jobs16,
+test-threads4. These are direct owner observations, not qualification receipts.
+Original Sol stall and rejected review remain negative evidence. G4.7 and
+broader resource/recovery/qualification gates stay open; ADR remains Proposed.
