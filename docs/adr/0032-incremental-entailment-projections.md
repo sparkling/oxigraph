@@ -4,9 +4,10 @@
 - **Date**: 2026-08-25
 - Updated: 2026-09-30
 - Deciders: Oxigraph parity programme
-- Implementation status: bounded outbox/full-closure reference evaluator
-  implemented; production entailment still uses full snapshot evaluation or
-  explicit one-shot materialization. No incremental projection or durable cursor
+- Implementation status: bounded outbox/full-closure reference evaluator and
+  opt-in finite-RDFS full-recompute derived provider implemented. Ordinary query
+  entailment still uses full snapshots or explicit one-shot materialization;
+  no incremental algorithm or query overlay is activated
 - Programme task: `task-1787670632864-10hfsk` (G4.7)
 - **Depends on**:
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),
@@ -284,3 +285,47 @@ default/RocksDB matrix, frozen semantic receipt or performance claim.
 
 Only the admission prerequisite is accepted. Full G4.7 provider defects,
 resource/recovery gates and original task remain open. ADR stays Proposed.
+
+## Bounded full-recompute provider (2026-09-30)
+
+The opt-in RocksDB/RDFS provider now uses the existing derived-generation
+lifecycle for build, replay, full recomputation, reconciliation and activation.
+Source quads and named-graph declarations are admitted before replay retention;
+inferred records remain separate from primary RDF. Governed cursor identity,
+canonical framing and checksums are validated. Ungoverned primary changes need
+independent reconciliation and rebuilding, never cursor-only strict freshness.
+An initially unidentified source cannot silently adopt its first governed lineage.
+
+Failed recomputation invalidates inferred state before fallible work. Cooperative
+control checks cover replay, framing and final decode/publication boundaries.
+RDFS errors preserve cancellation, timeout, resource and semantic categories.
+Test-only scoped thread-local observation reaches actual engine checkpoints for
+cancellation and positive-deadline controls. Logical ceilings are not process
+RSS bounds; sorting/native calls are not preemptible. Full recomputation is not
+an incremental algorithm, query overlay, server activation or performance claim.
+
+Fresh native Sol 6.1/high review `b3f8859a-c0bd-4185-a8ed-753bc0956e48`,
+worker `01a0f2a5-5848-7440-8f68-09fc0e8b97e1`, accepted all six source files.
+Response SHA256:
+`9fb8a042c0f2fb95dc1e69a99c86e720ce727046fa825d90c351de412c3bbc42`.
+Owner verified exact request/response identities, stopped native custody,
+28 reads and 15,255 unchanged source inputs against main `1e3e2a058`.
+The intervening catalog-test acceptance was explicitly reconciled. Evidence:
+`target/engineering-delivery/provider-final-integration-b3f8859a.json`.
+
+Canonical direct checks on the exact reviewed source passed:
+
+- Provider unit controls: 12 (`session20402`).
+- Default/RDFS provider, reference, query and outbox: 42 (`session97345`).
+- No-default/RDFS library, reference and query: 130 (`session33122`).
+- RDFS classifier/control tests with RDF12: nine (`session55119`).
+- Default-feature library check: exit 0 (`session51556`).
+
+Candidate focused/impacted checks also pass; candidate Clippy exits 0 with
+warnings. Scoped formatter with `skip_children=true` and diff checks pass.
+A recursive formatter check reported pre-existing descendant formatting; no
+unrelated source was changed. These are owner observations, not manufactured
+runner receipts. Earlier rejected reviews, failed tests and native stalls remain
+negative evidence. Query consistency, broader recovery/resource gates and
+separately authorized qualification remain open on the same G4.7 outcome.
+ADR remains Proposed; no default promotion, protected-data change or publication.

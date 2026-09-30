@@ -55,6 +55,8 @@ mod backup;
 mod derived;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod derived_generation;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb", feature = "rdfs"))]
+mod entailment_projection;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod format;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -100,6 +102,11 @@ pub use derived::{
 pub use derived_generation::{
     DerivedFiles, DerivedGeneration, DerivedGenerationError, DerivedGenerationLimits, DerivedIndex,
     DerivedMonitor, DerivedProvider, DerivedRestore, DerivedState, DerivedView, DerivedWriter,
+};
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb", feature = "rdfs"))]
+pub use entailment_projection::{
+    EntailmentProjectionLimits, EntailmentProjectionProvider, EntailmentProjectionState,
+    entailment_projection_identity,
 };
 pub use evaluation_metrics::{
     EvaluationDurationHistogram, EvaluationMetrics, EvaluationOperation, EvaluationOutcome,

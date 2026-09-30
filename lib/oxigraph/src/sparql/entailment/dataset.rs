@@ -30,7 +30,30 @@ pub struct QueryEntailmentDataset {
     control: Control,
 }
 
+#[cfg(all(test, feature = "rdfs"))]
+std::thread_local! {
+    static RDFS_CHECKPOINT_PROBE: std::cell::RefCell<Option<Box<dyn FnMut()>>> =
+        std::cell::RefCell::new(None);
+}
+
 impl QueryEntailmentDataset {
+    /// Test-only observation inside the existing engine cancellation callback.
+    #[cfg(all(test, feature = "rdfs"))]
+    pub(crate) fn with_rdfs_checkpoint_probe<T>(
+        probe: impl FnMut() + 'static,
+        run: impl FnOnce() -> T,
+    ) -> T {
+        struct RestoreProbe(Option<Box<dyn FnMut()>>);
+        impl Drop for RestoreProbe {
+            fn drop(&mut self) {
+                RDFS_CHECKPOINT_PROBE.with(|slot| slot.replace(self.0.take()));
+            }
+        }
+        let _restore =
+            RestoreProbe(RDFS_CHECKPOINT_PROBE.with(|slot| slot.replace(Some(Box::new(probe)))));
+        run()
+    }
+
     /// Captures a Store snapshot and materializes the selected bounded profile.
     pub fn from_store(
         store: &Store,
@@ -117,7 +140,15 @@ impl QueryEntailmentDataset {
                     engine_options.evaluation.cancellation_token = engine_options
                         .evaluation
                         .cancellation_token
-                        .with_cancellation_check(move || inference_control.check().is_err());
+                        .with_cancellation_check(move || {
+                            #[cfg(test)]
+                            RDFS_CHECKPOINT_PROBE.with(|slot| {
+                                if let Some(probe) = slot.borrow_mut().as_mut() {
+                                    probe();
+                                }
+                            });
+                            inference_control.check().is_err()
+                        });
                     let closure = crate::rdfs::Rdfs12Finite.evaluate(&working, &engine_options);
                     // The closure owns its own copies; release the working set early.
                     drop(working);

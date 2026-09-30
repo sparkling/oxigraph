@@ -1,10 +1,8 @@
-use crate::{
-    RDFS_12_FINITE_PROFILE, RDFS_12_IMPLEMENTED_PATTERNS,
-    rdfs12_axioms::{
-        insert_container_axioms, insert_container_property_axioms, insert_static_axioms,
-        is_container_membership_property,
-    },
+use crate::rdfs12_axioms::{
+    insert_container_axioms, insert_container_property_axioms, insert_static_axioms,
+    is_container_membership_property,
 };
+use crate::{RDFS_12_FINITE_PROFILE, RDFS_12_IMPLEMENTED_PATTERNS};
 mod datatypes;
 mod patterns;
 mod terms;
@@ -14,11 +12,10 @@ mod tests;
 pub use self::datatypes::{Rdfs12Consistency, Rdfs12Inconsistency};
 use self::datatypes::{mandatory_datatypes, normalized_recognized_datatypes};
 use self::terms::{reject_reserved_witness_labels, terms_in_quad};
-use oxdatalog::{EvaluationError, EvaluationOptions, LimitKind, rdf::RdfEvaluationError};
-use oxrdf::{
-    Dataset, GraphName, NamedNode, Quad, Term,
-    vocab::{rdf, rdfs},
-};
+use oxdatalog::rdf::RdfEvaluationError;
+use oxdatalog::{EvaluationError, EvaluationOptions, LimitKind};
+use oxrdf::vocab::{rdf, rdfs};
+use oxrdf::{Dataset, GraphName, NamedNode, Quad, Term};
 use std::collections::{HashMap, HashSet};
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 use std::time::Instant;
@@ -110,6 +107,45 @@ pub enum Rdfs12Error {
     /// The bounded evaluator rejected a resource limit or RDF adaptation step.
     #[error(transparent)]
     Evaluation(#[from] RdfEvaluationError),
+}
+
+impl Rdfs12Error {
+    /// Whether cooperative cancellation, rather than semantic validation, failed.
+    pub fn is_cancelled(&self) -> bool {
+        matches!(
+            self,
+            Self::Evaluation(RdfEvaluationError::Evaluation(EvaluationError::Cancelled))
+        )
+    }
+
+    /// Whether the evaluator's wall-clock ceiling was exceeded.
+    pub fn is_timed_out(&self) -> bool {
+        matches!(
+            self,
+            Self::Evaluation(RdfEvaluationError::Evaluation(
+                EvaluationError::LimitExceeded {
+                    kind: LimitKind::Time,
+                    ..
+                }
+            ))
+        )
+    }
+
+    /// Whether a non-time resource ceiling was exceeded. Semantic and adaptation
+    /// errors are not resource exhaustion. This avoids requiring callers to depend
+    /// directly on the evaluator crate merely to classify an RDFS failure.
+    pub fn is_resource_limit(&self) -> bool {
+        match self {
+            Self::Evaluation(RdfEvaluationError::Evaluation(error)) => match error {
+                EvaluationError::LimitExceeded { kind, .. } => *kind != LimitKind::Time,
+                EvaluationError::InputTermLimit { .. }
+                | EvaluationError::GeneratedTermLimit { .. }
+                | EvaluationError::GeneratedBlankNodeSpaceExhausted => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
 }
 
 /// Finite legal-RDF closure over the active vocabulary.

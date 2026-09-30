@@ -1,11 +1,63 @@
 use super::*;
 use oxdatalog::CancellationToken;
 use oxrdf::BlankNode;
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
+
+#[test]
+fn error_categories_do_not_turn_semantic_failures_into_resource_limits() {
+    let check = |error: Rdfs12Error, expected| {
+        assert_eq!(
+            (
+                error.is_cancelled(),
+                error.is_timed_out(),
+                error.is_resource_limit()
+            ),
+            expected
+        );
+    };
+    check(eval(EvaluationError::Cancelled), (true, false, false));
+    for kind in [
+        LimitKind::Facts,
+        LimitKind::IntermediateRows,
+        LimitKind::Iterations,
+        LimitKind::Memory,
+        LimitKind::Terms,
+        LimitKind::Time,
+    ] {
+        check(
+            limit(kind, 1),
+            (false, kind == LimitKind::Time, kind != LimitKind::Time),
+        );
+    }
+    for error in [
+        EvaluationError::InputTermLimit {
+            actual: 2,
+            limit: 1,
+        },
+        EvaluationError::GeneratedTermLimit {
+            actual: 2,
+            limit: 1,
+        },
+        EvaluationError::GeneratedBlankNodeSpaceExhausted,
+    ] {
+        check(eval(error), (false, false, true));
+    }
+    check(
+        Rdfs12Error::ReservedWitnessLabel {
+            label: "reserved".into(),
+            prefix: "reserved",
+        },
+        (false, false, false),
+    );
+    check(
+        Rdfs12Error::UnsupportedRecognizedDatatype {
+            datatype: NamedNode::new_unchecked("urn:unsupported"),
+        },
+        (false, false, false),
+    );
+}
 
 #[derive(Default)]
 struct Probe {
