@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-30 — resume receipt-publication fsync matrix accepted; broader residual gates remain open
+- Updated: 2026-09-30 — resume receipt-publication, abandoned FAILED, VALIDATED and SEALED journal fsync slices accepted; broader gates remain open
 - Deciders: Oxigraph parity programme
 - Implementation status: native offline physical-metadata inspection API/CLI,
   unknown/newer-layout preflight, version-0/1 physical-backup API/CLI and inactive
@@ -91,6 +91,99 @@
   [ADR-0014 — End-to-end RDF dataset graph topology](0014-rdf-dataset-graph-topology.md),
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md)
+
+## Abandoned FAILED-journal fsync evidence (2026-09-30)
+
+Test-only `schema_upgrade_abandoned_fsync_tests.rs` starts from INTENT0 with
+no attempt directory. Exact JOURNAL sync ordinal1 returns EIO while appending
+FAILED0, before any callback; complete visible frames remain independently
+checksum-bound. Ordinal3 succeeds through FAILED0/INTENT1, then cancels phase0.
+RDF11/RDF12 each exercise failure and control. Refusals preserve source, package
+and workspace; shimless recovery wins attempt1 or2 respectively, preserving
+PLAN/UUID/profile and independently checked COMPLETE bytes and inventory.
+Private child capture/TERM/KILL/reap and exact-one-test checks remain bounded.
+This is reported syscall failure and same-host visible recovery, not power loss.
+
+Fresh Sol6.1/high review `8e9568c0-14fe-49b8-96d3-9de88714507a`, worker
+`01a0f36f-d763-7282-ba75-1ff035032879`, ACCEPT; response SHA256
+`ef6ba6dff7e3cf614fffda3ddb4853f496971a03e40230aa8818b07251ea055f`.
+Owner verified exact identities/custody,12 reads and15,265 unchanged inputs;
+accepted query delta explicitly reconciled. Binding:
+`target/engineering-delivery/abandoned-fsync-integration-8e9568c0.json`.
+Subsequent accepted recovery commit `d818432b3` changes only an integration test
+and ADR0032, neither a journal read nor `--lib` input. Reviewed code hashes remain
+exact; running binaries and private targets were never overwritten.
+
+Candidate default/RDF12 checks pass2/2 each (26553/6258,742.63/780.74s).
+Canonical checks pass2/2 each (39627/34283,746.51/780.95s). Each count comprises
+one substantive four-case matrix and one inert helper. Scoped nightly format,
+diff and source-hash checks pass. Existing targets used jobs16/default and
+jobs14/canonical RDF12, test-threads4; warnings remain. Counts are direct owner
+observations, not runner-issued qualification receipts. Prior Sol author stall
+remains negative. No production change; same G4.3 outcome and broader gates
+remain open. ADR stays Proposed; no publication follows.
+
+## Resume VALIDATED-journal fsync evidence (2026-09-30)
+
+Test-only `schema_upgrade_validated_fsync_tests.rs` exercises exact JOURNAL
+fsync ordinal 2: INTENT succeeds, a complete VALIDATED frame is visible, then
+the caller receives `EIO` before phase 6. Ordinal 3 is a positive control:
+explicit cancellation at phase 6 proves both earlier syncs succeeded without
+appending SEALED. RDF11 and RDF12 profiles each run both cases. Complete phase
+vectors, independently chained frame/receipt bytes, attempt-0 inventory and
+source/package preservation are checked. Verification and same-path restart
+refuse without byte changes; shimless recovery reuses attempt 0 and publishes
+the verified receipt. This is syscall/page-cache evidence, not power loss.
+
+Fresh native Sol6.1/high review `1573e6d8-66d2-404f-bf65-cee83ddb9951`, worker
+`01a0f339-bfee-7db1-a8d7-f48ed3c25047`, ACCEPT; response SHA256
+`8838380456e47af76d9c4541741d23d2f77272f4be415d468832de9d4d53bf2a`.
+Owner verified exact request/identity, released custody, 11 read hashes and
+15,261 unchanged snapshot inputs. Accepted intervening hydration source was
+explicitly reconciled against main `cb03176da`. Binding evidence:
+`target/engineering-delivery/validated-fsync-integration-1573e6d8.json`.
+
+Candidate default/RDF12 checks pass 2/2 each (sessions 16498/1980, 530.29/556.00s).
+Canonical default/RDF12 checks pass 2/2 each (73876/87863, 533.70/566.89s).
+Each count includes one substantive four-case matrix and one inert process
+helper. Scoped nightly formatting, diff checks and unchanged reviewed hashes
+pass. Existing private targets used jobs16/test-threads4; warnings remain.
+These are owner observations, not qualification or runner-issued receipts.
+Prior author stall remains negative; this slice changes no production behavior.
+Original G4.3/migration alias remains open for other writeback boundaries,
+profile/derived-index policy and separately authorized qualification.
+ADR remains Proposed; no publication follows.
+
+## Resume SEALED-journal fsync evidence (2026-09-30)
+
+Test-only `schema_upgrade_journal_fsync_tests.rs` covers exact JOURNAL fsync
+failure after a complete SEALED frame, starting from verified VALIDATED state.
+RDF11/RDF12 profiles each exercise ordinal-1 EIO and ordinal-2 success controls.
+Failure reaches no phase 7, preserves source/package and complete visible frame
+bytes, publishes no receipt, refuses same-path start and resumes using attempt 0.
+The frame oracle chains the last complete encoded frame, not the entire journal.
+Private children retain bounded capture/kill/reap. No production behavior changes.
+
+Fresh Sol6.1/high reviewer `01a0f2ef-c029-7902-af2e-718e87aaf5a4` ACCEPTs
+run `ce84b0e6-fbed-40ea-9c3b-18049c788139`; response SHA256
+`2e15e5cbc9455fc62e9fd3d14b3d7b2b279737f9541a8f76891ada6b6df907a9`.
+Owner verified request/worker/custody, 13 reads and 15,249 unchanged inputs;
+intervening accepted inventory/restore/harness changes were reconciled against
+main `2b5607e91`. Evidence:
+`target/engineering-delivery/journal-fsync-integration-ce84b0e6.json`.
+Reviewed parent SHA256 `f8de6c3998e4e446de65a832c4d512beed53ad020eb7219888f3ef7d067361d2`;
+new module SHA256 `97a006f7da08311ac4b8a6a3f4631d4ada27392c7e8216869c8b0288c0a47f6f`.
+
+Canonical default session61197 and RDF12 session49836 each pass 3/3:
+one substantive four-combination parent plus two inert helpers. Parent durations
+637.43/674.27 seconds establish execution rather than infrastructure skip, not
+performance claims. Candidate focused checks also pass 3/3 each. Scoped nightly
+formatting and diff checks pass; compiler warnings remain. These are direct
+owner observations, not runner-owned qualification receipts. Existing exclusive
+targets used jobs16/test-threads4. Syscall/page-cache evidence is not power loss.
+Original G4.3 task and migration alias `task-1790778948534-c5otsa` remain open;
+other fsync points, profile admission, derived-index policy and qualification
+are not closed. Earlier negative evidence remains preserved. ADR stays Proposed.
 
 ## Resume receipt-publication fsync evidence (2026-09-30)
 

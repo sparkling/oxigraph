@@ -264,6 +264,7 @@ impl RestoreReceipt {
 
     /// Reads and checks the original completion record. It does NOT revalidate
     /// a database which may subsequently have been opened writable or changed.
+    /// Use [`Self::verify_current_primary`] to check the current database.
     pub fn read(directory: impl AsRef<Path>) -> Result<Self, RestoreError> {
         let directory = directory.as_ref();
         check_directory(directory)?;
@@ -279,6 +280,52 @@ impl RestoreReceipt {
             backup,
         )
     }
+
+    /// Bounded, read-only check that the CURRENT database at `store` still equals
+    /// this receipt's validated primary state. `store` may be any directory (for
+    /// example one moved out of the restore root); a symlink or non-directory is
+    /// refused before any native open. The database is opened read-only, passes
+    /// `Store::validate`, and its exact physical and governed checkpoint (database ID,
+    /// RocksDB sequence, lineage identity, governed sequence, latest receipt, outbox
+    /// coverage and retention floor), native-order content digest, every retained
+    /// outbox page and contributor inventory must equal the receipt. Equal RDF alone
+    /// is not sufficient. Only the contributor-free profile is supported: a receipt
+    /// observing any contributor returns `MissingReconciler`, because provider
+    /// semantics need trusted adapters. Nothing is written and no file hash is
+    /// recomputed; [`Self::read`] remains the historical completion check.
+    /// Cancellation and the control timeout are cooperative between native calls;
+    /// open and validation are proportional to dataset size and cannot be interrupted.
+    pub fn verify_current_primary(
+        &self,
+        store: impl AsRef<Path>,
+        control: &TransactionStartControl,
+    ) -> Result<(), RestoreError> {
+        let clock = Instant::now();
+        check(control, clock)?;
+        self.validate()?;
+        let (registry, expected) = read_inventory(self.backup.contributor_inventory())?;
+        if !expected.is_empty() {
+            return Err(RestoreError::MissingReconciler);
+        }
+        let store = store.as_ref();
+        check_directory(store)?;
+        let primary = Store::open_read_only(store)?;
+        check(control, clock)?;
+        let (_, health, outbox_records) =
+            reconcile_primary(&primary, &self.backup, control, clock)?;
+        let observed: Vec<ContributorObservation> = Vec::new();
+        let inventory = registry.evaluate(&primary, &health, &observed, || {
+            check(control, clock).is_ok()
+        })?;
+        if inventory.to_bytes() != self.backup.contributor_inventory()
+            || outbox_records != self.outbox_records
+        {
+            return Err(RestoreError::StateMismatch);
+        }
+        check(control, clock)?;
+        Ok(())
+    }
+
     fn encode(&self) -> Vec<u8> {
         let mut bytes = MAGIC.to_vec();
         bytes.extend_from_slice(&self.backup.fingerprint());
@@ -389,6 +436,53 @@ impl Store {
     }
 }
 
+/// Exact primary reconciliation shared by restore and current-primary verification:
+/// storage validation, the full checkpoint, the native-order content digest and every
+/// retained outbox page. Returns the observed checkpoint, health and outbox count.
+fn reconcile_primary(
+    primary: &Store,
+    backup: &BackupReceipt,
+    control: &TransactionStartControl,
+    clock: Instant,
+) -> Result<(BackupCheckpoint, super::GovernanceHealth, u64), RestoreError> {
+    primary.validate()?;
+    check(control, clock)?;
+    let (checkpoint, health) = primary.backup_checkpoint()?;
+    if &checkpoint != backup.checkpoint()
+        || &primary.backup_contents(control, clock)? != backup.contents()
+    {
+        return Err(RestoreError::StateMismatch);
+    }
+    let mut after = None;
+    let mut outbox_records = 0_u64;
+    loop {
+        check(control, clock)?;
+        let batch = primary.read_outbox(
+            after.as_ref(),
+            NonZeroUsize::new(256).unwrap_or(NonZeroUsize::MIN),
+        )?;
+        if batch.high_water() != checkpoint.outbox_high_water()
+            || batch.latest_receipt() != checkpoint.latest_receipt()
+            || batch.retained_after() != checkpoint.retained_after()
+            || batch.coverage().map(OutboxCoverage::after_receipt_sequence)
+                != checkpoint.outbox_after_receipt_sequence()
+        {
+            return Err(RestoreError::StateMismatch);
+        }
+        outbox_records = outbox_records
+            .checked_add(batch.records().len() as u64)
+            .ok_or(RestoreError::Limit)?;
+        if batch.next_cursor() == batch.high_water() {
+            break;
+        }
+        if batch.records().is_empty() || batch.next_cursor() == after.as_ref() {
+            return Err(RestoreError::StateMismatch);
+        }
+        after = batch.next_cursor().cloned();
+    }
+    Ok((checkpoint, health, outbox_records))
+}
+
 #[expect(
     clippy::create_dir,
     reason = "fresh restore directories must reject existing paths"
@@ -496,41 +590,8 @@ fn restore_inner(
     check(&options.control, clock)?;
     let primary = Store::open_read_only(destination.join("store"))?;
     phase(3)?;
-    primary.validate()?;
-    check(&options.control, clock)?;
-    let (checkpoint, health) = primary.backup_checkpoint()?;
-    if &checkpoint != backup.checkpoint()
-        || &primary.backup_contents(&options.control, clock)? != backup.contents()
-    {
-        return Err(RestoreError::StateMismatch);
-    }
-    let mut after = None;
-    let mut outbox_records = 0_u64;
-    loop {
-        check(&options.control, clock)?;
-        let batch = primary.read_outbox(
-            after.as_ref(),
-            NonZeroUsize::new(256).unwrap_or(NonZeroUsize::MIN),
-        )?;
-        if batch.high_water() != checkpoint.outbox_high_water()
-            || batch.latest_receipt() != checkpoint.latest_receipt()
-            || batch.retained_after() != checkpoint.retained_after()
-            || batch.coverage().map(OutboxCoverage::after_receipt_sequence)
-                != checkpoint.outbox_after_receipt_sequence()
-        {
-            return Err(RestoreError::StateMismatch);
-        }
-        outbox_records = outbox_records
-            .checked_add(batch.records().len() as u64)
-            .ok_or(RestoreError::Limit)?;
-        if batch.next_cursor() == batch.high_water() {
-            break;
-        }
-        if batch.records().is_empty() || batch.next_cursor() == after.as_ref() {
-            return Err(RestoreError::StateMismatch);
-        }
-        after = batch.next_cursor().cloned();
-    }
+    let (checkpoint, health, outbox_records) =
+        reconcile_primary(&primary, &backup, &options.control, clock)?;
     let mut observed = Vec::with_capacity(expected.len());
     for observation in &expected {
         check(&options.control, clock)?;
@@ -660,7 +721,7 @@ fn take<const N: usize>(bytes: &mut &[u8]) -> Result<[u8; N], RestoreError> {
 mod tests {
     use super::*;
     use crate::model::{GraphName, NamedNode, Quad};
-    use crate::store::BackupOptions;
+    use crate::store::{BackupOptions, TransactionRequest};
     use std::collections::HashSet;
     type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
@@ -787,6 +848,129 @@ mod tests {
         RestoreReceipt::read(target)
             .err()
             .ok_or("corrupt receipt accepted")?;
+        Ok(())
+    }
+
+    fn store_files(directory: &Path) -> Result<Vec<(String, Vec<u8>)>, io::Error> {
+        let mut files = Vec::new();
+        for entry in fs::read_dir(directory)? {
+            let entry = entry?;
+            files.push((
+                entry.file_name().to_string_lossy().into_owned(),
+                fs::read(entry.path())?,
+            ));
+        }
+        files.sort();
+        Ok(files)
+    }
+
+    /// Equal RDF is not a current-primary match: a different physical database or a
+    /// later governed commit that leaves quads unchanged must both be refused.
+    #[test]
+    fn current_primary_verification_rejects_equal_rdf_with_other_identity_or_lineage() -> TestResult
+    {
+        let directory = tempfile::tempdir()?;
+        let node = NamedNode::new_unchecked("urn:restore:current");
+        let quad = Quad::new(node.clone(), node.clone(), node, GraphName::DefaultGraph);
+        let mut restored = Vec::new();
+        for name in ["a", "b"] {
+            let source = Store::open(directory.path().join(format!("source-{name}")))?;
+            source.insert(quad.clone())?;
+            let package = directory.path().join(format!("backup-{name}"));
+            source.backup_with_receipt(&package, &BackupOptions::default())?;
+            let target = directory.path().join(format!("restore-{name}"));
+            let receipt = Store::restore_backup(&package, &target, &RestoreOptions::default())?;
+            restored.push((receipt, target));
+        }
+        let control = TransactionStartControl::new();
+        let (a, a_target) = &restored[0];
+        let (b, b_target) = &restored[1];
+        let a_store = a_target.join(RestoreReceipt::store_directory());
+        let b_store = b_target.join(RestoreReceipt::store_directory());
+        let before = store_files(&b_store)?;
+        a.verify_current_primary(&a_store, &control)?;
+        b.verify_current_primary(&b_store, &control)?;
+        assert_eq!(store_files(&b_store)?, before);
+        assert_eq!(a.backup().contents(), b.backup().contents());
+        assert!(matches!(
+            a.verify_current_primary(&b_store, &control),
+            Err(RestoreError::StateMismatch)
+        ));
+        assert!(matches!(
+            a.verify_current_primary(
+                &a_store,
+                &TransactionStartControl::new().with_timeout(Duration::ZERO)
+            ),
+            Err(RestoreError::Backup(BackupError::TimedOut))
+        ));
+        a.verify_current_primary(directory.path().join("missing"), &control)
+            .err()
+            .ok_or("missing store accepted")?;
+        let link = directory.path().join("link");
+        std::os::unix::fs::symlink(&a_store, &link)?;
+        assert!(matches!(
+            a.verify_current_primary(&link, &control),
+            Err(RestoreError::Backup(BackupError::InvalidPath))
+        ));
+        let rdf = quads(&a_store)?;
+        {
+            let store = Store::open(&a_store)?;
+            store
+                .start_governed_transaction(
+                    TransactionRequest::default(),
+                    TransactionKey::new([5; 16]),
+                )?
+                .into_transaction()
+                .commit()?;
+        }
+        assert_eq!(quads(&a_store)?, rdf);
+        assert!(matches!(
+            a.verify_current_primary(&a_store, &control),
+            Err(RestoreError::StateMismatch)
+        ));
+        // The historical completion record is unaffected by later writes.
+        assert_eq!(RestoreReceipt::read(a_target)?, *a);
+        Ok(())
+    }
+
+    #[test]
+    fn current_primary_retained_outcome_corruption_preserves_nested_error() -> TestResult {
+        let directory = tempfile::tempdir()?;
+        let source = Store::open(directory.path().join("source"))?;
+        let key = TransactionKey::new([7; 16]);
+        source
+            .start_governed_transaction(TransactionRequest::default(), key.clone())?
+            .into_transaction()
+            .commit()?;
+        let package = directory.path().join("backup");
+        source.backup_with_receipt(&package, &BackupOptions::default())?;
+        let target = directory.path().join("restore");
+        let receipt = Store::restore_backup(&package, &target, &RestoreOptions::default())?;
+        let primary = target.join(RestoreReceipt::store_directory());
+        let control = TransactionStartControl::new();
+        receipt.verify_current_primary(&primary, &control)?;
+        {
+            let store = Store::open(&primary)?;
+            store
+                .storage
+                .write_raw_transaction_outcome_record(key.as_bytes(), b"malformed")?;
+            store.flush()?;
+        }
+        let before = store_files(&primary)?;
+        let result = receipt.verify_current_primary(&primary, &control);
+        assert!(
+            matches!(
+                &result,
+                Err(RestoreError::Backup(BackupError::Governance(
+                    super::super::GovernanceError::Cursor(OutboxReadError::Storage(
+                        StorageError::Corruption(_)
+                    ))
+                )))
+            ),
+            "unexpected corruption result: {result:?}"
+        );
+        assert_eq!(store_files(&primary)?, before);
+        assert_eq!(RestoreReceipt::read(&target)?, receipt);
         Ok(())
     }
 

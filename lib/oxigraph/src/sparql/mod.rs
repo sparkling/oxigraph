@@ -5,6 +5,8 @@
 mod analytical;
 mod dataset;
 mod entailment;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb", feature = "rdfs"))]
+mod entailment_projection;
 mod error;
 #[cfg(feature = "http-client")]
 pub(crate) mod federation;
@@ -27,9 +29,6 @@ mod statistics;
 #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
 mod text_service;
 mod update;
-#[cfg(all(not(target_family = "wasm"), feature = "statistics"))]
-pub use statistics::{BoundStatisticsSparqlQuery, StatisticsAvailability, StatisticsQueryContext};
-
 #[cfg(feature = "http-client")]
 use crate::http::HttpClient;
 #[cfg(feature = "http-client")]
@@ -41,6 +40,13 @@ pub use crate::model::{Variable, VariableNameParseError};
 use crate::sparql::dataset::DatasetView;
 pub use crate::sparql::entailment::{
     QueryEntailment, QueryEntailmentDataset, QueryEntailmentError, QueryEntailmentOptions,
+};
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb", feature = "rdfs"))]
+pub use crate::sparql::entailment_projection::{
+    BoundEntailmentProjectionSparqlQuery, QueryEntailmentProjectionContext,
+    QueryEntailmentProjectionError, QueryEntailmentProjectionErrorKind,
+    QueryEntailmentProjectionExecutionError, QueryEntailmentProjectionOptions,
+    QueryEntailmentProjectionResource, QueryEntailmentProjectionResults,
 };
 pub use crate::sparql::error::UpdateEvaluationError;
 #[cfg(feature = "http-client")]
@@ -57,9 +63,8 @@ pub use crate::sparql::update::{
     BoundKeyedSparqlUpdate, BoundNegotiatedSparqlUpdate, BoundPreparedSparqlUpdate,
     BoundTransactionalSparqlUpdate, PreparedSparqlUpdate,
 };
-use crate::store::EvaluationOperation;
 use crate::store::evaluation_metrics::{EvaluationObservation, observe_query_result};
-use crate::store::{Store, Transaction};
+use crate::store::{EvaluationOperation, Store, Transaction};
 pub use analytical::{
     AnalyticalBudget, AnalyticalDisposition, AnalyticalExecutionError, AnalyticalExecutionLimits,
     AnalyticalExecutionMode, AnalyticalExecutionOptions, AnalyticalExecutionReport,
@@ -83,6 +88,8 @@ pub use spatial_service::{
     BoundSpatialSparqlQuery, SPATIAL_SEARCH_SERVICE, SpatialQueryContext, SpatialServiceError,
     SpatialSparqlResults,
 };
+#[cfg(all(not(target_family = "wasm"), feature = "statistics"))]
+pub use statistics::{BoundStatisticsSparqlQuery, StatisticsAvailability, StatisticsQueryContext};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem::take;

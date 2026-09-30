@@ -4,9 +4,10 @@
 - **Date**: 2026-08-25
 - Updated: 2026-09-30
 - Deciders: Oxigraph parity programme
-- Implementation status: bounded outbox/full-closure reference evaluator
-  implemented; production entailment still uses full snapshot evaluation or
-  explicit one-shot materialization. No incremental projection or durable cursor
+- Implementation status: bounded outbox/full-closure reference evaluator,
+  opt-in finite-RDFS full-recompute provider, immutable hydration and explicit
+  strict projection-query binding implemented. Ordinary query entailment keeps
+  its full-snapshot path; no incremental algorithm or server default activated
 - Programme task: `task-1787670632864-10hfsk` (G4.7)
 - **Depends on**:
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),
@@ -284,3 +285,175 @@ default/RocksDB matrix, frozen semantic receipt or performance claim.
 
 Only the admission prerequisite is accepted. Full G4.7 provider defects,
 resource/recovery gates and original task remain open. ADR stays Proposed.
+
+## Bounded full-recompute provider (2026-09-30)
+
+The opt-in RocksDB/RDFS provider now uses the existing derived-generation
+lifecycle for build, replay, full recomputation, reconciliation and activation.
+Source quads and named-graph declarations are admitted before replay retention;
+inferred records remain separate from primary RDF. Governed cursor identity,
+canonical framing and checksums are validated. Ungoverned primary changes need
+independent reconciliation and rebuilding, never cursor-only strict freshness.
+An initially unidentified source cannot silently adopt its first governed lineage.
+
+Failed recomputation invalidates inferred state before fallible work. Cooperative
+control checks cover replay, framing and final decode/publication boundaries.
+RDFS errors preserve cancellation, timeout, resource and semantic categories.
+Test-only scoped thread-local observation reaches actual engine checkpoints for
+cancellation and positive-deadline controls. Logical ceilings are not process
+RSS bounds; sorting/native calls are not preemptible. Full recomputation is not
+an incremental algorithm, query overlay, server activation or performance claim.
+
+Fresh native Sol 6.1/high review `b3f8859a-c0bd-4185-a8ed-753bc0956e48`,
+worker `01a0f2a5-5848-7440-8f68-09fc0e8b97e1`, accepted all six source files.
+Response SHA256:
+`9fb8a042c0f2fb95dc1e69a99c86e720ce727046fa825d90c351de412c3bbc42`.
+Owner verified exact request/response identities, stopped native custody,
+28 reads and 15,255 unchanged source inputs against main `1e3e2a058`.
+The intervening catalog-test acceptance was explicitly reconciled. Evidence:
+`target/engineering-delivery/provider-final-integration-b3f8859a.json`.
+
+Canonical direct checks on the exact reviewed source passed:
+
+- Provider unit controls: 12 (`session20402`).
+- Default/RDFS provider, reference, query and outbox: 42 (`session97345`).
+- No-default/RDFS library, reference and query: 130 (`session33122`).
+- RDFS classifier/control tests with RDF12: nine (`session55119`).
+- Default-feature library check: exit 0 (`session51556`).
+
+Candidate focused/impacted checks also pass; candidate Clippy exits 0 with
+warnings. Scoped formatter with `skip_children=true` and diff checks pass.
+A recursive formatter check reported pre-existing descendant formatting; no
+unrelated source was changed. These are owner observations, not manufactured
+runner receipts. Earlier rejected reviews, failed tests and native stalls remain
+negative evidence. Query consistency, broader recovery/resource gates and
+separately authorized qualification remain open on the same G4.7 outcome.
+ADR remains Proposed; no default promotion, protected-data change or publication.
+
+## Retained payload inventory binding (2026-09-30)
+
+Provider loading now reuses `DerivedFiles::read_verified` for RDFS payloads.
+Copied `meta`, `image` and `inferred` bytes must match the admitted generation's
+retained size/hash inventory, not only their own internally consistent metadata.
+Wire format, public API, bounds and final control checks remain unchanged.
+The new public regression replaces all three files with another valid generation:
+before repair it incorrectly loaded successfully (`session6451`, retained RED);
+after repair it returns `Corrupt`. This is a hydration integrity prerequisite,
+not a query overlay, snapshot-consistency admission or incremental algorithm.
+
+Fresh native Sol6.1/high review `e10747f4-5044-45d4-9654-81890137f45f`, worker
+`01a0f2db-c720-71c1-86d8-97ade658af39`, ACCEPTs exact three-file source; response
+SHA256 `1420ca196d72cd01663b5d59b4f30f28f230a09b97723a6172699e05716b5735`.
+Owner verified request/receipt/custody, eight reads and 15,256 unchanged inputs,
+reconciling only the accepted three-path harness correction since parent
+`86faf32c`. Evidence: `target/engineering-delivery/hydration-integration-e10747f4.json`.
+
+Canonical checks pass 24 derived-input/provider/reference tests (`session21181`),
+12 provider unit tests and default-feature library check (`session54405`).
+Reviewed hashes still match after validation; scoped nightly formatting and diff
+checks pass. Candidate integration/unit checks each pass 12. Compiler warnings
+remain. Counts are direct owner observations, not runner-issued qualification
+receipts. Earlier native stalls remain negative; no stalled proposal was applied.
+Same G4.7 outcome stays open. ADR remains Proposed; no server/default activation,
+qualification, protected-data mutation or publication follows.
+
+## Immutable admitted-view hydration (2026-09-30)
+
+`EntailmentProjectionSnapshot::hydrate` copies primary image and inferred data
+from one admitted strict generation, not a later live Store snapshot. It verifies
+retained inventory, provider identity, exact checkpoints and graph topology.
+Owned datasets remain immutable after primary commits, ACTIVE swaps, payload
+replacement and handle release. Eventual views fail before payload I/O.
+Four mandatory caller ceilings bound source/inferred records, cumulative copied
+payload bytes and logical retained-byte estimates. They do not bound one decoded
+record, topology sets, hashing, allocator overhead or process RSS. Control checks
+span final inferred decode and publication, preserving absolute-token expiry as
+`TimedOut` even when the nested backup-style reader reports `Cancelled`.
+No query consumer, incremental algorithm, server/default or schema change.
+
+Same-outcome Opus repair `8b31b67d-3e9b-49fd-9095-16ecad182358` completed after
+an inactivity warning; prior Sol stalls remain negative. Initial integration
+compile21539 lacked a trait import. Fresh reviewf5abac15 rejected two test gaps;
+root repaired the import and added old-view-after-ACTIVE-swap and absolute-token
+boundary/nested-reader regressions. Fresh Sol6.1/high review
+`61a95c82-4e8d-48f8-a6ff-01e06d6962a2`, worker
+`01a0f322-ea5b-7203-9d3f-a86a8377619f`, ACCEPTs all four code files; response
+SHA256 `5ab23b27a41b1ec9aac9adb1b960993461a2986dee2d1107ea3a124e0484a6d6`.
+Owner verified request/custody, 17 reads and 15,253 unchanged snapshot inputs;
+accepted intervening restore/journal changes were explicitly reconciled against
+main `ddafc7393`. Exact binding:
+`target/engineering-delivery/hydration-snapshot-integration-61a95c82.json`.
+
+Canonical default/RDFS integration join54812 passes 53 tests: hydration10,
+provider12, reference6, query17 and outbox8. Unit join79270 passes 19,
+including seven hydration controls; no-default/RDFS library check47442 exits0.
+Candidate focused10/7 and impacted53 also pass. Scoped nightly formatting,
+diff checks and unchanged reviewed source hashes pass. Existing exclusive
+`projection-limits` target used jobs16/test-threads4; compiler warnings remain.
+Counts are direct owner observations, not runner-issued qualification receipts.
+Original G4.7/migration alias remains open for query/recovery/resource gates;
+ADR stays Proposed. Negative reviews/checks retained; no publication follows.
+
+## Explicit strict projection-query binding (2026-09-30)
+
+`PreparedSparqlQuery::on_entailment_projection` binds one admitted strict
+finite-RDFS generation to an owned visible dataset, without rereading Store or
+ACTIVE or recomputing closure. Original FROM/FROM NAMED clauses, nondefault
+dataset scopes, unsupported profiles and incompatible checkpoints fail before
+payload I/O. Mandatory record/estimated-byte ceilings govern visible retention;
+they are logical bounds, not RSS guarantees. Existing evaluator retains token,
+absolute deadline and lazy cancellation semantics. Context names exact generation,
+checkpoint and profile. Ordinary queries, primary RDF and server defaults remain
+unchanged. This is a query consumer, not an incremental maintenance algorithm.
+
+Same-outcome module/public-test Opus proposals received fresh Sol6.1/high review
+`53ffef4b-a713-4e2f-a3b2-575158ff7471`, worker
+`01a0f360-3b33-7213-84b1-885cc71cb3bb`, ACCEPT. Response SHA256:
+`5f339ab4f968ec831e280ed1029ec6e0555d052cb80e854ca86bd2ed7ed074cd`.
+Owner verified exact identity/custody,17 reads and15,264 unchanged source inputs,
+reconciling only accepted VALIDATED-journal changes since snapshot `cb03176da`.
+Binding: `target/engineering-delivery/projection-query-integration-53ffef4b.json`.
+
+Canonical join40227 passes63 integration tests: hydration10, provider12,
+reference6, existing query17, new public query10 and outbox8. Unit join91853
+passes26, including seven query-binding controls. No-default/RDFS library check
+exits0; scoped nightly format/diff and unchanged reviewed-source hashes pass.
+Candidate public10, private7 and impacted53 also pass. RDFS enables RDF12;
+the extra explicit-RDF12 candidate run is repeat evidence, not a separate profile.
+Checks reuse the exclusive projection-limits target, jobs16/test-threads4.
+Direct owner observations are not runner-issued qualification receipts.
+
+Fresh review notes nonblocking missing iteration-deadline-expiry regression and
+an unused-must-use warning in a positive private control; warnings remain visible.
+Earlier stalled native attempts remain negative, with no proposal accepted from
+them. Same G4.7 outcome and broader recovery/resource/qualification gates remain
+open. ADR stays Proposed; no protected-data mutation, promotion or publication.
+
+## Expired-cursor recovery query regression (2026-09-30)
+
+`entailment_projection_recovery.rs` joins real finite-RDFS cursor expiry,
+orderly persisted reopen, explicit full rebuild and strict query consumption.
+Expired catch-up preserves ACTIVE and fails with the exact retained boundary;
+strict access remains NotFresh. Rebuild restores exact checkpoint/generation
+provenance and matches an independent full-closure oracle, including retraction,
+empty graph topology and duplicate solution rows. Primary contents, namespaces
+and checkpoint remain unchanged. This is orderly handle-release recovery, not
+new process-crash, syscall-fault or power-loss evidence; production is unchanged.
+
+Initial source review `c0a09dda` rejected vacuous multiplicity coverage. Root
+added a subject-only projection and an explicit duplicate-oracle guard, retaining
+the negative review. Fresh Sol6.1/high review
+`230744c8-3ab0-447f-8de6-fd5065fc2fdc`, worker
+`01a0f385-27eb-7a41-9a12-4e517db96a35`, ACCEPT; response SHA256
+`21b4635e57e750dfe9cb256abcf26afb74fa8cd2ae69c228d43b4bbb2b81b667`.
+Exact request/custody,20 reads and15,269 unchanged source inputs verified.
+Two independently reviewed pending journal-test paths were separately hash-bound,
+not absorbed into this slice. Their frozen binaries and private targets remain
+independent. Binding: `target/engineering-delivery/projection-recovery-integration-230744c8.json`.
+
+Candidate39842 and canonical9380 each pass39 tests: derived6, provider12,
+recovery1, retention10 and query10. Scoped format/diff and exact reviewed-source
+hashes pass; compiler warnings remain. Existing exclusive target uses jobs16,
+test-threads4. These are direct owner observations, not qualification receipts.
+Original Sol stall and rejected review remain negative evidence. G4.7 and
+broader resource/recovery/qualification gates stay open; ADR remains Proposed.

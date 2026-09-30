@@ -2,10 +2,10 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-09-29
+- Updated: 2026-09-30
 - Deciders: Oxigraph parity programme
 - Implementation status: bounded pure lifecycle model and opt-in Linux
-  create/reconcile/open/quiesce/recovery-backed tombstone catalog implemented below. Each current server process
+  create/reconcile/open/quiesce/recovery-backed tombstone/restore catalog implemented below. Each current server process
   still owns one `Store`; no administrative lifecycle is activated
 - Programme task: `task-1787728710646-enu8i1` (G4.6)
 - **Depends on**:
@@ -428,3 +428,51 @@ there is no abandon operation. Phase hooks/process exits are not power-loss
 proof. Restore/purge, protocol/isolation, upgrade and resource gates remain open
 on the same G4.6 task and migration alias. ADR stays Proposed; no qualification,
 default promotion, protected-data mutation or publication follows.
+
+## Bounded recovery-package restore (2026-09-30)
+
+The opt-in Linux catalog restores its own verified tombstone package under a
+fresh external ID and manager UUID. The underlying physical/governed store
+identity is preserved, not rekeyed. Generation CAS, exact backup fingerprint,
+logical retention window, capacity and path guards precede intent. Source entry,
+trash and package remain unchanged. Incomplete attempts stay inventoried;
+explicit retry uses a new attempt without deleting old artifacts.
+
+Reserved/Validated restart verifies provenance, current primary checkpoint,
+retained outbox, content/topology/namespaces and contributor-free inventory before
+Closed. Historical completion alone is insufficient. Both publication parents
+are resynced. Repository-local recovery refusals do not poison unrelated entries;
+uncertain catalog writes still poison. Definite corruption, including nested
+backup/governance/cursor storage errors, becomes Failed; I/O, cancellation,
+timeouts and resource refusals remain retryable. No HTTP/admin/purge activation.
+
+Fresh native Sol6.1/high whole-source review
+`5ab807e4-2c33-4c9f-8497-14e369c247d6`, worker
+`01a0f2f4-c2d7-71e0-9b1f-8881725f9ae8`, ACCEPTs exact six-file source.
+Response SHA256 `afad47547df888e70a6b36b32e3d98effe329914f3e2f5c396e088b7448da324`.
+Owner verified 15,219 unchanged inputs, 19 reads and stopped native custody.
+Intervening accepted source was reconciled, including exact catalog-test adoption
+from `1e3e2a058`, not an evaluator rebaseline. Evidence:
+`target/engineering-delivery/restore-nested-integration-5ab807e4.json`.
+
+Canonical direct checks on unchanged reviewed hashes pass:
+
+- CLI library/catalog/quiesce/restore/tombstone/lifecycle: 207 no-default
+  (`session10813`) and 207 default (`session7458`).
+- Library restore controls: eight (`session75242`).
+- Public backup/restore receipts: 18 (`session53604`).
+- Affected CLI binary build: exit 0 (`session49054`).
+
+Candidate matrices, real nested-corruption and error-mapping regressions also
+pass. Scoped nightly formatting and diff checks pass; compiler warnings remain.
+These are owner observations, not runner-issued qualification receipts.
+
+Tests cover 27 public restore cases, restart failure isolation and real scoped
+fsync EIO. Process exits and syscall errors are not power-loss proof. Retained
+outcome corruption is exercised through the real library verification path plus
+catalog mapping tests, not direct CLI staged/published retained-prefix injection.
+Same-uid hostile filesystem races, full resource qualification and contributor
+restore profiles are not established. Earlier rejects/stalls remain negative.
+Original G4.6 and alias `task-1790681494161-as3snp` remain open for purge and
+broader isolation/protocol/upgrade/resource gates. ADR remains Proposed; no
+protected-data change, qualification, default activation or publication.

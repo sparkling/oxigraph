@@ -55,6 +55,8 @@ mod backup;
 mod derived;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod derived_generation;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb", feature = "rdfs"))]
+mod entailment_projection;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod format;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -71,16 +73,6 @@ mod statistics;
 mod text_index;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 pub(crate) mod upgrade;
-#[cfg(all(not(target_family = "wasm"), feature = "spatial-index"))]
-pub use spatial_index::{
-    SpatialError, SpatialIndexProvider, SpatialLimits, SpatialQuery, SpatialResults,
-};
-#[cfg(all(not(target_family = "wasm"), feature = "statistics"))]
-pub use statistics::{
-    DistinctStatisticsLimits, FrequencyBounds, FrequentValue, GraphPredicateStatistics,
-    StatisticsError, StatisticsLimits, StatisticsProvider, StatisticsSnapshot,
-};
-
 pub use crate::storage::TransactionStartControl;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 pub use backup::{
@@ -100,6 +92,13 @@ pub use derived::{
 pub use derived_generation::{
     DerivedFiles, DerivedGeneration, DerivedGenerationError, DerivedGenerationLimits, DerivedIndex,
     DerivedMonitor, DerivedProvider, DerivedRestore, DerivedState, DerivedView, DerivedWriter,
+};
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb", feature = "rdfs"))]
+pub use entailment_projection::{
+    EntailmentProjectionHydrationError, EntailmentProjectionHydrationLimits,
+    EntailmentProjectionHydrationResource, EntailmentProjectionLimits,
+    EntailmentProjectionProvider, EntailmentProjectionSnapshot, EntailmentProjectionState,
+    entailment_projection_identity,
 };
 pub use evaluation_metrics::{
     EvaluationDurationHistogram, EvaluationMetrics, EvaluationOperation, EvaluationOutcome,
@@ -146,6 +145,15 @@ pub use shacl_gate::{
 pub use shacl_receipt::{
     ShaclCommitReceipt, ShaclDisposition, ShaclPolicyDescriptor, ShaclReceiptOutcome,
     ShaclValidationEvidence,
+};
+#[cfg(all(not(target_family = "wasm"), feature = "spatial-index"))]
+pub use spatial_index::{
+    SpatialError, SpatialIndexProvider, SpatialLimits, SpatialQuery, SpatialResults,
+};
+#[cfg(all(not(target_family = "wasm"), feature = "statistics"))]
+pub use statistics::{
+    DistinctStatisticsLimits, FrequencyBounds, FrequentValue, GraphPredicateStatistics,
+    StatisticsError, StatisticsLimits, StatisticsProvider, StatisticsSnapshot,
 };
 #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
 pub use text_index::{
@@ -2419,7 +2427,9 @@ impl KeyedTransaction<'_> {
 ///
 /// let store = Store::new()?;
 /// let transaction = store.start_owned_transaction()?;
-/// let quads = transaction.as_transaction().quads_for_pattern(None, None, None, None);
+/// let quads = transaction
+///     .as_transaction()
+///     .quads_for_pattern(None, None, None, None);
 /// drop(quads);
 /// transaction.commit()?;
 ///
