@@ -1863,6 +1863,15 @@ impl<'a> Reader<'a> {
         column_family: &ColumnFamily,
         key: &[u8],
     ) -> Result<bool, StorageError> {
+        Ok(self.value_len(column_family, key)?.is_some())
+    }
+
+    /// Inspects the value length without copying its bytes.
+    pub fn value_len(
+        &self,
+        column_family: &ColumnFamily,
+        key: &[u8],
+    ) -> Result<Option<usize>, StorageError> {
         let mut value_len = 0;
         let mut found = 0;
         unsafe {
@@ -1909,7 +1918,7 @@ impl<'a> Reader<'a> {
                 }
             }
         }?;
-        Ok(found != 0)
+        Ok((found != 0).then_some(value_len))
     }
 
     #[expect(clippy::iter_not_returning_iterator)]
@@ -2701,6 +2710,25 @@ mod tests {
         assert!(ro_reader.contains_key(&ro_default_cf, b"non-empty")?);
         assert!(!ro_reader.contains_key(&ro_default_cf, b"missing")?);
 
+        Ok(())
+    }
+
+    #[test]
+    #[expect(clippy::panic_in_result_fn)]
+    fn value_len_handles_large_empty_and_missing_values() -> Result<(), StorageError> {
+        let dir = TempDir::new()?;
+        let db = Db::open_read_write(dir.path(), vec![], DbOptions::default())?;
+        let cf = db.column_family("default")?;
+        db.insert(&cf, b"large", &vec![42; 10240])?;
+        db.insert(&cf, b"empty", &[])?;
+        db.flush()?;
+        let reader = db.snapshot();
+        assert_eq!(reader.value_len(&cf, b"large")?, Some(10240));
+        assert_eq!(reader.value_len(&cf, b"empty")?, Some(0));
+        assert_eq!(reader.value_len(&cf, b"missing")?, None);
+        let ro = Db::open_read_only(dir.path(), vec![])?;
+        let ro_cf = ro.column_family("default")?;
+        assert_eq!(ro.snapshot().value_len(&ro_cf, b"large")?, Some(10240));
         Ok(())
     }
 

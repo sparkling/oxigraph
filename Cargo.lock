@@ -1992,6 +1992,7 @@ dependencies = [
  "spareval",
  "spargebra",
  "spargeo",
+ "sparopt",
  "tantivy",
  "tempfile",
  "thiserror 2.0.18",

@@ -1161,20 +1161,53 @@ fn namespace_mapping_value(iri: &NamedNode) -> Vec<u8> {
 }
 
 #[must_use]
-#[cfg_attr(
-    any(
-        feature = "text-index",
-        feature = "spatial-index",
-        feature = "statistics"
-    ),
-    derive(Clone)
-)]
+#[derive(Clone)]
 pub struct RocksDbStorageReader<'a> {
     reader: Reader<'a>,
     storage: RocksDbStorage,
 }
 
 impl<'a> RocksDbStorageReader<'a> {
+    pub fn str_len(&self, key: &StrHash) -> Result<Option<usize>, StorageError> {
+        self.reader
+            .value_len(&self.storage.id2str_cf, &key.to_be_bytes())
+    }
+
+    /// Crate-private analytical access: one ordered seek on an existing quad
+    /// index of this reader's snapshot. Copies at most `buffer.len()` leading
+    /// bytes of the first key that starts with `prefix` and is at or after
+    /// `lower_bound`, and returns that key's full length. No iterator outlives
+    /// the call.
+    pub(crate) fn analytical_seek(
+        &self,
+        encoding: QuadEncoding,
+        prefix: &[u8],
+        lower_bound: &[u8],
+        buffer: &mut [u8],
+    ) -> Result<Option<usize>, StorageError> {
+        let column_family = match encoding {
+            QuadEncoding::Spog => &self.storage.spog_cf,
+            QuadEncoding::Posg => &self.storage.posg_cf,
+            QuadEncoding::Ospg => &self.storage.ospg_cf,
+            QuadEncoding::Gspo => &self.storage.gspo_cf,
+            QuadEncoding::Gpos => &self.storage.gpos_cf,
+            QuadEncoding::Gosp => &self.storage.gosp_cf,
+            QuadEncoding::Dspo => &self.storage.dspo_cf,
+            QuadEncoding::Dpos => &self.storage.dpos_cf,
+            QuadEncoding::Dosp => &self.storage.dosp_cf,
+        };
+        let iter = self
+            .reader
+            .scan_prefix_from(column_family, prefix, lower_bound);
+        iter.status()?;
+        let Some(key) = iter.key() else {
+            return Ok(None);
+        };
+        let copied = key.len().min(buffer.len());
+        buffer[..copied].copy_from_slice(&key[..copied]);
+        Ok(Some(key.len()))
+    }
+
     pub fn check_layout(&self) -> Result<(), StorageError> {
         let version = self
             .reader

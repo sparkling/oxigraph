@@ -2,6 +2,7 @@
 //!
 //! The entry point for SPARQL execution is the [`SparqlEvaluator`] type.
 
+mod analytical;
 mod dataset;
 mod entailment;
 mod error;
@@ -59,6 +60,12 @@ pub use crate::sparql::update::{
 use crate::store::EvaluationOperation;
 use crate::store::evaluation_metrics::{EvaluationObservation, observe_query_result};
 use crate::store::{Store, Transaction};
+pub use analytical::{
+    AnalyticalBudget, AnalyticalDisposition, AnalyticalExecutionError, AnalyticalExecutionLimits,
+    AnalyticalExecutionMode, AnalyticalExecutionOptions, AnalyticalExecutionReport,
+    AnalyticalExecutionSnapshot, AnalyticalFallback, AnalyticalLimitsError, AnalyticalReason,
+    AnalyticalVariableOrder, AnalyticalVariableOrderKind, BoundAnalyticalSparqlQuery,
+};
 pub use spareval::{
     AggregateDistinctBudget, AggregateFunctionAccumulator, BoundedJoinCostModel,
     BoundedJoinPlanning, CancellationReason, CancellationToken, CardinalityFeedback,
@@ -149,6 +156,7 @@ pub struct SparqlEvaluator {
     cancellation_token: Option<CancellationToken>,
     parser: SparqlParser,
     inner: QueryEvaluator,
+    analytical: AnalyticalExecutionOptions,
 }
 
 struct PreparedEvaluator {
@@ -532,6 +540,20 @@ impl SparqlEvaluator {
         self
     }
 
+    /// Configures explicit analytical execution for queries prepared by this
+    /// evaluator or its clones. Only [`PreparedSparqlQuery::on_store_analytical`]
+    /// uses these options; ordinary bindings and updates are unchanged.
+    /// Disabled is the default. There is no automatic mode.
+    pub fn with_analytical_execution(mut self, options: AnalyticalExecutionOptions) -> Self {
+        self.analytical = options;
+        self
+    }
+
+    /// The configured analytical execution options.
+    pub fn analytical_execution(&self) -> AnalyticalExecutionOptions {
+        self.analytical
+    }
+
     /// Injects a cancellation token into SPARQL evaluation.
     ///
     /// It may be used to abort a query or an update cleanly. Updates that own
@@ -756,8 +778,10 @@ impl SparqlEvaluator {
     pub fn for_query(self, query: Query) -> PreparedSparqlQuery {
         let dataset = query.dataset().cloned().map(Into::into).unwrap_or_default();
         let cancellation_token = self.cancellation_token.clone();
+        let analytical = self.analytical;
         let evaluator = self.into_evaluator();
         PreparedSparqlQuery {
+            analytical,
             dataset,
             query,
             evaluator: evaluator.inner,
@@ -856,6 +880,7 @@ impl Default for SparqlEvaluator {
             cancellation_token: None,
             parser: SparqlParser::new(),
             inner: QueryEvaluator::new(),
+            analytical: AnalyticalExecutionOptions::disabled(),
         }
     }
 }
@@ -887,6 +912,7 @@ impl Default for SparqlEvaluator {
 #[derive(Clone)]
 #[must_use]
 pub struct PreparedSparqlQuery {
+    analytical: AnalyticalExecutionOptions,
     evaluator: QueryEvaluator,
     cancellation_token: Option<CancellationToken>,
     #[cfg(feature = "http-client")]
@@ -896,19 +922,9 @@ pub struct PreparedSparqlQuery {
     substitutions: HashMap<Variable, Term>,
 }
 
-#[cfg_attr(
-    all(
-        not(target_family = "wasm"),
-        any(
-            feature = "text-index",
-            feature = "spatial-index",
-            feature = "statistics"
-        )
-    ),
-    expect(
-        clippy::multiple_inherent_impl,
-        reason = "optional index bindings are isolated in their service modules"
-    )
+#[expect(
+    clippy::multiple_inherent_impl,
+    reason = "analytical and optional index bindings are isolated in their modules"
 )]
 impl PreparedSparqlQuery {
     /// The SPARQL semantic feature mode used during evaluation.

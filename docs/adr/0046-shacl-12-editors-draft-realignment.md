@@ -652,10 +652,10 @@ passed), `run-z4Xly4` and `run-bOVV7w` (Clippy, no warnings). The open notes are
 - Ill-formed `sh:parameter` declarations are now accepted silently, because
   parameters are documentation only.
 
-Declared functions are registered only for `sh:sparql` constraint and custom
-component queries. They are not available in node-expression `sh:select`,
-`sh:sparqlExpr`, SRL or SHACL-SPARQL rules. The specification says SHOULD, so
-this is a known gap rather than a violation.
+Historically, declared functions were registered only for `sh:sparql` constraint
+and custom component queries. The September 29 node-expression slice below adds
+`sh:select` and `sh:sparqlExpr`; SRL and SHACL-SPARQL rules remain outside that
+registration scope. The specification says SHOULD, not MUST.
 
 | Command | Receipt | Head | Outcome |
 | --- | --- | --- | --- |
@@ -765,6 +765,34 @@ excluded sets remain intact. E3/E4's bounded evidence transition is accepted;
 smaller language limitations recorded above, provisional ADR-0047 and upstream
 #1276 remain. This ADR stays Accepted, not a full-conformance or whole-programme
 completion claim. No qualification, promotion, publication or push occurred.
+
+### Declared functions in node expressions, 2026-09-29
+
+Outcome `task-1790702694659-vn3q4l` registers shapes-graph declarations on
+node-expression SELECT and scalar SPARQL evaluation. Nested and shape-mediated
+calls share cancellation, remaining deadline and cumulative work ceilings.
+Strictly decreasing recursion bounds and scoped call threads preserve the
+configured default depth without nested query stacks overflowing. Live graph,
+shapes and isolated-dataset copies reserve estimated memory before allocation;
+nested baselines include ancestor reservations, not already-freed sequential
+copies. Query cleanup charges usage and re-raises parked limits even on early
+errors. Existing coarse memory estimates remain estimates, not allocator bounds.
+
+Fresh Sonnet 5.5/high review `35517108-4571-45b4-8efc-5e0360b42c8d` accepts
+the exact six-file candidate after Opus repair and owner fixture corrections.
+Owner revalidated candidate source, supplemental reads, independent identity and
+released custody before integration atop `fb8334091`. Canonical stable-source
+receipts: `run-Pt18ww` all-feature library/integration tests 302/302;
+`run-JqHe5i` no-default library 45/45; `run-Ud0TlK` all-feature build passed.
+The new independent integration file contributes 16 tests. Earlier recursion
+abort, rejected reviews and two failing positive-control fixtures remain negative
+evidence; no limit or protected oracle was weakened. Exact integration and check
+records are `target/engineering-delivery/shacl-memory-integration-35517108-4571-45b4-8efc-5e0360b42c8d.json`
+and `target/engineering-delivery/shacl-memory-canonical-checks.json`.
+
+No pinned 560-case suite rerun, qualification, promotion or publication is claimed.
+Thread-per-call overhead and coarse closure-copy estimates remain limitations.
+E3/E4 acceptance and historical evidence remain unchanged; ADR stays Accepted.
 
 ### Original investigation
 

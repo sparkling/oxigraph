@@ -27,7 +27,14 @@ use std::time::{Duration, Instant};
 #[cfg(not(target_family = "wasm"))]
 use std::{io, thread};
 
-#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+pub(crate) mod analytical;
+#[cfg_attr(
+    not(all(not(target_family = "wasm"), feature = "rocksdb")),
+    expect(
+        dead_code,
+        reason = "shared analytical term encoding uses a subset of physical codecs"
+    )
+)]
 mod binary_encoder;
 mod error;
 mod memory;
@@ -713,15 +720,16 @@ enum StorageReaderKind<'a> {
     expect(clippy::unnecessary_wraps)
 )]
 impl<'a> StorageReader<'a> {
+    /// Byte length of a dictionary string, without copying it.
+    pub(crate) fn str_len(&self, key: &StrHash) -> Result<Option<usize>, StorageError> {
+        match &self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageReaderKind::RocksDb(reader) => reader.str_len(key),
+            StorageReaderKind::Memory(reader) => Ok(reader.str_len(key)),
+        }
+    }
+
     /// Duplicate a reader of the SAME snapshot, never capture a newer one.
-    #[cfg(all(
-        not(target_family = "wasm"),
-        any(
-            feature = "text-index",
-            feature = "spatial-index",
-            feature = "statistics"
-        )
-    ))]
     pub(crate) fn clone_for_index_query(&self) -> Self {
         Self {
             kind: match &self.kind {

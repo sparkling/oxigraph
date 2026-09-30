@@ -5,7 +5,7 @@
 - Updated: 2026-09-29
 - Deciders: Oxigraph parity programme
 - Implementation status: bounded pure lifecycle model and opt-in Linux
-  create/reconcile/open/quiesce catalog implemented below. Each current server process
+  create/reconcile/open/quiesce/recovery-backed tombstone catalog implemented below. Each current server process
   still owns one `Store`; no administrative lifecycle is activated
 - Programme task: `task-1787728710646-enu8i1` (G4.6)
 - **Depends on**:
@@ -384,3 +384,47 @@ Original G4.6 and migration alias remain open for recovery-backed tombstone,
 restore/purge, protocol/isolation and resource gates. This accepts bounded
 ordinary quiesce only, not qualification or production readiness. ADR remains
 Proposed; no protected-data change, promotion or publication follows.
+
+## Bounded recovery-backed tombstone (2026-09-29)
+
+The opt-in Linux catalog now creates an actual ADR-0022 backup receipt before
+moving a drained repository to manager-owned trash. Generation CAS, injected
+logical time and nonregressing retries bind retention. Guards precede native
+opens; only proven manager-owned checkpoint hardlinks receive an exception.
+Capacity reserves backups, trash and catalog publication before mutation.
+`renameat2(RENAME_NOREPLACE)` refuses occupied destinations without fallback.
+Restart compares bounded ordered quads, named graphs (including empty graphs)
+and namespaces against the verified package, then syncs repos/trash/root before
+sealing the catalog. Ambiguous source-plus-trash remains nonready and inventoried.
+Repository-local pre-catalog refusals isolate that entry; uncertain attempted
+catalog writes poison the manager and fail open. No HTTP/admin/purge activation.
+
+Fresh Sonnet 5.5/high review `3cd4c21c-2954-42ff-82fa-847769c34cb5`, worker
+`746cc154-526a-4eed-b83f-21e7b6abd645`, accepted the exact four-file candidate.
+Response SHA256:
+`16371c2033df64d712a58c7c139d57214d8234e470b004b22814ff439ea78bf3`.
+Owner verified 15,237 unchanged inputs, nine accepted intervening paths, nine
+submodule pins, 31 supplemental reads and stopped native actions before applying.
+Evidence: `target/engineering-delivery/tombstone-current-integration-3cd4c21c-2954-42ff-82fa-847769c34cb5.json`.
+
+Canonical stable-source receipts: `run-kUYA8Y` no-default 172 tests,
+`run-EsCIZM` default 172 tests, `run-JLdOoL` affected CLI binary build.
+Each matrix includes 84 library, 16 catalog, 22 quiesce, 19 tombstone and
+31 lifecycle tests. Candidate focused 19 and both 172-test matrices also pass;
+scoped formatter and diff checks pass. Warnings remain; no clean-lint claim.
+
+Original failed workflow-P5kbdK, rejected reviews and Opus repairs remain
+negative/recovery evidence, never inherited workflow acceptance. The earlier
+no-default at-rest count failure remains unexplained; no ceiling or oracle was
+weakened. Final Opus repair `a2457e38-6f8b-4a79-8394-dd6d9456455d` repaired
+recovery sync order and repository-local refusal isolation before fresh review.
+
+Limits: comparison binds RDF content, not governed lineage/outbox/receipt
+sequence or source RocksDB ID/sequence; directory identity and format checks
+remain. Concurrent same-uid filesystem adversaries are excluded. Normal sealing
+uses inode continuity, not another post-rename content comparison. Definite
+TombstoneIntent refusal may leave retry-only dead ends and retained debris;
+there is no abandon operation. Phase hooks/process exits are not power-loss
+proof. Restore/purge, protocol/isolation, upgrade and resource gates remain open
+on the same G4.6 task and migration alias. ADR stays Proposed; no qualification,
+default promotion, protected-data mutation or publication follows.
