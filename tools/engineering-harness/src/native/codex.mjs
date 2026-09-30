@@ -14,10 +14,11 @@ export function codexInvocation({
   prompt,
   reasoningEffort = null,
   workerSchemaVersion = 1,
+  resolveExecutable = resolveNativeExecutable,
 }) {
   const validatedEffort = validateAstraReasoningEffort(model, reasoningEffort);
   const environment = nativeChildEnvironment();
-  const attestation = resolveNativeExecutable("codex");
+  const attestation = resolveExecutable("codex");
   const args = [
     "exec",
     "--sandbox",

@@ -19,6 +19,10 @@ const WORK_CLASS_EFFORT = Object.freeze({
 });
 
 export function validateAstraReasoningEffort(model, effort) {
+  if (model === "gpt-6.1-sol") {
+    if (effort !== "high") throw new Error("gpt-6.1-sol requires high reasoning effort");
+    return effort;
+  }
   if (model !== ASTRA_MODEL) {
     if (effort === undefined || effort === null) return null;
     throw new Error("explicit Astra reasoning effort requires gpt-6-astra");

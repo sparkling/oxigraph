@@ -82,3 +82,10 @@ test("Astra worker guidance is additive and leaves legacy prompts unchanged", ()
   assert.match(guidance.join("\n"), /continue without asking questions/u);
   assert.match(guidance.join("\n"), /structured response concise/u);
 });
+
+test("Sol 6.1 admits exact high effort without changing legacy Astra selections", () => {
+  assert.equal(validateAstraReasoningEffort("gpt-6.1-sol", "high"), "high");
+  for (const effort of [null, undefined, "low", "medium", "xhigh", "max", "ultra"]) {
+    assert.throws(() => validateAstraReasoningEffort("gpt-6.1-sol", effort), /requires high/);
+  }
+});

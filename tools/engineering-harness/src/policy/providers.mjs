@@ -8,6 +8,7 @@ import {
   claudeWorkerOutputSchema,
   workerOutputSchemaPath,
   workerOutputV2SchemaPath,
+  ordinaryWorkerOutputSchemaPath,
 } from "../native/worker-schema.mjs";
 import { validateAstraReasoningEffort } from "./astra-routing.mjs";
 
@@ -195,7 +196,8 @@ export function validateProviderInvocation({
     const suppliedSchemaPath = args[args.indexOf("--output-schema") + 1];
     if (
       suppliedSchemaPath !== workerOutputSchemaPath &&
-      suppliedSchemaPath !== workerOutputV2SchemaPath
+      suppliedSchemaPath !== workerOutputV2SchemaPath &&
+      suppliedSchemaPath !== ordinaryWorkerOutputSchemaPath
     ) {
       throw new Error("codex invocation selected an unsupported output schema");
     }

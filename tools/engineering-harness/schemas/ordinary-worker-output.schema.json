@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "verdict", "findings", "changes"],
+  "properties": {
+    "summary": { "type": "string" },
+    "verdict": { "type": "string", "enum": ["ACCEPT", "REJECT", "INCONCLUSIVE"] },
+    "findings": { "type": "array", "items": { "type": "string" } },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "content"],
+        "properties": { "path": { "type": "string" }, "content": { "type": "string" } }
+      }
+    }
+  }
+}

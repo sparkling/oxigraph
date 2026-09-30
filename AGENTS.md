@@ -1,11 +1,13 @@
 # Oxigraph fork instructions
 
-## Sonnet ordinary delivery and GCP resumption (2026-09-29 owner amendment)
+## Sol 6.1 ordinary delivery and GCP resumption (2026-09-30 owner amendment)
 
 Ordinary planning, implementation and fresh independent review now default to
-native `cc/claude-sonnet-5-5[1m]` / high through the configured 9router subscription.
+native `gpt-6.1-sol` / high through the configured 9router subscription.
 Retain explicit task/model pins, stronger review policies, Opus/high capability
 repair, Codex coordination, isolated parallel candidates and native learning.
+Documentation uses Sol 6.1/high too; confirmed nonexecuted HTTP402 credit fallback
+uses that same native route. Historical Sonnet/Sol effort pins remain readable.
 Direct API remains explicitly selectable under the existing per-request policy;
 it is no longer the ordinary default. Historical receipts are not rewritten.
 The owner authorizes main programme resumption on the Oxigraph GCP host, with

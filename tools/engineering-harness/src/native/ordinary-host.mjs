@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { nativeChildEnvironment } from "./environment.mjs";
 import { resolveNativeExecutable } from "./executable.mjs";
+import { codexInvocation } from "./codex.mjs";
 import { ordinaryClaudeStreamArgs, startOrdinaryClaudeStream, forwardOrdinaryStreamSignals } from "./ordinary-stream.mjs";
 import { workerOutput } from "../workflow-output.mjs";
 
@@ -17,33 +19,38 @@ const schema = { type: "object", additionalProperties: false, required: ["summar
 } };
 
 /** One ordinary bridge invocation; caller owns packet, supplemental reads and recovery. */
-export async function runOrdinaryClaudeRequest({
+export async function runOrdinaryNativeRequest({
   request, requestPath, prompt, directory, reads = [], readSource, driverUrl,
   resolveExecutable = resolveNativeExecutable, streamLimits, observation = value => console.log(JSON.stringify(value)),
 }) {
   const { payload, action, ...identity } = request;
   assert.equal(action, "native-worker");
   assert.equal(payload.route.transport, "native-subscription");
-  assert.ok(["cc/claude-sonnet-5-5[1m]", "cc/claude-opus-5-5[1m]"].includes(payload.route.model));
+  assert.ok(["gpt-6.1-sol", "cc/claude-sonnet-5-5[1m]", "cc/claude-opus-5-5[1m]"].includes(payload.route.model));
   assert.equal(payload.route.effort, "high");
   assert.deepEqual(JSON.parse(readFileSync(requestPath, "utf8")), request);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const save = (name, value) => writeFileSync(join(directory, name), JSON.stringify(value, null, 2), { flag: "wx", mode: 0o600 });
-  const executable = resolveExecutable("claude");
-  const argv = ordinaryClaudeStreamArgs(["--print", "--safe-mode", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+  const client = payload.route.model === "gpt-6.1-sol" ? "codex" : "claude-code";
+  // Keep Codex's existing temporary-root policy even when bridge receipts live in target/.
+  const executionRoot = client === "codex" ? mkdtempSync(join(tmpdir(), "oxigraph-ordinary-codex-")) : directory;
+  const invocation = client === "codex" ? codexInvocation({ executionRoot, model: payload.route.model,
+    reasoningEffort: payload.route.effort, prompt, workerSchemaVersion: "ordinary", resolveExecutable }) : undefined;
+  const executable = invocation?.attestation ?? resolveExecutable("claude");
+  const argv = invocation?.args ?? ordinaryClaudeStreamArgs(["--print", "--safe-mode", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
     "--model", payload.route.model, "--effort", payload.route.effort, "--permission-mode", "dontAsk", "--tools", "", "--output-format", "json",
     "--json-schema", JSON.stringify(schema), "--no-chrome", "--disable-slash-commands"]);
-  const environment = nativeChildEnvironment("claude");
+  const environment = invocation?.environment ?? nativeChildEnvironment("claude");
   // All fallible metadata reads precede spawn; later host exceptions drain the child.
   const start = { runId: request.runId, requestId: request.requestId, taskId: request.taskId, role: payload.route.role,
-    client: "claude-code", model: payload.route.model, effort: payload.route.effort, startedAt: new Date().toISOString(),
+    client, model: payload.route.model, effort: payload.route.effort, startedAt: new Date().toISOString(),
     executableSha256: executable.sha256, driverSha256: sha(readFileSync(driverUrl)),
     hostHelperSha256: sha(readFileSync(new URL(import.meta.url))),
     streamHelperSha256: sha(readFileSync(new URL("./ordinary-stream.mjs", import.meta.url))),
-    argv, outputLimit: Number(environment.CLAUDE_CODE_MAX_OUTPUT_TOKENS), promptSha256: sha(prompt),
+    argv, executionRoot, ...(client === "claude-code" ? { outputLimit: Number(environment.CLAUDE_CODE_MAX_OUTPUT_TOKENS) } : {}), promptSha256: sha(prompt),
     requestSha256: sha(readFileSync(requestPath)), reads: reads.map(({ content, ...r }) => r) };
-  const execution = startOrdinaryClaudeStream({ executable: executable.path, args: argv, cwd: directory, environment, stdin: prompt,
-    identity: request, progressPath: join(directory, "progress.jsonl"), limits: streamLimits,
+  const execution = startOrdinaryClaudeStream({ executable: executable.path, args: argv, cwd: executionRoot, environment, stdin: prompt,
+    identity: request, progressPath: join(directory, "progress.jsonl"), limits: streamLimits, client,
     onProgress: progress => observation({ ...progress, type: "native-progress", event: progress.type }) });
   forwardOrdinaryStreamSignals(execution);
   start.pid = execution.pid;
@@ -54,7 +61,7 @@ export async function runOrdinaryClaudeRequest({
     const { exitCode: code, stdout, stderr } = terminal;
     save("terminal.json", { ...terminal, code, endedAt: new Date().toISOString() });
     const fail = (classification, error) => {
-      const failure = { ...identity, client: "claude-code", model: payload.route.model,
+      const failure = { ...identity, client, model: payload.route.model,
         classification, custodyReleased: terminal.custodyReleased, pid: terminal.pid,
         ...(error === undefined ? {} : { error }) };
       save("failure.json", failure);
@@ -81,14 +88,20 @@ export async function runOrdinaryClaudeRequest({
     if ((code !== 0 || envelope?.is_error) && /response exceeded .* output token maximum/.test(error)) {
       classification = "output-token-limit";
       if (typeof envelope?.session_id !== "string" || !envelope.session_id) return fail(classification, error);
-      result = { status: "completed", client: "claude-code", workerId: envelope.session_id, model: payload.route.model,
+      result = { status: "completed", client, workerId: envelope.session_id, model: payload.route.model,
         effort: payload.route.effort, summary: error, verdict: "INCONCLUSIVE", findings: [], changes: [] };
     } else if (code !== 0 || envelope?.is_error) {
       if (!outage(error)) return fail("native-client-error", error);
       classification = "native-unavailable";
-      result = { status: "unavailable", client: "claude-code", model: payload.route.model, effort: payload.route.effort, error };
+      result = { status: "unavailable", client, model: payload.route.model, effort: payload.route.effort, error };
     } else {
-      result = workerOutput({ ...envelope.structured_output ?? JSON.parse(envelope.result), status: "completed", client: "claude-code",
+      let structured = envelope.structured_output;
+      if (client === "codex") {
+        const path = join(executionRoot, "last-message.json");
+        assert.ok(statSync(path).isFile() && statSync(path).size <= 1024 * 1024, "Native result exceeds structural limit");
+        structured = JSON.parse(readFileSync(path, "utf8"));
+      }
+      result = workerOutput({ ...structured ?? JSON.parse(envelope.result), status: "completed", client,
         workerId: envelope.session_id, model: payload.route.model, effort: payload.route.effort }, payload.route, payload.files.map(f => f.path));
     }
     const response = { ...identity, result };
@@ -103,3 +116,6 @@ export async function runOrdinaryClaudeRequest({
     throw error;
   }
 }
+
+// Existing host drivers retain their import while routing through either native client.
+export const runOrdinaryClaudeRequest = runOrdinaryNativeRequest;

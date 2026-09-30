@@ -36,17 +36,17 @@ test("source drift or missing process observation prevents command success", () 
   assert.equal(deliveryStatus(before, before, null, null).status, "failed");
   assert.equal(deliveryStatus(before, before, { passed: true }, "cannot read artifact").status, "failed");
 });
-test("ordinary role defaults use exact Sonnet 5.5 native routes and retain Opus escalation", () => {
+test("ordinary role defaults use exact Sol 6.1/high native routes and retain Opus escalation", () => {
   for (const [role, model, effort] of [
-    ["plan", "cc/claude-sonnet-5-5[1m]", "high"],
-    ["implement", "cc/claude-sonnet-5-5[1m]", "high"], ["documentation", "cc/claude-sonnet-5-5[1m]", "medium"],
-    ["review", "cc/claude-sonnet-5-5[1m]", "high"], ["difficult", "cc/claude-opus-5-5[1m]", "high"],
+    ["plan", "gpt-6.1-sol", "high"],
+    ["implement", "gpt-6.1-sol", "high"], ["documentation", "gpt-6.1-sol", "high"],
+    ["review", "gpt-6.1-sol", "high"], ["difficult", "cc/claude-opus-5-5[1m]", "high"],
     ["decision", "cc/claude-opus-5-5[1m]", "high"],
   ]) {
     const route = routeDelivery({ role, taskId, completionCheck });
     assert.equal(route.model, model);
     assert.equal(route.effort, effort);
-    assert.deepEqual(route.nativeDispatch, model.startsWith("deepseek/") ? null : { provider: "claude", model, effort });
+    assert.deepEqual(route.nativeDispatch, { provider: model.startsWith("gpt-") ? "codex" : "claude", model, effort });
     assert.equal(route.transport, model.startsWith("deepseek/") ? "openrouter-api" : "native-subscription");
     assert.equal(route.selection, "role-policy");
     assert.equal(route.status, "planned-not-dispatched");
@@ -76,7 +76,7 @@ test("unqualified aliases and unsupported models remain refused", () => {
   }
 });
 test("authorized Codex routes retain exact effort and native transport", () => {
-  for (const model of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra"]) {
+  for (const model of ["gpt-6.1-sol", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra"]) {
     const route = routeDelivery({ role: "implement", taskId, completionCheck, model, effort: "high", reason: "owner authorized native route" });
     assert.equal(route.transport, "native-subscription");
     assert.deepEqual(route.nativeDispatch, { provider: "codex", model, effort: "high" });
@@ -232,7 +232,7 @@ test("CLI route is inspectable without any model execution; invalid run rejects 
   const cli = "tools/engineering-harness/bin/oxigraph-delivery.mjs";
   const route = JSON.parse(execFileSync(process.execPath, [cli, "route", "--task", taskId,
     "--role", "implement", "--check", completionCheck], { encoding: "utf8" }));
-  assert.deepEqual(route.nativeDispatch, { provider: "claude", model: "cc/claude-sonnet-5-5[1m]", effort: "high" });
+  assert.deepEqual(route.nativeDispatch, { provider: "codex", model: "gpt-6.1-sol", effort: "high" });
   assert.equal(route.apiDispatch, null);
   assert.throws(() => execFileSync(process.execPath, [cli, "run", "--task", taskId, "--", "cargo", "publish", "--locked"], { stdio: "pipe" }));
 });

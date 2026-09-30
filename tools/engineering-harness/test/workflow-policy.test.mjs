@@ -76,15 +76,15 @@ test("spec role overrides reject unqualified models before any host request", as
   }));
 });
 
-test("ordinary stages use Sonnet 5.5 native role defaults", async () => {
+test("ordinary stages use Sol 6.1/high native role defaults", async () => {
   const fixtureState = setup();
   const routes = [];
   const host = updateNativeResults(fixtureState, (_result, request) => routes.push(request.payload.route));
   const result = await runWorkflow(spec, host, fixtureState.io);
   assert.equal(result.status, "ready-for-owner-review");
   assert.deepEqual(routes.map(({ role, model, effort }) => [role, model, effort]), [
-    ["implement", "cc/claude-sonnet-5-5[1m]", "high"],
-    ["review", "cc/claude-sonnet-5-5[1m]", "high"],
+    ["implement", "gpt-6.1-sol", "high"],
+    ["review", "gpt-6.1-sol", "high"],
   ]);
 });
 

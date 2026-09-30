@@ -84,12 +84,31 @@ function substantive(event, tools) {
   return changed;
 }
 
+function codexSubstantive(event, items) {
+  const item = event?.item;
+  if (!item || typeof item.id !== "string" || item.id.length > 256) return false;
+  if (["agent_message", "reasoning"].includes(item.type) && ["item.updated", "item.completed"].includes(event.type)) {
+    if (typeof item.text !== "string" || !item.text.length) return false;
+    const digest = createHash("sha256").update(item.text).digest("hex");
+    if (items.get(item.id) === digest) return false;
+    items.set(item.id, digest);
+  } else if (["command_execution", "mcp_tool_call", "web_search"].includes(item.type) &&
+      ["item.started", "item.completed"].includes(event.type)) {
+    const state = `${item.type}:${event.type}`;
+    if (items.get(item.id) === state || items.get(item.id)?.endsWith(":item.completed")) return false;
+    items.set(item.id, state);
+  } else return false;
+  if (items.size > 4096) throw new Error("tool-state-limit");
+  return true;
+}
+
 /** Ordinary host only. No qualification authority, retry, routing or scheduler. */
 export function startOrdinaryClaudeStream({
   executable, args, cwd, environment, stdin, identity, progressPath, signal,
-  limits: overrides = {}, onProgress,
+  limits: overrides = {}, onProgress, client = "claude-code",
 }) {
   if (process.platform === "win32") throw new Error("Ordinary native streaming requires POSIX process groups");
+  if (!["claude-code", "codex"].includes(client)) throw new Error("Invalid ordinary native client");
   const limits = { ...ordinaryStreamLimits, ...overrides };
   if (Object.keys(limits).some(key => !Object.hasOwn(ordinaryStreamLimits, key)) ||
       Object.values(limits).some(value => !Number.isSafeInteger(value) || value <= 0) ||
@@ -117,6 +136,8 @@ export function startOrdinaryClaudeStream({
   const stderrHash = createHash("sha256");
   const terminationErrors = [];
   const toolState = { active: new Set(), completed: new Set(), thinking: new Set() };
+  const codexItems = new Map();
+  let threadId;
   let resolve;
   const completion = new Promise(done => { resolve = done; });
   const groupGone = () => {
@@ -200,7 +221,7 @@ export function startOrdinaryClaudeStream({
     let event;
     try { event = JSON.parse(bytes.toString("utf8")); } catch { return; }
     let active;
-    try { active = substantive(event, toolState); }
+    try { active = client === "codex" ? codexSubstantive(event, codexItems) : substantive(event, toolState); }
     catch { stop("output-limit"); return; }
     if (active) {
       if (terminal !== undefined) { stop("invalid-output"); return; }
@@ -208,7 +229,18 @@ export function startOrdinaryClaudeStream({
       activityCount += 1;
       if (warned) { warned = false; report("activity-resumed"); }
     }
-    if (event?.type === "result") {
+    if (client === "codex" && event?.type === "thread.started") {
+      if (threadId !== undefined || typeof event.thread_id !== "string" || !/^[a-zA-Z0-9-]{1,128}$/.test(event.thread_id)) {
+        stop("invalid-output"); return;
+      }
+      threadId = event.thread_id;
+    }
+    if (client === "codex" && ["turn.completed", "turn.failed"].includes(event?.type)) {
+      if (terminal !== undefined || threadId === undefined) { stop("invalid-output"); return; }
+      terminal = true;
+      stdout = JSON.stringify({ session_id: threadId, is_error: event.type === "turn.failed",
+        ...(event.error?.message ? { result: event.error.message } : {}) });
+    } else if (client === "claude-code" && event?.type === "result") {
       if (terminal !== undefined) { stop("invalid-output"); return; }
       terminal = true;
       // Preserve only terminal authority. Never retain reasoning/tool stream bodies.

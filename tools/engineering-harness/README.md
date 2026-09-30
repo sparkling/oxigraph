@@ -1,6 +1,6 @@
 # Oxigraph engineering harness
 
-Current ordinary-development guide, updated 2026-09-29.
+Current ordinary-development guide, updated 2026-09-30.
 [AGENTS.md](../../AGENTS.md) and
 [ADR-0049](../../docs/adr/0049-upstream-first-parallel-hybrid-delivery.md)
 govern current models, ownership and proof status. This guide supersedes old
@@ -17,15 +17,22 @@ WIP remains preserved, not accepted.
 ## Configured subscription transport
 
 Ordinary planning, implementation and fresh independent review default to native
-`cc/claude-sonnet-5-5[1m]` / high through configured 9router. Explicit API task pins
+`gpt-6.1-sol` / high through configured 9router, including documentation roles. Explicit API task pins
 remain supported, but are not defaults. Capability/output repair uses
 native `cc/claude-opus-5-5[1m]` / high. Only confirmed nonexecuted HTTP402 credit
-rejection permits lighter native Sonnet/Sol fallback, medium first.
+rejection permits native Sol 6.1/high fallback.
 Auth errors, unknown completion and local request-cost refusal are not fallback.
 Native unavailability stops with exact client/model/error.
 
-Ordinary Claude host drivers use `runOrdinaryClaudeRequest` from
-`src/native/ordinary-host.mjs`, backed by `src/native/ordinary-stream.mjs`. Keep
+Ordinary host drivers use `runOrdinaryNativeRequest` from
+`src/native/ordinary-host.mjs`, backed by existing `codexInvocation` and
+`src/native/ordinary-stream.mjs`. The old `runOrdinaryClaudeRequest` import remains
+compatible and dispatches the selected native client. Codex uses its ordinary
+output-schema projection, actual thread ID and bounded `last-message.json`;
+its private temporary execution root preserves existing Codex path policy even
+when bridge receipts live in repository `target/`. `start.json` records that root.
+Claude retains its terminal structured envelope. Both pass `workerOutput` before
+host response. Keep
 `nativeChildEnvironment('claude')` unchanged. The existing GCP driver uses this
 helper between invocations; frozen calls are never retrofitted. It streams partial
 events, warns at 120s without substantive content and cancels at 300s, drains its
@@ -37,14 +44,16 @@ failure, not provider unavailability; retain failed receipts/candidates and let
 owner decide recovery. No automatic retry or accepted result follows.
 Text/reasoning/structured deltas and genuine tool start/matched result count as
 activity; heartbeat traffic, duplicate starts and unmatched results do not.
+Codex counts changed text/reasoning items and genuine tool lifecycle events;
+correlation stores hashes and IDs, never stream bodies.
 Warnings/stalls appear on the existing driver console as redacted
 `native-progress` records as well as the private journal. The tracked host adapter
 owns native argv/environment, signals, capture and receipts; reproduce wiring
 without copying the ignored GCP driver's historical task-specific prompt additions:
 
 ```js
-import { runOrdinaryClaudeRequest } from './tools/engineering-harness/src/native/ordinary-host.mjs';
-const outcome = await runOrdinaryClaudeRequest({
+import { runOrdinaryNativeRequest } from './tools/engineering-harness/src/native/ordinary-host.mjs';
+const outcome = await runOrdinaryNativeRequest({
   request, requestPath, prompt: request.payload.prompt,
   directory, reads: [], readSource, driverUrl: new URL(import.meta.url),
 });
@@ -104,8 +113,9 @@ Any attempted API stage excludes the whole hybrid run from native Router trainin
 Ordinary observations remain unpaired; only explicit integrator-owned `compare`
 callbacks produce controlled equal-packet evidence. Five common inputs across all
 eligible routes and full predicted quality are required for upstream Router choice.
-Only unpinned confirmed402 Sonnet/Sol fallback adapts; Sonnet 5.5 defaults, explicit
-pins and Opus repair stay unchanged. No latency claim or live training is implied.
+Confirmed402 fallback uses Sol 6.1/high; ordinary observations do not reselect its
+default. Explicit pins and Opus repair stay unchanged. Historical paired routes
+remain readable; no latency claim or live training is implied.
 
 `ordinary-policy.mjs` composes upstream Flywheel with injected proposer/evaluator
 and signer; `ordinary-policy-evaluator.mjs` executes actual isolated workflows.
@@ -204,6 +214,11 @@ authoring and fresh review for two scoped harness regressions, records PIDs/timi
 and leaves canonical integration to owner. It is proof tooling, not a production
 MCP bridge or scheduler. Requires current native-execution authority; no Rust/cloud
 work. ADR-0049 pins successful overlap and separate accepted-source handoff evidence.
+
+Current-route local smoke: `node tools/engineering-harness/test/support/prove-ordinary-sol61.mjs --run`.
+It invokes the tracked ordinary bridge through configured Codex Sol 6.1/high,
+validates structured readiness and custody release, and retains private evidence
+under `/tmp`. It proves local route execution, not cloud adoption or product acceptance.
 
 `src/ordinary-pool.mjs` exports `runOrdinaryBatch(entries, {maxConcurrency, signal})`.
 Each entry supplies unique ID, validated workflow spec, host callback, optional

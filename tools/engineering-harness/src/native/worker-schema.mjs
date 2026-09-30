@@ -11,10 +11,12 @@ export const workerOutputV2SchemaPath = join(
   harnessRoot,
   "schemas/worker-output-v2.schema.json",
 );
+export const ordinaryWorkerOutputSchemaPath = join(harnessRoot, "schemas/ordinary-worker-output.schema.json");
 
 export function workerOutputSchemaPathForVersion(schemaVersion = 1) {
   if (schemaVersion === 1) return workerOutputSchemaPath;
   if (schemaVersion === 2) return workerOutputV2SchemaPath;
+  if (schemaVersion === "ordinary") return ordinaryWorkerOutputSchemaPath;
   throw new Error(`unsupported worker output schema version: ${schemaVersion}`);
 }
 
