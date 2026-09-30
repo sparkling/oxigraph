@@ -28,6 +28,9 @@ test("ordinary packet prompts preserve root-only mutation and independent review
   const result = await runWorkflow(spec, host, fixtureState.io);
   assert.deepEqual(result.implementationWorkerIds, ["implementation"]);
   assert.match(instructions.get("implement"), /Root alone applies changes/);
+  assert.match(instructions.get("implement"), /Implementation ACCEPT means the proposed source is ready for runner-owned checks and fresh independent review/);
+  assert.match(instructions.get("implement"), /it never claims those later stages already passed/);
+  assert.match(instructions.get("implement"), /report INCONCLUSIVE when source evidence prevents a complete proposal/);
   assert.match(instructions.get("review"), /independent of all implementationWorkerIds/);
 });
 

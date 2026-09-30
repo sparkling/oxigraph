@@ -327,7 +327,7 @@ export async function runWorkflow(rawSpec, host, io = {}) {
     const selection = feedback ? { model: "cc/claude-opus-5-5[1m]", effort: "high", reason: "capability/output repair" } : spec.implement;
     const route = routeDelivery({ ...selection, role: "implement", taskId: spec.taskId, completionCheck: spec.completionCheck });
     const proposal = await ordinaryStage(route, { goal: spec.goal, completionCheck: spec.completionCheck,
-      files: beforeFiles, sourceSha256: digest(before), feedback, plan, instructions: "Read-only packet worker. Propose full UTF-8 file contents as changes [{path, content}] against this exact source. Preserve selected model and transport. Never write files or run builds/tests. Root alone applies changes. No publication." }, request, runtime);
+      files: beforeFiles, sourceSha256: digest(before), feedback, plan, instructions: "Read-only packet worker. Propose full UTF-8 file contents as changes [{path, content}] against this exact source. Preserve selected model and transport. Never write files or run builds/tests. Root alone applies changes. Implementation ACCEPT means the proposed source is ready for runner-owned checks and fresh independent review; it never claims those later stages already passed. Pending runner-owned validation alone is not INCONCLUSIVE; report INCONCLUSIVE when source evidence prevents a complete proposal. No publication." }, request, runtime);
     stable(before);
     for (const workerId of participantIds(proposal)) workerIds.add(workerId);
     if (proposal.verdict !== "ACCEPT") throw new Error(`Implementation ${proposal.verdict}: ${proposal.summary}`);
