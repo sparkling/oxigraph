@@ -812,13 +812,31 @@ fn repeated_real_reopen_cycles_preserve_data_at_file_admission_ceiling()
                     "must exercise repeated successful real opens"
                 );
                 let db = database(dir.path());
-                assert!(fs::read_dir(&db)?.count() > limits().store_files);
-                let before = file_bytes(&db);
-                assert!(matches!(
-                    manager.open_repository(&id("A"), OpenMode::ReadOnly),
-                    Err(CatalogError::Limit)
-                ));
-                assert_eq!(file_bytes(&db), before);
+                if fs::read_dir(&db)?.count() > limits().store_files {
+                    let before = file_bytes(&db);
+                    assert!(matches!(
+                        manager.open_repository(&id("A"), OpenMode::ReadOnly),
+                        Err(CatalogError::Limit)
+                    ));
+                    assert_eq!(file_bytes(&db), before);
+                } else {
+                    // The live guard counts SSTs removed during compaction too.
+                    // Closing the refused Store can leave fewer files than it saw.
+                    let reader = manager.open_repository(&id("A"), OpenMode::ReadOnly)?;
+                    for prior in 0..completed {
+                        assert!(reader.contains(&Quad::new(
+                            NamedNode::new_unchecked(format!("urn:cycle:{prior}")),
+                            NamedNode::new_unchecked("urn:p"),
+                            NamedNode::new_unchecked("urn:o"),
+                            GraphName::DefaultGraph,
+                        ))?);
+                    }
+                    drop(reader);
+                    assert_eq!(
+                        oxigraph::store::Store::open_read_only(&db)?.len()?,
+                        completed
+                    );
+                }
                 break;
             }
         };

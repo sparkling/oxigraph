@@ -1,3 +1,6 @@
+#[path = "schema_upgrade_publication_fsync_tests.rs"]
+mod publication_fsync;
+
 use super::*;
 use crate::model::{GraphName, NamedNode, Quad};
 use crate::store::{
@@ -1201,10 +1204,9 @@ fn schema_upgrade_start_process_helper() -> TestResult {
 /// whose resolved path equals that value exactly (not a prefix). Unset,
 /// empty, or too long for the shim's buffer, both pass straight through
 /// without even resolving the path, so every `ENOSPC`-only caller behaves
-/// as before. Unlike the `write` path, this addition keeps no mutable
-/// state at all: every call re-reads the variable, resolves the path into
-/// its own stack buffer and looks up the real symbol into a local, so
-/// concurrent RocksDB threads syncing at the same time cannot race on it.
+/// as before. Optional `FSYNC_SHIM_FAIL_ON_MATCH` selects one positive
+/// matching-call ordinal across fsync/fdatasync; its counter is atomic.
+/// Without it every exact match still fails, preserving earlier tests.
 #[expect(
     clippy::print_stderr,
     reason = "diagnostic for a CI host missing a C compiler, opt-in test infrastructure only"
@@ -1214,6 +1216,8 @@ fn compile_enospc_shim(directory: &Path, name: &str) -> TestResult<Option<PathBu
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <errno.h>
+#include <limits.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1292,14 +1296,38 @@ static int fd_is_exact_fsync_path(int fd) {
 
 typedef int (*fsync_fn)(int);
 
+static _Atomic unsigned long fsync_matches = 0;
+
+static int inject_exact_fsync(int fd) {
+    if (!fd_is_exact_fsync_path(fd)) return 0;
+    const char *value = getenv("FSYNC_SHIM_FAIL_ON_MATCH");
+    if (!value) return 1;
+    unsigned long wanted = 0;
+    if (!*value) return 0;
+    for (const char *p = value; *p; ++p) {
+        if (*p < '0' || *p > '9') return 0;
+        unsigned long digit = (unsigned long)(*p - '0');
+        if (wanted > (ULONG_MAX - digit) / 10) return 0;
+        wanted = wanted * 10 + digit;
+    }
+    if (!wanted) return 0;
+    unsigned long previous = atomic_load_explicit(&fsync_matches, memory_order_relaxed);
+    for (;;) {
+        if (previous == ULONG_MAX) return 0;
+        if (atomic_compare_exchange_weak_explicit(&fsync_matches, &previous,
+                previous + 1, memory_order_relaxed, memory_order_relaxed))
+            return previous + 1 == wanted;
+    }
+}
+
 int fsync(int fd) {
-    if (fd_is_exact_fsync_path(fd)) { errno = EIO; return -1; }
+    if (inject_exact_fsync(fd)) { errno = EIO; return -1; }
     fsync_fn real = (fsync_fn)dlsym(RTLD_NEXT, "fsync");
     return real(fd);
 }
 
 int fdatasync(int fd) {
-    if (fd_is_exact_fsync_path(fd)) { errno = EIO; return -1; }
+    if (inject_exact_fsync(fd)) { errno = EIO; return -1; }
     fsync_fn real = (fsync_fn)dlsym(RTLD_NEXT, "fdatasync");
     return real(fd);
 }
