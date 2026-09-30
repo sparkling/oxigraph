@@ -74,6 +74,10 @@ test("owner accepts settled parent and starts accepted-source child before unrel
     await notified.promise;
     assert.equal(siblingRunning, true);
     assert.equal(candidate.integration, "pending-owner-acceptance");
+    const unacceptedSnapshot = createOrdinaryWorkspace();
+    assert.equal(unacceptedSnapshot.base.head, parent.base.head);
+    assert.equal(readFileSync(join(unacceptedSnapshot.root, path), "utf8"), original);
+    assert.notEqual(readFileSync(join(unacceptedSnapshot.root, path), "utf8"), updated);
     const custody = [held({ paths: [siblingPath], resources: [] })];
     admit({ paths: [path], resources: [] }, custody);
     // Fixture owner verifies bytes, applies serially, validates and commits. Production

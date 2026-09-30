@@ -19,6 +19,104 @@ const entry = (id, path) => ({ id, host: async () => ({}), resources: [], spec: 
 } });
 const pair = () => [entry("first", "tools/engineering-harness/README.md"),
   entry("second", "tools/engineering-harness/src/delivery.mjs")];
+// Metadata-only fixture outcomes; no model, source writer or product command runs.
+const wide = () => ["README.md", ...["delivery", "workflow-host", "workflow", "ordinary-api",
+  "ordinary-runtime", "ordinary-memory", "ordinary-policy", "ordinary-policy-evaluator",
+  "ordinary-workspace", "ordinary-pool", "workflow-output"].map(name => `src/${name}.mjs`),
+  ...["ordinary-runtime", "ordinary-pool", "ordinary-batch-cli", "ordinary-api", "delivery",
+    "workflow-policy"].map(name => `test/${name}.test.mjs`)]
+  .map((path, index) => ({ ...entry(`wide-${index}`, `tools/engineering-harness/${path}`),
+    resources: [`fixture-resource-${index}`] }));
+
+test("16 independent callbacks rendezvous and queued outcomes refill before held sibling ends", { timeout: 5000 }, async t => {
+  const tasks = wide(), gates = Array.from({ length: 16 }, () => Promise.withResolvers());
+  const started = Promise.withResolvers(), refilled = Promise.withResolvers();
+  const events = [], starts = [];
+  let active = 0, peak = 0, completed = false;
+  const pending = runOrdinaryBatch(tasks, { maxConcurrency: 16, onSettled: lane => {
+    events.push(lane); if (lane.id === "wide-17") refilled.resolve();
+  } }, async spec => {
+    const index = tasks.findIndex(task => task.spec.taskId === spec.taskId);
+    starts.push(index); active++; peak = Math.max(peak, active);
+    if (starts.length === 16) started.resolve();
+    try { if (index < 16) await gates[index].promise; }
+    finally { active--; }
+    return { candidateRoot: `/fixture/${index}`, directory: `/fixture/${index}/evidence` };
+  }).then(result => { completed = true; return result; });
+  t.signal.addEventListener("abort", () => gates.forEach(gate => gate.resolve()), { once: true });
+  try {
+    await started.promise;
+    assert.equal(active, 16); assert.equal(peak, 16);
+    assert.deepEqual(starts, Array.from({ length: 16 }, (_, index) => index));
+    const conflict = entry("wide-conflict", tasks[0].spec.paths[0]);
+    await assert.rejects(runOrdinaryBatch([conflict], { maxConcurrency: 1 }, async () => assert.fail("held path dispatched")), /ownership conflict/);
+    conflict.spec.paths = ["tools/engineering-harness/test/workflow.test.mjs"];
+    conflict.resources = tasks[0].resources;
+    await assert.rejects(runOrdinaryBatch([conflict], { maxConcurrency: 1 }, async () => assert.fail("held resource dispatched")), /ownership conflict/);
+    gates[1].resolve(); await refilled.promise;
+    assert.equal(completed, false); assert.equal(active, 15);
+    assert.deepEqual(events.map(event => event.id), ["wide-1", "wide-16", "wide-17"]);
+    assert.deepEqual(starts, Array.from({ length: 18 }, (_, index) => index));
+    const refill = { ...entry("wide-refill", tasks[1].spec.paths[0]), resources: tasks[1].resources };
+    assert.equal((await runOrdinaryBatch([refill], { maxConcurrency: 1 }, async () => ({}))).results[0].status, "fulfilled");
+    assert.equal(completed, false);
+  } finally { gates.forEach(gate => gate.resolve()); await pending; }
+  const result = await pending;
+  assert.equal(active, 0); assert.equal(result.peakConcurrency, 16);
+  assert.deepEqual(result.results.map(row => row.id), tasks.map(task => task.id));
+  assert.ok(result.results.every(row => row.status === "fulfilled"));
+  assert.ok(events.every(event => event.integration === "pending-owner-acceptance"));
+  assert.deepEqual(result.custodyErrors, []);
+  assert.deepEqual(readdirSync(custodyDirectory).filter(name => name.endsWith(".json")), []);
+});
+
+test("16 active callbacks retain failure and cancellation custody until noncooperative work drains", { timeout: 5000 }, async t => {
+  const tasks = wide(), controller = new AbortController();
+  const started = Promise.withResolvers(), fail = Promise.withResolvers(), drain = Promise.withResolvers();
+  const refilled = Promise.withResolvers(), events = [], starts = [];
+  let active = 0, peak = 0, completed = false;
+  const pending = runOrdinaryBatch(tasks, { maxConcurrency: 16, signal: controller.signal,
+    onSettled: lane => events.push(lane) }, async spec => {
+    const index = tasks.findIndex(task => task.spec.taskId === spec.taskId);
+    starts.push(index); active++; peak = Math.max(peak, active);
+    if (starts.length === 16) started.resolve();
+    if (index === 16) refilled.resolve();
+    try {
+      if (index === 0) {
+        await fail.promise;
+        throw Object.assign(new Error("fixture author failed"), { candidateRoot: "/fixture/failed", evidenceDirectory: "/fixture/failed/evidence" });
+      }
+      await drain.promise;
+      return { candidateRoot: `/fixture/${index}`, directory: `/fixture/${index}/evidence` };
+    } finally { active--; }
+  }).then(result => { completed = true; return result; });
+  t.signal.addEventListener("abort", () => { fail.resolve(); drain.resolve(); }, { once: true });
+  try {
+    await started.promise; assert.equal(active, 16);
+    fail.resolve(); await refilled.promise;
+    controller.abort(new Error("fixture stop"));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(completed, false); assert.equal(active, 16);
+    const conflict = { ...entry("cancelled-custody", tasks[1].spec.paths[0]), resources: [] };
+    await assert.rejects(runOrdinaryBatch([conflict], { maxConcurrency: 1 }, async () => assert.fail("draining path dispatched")), /ownership conflict/);
+  } finally { fail.resolve(); drain.resolve(); await pending; }
+  const result = await pending;
+  assert.equal(active, 0); assert.equal(peak, 16); assert.equal(result.peakConcurrency, 16);
+  assert.deepEqual(starts, Array.from({ length: 17 }, (_, index) => index));
+  assert.equal(result.results[0].status, "rejected");
+  assert.equal(result.results[0].error, "fixture author failed");
+  assert.equal(result.results[0].candidateRoot, "/fixture/failed");
+  assert.ok(result.results.slice(1).every(row => row.status === "cancelled"));
+  assert.ok(result.results.slice(1, 17).every(row => row.candidateRoot && row.evidenceDirectory));
+  assert.equal(result.results[17].candidateRoot, undefined);
+  assert.equal(events.length, 17);
+  assert.deepEqual(result.custodyErrors, []);
+  assert.deepEqual(readdirSync(custodyDirectory).filter(name => name.endsWith(".json")), []);
+  const redispatched = await runOrdinaryBatch(tasks, { maxConcurrency: 16 }, async () => ({}));
+  assert.equal(redispatched.results.length, 18);
+  assert.ok(redispatched.results.every(row => row.status === "fulfilled"));
+  assert.deepEqual(redispatched.custodyErrors, []);
+});
 
 for (const reject of [false, true]) test(`release failure preserves task result and disk claim, rejected=${reject}`, async () => {
   const directory = mkdtempSync(join(tmpdir(), "ox-release-fault-"));
