@@ -15,6 +15,8 @@ test("coordinator ordinary instructions match configured default routes and reta
   assert.ok(coordinatorPrompt.includes("Opus repair and stronger explicit task pins"));
   assert.ok(coordinatorPrompt.includes("Historical routes and receipts remain unchanged"));
   assert.ok(!coordinatorPrompt.includes("Preserve Sonnet 5.5 ordinary"));
+  assert.ok(coordinatorPrompt.includes("task branches and isolated Git worktrees"));
+  assert.ok(!coordinatorPrompt.includes("no branches or additional Git worktrees"));
 });
 test("coordinator preview pins existing resume and native model without spawning", () => {
   const launch = JSON.parse(execFileSync(process.execPath, [cli, "coordinator", "--session", session], { encoding: "utf8" }));

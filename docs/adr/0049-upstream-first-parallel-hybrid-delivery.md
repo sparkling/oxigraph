@@ -220,7 +220,7 @@ scoped harness commits. Unexpected owned source changes still require reconcilia
 | Concurrent ready callbacks | First assess `runBoundedPool` in Ruflo `v3/@claude-flow/cli/src/services/bounded-worker-pool.ts`, as documented in Builder ADR-0054 R8. Wrap existing outcome callbacks, not a new agent platform. |
 | Export compatibility | Pool is exposed through `./dist/*`, not stable dedicated high-level API. Resolve installed export/declarations on Node 24, record package/version/lock and cancellation behavior. Declare any dependency actually used; no reliance on an accidental global install. |
 | Scheduling authority | Pool bounds callbacks; project retains dependency acceptance and same-file/ancestor-path/named-resource exclusion. Do not remove them or claim pool handles them. Root releases children only after integrated predecessor source reaches their input. |
-| Source isolation | Non-Git candidate snapshots/patches, one integrator on the authorized checkout specified below. No new branches/worktrees/PR machinery is required for this repair. Earlier worktree proposal needs separate future authorization. |
+| Source isolation | October 1 permits isolated task branches/worktrees from accepted `main`, with one integration owner. Supported snapshots/patches remain valid. Preserve source/evaluator pins and independent review; permission proves neither harness worktree support nor cloud adoption. |
 | Planning | Share architecture renderer across native/API wrappers; packet-only mode explicitly has no tools, retains admitted source and requests a plan instance, not schema definition. Native contract stays unchanged. |
 | Review | One existing coordinator for ordinary/recovery paths; one production prompt renderer shared by native/API wrappers and qualification. Remove duplicate active prompts/coordinators only after preserving stronger checks. |
 | Evidence | Reviewer sees current admitted source, patch, task and sanitized deterministic results/file-policy facts; never hidden evaluator, expected verdict or author rationale. Bind qualification to original source/evaluator, not today's checkout. |
@@ -300,7 +300,7 @@ Acceptance in this repository, within one repair outcome:
 5. Integrate verified source serially; run read-only restart admission and document
    active/ready/manual/blocked work separately from harness defects. Record
    installed versions, exact commands, source/receipt identities, costs and limits.
-   Update this ADR to Implemented only for proven scope; leave programme stopped.
+   Mark only proven scope Implemented; current owner authorization governs execution, not historical global pauses. Publication remains separately authorized.
 
 ## Oxigraph-specific implementation map (September 28)
 
@@ -486,7 +486,7 @@ old records without rewriting them as evidence for the new policy.
 ## Consequences
 The target gains useful parallelism without discarding existing exact-source checks or confusing engineering with semantic truth. Real
 migration costs are workspace context, API/MCP integration and resource ownership. Upstream batches and fork-specific evidence restrictions
-remain visible limitations. Current application holds and protected runtime state remain intact.
+remain visible limitations. Explicit task holds and protected runtime state remain intact; historical global pauses do not override current owner authorization.
 
 ## Links
 - [Ordinary harness repair](0048-ordinary-engineering-harness-repair-and-learning.md)

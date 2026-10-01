@@ -44,8 +44,13 @@ not a silent transport fallback.
   worker acceptance receipts or manufacture runner-owned evidence.
 
 ADR-0049 records matching request defaults and implementation/proof status.
-Policy authorization is not runtime activation proof. Application work stays paused;
-qualification, protected state and publication still need their own authorization.
+Policy authorization is not runtime activation proof. Main programme resumption
+is authorized above; qualification, protected state and publication remain separate.
+Task branches and isolated Git worktrees are authorized (2026-10-01), based on
+accepted `main`, with one writer per lane and one integration owner. Existing
+non-Git candidates remain valid; isolate Cargo targets and mutable test resources.
+Native failures hold the affected invocation, not independent work. Inspect and
+back off before unchanged-route transient-capacity retry; no silent route switch.
 
 ## Model access and spending (2026-09-26 owner amendment)
 
