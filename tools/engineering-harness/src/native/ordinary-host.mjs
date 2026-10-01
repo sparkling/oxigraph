@@ -11,6 +11,11 @@ import { ordinaryClaudeStreamArgs, startOrdinaryClaudeStream, forwardOrdinaryStr
 import { workerOutput } from "../workflow-output.mjs";
 
 const sha = bytes => createHash("sha256").update(bytes).digest("hex");
+// Request scoped startup settings without changing user provider configuration.
+const ORDINARY_CODEX_ISOLATION_CONFIG = Object.freeze([
+  "project_doc_max_bytes=0", "project_doc_fallback_filenames=[]", "mcp_servers={}",
+  "features.hooks=false", "features.remote_plugin=false",
+]);
 // Positive native diagnostics only. Exit codes, parser failures and signals are
 // not evidence that a subscription or requested model is unavailable.
 const outage = error => /^(?:API Error:\s*(?:401|403|429|5\d\d)\b|(?:authentication_error|permission_error|rate_limit_error|overloaded_error)\b|not logged in\b|invalid API key\b|OAuth token (?:has )?expired\b|(?:requested )?model\b[^\n]*(?:not found|not available|unavailable|does not exist|not supported))/i.test(error.trim());
@@ -43,7 +48,8 @@ export async function runOrdinaryNativeRequest({
     "--json-schema", JSON.stringify(schema), "--no-chrome", "--disable-slash-commands"]);
   const environment = ordinaryRustEnvironment(invocation?.environment ?? nativeChildEnvironment("claude"));
   if (client === "codex") {
-    argv = [...argv.slice(0, -1), ...Object.entries(ordinaryRustEnvironment({})).flatMap(([name, value]) =>
+    argv = [...argv.slice(0, -1), ...ORDINARY_CODEX_ISOLATION_CONFIG.flatMap(value => ["-c", value]),
+      ...Object.entries(ordinaryRustEnvironment({})).flatMap(([name, value]) =>
       ["-c", `shell_environment_policy.set.${name}=${JSON.stringify(value)}`]),
       argv.at(-1)];
   }

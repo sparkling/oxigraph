@@ -9,7 +9,7 @@ import { repository } from "../src/delivery.mjs";
 import { ordinaryRustEnvironment, scrubbedChildEnvironment } from "../../child-environment.mjs";
 
 const secret = "PRIVATE_prompt_reasoning_tool_error";
-function setup(t, code, role = "review", files = [], repositoryReceipts = false) {
+function setup(t, code, role = "review", files = [], repositoryReceipts = false, model = "gpt-6.1-sol") {
   const parent = repositoryReceipts ? join(repository, "target/engineering-delivery") : tmpdir();
   mkdirSync(parent, { recursive: true });
   const directory = mkdtempSync(join(parent, "ordinary-codex-"));
@@ -27,7 +27,7 @@ function setup(t, code, role = "review", files = [], repositoryReceipts = false)
     ${code}\n`, { mode: 0o700 });
   const request = { schema: 1, runId: randomUUID(), requestId: 1, taskId: "task-sol61-fixture",
     specSha256: "spec", sourceSha256: "source", action: "native-worker",
-    payload: { route: { transport: "native-subscription", role, model: "gpt-6.1-sol", effort: "high" }, files } };
+    payload: { route: { transport: "native-subscription", role, model, effort: "high" }, files } };
   const requestPath = join(directory, "request.json");
   writeFileSync(requestPath, JSON.stringify(request));
   const records = [];
@@ -58,6 +58,14 @@ test("ordinary Codex bridge reuses canonical invocation and validates actual thr
   assert.equal(actual.argv[actual.argv.indexOf("--config") + 1], 'model_reasoning_effort="high"');
   assert.ok(actual.argv[actual.argv.indexOf("--output-schema") + 1].endsWith("ordinary-worker-output.schema.json"));
   assert.equal(actual.apiKeyPresent, false);
+  for (const config of ["project_doc_max_bytes=0", "project_doc_fallback_filenames=[]", "mcp_servers={}",
+    "features.hooks=false", "features.remote_plugin=false"]) {
+    const index = actual.argv.indexOf(config);
+    assert.ok(index > 0);
+    assert.equal(actual.argv[index - 1], "-c");
+  }
+  assert.ok(!actual.argv.includes("--ignore-user-config"));
+  assert.equal(actual.argv[actual.argv.indexOf("--model") + 1], "gpt-6.1-sol");
   assert.deepEqual(actual.profiles, ordinaryRustEnvironment({}));
   for (const [name, value] of Object.entries(ordinaryRustEnvironment({}))) {
     assert.ok(actual.argv.includes(`shell_environment_policy.set.${name}=${JSON.stringify(value)}`));
@@ -69,6 +77,23 @@ test("ordinary Codex bridge reuses canonical invocation and validates actual thr
   assert.ok(!readFileSync(join(fixture.directory, "progress.jsonl"), "utf8").includes(secret));
   assert.ok(!readFileSync(join(fixture.directory, "terminal.json"), "utf8").includes(secret));
   assert.equal(runOrdinaryClaudeRequest, runOrdinaryNativeRequest);
+});
+
+test("ordinary Codex isolation leaves exact Claude argv and Rust environment unchanged", async t => {
+  const fixture = setup(t, `emit({type:'result',session_id:'fixture-claude-worker',structured_output:{
+    summary:'checked',verdict:'ACCEPT',findings:[],changes:[]}});`, "review", [], false, "cc/claude-opus-5-5[1m]");
+  const result = await runOrdinaryNativeRequest(fixture.args), actual = fixture.read("actual.json");
+  assert.equal(result.status, "completed");
+  assert.equal(result.response.result.client, "claude-code");
+  assert.equal(actual.argv[actual.argv.indexOf("--model") + 1], "cc/claude-opus-5-5[1m]");
+  assert.equal(actual.argv[actual.argv.indexOf("--effort") + 1], "high");
+  for (const flag of ["--safe-mode", "--strict-mcp-config", "--no-session-persistence", "--include-partial-messages"]) {
+    assert.ok(actual.argv.includes(flag));
+  }
+  assert.equal(actual.argv[actual.argv.indexOf("--mcp-config") + 1], '{"mcpServers":{}}');
+  assert.equal(actual.argv[actual.argv.indexOf("--tools") + 1], "");
+  assert.equal(actual.argv.some(value => /^(?:project_doc_|mcp_servers=|features\.)/.test(value)), false);
+  assert.deepEqual(actual.profiles, ordinaryRustEnvironment({}));
 });
 
 test("ordinary Rust defaults follow sanitization without changing frozen child environment", () => {
