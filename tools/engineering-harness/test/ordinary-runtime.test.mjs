@@ -19,7 +19,7 @@ const nativeSpec = (id = "native") => ({ ...ordinaryWorkflowSpec, taskId: `task-
 });
 const configFor = (directory) => ({ schema: 1, memoryDirectory: `target/engineering-delivery/fixtures/${basename(directory)}` });
 
-test("unpinned ordinary planning, author and fresh review use Sol 6.1/high and retain native learning", async () => {
+test("unpinned ordinary planning, author and fresh review use Sonnet 5.5/high and retain native learning", async () => {
   const directory = mkdtempSync(join(tmpdir(), "oxigraph-sol61-")), config = configFor(directory);
   const fixture = setupOrdinaryWorkflowFixture(), routes = [], workers = [];
   try {
@@ -31,7 +31,7 @@ test("unpinned ordinary planning, author and fresh review use Sol 6.1/high and r
       return response;
     }, { ...fixture.io, runtime: createOrdinaryRuntime(config) });
     assert.deepEqual(routes.map(({ role, model, effort, transport }) => [role, model, effort, transport]),
-      ["plan", "implement", "review"].map(role => [role, "gpt-6.1-sol", "high", "native-subscription"]));
+      ["plan", "implement", "review"].map(role => [role, "cc/claude-sonnet-5-5[1m]", "high", "native-subscription"]));
     assert.notEqual(workers[1], workers[2]);
     assert.equal(result.learning.recorded, true);
     assert.equal(JSON.parse(readFileSync(result.learning.path, "utf8")).transport, "native-only");
@@ -65,8 +65,8 @@ test("ordinary native driver plans, consumes policy/memory and records only chec
     assert.equal(fresh.context("implement").nativeMemory.observations, 1);
     fresh.notePacket({ sourceSha256: "b".repeat(64), payload: { prompt: "credit fallback", route: { role: "implement" } } });
     const credit = fresh.selectCreditFallback(routeDelivery({ role: "implement", taskId: spec.taskId,
-      completionCheck: spec.completionCheck, model: "gpt-6.1-sol", effort: "high", reason: "confirmed-credit-rejection" }));
-    assert.equal(credit.model, "gpt-6.1-sol");
+      completionCheck: spec.completionCheck, model: "cc/claude-sonnet-5-5[1m]", effort: "high", reason: "confirmed-credit-rejection" }));
+    assert.equal(credit.model, "cc/claude-sonnet-5-5[1m]");
     assert.equal(credit.effort, "high");
     const newPolicy = { ...seedOrdinaryPolicy, planner: "Different policy must not share learned ranking." };
     assert.equal(createOrdinaryRuntime(config, { policy: newPolicy }).forWorkflow(spec, next.io.files())

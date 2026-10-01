@@ -229,7 +229,7 @@ async function ordinaryStage(route, payload, host, runtime) {
     const credit = error.code === "confirmed-credit-rejection";
     if (!credit && !["completed-invalid-output", "task-output-held"].includes(error.code)) throw error;
     let fallback = routeDelivery({ role: route.role, taskId: route.taskId, completionCheck: route.completionCheck,
-      model: credit ? "gpt-6.1-sol" : "cc/claude-opus-5-5[1m]",
+      model: credit ? "cc/claude-sonnet-5-5[1m]" : "cc/claude-opus-5-5[1m]",
       effort: "high", reason: error.code });
     if (credit && runtime) fallback = runtime.selectCreditFallback(fallback);
     const result = await nativeStage(fallback, { ...payload, transportFailure: { code: error.code, evidence: error.evidence } }, host, runtime);

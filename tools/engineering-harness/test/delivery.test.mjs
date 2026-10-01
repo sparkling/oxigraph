@@ -36,11 +36,11 @@ test("source drift or missing process observation prevents command success", () 
   assert.equal(deliveryStatus(before, before, null, null).status, "failed");
   assert.equal(deliveryStatus(before, before, { passed: true }, "cannot read artifact").status, "failed");
 });
-test("ordinary role defaults use exact Sol 6.1/high native routes and retain Opus escalation", () => {
+test("ordinary role defaults use exact Sonnet 5.5/high native routes and retain Opus escalation", () => {
   for (const [role, model, effort] of [
-    ["plan", "gpt-6.1-sol", "high"],
-    ["implement", "gpt-6.1-sol", "high"], ["documentation", "gpt-6.1-sol", "high"],
-    ["review", "gpt-6.1-sol", "high"], ["difficult", "cc/claude-opus-5-5[1m]", "high"],
+    ["plan", "cc/claude-sonnet-5-5[1m]", "high"],
+    ["implement", "cc/claude-sonnet-5-5[1m]", "high"], ["documentation", "cc/claude-sonnet-5-5[1m]", "high"],
+    ["review", "cc/claude-sonnet-5-5[1m]", "high"], ["difficult", "cc/claude-opus-5-5[1m]", "high"],
     ["decision", "cc/claude-opus-5-5[1m]", "high"],
   ]) {
     const route = routeDelivery({ role, taskId, completionCheck });
@@ -232,7 +232,7 @@ test("CLI route is inspectable without any model execution; invalid run rejects 
   const cli = "tools/engineering-harness/bin/oxigraph-delivery.mjs";
   const route = JSON.parse(execFileSync(process.execPath, [cli, "route", "--task", taskId,
     "--role", "implement", "--check", completionCheck], { encoding: "utf8" }));
-  assert.deepEqual(route.nativeDispatch, { provider: "codex", model: "gpt-6.1-sol", effort: "high" });
+  assert.deepEqual(route.nativeDispatch, { provider: "claude", model: "cc/claude-sonnet-5-5[1m]", effort: "high" });
   assert.equal(route.apiDispatch, null);
   assert.throws(() => execFileSync(process.execPath, [cli, "run", "--task", taskId, "--", "cargo", "publish", "--locked"], { stdio: "pipe" }));
 });

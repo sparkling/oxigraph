@@ -18,10 +18,10 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const roles = Object.freeze({
   build: [null, null],
   test: [null, null],
-  plan: ["gpt-6.1-sol", "high"],
-  implement: ["gpt-6.1-sol", "high"],
-  documentation: ["gpt-6.1-sol", "high"],
-  review: ["gpt-6.1-sol", "high"],
+  plan: ["cc/claude-sonnet-5-5[1m]", "high"],
+  implement: ["cc/claude-sonnet-5-5[1m]", "high"],
+  documentation: ["cc/claude-sonnet-5-5[1m]", "high"],
+  review: ["cc/claude-sonnet-5-5[1m]", "high"],
   difficult: ["cc/claude-opus-5-5[1m]", "high"],
   decision: ["cc/claude-opus-5-5[1m]", "high"],
 });
