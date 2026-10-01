@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { nativeChildEnvironment } from "./environment.mjs";
+import { ordinaryClaudeEnvironment } from "./environment.mjs";
 import { ordinaryRustEnvironment } from "../../../child-environment.mjs";
 import { resolveNativeExecutable } from "./executable.mjs";
 import { codexInvocation } from "./codex.mjs";
@@ -46,7 +46,7 @@ export async function runOrdinaryNativeRequest({
   let argv = invocation?.args ?? ordinaryClaudeStreamArgs(["--print", "--safe-mode", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
     "--model", payload.route.model, "--effort", payload.route.effort, "--permission-mode", "dontAsk", "--tools", "", "--output-format", "json",
     "--json-schema", JSON.stringify(schema), "--no-chrome", "--disable-slash-commands"]);
-  const environment = ordinaryRustEnvironment(invocation?.environment ?? nativeChildEnvironment("claude"));
+  const environment = ordinaryRustEnvironment(invocation?.environment ?? ordinaryClaudeEnvironment());
   if (client === "codex") {
     argv = [...argv.slice(0, -1), ...ORDINARY_CODEX_ISOLATION_CONFIG.flatMap(value => ["-c", value]),
       ...Object.entries(ordinaryRustEnvironment({})).flatMap(([name, value]) =>
