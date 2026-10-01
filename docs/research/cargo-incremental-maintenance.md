@@ -1,5 +1,26 @@
 # Cargo incremental maintenance
 
+## Preventing new build bloat (October 1, 2026)
+
+Ordinary workflows create separate retained candidate targets. Previously Cargo
+defaults generated full Rust debug data and incremental caches in each one.
+Workspace dev/test builds now use `debug = 1`, `incremental = false`; test
+inherits dev. Bundled `oxrocksdb-sys` uses `debug = 0`, also making its build-script
+`DEBUG=false` so cc does not generate C++ debug data. Rust limited debug retains
+backtrace information, not full variable/type inspection. Assertions, overflow
+checks, optimization and release/bench settings are unchanged. Frozen qualification
+environment overrides and historical receipts remain untouched.
+
+This reduces generation, not retention. Private targets remain necessary to avoid
+concurrent crash tests reopening replaced executables. Existing sources, archives,
+binaries and receipts are not deleted or silently retired. Existing timer still
+reclaims only proven disposable caches/redundant objects. Distinct dependency
+graphs still accumulate; no bounded-storage or measured savings claim follows.
+Validate actual Cargo profile inheritance/build-script environment with the small
+offline fixture in `tests/maintenance/test_cargo_storage_profile.py`; no RocksDB
+rebuild or semantic benchmark is required for that configuration check.
+Cargo authority: https://doc.rust-lang.org/cargo/reference/profiles.html .
+
 September 29, 2026: automatic hourly pressure check, with a six-hour minimum
 cache age. Start at 85% filesystem bytes used; remove coldest eligible incremental
 caches until usage reaches 80%. These percentages use filesystem total/free bytes;

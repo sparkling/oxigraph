@@ -335,6 +335,16 @@ verbose_file_reads = "warn"
 wildcard_dependencies = "warn"
 zero_sized_map_values = "warn"
 
+# Isolated engineering candidates cannot reuse incremental state across snapshots.
+# Keep Rust backtraces useful without retaining full variable/type debug data.
+[profile.dev]
+debug = 1
+incremental = false
+
+# Bundled RocksDB's C++ objects and archives otherwise carry repeated full debug data.
+[profile.dev.package.oxrocksdb-sys]
+debug = 0
+
 [profile.release]
 lto = true
 codegen-units = 1
