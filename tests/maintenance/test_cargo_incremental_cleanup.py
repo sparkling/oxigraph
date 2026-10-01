@@ -101,6 +101,50 @@ class CleanupTest(unittest.TestCase):
         nested.mkdir(parents=True)
         self.assertEqual(set(cleanup.discover(self.repo)), {self.cache, nested})
 
+    def test_exact_wasm_profiles_discovered_without_other_targets(self):
+        expected = {self.cache} | {self.repo / "target/wasm32-unknown-unknown" / profile / "incremental"
+                                  for profile in ("debug", "release")}
+        for cache in expected:
+            cache.mkdir(parents=True, exist_ok=True)
+        protected = self.repo / "target/c3-witness/debug/incremental"
+        protected.mkdir(parents=True)
+        (protected / "evidence.bin").write_bytes(b"qualification")
+        self.assertEqual(set(cleanup.discover(self.repo)), expected)
+        self.assertEqual((protected / "evidence.bin").read_bytes(), b"qualification")
+
+    def test_wasm_target_symlink_refused(self):
+        (self.repo / "target/wasm32-unknown-unknown").symlink_to(
+            self.profile.parent, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            cleanup.discover(self.repo)
+        self.assertTrue((self.cache / "session/work-products.bin").exists())
+
+    def test_wasm_cache_keeps_busy_missing_lock_and_protected_siblings(self):
+        profile = self.repo / "target/wasm32-unknown-unknown/debug"
+        cache = profile / "incremental"
+        cache.mkdir(parents=True)
+        (cache / "session.bin").write_bytes(b"compiler cache")
+        for item in (cache, cache / "session.bin"):
+            os.utime(item, (1, 1))
+        for name in ("binary", "receipt.json", "memory.db-wal"):
+            (profile / name).write_bytes(b"protected")
+        with self.assertRaises(FileNotFoundError):
+            cleanup.clean_one(cache, 3600, True)
+        lock = profile / ".cargo-lock"
+        lock.touch()
+        identity = lock.stat().st_ino
+        with lock.open("r+") as handle:
+            fcntl.flock(handle, fcntl.LOCK_SH)
+            self.assertEqual(cleanup.clean_one(cache, 3600, True)["status"], "busy")
+            self.assertTrue((cache / "session.bin").exists())
+        self.assertEqual(cleanup.clean_one(cache, 3600)["status"], "eligible")
+        self.assertTrue((cache / "session.bin").exists())
+        self.assertEqual(cleanup.clean_one(cache, 3600, True)["status"], "cleaned")
+        self.assertEqual(list(cache.iterdir()), [])
+        self.assertEqual(lock.stat().st_ino, identity)
+        for name in ("binary", "receipt.json", "memory.db-wal"):
+            self.assertEqual((profile / name).read_bytes(), b"protected")
+
     def test_canonical_and_lane_symlinks_refused(self):
         repo = self.repo / "standalone"
         repo.mkdir()
@@ -138,21 +182,38 @@ class CleanupTest(unittest.TestCase):
         self.assertTrue((self.cache / "session").exists())
 
     def test_real_cargo_build_lock(self):
+        self.assert_real_cargo_build_lock()
+
+    def test_real_wasm_cargo_build_lock(self):
+        self.assert_real_cargo_build_lock("wasm32-unknown-unknown")
+
+    def assert_real_cargo_build_lock(self, target=None):
         crate = self.repo / "crate"
         crate.mkdir()
         (crate / "Cargo.toml").write_text('[package]\nname="cleanup-lock-proof"\nversion="0.1.0"\nedition="2021"\n[lib]\npath="lib.rs"\n')
         (crate / "lib.rs").write_text("pub fn value() -> u8 { 1 }\n")
         (crate / "build.rs").write_text('fn main() { std::fs::write("running", "yes").unwrap(); std::thread::sleep(std::time::Duration::from_secs(2)); }\n')
-        process = subprocess.Popen(["cargo", "check", "--offline", "--manifest-path", str(crate / "Cargo.toml"),
-                                    "--target-dir", str(self.profile.parent)], cwd=crate,
+        args = ["cargo", "check", "--offline", "--manifest-path", str(crate / "Cargo.toml"),
+                "--target-dir", str(self.profile.parent)]
+        cache = self.cache
+        cache_file = cache / "session/work-products.bin"
+        if target:
+            cache = self.profile.parent / target / "debug/incremental"
+            cache.mkdir(parents=True)
+            cache_file = cache / "work-products.bin"
+            cache_file.write_bytes(b"compiler cache")
+            for item in (cache, cache_file):
+                os.utime(item, (1, 1))
+            args.extend(["--target", target])
+        process = subprocess.Popen(args, cwd=crate,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
             deadline = time.monotonic() + 30
             while not (crate / "running").exists() and process.poll() is None and time.monotonic() < deadline:
                 time.sleep(0.02)
             self.assertTrue((crate / "running").exists(), "Cargo fixture did not enter build script")
-            self.assertEqual(cleanup.clean_one(self.cache, 3600, True)["status"], "busy")
-            self.assertTrue((self.cache / "session/work-products.bin").exists())
+            self.assertEqual(cleanup.clean_one(cache, 3600, True)["status"], "busy")
+            self.assertEqual(cache_file.read_bytes(), b"compiler cache")
             _, error = process.communicate(timeout=30)
             self.assertEqual(process.returncode, 0, error.decode())
         finally:

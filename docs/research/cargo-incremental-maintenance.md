@@ -37,6 +37,7 @@ Only `debug/incremental` and `release/incremental` beneath these allocations qua
 - `target/engineering-delivery/builds/*`
 - `target/engineering-delivery/candidates/source-*/target/engineering-delivery/builds/*`
 - `target` and `target/engineering-delivery/candidates/source-*/target`
+- `target/wasm32-unknown-unknown` (the exact canonical cross-compile target)
 - `target-lanes/*` (when operating on the Query runtime crate)
 
 October 1 local audit found the old discovery returned early without an
@@ -48,6 +49,21 @@ and Query now use matching dev/test generation defaults; each crate/workspace
 owns its own profile, independent of dependency workspace profiles. Real offline
 Cargo graphs verify limited debug, no incremental, unchanged assertions/overflow.
 22 maintenance/profile tests pass; this is local source, not GCP adoption.
+
+October 1 local recurring-job audit found another exact discovery gap:
+`target/wasm32-unknown-unknown/debug/incremental` held 997,888,000 allocated bytes
+eligible under the existing six-hour age and nonblocking Cargo-lock checks.
+Discovery now includes that canonical target's debug/release profiles only.
+Real offline cross-compilation proves Cargo holds the same retained profile lock;
+fixtures preserve busy/missing-lock caches, binaries, receipts and memory sidecars.
+All 26 maintenance/profile fixtures pass; two discovery controls fail before this fix.
+The existing hourly timer remains the scheduler. Root installed script SHA256
+`cd4fbfbcccfe1d8af90374f8fcb6720a5d5a80737ca1d3d415f41d6e5516f55a` locally;
+October 1 08:22 UTC service completed successfully and removed that exact wasm
+cache's children, leaving its root at 4096 allocated bytes and preserving Cargo
+locks. This is allocated-cache removal, not an independent whole-filesystem savings
+measure. Disk remains 89% used; no bounded-retention claim. Historical executables, pinned
+snapshots and temporary trees without proved custody remain outside deletion.
 
 The cleaner preserves profile directories and every Cargo lock inode. It takes
 exclusive nonblocking `flock` on the existing `.cargo-lock` before rechecking age

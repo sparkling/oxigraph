@@ -69,7 +69,7 @@ def inventory(path):
 
 def discover(repository, objects=False):
     regular_path(repository)
-    targets = [repository / "target"]
+    targets = [repository / "target", repository / "target/wasm32-unknown-unknown"]
     delivery = repository / "target/engineering-delivery"
     # Finite known allocation levels; no traversal of source, evidence or databases.
     roots = [delivery / "builds"]
