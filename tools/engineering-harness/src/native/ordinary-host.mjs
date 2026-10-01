@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "n
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { nativeChildEnvironment } from "./environment.mjs";
+import { ordinaryRustEnvironment } from "../../../child-environment.mjs";
 import { resolveNativeExecutable } from "./executable.mjs";
 import { codexInvocation } from "./codex.mjs";
 import { ordinaryClaudeStreamArgs, startOrdinaryClaudeStream, forwardOrdinaryStreamSignals } from "./ordinary-stream.mjs";
@@ -37,10 +38,15 @@ export async function runOrdinaryNativeRequest({
   const invocation = client === "codex" ? codexInvocation({ executionRoot, model: payload.route.model,
     reasoningEffort: payload.route.effort, prompt, workerSchemaVersion: "ordinary", resolveExecutable }) : undefined;
   const executable = invocation?.attestation ?? resolveExecutable("claude");
-  const argv = invocation?.args ?? ordinaryClaudeStreamArgs(["--print", "--safe-mode", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+  let argv = invocation?.args ?? ordinaryClaudeStreamArgs(["--print", "--safe-mode", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
     "--model", payload.route.model, "--effort", payload.route.effort, "--permission-mode", "dontAsk", "--tools", "", "--output-format", "json",
     "--json-schema", JSON.stringify(schema), "--no-chrome", "--disable-slash-commands"]);
-  const environment = invocation?.environment ?? nativeChildEnvironment("claude");
+  const environment = ordinaryRustEnvironment(invocation?.environment ?? nativeChildEnvironment("claude"));
+  if (client === "codex") {
+    argv = [...argv.slice(0, -1), ...Object.entries(ordinaryRustEnvironment({})).flatMap(([name, value]) =>
+      ["-c", `shell_environment_policy.set.${name}=${JSON.stringify(value)}`]),
+      argv.at(-1)];
+  }
   // All fallible metadata reads precede spawn; later host exceptions drain the child.
   const start = { runId: request.runId, requestId: request.requestId, taskId: request.taskId, role: payload.route.role,
     client, model: payload.route.model, effort: payload.route.effort, startedAt: new Date().toISOString(),

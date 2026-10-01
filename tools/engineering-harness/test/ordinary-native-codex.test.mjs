@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { runOrdinaryNativeRequest, runOrdinaryClaudeRequest } from "../src/native/ordinary-host.mjs";
 import { repository } from "../src/delivery.mjs";
+import { ordinaryRustEnvironment, scrubbedChildEnvironment } from "../../child-environment.mjs";
 
 const secret = "PRIVATE_prompt_reasoning_tool_error";
 function setup(t, code, role = "review", files = [], repositoryReceipts = false) {
@@ -19,7 +20,8 @@ function setup(t, code, role = "review", files = [], repositoryReceipts = false)
   const executable = join(directory, "fake-codex.mjs");
   writeFileSync(executable, `#!${process.execPath}\nimport fs from 'node:fs';
     const argv=process.argv.slice(2),emit=event=>process.stdout.write(JSON.stringify(event)+'\\n');
-    fs.writeFileSync('actual.json',JSON.stringify({argv,apiKeyPresent:!!process.env.OPENROUTER_API_KEY}));
+    fs.writeFileSync('actual.json',JSON.stringify({argv,apiKeyPresent:!!process.env.OPENROUTER_API_KEY,
+      profiles:Object.fromEntries(Object.entries(process.env).filter(([name])=>name.startsWith('CARGO_PROFILE_')))}));
     process.stdin.resume();
     emit({type:'thread.started',thread_id:'fixture-codex-worker'});
     ${code}\n`, { mode: 0o700 });
@@ -56,6 +58,10 @@ test("ordinary Codex bridge reuses canonical invocation and validates actual thr
   assert.equal(actual.argv[actual.argv.indexOf("--config") + 1], 'model_reasoning_effort="high"');
   assert.ok(actual.argv[actual.argv.indexOf("--output-schema") + 1].endsWith("ordinary-worker-output.schema.json"));
   assert.equal(actual.apiKeyPresent, false);
+  assert.deepEqual(actual.profiles, ordinaryRustEnvironment({}));
+  for (const [name, value] of Object.entries(ordinaryRustEnvironment({}))) {
+    assert.ok(actual.argv.includes(`shell_environment_policy.set.${name}=${JSON.stringify(value)}`));
+  }
   assert.equal(start.client, "codex");
   assert.equal(result.terminal.custodyReleased, true);
   assert.equal(result.terminal.activityCount, 1);
@@ -63,6 +69,15 @@ test("ordinary Codex bridge reuses canonical invocation and validates actual thr
   assert.ok(!readFileSync(join(fixture.directory, "progress.jsonl"), "utf8").includes(secret));
   assert.ok(!readFileSync(join(fixture.directory, "terminal.json"), "utf8").includes(secret));
   assert.equal(runOrdinaryClaudeRequest, runOrdinaryNativeRequest);
+});
+
+test("ordinary Rust defaults follow sanitization without changing frozen child environment", () => {
+  const frozen = scrubbedChildEnvironment({}, { PATH: "/bin", CARGO_PROFILE_DEV_DEBUG: "2",
+    CARGO_PROFILE_RELEASE_DEBUG: "2", CARGO_INCREMENTAL: "1", RUSTFLAGS: "untrusted" });
+  assert.deepEqual(frozen, { PATH: "/bin" });
+  assert.deepEqual(ordinaryRustEnvironment(frozen), { PATH: "/bin", CARGO_PROFILE_DEV_DEBUG: "1",
+    CARGO_PROFILE_TEST_DEBUG: "1", CARGO_PROFILE_DEV_INCREMENTAL: "false", CARGO_PROFILE_TEST_INCREMENTAL: "false" });
+  assert.equal(ordinaryRustEnvironment({ CARGO_INCREMENTAL: "0" }).CARGO_INCREMENTAL, "0");
 });
 
 test("repository bridge receipts retain Codex private temporary execution-root policy", async t => {

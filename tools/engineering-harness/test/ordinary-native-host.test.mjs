@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { runOrdinaryClaudeRequest } from "../src/native/ordinary-host.mjs";
 import { nativeChildEnvironment } from "../src/native/environment.mjs";
+import { ordinaryRustEnvironment } from "../../child-environment.mjs";
 
 const secret="PRIVATE_prompt_reasoning_tool_error";
 function setup(t, code) {
@@ -13,7 +14,8 @@ function setup(t, code) {
   t.after(()=>rmSync(directory,{recursive:true,force:true}));
   const path=join(directory,"fake-claude.mjs");
   writeFileSync(path,`#!${process.execPath}\nimport fs from 'node:fs';
-    fs.writeFileSync('actual.json',JSON.stringify({argv:process.argv.slice(2),outputLimit:process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS}));
+    fs.writeFileSync('actual.json',JSON.stringify({argv:process.argv.slice(2),outputLimit:process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS,
+      profiles:Object.fromEntries(Object.entries(process.env).filter(([name])=>name.startsWith('CARGO_PROFILE_')))}));
     const emit=event=>process.stdout.write(JSON.stringify(event)+'\\n');
     process.stdin.resume();
     ${code}\n`,{mode:0o700});
@@ -42,6 +44,7 @@ test("tracked adapter reproduces real driver argv/environment, hashes and exact 
   assert.ok(actual.argv.includes("--verbose"));
   assert.deepEqual(actual.argv,start.argv);
   assert.equal(actual.outputLimit,nativeChildEnvironment("claude").CLAUDE_CODE_MAX_OUTPUT_TOKENS);
+  assert.deepEqual(actual.profiles,ordinaryRustEnvironment({}));
   assert.equal(start.outputLimit,Number(actual.outputLimit));
   for(const field of ["driverSha256","hostHelperSha256","streamHelperSha256","executableSha256","requestSha256"]) assert.match(start[field],/^[a-f0-9]{64}$/);
   assert.equal(fixture.read("terminal.json").custodyReleased,true);

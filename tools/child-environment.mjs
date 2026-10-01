@@ -1,5 +1,11 @@
 export const CHILD_ENVIRONMENT_POLICY = "inherited-safe-name-allowlist-v1";
 
+/** Apply after sanitization on ordinary routes, never sealed qualification. */
+export function ordinaryRustEnvironment(environment) {
+  return { ...environment, CARGO_PROFILE_DEV_DEBUG: "1", CARGO_PROFILE_TEST_DEBUG: "1",
+    CARGO_PROFILE_DEV_INCREMENTAL: "false", CARGO_PROFILE_TEST_INCREMENTAL: "false" };
+}
+
 const providerPrefix =
   /^(?:ANTHROPIC|AZURE_OPENAI|CLAUDE|CODEX|COHERE|COPILOT|DEEPSEEK|GEMINI|GOOGLE_GENAI|GROQ|MISTRAL|OPENAI|OPENROUTER|PERPLEXITY|TOGETHER|XAI)(?:_|$)/i;
 const sensitiveName =
