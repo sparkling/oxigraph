@@ -84,6 +84,36 @@ class CleanupTest(unittest.TestCase):
             cleanup.clean_one(self.cache, 3600, True)
         self.assertTrue((self.cache / "valuable.db").exists())
 
+    def test_canonical_target_without_delivery_and_lane_targets_discovered(self):
+        repo = self.repo / "standalone"
+        expected = {repo / "target/debug/incremental",
+                    repo / "target/release/incremental",
+                    repo / "target-lanes/worker-a/debug/incremental"}
+        for cache in expected:
+            cache.mkdir(parents=True)
+        # Custom qualification targets and source-looking directories stay excluded.
+        (repo / "target/c3-witness/debug/incremental").mkdir(parents=True)
+        (repo / "source/debug/incremental").mkdir(parents=True)
+        self.assertEqual(set(cleanup.discover(repo)), expected)
+
+    def test_candidate_default_target_discovered(self):
+        nested = self.repo / "target/engineering-delivery/candidates/source-a/target/debug/incremental"
+        nested.mkdir(parents=True)
+        self.assertEqual(set(cleanup.discover(self.repo)), {self.cache, nested})
+
+    def test_canonical_and_lane_symlinks_refused(self):
+        repo = self.repo / "standalone"
+        repo.mkdir()
+        (repo / "target").symlink_to(self.profile.parent, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            cleanup.discover(repo)
+        (repo / "target").unlink()
+        lanes = repo / "target-lanes"
+        lanes.mkdir()
+        (lanes / "escape").symlink_to(self.profile.parent, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            cleanup.discover(repo)
+
     def test_nonfinite_age_rejected(self):
         for age in (float("nan"), float("inf"), -float("inf")):
             with self.assertRaises(ValueError):

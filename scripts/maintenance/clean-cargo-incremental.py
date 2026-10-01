@@ -69,34 +69,46 @@ def inventory(path):
 
 def discover(repository, objects=False):
     regular_path(repository)
+    targets = [repository / "target"]
     delivery = repository / "target/engineering-delivery"
-    if not delivery.exists():
-        return []
-    regular_path(delivery)
     # Finite known allocation levels; no traversal of source, evidence or databases.
     roots = [delivery / "builds"]
+    if delivery.exists():
+        regular_path(delivery)
     candidates = delivery / "candidates"
     if candidates.exists():
         regular_path(candidates)
         for candidate in sorted(candidates.glob("source-*")):
             regular_path(candidate)
+            targets.append(candidate / "target")
             roots.append(candidate / "target/engineering-delivery/builds")
-    found = []
+    lanes = repository / "target-lanes"
+    if lanes.exists():
+        regular_path(lanes)
+        for lane in sorted(lanes.iterdir()):
+            regular_path(lane)
+            targets.append(lane)
     for root in roots:
         if not root.exists():
             continue
         regular_path(root)
         for allocation in sorted(root.iterdir()):
             regular_path(allocation)
-            for profile in ("debug", "release"):
-                cache = allocation / profile / "incremental"
-                if objects and (cache.parent / "build").exists():
-                    regular_path(cache.parent)
-                    found.append(cache)
-                elif not objects and cache.exists():
-                    regular_path(cache.parent)
-                    regular_path(cache)
-                    found.append(cache)
+            targets.append(allocation)
+    found = []
+    for target in targets:
+        if not target.exists():
+            continue
+        regular_path(target)
+        for profile in ("debug", "release"):
+            cache = target / profile / "incremental"
+            if objects and (cache.parent / "build").exists():
+                regular_path(cache.parent)
+                found.append(cache)
+            elif not objects and cache.exists():
+                regular_path(cache.parent)
+                regular_path(cache)
+                found.append(cache)
     return found
 
 

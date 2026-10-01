@@ -36,6 +36,18 @@ Only `debug/incremental` and `release/incremental` beneath these allocations qua
 
 - `target/engineering-delivery/builds/*`
 - `target/engineering-delivery/candidates/source-*/target/engineering-delivery/builds/*`
+- `target` and `target/engineering-delivery/candidates/source-*/target`
+- `target-lanes/*` (when operating on the Query runtime crate)
+
+October 1 local audit found the old discovery returned early without an
+engineering-delivery directory and missed canonical caches: Oxigraph 68.64 GiB,
+Fabric 125.16 GiB, Query canonical/lanes 118.12 GiB eligible in dry runs.
+Discovery now covers those fixed layouts with unchanged lock/age/mount checks.
+Custom qualification targets and lane recovery artifacts stay excluded. Fabric
+and Query now use matching dev/test generation defaults; each crate/workspace
+owns its own profile, independent of dependency workspace profiles. Real offline
+Cargo graphs verify limited debug, no incremental, unchanged assertions/overflow.
+22 maintenance/profile tests pass; this is local source, not GCP adoption.
 
 The cleaner preserves profile directories and every Cargo lock inode. It takes
 exclusive nonblocking `flock` on the existing `.cargo-lock` before rechecking age
