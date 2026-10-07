@@ -190,7 +190,7 @@ fn generate_service_description_graph(
         ));
     }
     graph.push(Triple::new(root.clone(), sd::FEATURE, sd::EMPTY_GRAPHS));
-    if union_default_graph && (kind.query || kind.update) {
+    if union_default_graph && kind.query {
         graph.push(Triple::new(
             root.clone(),
             sd::FEATURE,
