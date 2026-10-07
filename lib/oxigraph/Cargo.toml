@@ -12,6 +12,7 @@ documentation = "https://docs.rs/oxigraph"
 description = "SPARQL database and RDF toolkit"
 edition.workspace = true
 rust-version.workspace = true
+build = "build.rs"
 
 [features]
 default = ["rocksdb"]
