@@ -723,42 +723,42 @@ const PREDECESSOR_PINS = deepFreeze([
   {
     label: "ADR-0037",
     url: ADR_URL,
-    bytes: 204827,
-    lines: 3458,
-    sha256: "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",
-    blob: "d3b0bfebdf336036e6d723ce0ee7ce85d26a4231",
+    bytes: 216620,
+    lines: 3637,
+    sha256: "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",
+    blob: "284231e5441ee45b8fdd8f7cef0b0434edf49743",
   },
   {
     label: "S2 statefs source",
     url: STATEFS_SOURCE_URL,
-    bytes: 190954,
-    lines: 6299,
-    sha256: "240c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",
-    blob: "a59c48fa21bc31cf8dcb646fb9a298569a1840de",
+    bytes: 189577,
+    lines: 6242,
+    sha256: "5feccc9039c36d404e3097ee2c3da59ff1d3a319413deaf8e1c18ec9f80aa5e1",
+    blob: "c452f04d9b64719dcd6b0392ee019578811aa263",
   },
   {
     label: "S2 statefs evaluator",
     url: STATEFS_EVALUATOR_URL,
-    bytes: 324808,
-    lines: 9548,
-    sha256: "0170540e8cd68d233b2e6c01df6cbeca3a9be44dabc59570b09c4b9d48a08c8c",
-    blob: "6d808b107ed9bda6b2195c035e6a3ad2a6066c9d",
+    bytes: 381815,
+    lines: 11171,
+    sha256: "8362816b1008daa63500f0a506c1e19a2be79fffff441b97db6d3c7b8698c382",
+    blob: "ef1d5692a651aa75467049dc64040b69ebc73e97",
   },
   {
     label: "S3 syscall evaluator",
     url: SYSCALL_EVALUATOR_URL,
-    bytes: 147416,
-    lines: 4459,
-    sha256: "75b60e1ebfe8322f804e715ca926cd7ed943289acc77834488cd9b019470b909",
-    blob: "e07e312de2b0d7102afd9dd9f613bf495ca8cc77",
+    bytes: 160288,
+    lines: 4801,
+    sha256: "6fb8848670dc84fad1fa42fdf8f34bfd31ea7876da40361bcff7ddf5ed95be81",
+    blob: "d95a93e4fe0b3ca6b9da5b55dad7672e09253edd",
   },
   {
     label: "S3 fault evaluator",
     url: FAULT_EVALUATOR_URL,
-    bytes: 146152,
-    lines: 4406,
-    sha256: "b8fa23d4fd6238f175da41a3348ecac592c2777b2fc44df82c0c90d371cc9774",
-    blob: "864588a504d506fd1b94a33717797b0b9d72299e",
+    bytes: 177918,
+    lines: 5275,
+    sha256: "b3555e754804ed768771dfb1a0541624554be205b348a250fea248c00dfd28a2",
+    blob: "966c0ef49a1868588b38b7e556bf700353417990",
   },
   {
     label: "engineering package",
@@ -1113,7 +1113,7 @@ const FAULT_CASES = expectedFaultCases();
 const ABI = deepFreeze(
   record(
     ["request", record(["alignment", 8], ["size", 192], ["offsets", pairs(["abiVersion", 0], ["structSize", 4], ["operation", 8], ["inventoryKind", 12], ["dirfdA", 16], ["dirfdB", 20], ["dirfdARole", 24], ["dirfdBRole", 28], ["nameALength", 32], ["nameBLength", 36], ["inputLength", 40], ["nameAAddress", 48], ["nameBAddress", 56], ["inputAddress", 64], ["observationsAddress", 72], ["observationCapacity", 80], ["outputCapacity", 84], ["outputAddress", 88], ["testFaultSelector", 96], ["expectedOwnerUid", 100], ["expectedOwnerGid", 104], ["inventoryDirectoryRole", 108], ["expectedMountIdA", 112], ["expectedMountIdB", 120], ["expectedDeviceMajorA", 128], ["expectedDeviceMinorA", 136], ["expectedInodeA", 144], ["expectedFilesystemMagicA", 152], ["expectedDeviceMajorB", 160], ["expectedDeviceMinorB", 168], ["expectedInodeB", 176], ["expectedFilesystemMagicB", 184])])],
-    ["observation", record(["alignment", 8], ["size", 384], ["offsets", pairs(["structSize", 0], ["kind", 4], ["role", 8], ["nameLength", 12], ["deviceMajor", 16], ["deviceMinor", 24], ["inode", 32], ["mountId", 40], ["byteLength", 48], ["linkCount", 56], ["mode", 64], ["ownerUid", 68], ["ownerGid", 72], ["flags", 76], ["filesystemMagic", 80], ["contentOffset", 88], ["contentLength", 96], ["name", 104], ["reserved0", 360], ["reserved1", 368], ["reserved2", 376])])],
+    ["observation", record(["alignment", 8], ["size", 384], ["offsets", pairs(["structSize", 0], ["kind", 4], ["role", 8], ["nameLength", 12], ["deviceMajor", 16], ["deviceMinor", 24], ["inode", 32], ["mountId", 40], ["byteLength", 48], ["linkCount", 56], ["mode", 64], ["ownerUid", 68], ["ownerGid", 72], ["statxMask", 76], ["filesystemMagic", 80], ["contentOffset", 88], ["contentLength", 96], ["name", 104], ["reserved0", 360], ["reserved1", 368], ["reserved2", 376])])],
     ["result", record(["alignment", 8], ["size", 64], ["offsets", pairs(["abiVersion", 0], ["structSize", 4], ["operation", 8], ["status", 12], ["effectClass", 16], ["lastCompletedStep", 20], ["failedStep", 24], ["errno", 28], ["observationCount", 32], ["outputLength", 36], ["completedStepCount", 40], ["returnedDirectoryFd", 44], ["bytesConsumed", 48], ["reserved", 56])])],
   ),
 );
@@ -1963,7 +1963,7 @@ const CLEANUP_MAX_OPEN_DIRECTORIES = 5;
 const CLEANUP_MAX_DIRECTORY_ENTRIES = 256;
 const CLEANUP_MAX_AGGREGATE_ENTRIES = 1_536;
 const EXPECTED_STATEFS_REQUIREMENTS_SHA256 =
-  "9edea8e3e4a7e4e9679b338635ec9d9768ac159fde531ba6e4966498c8d025d1";
+  "9b401032c2b0331174f74895181e906106bb86a32204b818b30686d9a47c0a42";
 let profileOrdinal = 0;
 let scratchParentPromise;
 
@@ -2117,7 +2117,12 @@ function parseDirectoryEntries(bytes, byteLength) {
     const nameBytes = Buffer.from(nameArea.subarray(0, nul));
     if (!nameBytes.equals(Buffer.from(".")) && !nameBytes.equals(Buffer.from(".."))) {
       assert.equal(nameBytes.length >= 1 && nameBytes.length <= 255, true);
-      assert.equal(nameBytes.every((byte) => byte >= 0x20 && byte <= 0x7e), true);
+      assert.equal(
+        nameBytes.every(
+          (byte) => byte >= 0x01 && byte <= 0x7f && byte !== 0x2f,
+        ),
+        true,
+      );
       entries.push(nameBytes);
     }
     offset += recordLength;
@@ -2766,7 +2771,7 @@ function encodeNativeRequest(specification) {
     nameA,
     nameB,
     input,
-    observations: Buffer.alloc(observationCapacity * 384),
+    observations: Buffer.alloc(observationCapacity * 384, 0xa5),
     output: Buffer.alloc(outputCapacity),
     result: Buffer.alloc(64),
   };
@@ -2774,24 +2779,31 @@ function encodeNativeRequest(specification) {
 
 function decodeNativeObservation(bytes, offset) {
   assert.equal(bytes.readUInt32LE(offset), 384);
-  assert.equal(bytes.readUInt32LE(offset + 76), 0);
   assert.equal(bytes.readBigUInt64LE(offset + 360), 0n);
   assert.equal(bytes.readBigUInt64LE(offset + 368), 0n);
   assert.equal(bytes.readBigUInt64LE(offset + 376), 0n);
+  const kind = exactEnumName(
+    OBSERVATION_KIND_NAMES,
+    bytes.readUInt32LE(offset + 4),
+    "observation kind",
+  );
   const nameLength = bytes.readUInt32LE(offset + 12);
   assert.equal(nameLength <= 255, true);
   const nameArea = bytes.subarray(offset + 104, offset + 360);
   assert.equal(nameArea.subarray(nameLength).every((byte) => byte === 0), true);
   const rawObservedName = nameArea.subarray(0, nameLength);
   assert.equal(
-    rawObservedName.every((byte) => byte >= 0x20 && byte <= 0x7e),
+    rawObservedName.every(
+      (byte) => byte >= 0x01 && byte <= 0x7f && byte !== 0x2f,
+    ),
     true,
   );
   const name = nameLength === 0 ? null : rawObservedName.toString("ascii");
-  const kind = exactEnumName(
-    OBSERVATION_KIND_NAMES,
-    bytes.readUInt32LE(offset + 4),
-    "observation kind",
+  assert.equal(name !== "." && name !== "..", true);
+  const statxMask = bytes.readUInt32LE(offset + 76);
+  assert.equal(
+    kind === "ABSENT" ? statxMask === 0 : (statxMask & 0x17ff) === 0x17ff,
+    true,
   );
   const role = exactEnumName(
     ROLE_NAMES,
@@ -2812,6 +2824,7 @@ function decodeNativeObservation(bytes, offset) {
       ["mode", bytes.readUInt32LE(offset + 64)],
       ["ownerUid", bytes.readUInt32LE(offset + 68)],
       ["ownerGid", bytes.readUInt32LE(offset + 72)],
+      ["statxMask", statxMask],
       ["filesystemMagic", bytes.readBigUInt64LE(offset + 80).toString(10)],
       ["contentOffset", exactSafeUnsignedNumber(bytes.readBigUInt64LE(offset + 88), "contentOffset")],
       ["contentLength", exactSafeUnsignedNumber(bytes.readBigUInt64LE(offset + 96), "contentLength")],
@@ -2842,6 +2855,12 @@ function decodeNativeResult(specification, buffers) {
   const outputLength = bytes.readUInt32LE(36);
   assert.equal(observationCount * 384 <= buffers.observations.length, true);
   assert.equal(outputLength <= buffers.output.length, true);
+  assert.equal(
+    buffers.observations
+      .subarray(observationCount * 384)
+      .every((byte) => byte === 0),
+    true,
+  );
   const observations = array(
     ...Array.from({ length: observationCount }, (_, index) =>
       decodeNativeObservation(buffers.observations, index * 384),
@@ -4590,6 +4609,7 @@ function expectedNativeObservation({
     ["mode", identity.mode],
     ["ownerUid", identity.ownerUid],
     ["ownerGid", identity.ownerGid],
+    ["statxMask", identity.mask],
     ["filesystemMagic", filesystemMagic.toString(10)],
     ["contentOffset", 0],
     ["contentLength", contentLength],
@@ -4610,6 +4630,7 @@ function expectedAbsentObservation(role, name) {
     ["mode", 0],
     ["ownerUid", 0],
     ["ownerGid", 0],
+    ["statxMask", 0],
     ["filesystemMagic", "0"],
     ["contentOffset", 0],
     ["contentLength", 0],
@@ -6106,6 +6127,43 @@ test("ABI sizes and every request, observation, and result offset are independen
   const observation = Buffer.alloc(ABI.observation.size);
   observation.writeUInt32LE(ABI.observation.size, 0);
   assert.equal(decodeNativeObservation(observation, 0).kind, "ABSENT");
+  assert.equal(decodeNativeObservation(observation, 0).statxMask, 0);
+  const regularObservation = Buffer.from(observation);
+  regularObservation.writeUInt32LE(
+    OBSERVATION_KIND_NAMES.indexOf("REGULAR"),
+    4,
+  );
+  regularObservation.writeUInt32LE(0x17ff, 76);
+  assert.equal(decodeNativeObservation(regularObservation, 0).statxMask, 0x17ff);
+  for (const mask of [0x1000, 0x07ff]) {
+    const incompleteMask = Buffer.from(regularObservation);
+    incompleteMask.writeUInt32LE(mask, 76);
+    assert.throws(() => decodeNativeObservation(incompleteMask, 0));
+  }
+  const extraMask = Buffer.from(regularObservation);
+  extraMask.writeUInt32LE((0x17ff | 0x8000_0000) >>> 0, 76);
+  assert.equal(
+    decodeNativeObservation(extraMask, 0).statxMask,
+    (0x17ff | 0x8000_0000) >>> 0,
+  );
+  const nonzeroAbsentMask = Buffer.from(observation);
+  nonzeroAbsentMask.writeUInt32LE(1, 76);
+  assert.throws(() => decodeNativeObservation(nonzeroAbsentMask, 0));
+  for (const rawByte of [0x01, 0x1f, 0x7f]) {
+    const rawNameObservation = Buffer.from(observation);
+    rawNameObservation.writeUInt32LE(1, 12);
+    rawNameObservation[104] = rawByte;
+    assert.equal(
+      decodeNativeObservation(rawNameObservation, 0).name.charCodeAt(0),
+      rawByte,
+    );
+  }
+  for (const rawName of [Buffer.from([0x2f]), Buffer.from("."), Buffer.from(".."), Buffer.from([0x80]), Buffer.from([0xff])]) {
+    const invalidRawName = Buffer.from(observation);
+    invalidRawName.writeUInt32LE(rawName.length, 12);
+    rawName.copy(invalidRawName, 104);
+    assert.throws(() => decodeNativeObservation(invalidRawName, 0));
+  }
   const malformedKind = Buffer.from(observation);
   malformedKind.writeUInt32LE(OBSERVATION_KIND_NAMES.length, 4);
   assert.throws(() => decodeNativeObservation(malformedKind, 0));
@@ -6119,6 +6177,15 @@ test("ABI sizes and every request, observation, and result offset are independen
     88,
   );
   assert.throws(() => decodeNativeObservation(unsafeContentOffset, 0));
+
+  const unpublishedPartialSlot = Buffer.alloc(ABI.observation.size);
+  unpublishedPartialSlot[0] = 0xa5;
+  assert.throws(() =>
+    decodeNativeResult(resultSpecification, {
+      ...resultBuffers,
+      observations: unpublishedPartialSlot,
+    }),
+  );
 
   const absentRegular = decodeNativeResult(
     { ...resultSpecification, inventoryKind: "REGULAR_FILE" },
