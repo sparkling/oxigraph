@@ -568,8 +568,16 @@ The remaining Proposed containment decisions now have one-way ownership.
 owns the sole statefs policy/oracle and exact separately attested bounded
 statefs-syscalls object;
 [ADR-0038](./docs/adr/0038-native-containment-manager-guardian-and-trampoline.md)
-must link that object unchanged and owns only manager/guardian/trampoline
-process/cgroup/exec mechanics. ADR-0034 owns dormant application receipt v7,
+links that object unchanged and owns only manager/guardian/trampoline
+process/cgroup/exec mechanics. ADR-0038's bounded authority-null S0-S3B
+repository inputs are integrated through exact commit
+`37a02bb28b9dcd2ed647b6be78371748d9e804be`; the exact 23-file matrix passes
+400/400 on Node 24.14.1 and exact Node 20.20.2. That closure does not implement
+non-StateFS manager transitions, native-manager dispatch into ADR-0037's C
+entrypoint, physical process/cgroup integration, or qualification/activation.
+ADR-0038 remains Proposed and readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`. ADR-0034 owns
+dormant application receipt v7,
 schema-v2 reconstruction/dispatch/profile literals, and the early exact
 `executionGate: "native-containment-qualification-v1"` for
 `contractSchemaVersion: 2`. Its early gate, separate dormant profile, exact
