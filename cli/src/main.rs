@@ -20,6 +20,12 @@ use oxigraph::io::{
 use oxigraph::model::{
     GraphName, IriParseError, NamedNode, NamedOrBlankNode, OxString, RdfVersion,
 };
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use oxigraph::sparql::EgressPolicy;
 use oxigraph::sparql::results::{QueryResultsFormat, QueryResultsSerializer};
 use oxigraph::sparql::{
     CancellationToken, QueryEntailment, QueryEntailmentOptions, QueryResults, SparqlEvaluator,
@@ -2743,8 +2749,22 @@ fn rdf_response_media_type(format: RdfResponseFormat) -> &'static str {
     format.media_type()
 }
 
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
 fn sparql_evaluator() -> SparqlEvaluator {
-    SparqlEvaluator::new().with_deny_all_egress_policy()
+    SparqlEvaluator::new().with_egress_policy(EgressPolicy::deny_all())
+}
+
+#[cfg(not(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+)))]
+fn sparql_evaluator() -> SparqlEvaluator {
+    SparqlEvaluator::new()
 }
 
 fn service_description_response(
