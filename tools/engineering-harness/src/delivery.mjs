@@ -319,7 +319,7 @@ export async function runDelivery({ taskId, completionCheck, argv, timeoutMs = 1
   try {
     result = await execute(command.program, command.args, {
       cwd: workspace, timeoutMs, captureOutputBytes: 16 * 1024 * 1024,
-      quiet, announce: !quiet,
+      quiet, announce: !quiet, ordinaryRustProfile: true,
     });
   } catch (error) {
     failure = error.message;

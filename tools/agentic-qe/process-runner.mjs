@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { TextDecoder } from "node:util";
-import { scrubbedChildEnvironment } from "../child-environment.mjs";
+import { ordinaryRustEnvironment, scrubbedChildEnvironment } from "../child-environment.mjs";
 import {
   countCargoPassedTests,
   normalizeCargoTestObservation,
@@ -63,6 +63,9 @@ export async function execute(program, args, options = {}) {
     typeof options.inheritEnvironment !== "boolean"
   ) {
     throw new Error("process environment inheritance policy is invalid");
+  }
+  if (options.ordinaryRustProfile !== undefined && typeof options.ordinaryRustProfile !== "boolean") {
+    throw new Error("ordinary Rust profile policy is invalid");
   }
   if (
     captureOutputBytes !== undefined &&
@@ -283,12 +286,13 @@ export async function execute(program, args, options = {}) {
     let terminationCloseResult = null;
     let timeoutHandle;
     let forceKillHandle;
+    const sanitized = scrubbedChildEnvironment(
+      options.env,
+      options.inheritEnvironment === false ? {} : process.env,
+    );
     const child = spawn(program, args, {
       cwd: options.cwd ?? repoRoot,
-      env: scrubbedChildEnvironment(
-        options.env,
-        options.inheritEnvironment === false ? {} : process.env,
-      ),
+      env: options.ordinaryRustProfile === true ? ordinaryRustEnvironment(sanitized) : sanitized,
       shell: false,
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
